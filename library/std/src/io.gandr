@@ -20,7 +20,11 @@
 // model: the scope that handles it chooses one. `Scripted` is the model with
 // no kernel: it answers each operation from a tape in the source.
 //
+// Its seam is the descriptors of the standard streams, borrowed as
+// `BorrowedFd`, as the three handles of `cap_std`.
+//
 // - see: #4523
+// - see: `corpus/model/effects/hello.gandr` — a source that uses it
 // - see: #7844 — the theory, a model and the buffer
 // - see: `corpus/model/completion/` — the completion contract that a model
 //   keeps

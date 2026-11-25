@@ -8,6 +8,8 @@
 //! the answer.
 //!
 //! - see: #7968
+//! - see: `corpus/ledger/features/width-arithmetic.gandr` — a source that uses
+//!   it
 
 @![features(("nominal-data", "signatures-as-values", "universes", "visibility"))]
 

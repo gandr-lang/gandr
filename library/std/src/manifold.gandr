@@ -27,6 +27,9 @@
 // at the site's boundary, so a manifold admits one only by the policy its
 // `translation` states. A manifold that states none admits none.
 //
+// The module has no host access: the driver reads the files of a site
+// and of a manifold.
+//
 // - see: #3374
 // - see: #3375
 // - see: #3523

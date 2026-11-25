@@ -15,6 +15,7 @@
 // source `hashing.gandr` states the exact probability of a collision.
 //
 // - see: #5713
+// - see: `corpus/model/probability/hashing.gandr` — a source that uses it
 // - see: Dietzfelbinger, Hagerup, Katajainen and Penttonen 1997, A reliable
 //   randomized algorithm for the closest-pair problem — the family and its
 //   bound

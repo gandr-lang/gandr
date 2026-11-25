@@ -4,4 +4,6 @@
 // nowhere else. The interface is native, so no declaration here
 // states it. The pool capability and its streams wait for demand.
 //
+// Its seam is `cap_std::net::Pool`, `cap_net_ext::PoolExt` and rustix `net`.
+//
 // - see: #4523

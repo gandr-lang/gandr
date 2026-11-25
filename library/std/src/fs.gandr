@@ -4,4 +4,11 @@
 // nowhere else. The interface is native, so no declaration here
 // states it. The functions over a directory capability wait for demand.
 //
+// Its seam is `cap_std::fs::Dir`, `cap_tempfile::TempDir`,
+// `cap_primitives::fs::open_dir`, which resolves beneath its start, and rustix
+// `fs`.
+//
 // - see: #4523
+// - see: `corpus/model/builtins/host-modules.gandr` and
+//   `corpus/model/control/capability-attenuate.gandr` — the sources that use
+//   the interface

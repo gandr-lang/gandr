@@ -19,6 +19,7 @@
 //
 // - see: #5739
 // - see: #5740
+// - see: `corpus/model/quantum/` — the sources that use it
 
 /// The exponent `k` of an amplitude's denominator `2^k`, as a unary number.
 pub data Scale : Type where

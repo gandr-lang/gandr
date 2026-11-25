@@ -9,10 +9,10 @@
 // Each host module opens its root capability from it by attenuation. A
 // capability holding more operations stands where a program asks for one
 // holding fewer. A holder never reaches an operation its own capability does
-// not hold. The authority holds the operations of every landed host module of
-// the map, and grows as each one lands.
+// not hold. The authority holds the operations of each host module of `std`.
+// The head comment of each host module names its seam.
 //
-// - see: `../README.md` — the map of host modules
+// Its seam is `cap_std::ambient_authority` and `AmbientAuthority`.
 
 /// The ambient authority: every host operation a landed module of `std`
 /// reaches, held once, as `main`'s parameter.

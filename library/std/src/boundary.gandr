@@ -13,6 +13,8 @@
 // The checker holds the layout program's integer comparisons as neutrals, so
 // admission is a run. A corpus source admits Rust externs against a row.
 //
+// The row and `admit` are in this module.
+//
 // - see: `corpus/model/interop/boundary/function-row.gandr` — Rust externs
 //   against a row
 

@@ -21,6 +21,8 @@
 // enum's own. The program models no `repr` attribute and no target but
 // x86-64.
 //
+// The program of Rust's default layout is in this module.
+//
 // - see: `compiler/rustc_abi/src/layout.rs` — rustc's `univariant`,
 //   `univariant_biased` and `layout_of_enum`
 // - see: `corpus/model/layouts/rust-default.gandr` — the program checked

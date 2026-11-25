@@ -9,5 +9,8 @@
 // checked enclosure of its root. `decide`, `step`, `checkpoint`, `restore`
 // and `report` decide an open root by a resumable machine.
 //
+// Its seam is the crate `theory-exact-reals`.
+//
 // - see: #5700
 // - see: #5703
+// - see: `corpus/model/reals/` — the sources that use it

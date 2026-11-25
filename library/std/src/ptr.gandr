@@ -18,6 +18,7 @@
 //! - see: #7838 — the effect, and the model that refuses an access outside a
 //!   mapped extent
 //! - see: #7836 — a source handler shadows a block
+//! - see: `corpus/model/boot-core/` — the sources that use it
 
 @![features(("call-by-push-value", "conditionals", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
 

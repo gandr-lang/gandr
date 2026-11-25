@@ -28,8 +28,11 @@
 // Limits: a draw wider than the generator gets its answer from the model
 // outside it. The capability of randomness and distributions wait for demand.
 //
+// Its seam is `getrandom::fill`, and `cap_rand` for a capability.
+//
 // - see: #5707
 // - see: #5713
+// - see: `corpus/model/probability/` — the sources that use it
 // - see: Knuth, The Art of Computer Programming, volume 2, § 3.2.1 — the
 //   conditions for a full period
 

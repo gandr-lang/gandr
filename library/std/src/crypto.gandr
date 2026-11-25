@@ -17,6 +17,7 @@
 // use.
 //
 // - see: #5713
+// - see: `corpus/model/probability/one-time-pad.gandr` — a source that uses it
 // - see: Shannon 1949, Communication theory of secrecy systems — perfect
 //   secrecy
 

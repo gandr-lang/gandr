@@ -6,4 +6,9 @@
 // The interfaces are native, so no declaration here states them. The
 // process's arguments wait for demand.
 //
+// Its seam is rustix `process`, because `cap-std` has no process type.
+//
 // - see: #4523
+// - see: `corpus/model/control/capability-region.gandr` and
+//   `corpus/model/control/program-exit.gandr` — the sources that use the
+//   interfaces
