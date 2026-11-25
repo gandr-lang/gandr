@@ -448,9 +448,10 @@ fn whole(
     }
 }
 
-/// Writes `line` and a newline to `descriptor` by the system call of the IO
-/// core of the bootstrap. A line below one page goes with its newline in one
-/// call; a longer line goes in one call and its newline in a second.
+/// Writes `line` and a newline to `descriptor` through `gandr-boot-io`.
+///
+/// A line below one page goes with its newline in one call; a longer line
+/// goes in one call and its newline in a second.
 ///
 /// # Specification
 /// - ensures: [`Printed::Written`] once the descriptor took the line and its
@@ -482,19 +483,18 @@ pub fn line_to(
 {
     let text = line.as_ref().as_bytes();
     let mut page = [0_u8; PAGE];
-    let joined = page.get_mut(..= text.len()).and_then(|piece| {
-        let (body, end) = piece.split_at_mut_checked(text.len())?;
-        body.copy_from_slice(text);
-        end.fill(b'\n');
-        Some(&*piece)
-    });
-    match joined {
-        Some(piece) => whole(descriptor, piece),
-        None => match whole(descriptor, text) {
+    let Some((body, end)) = page
+        .get_mut(..= text.len())
+        .and_then(|piece| piece.split_at_mut_checked(text.len()))
+    else {
+        return match whole(descriptor, text) {
             Printed::Written => whole(descriptor, b"\n"),
             Printed::Failed => Printed::Failed,
-        },
-    }
+        };
+    };
+    body.copy_from_slice(text);
+    end.fill(b'\n');
+    whole(descriptor, page.get(..= text.len()).unwrap_or_default())
 }
 
 /// Writes `line` and a newline to standard output by the IO core of the

@@ -2,6 +2,8 @@
 //! to a descriptor, by the system call of the IO core of the bootstrap. A
 //! socket of the host's `std` is the descriptor, and the oracle of the bytes.
 
+#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+
 use core::ffi::c_int;
 use core::time::Duration;
 use std::io::ErrorKind;
