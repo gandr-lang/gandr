@@ -57,7 +57,7 @@
       "crates/surface-dispatcher/tests/digest.rs",
       "crates/theory-exact-reals/benches/support.rs"
     ],
-    "gandr-surface-features": ["ledger/features.sql"],
+    "gandr-surface-features": ["ledger/features-schema.sql", "ledger/features/"],
     "gandr-surface-lowering": [
       "corpus/model/desc/wide-face-poset.gandr",
       "corpus/model/identity/cong-over-a-lambda.gandr",

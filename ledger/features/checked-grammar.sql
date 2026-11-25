@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('checked-grammar','syntax','A checked precedence-bounded grammar',NULL,'implemented','notable',NULL,'The surface is a set of rules over a precedence DAG, checked by build-time gates into the mold table the parser reads.','surface-grammar','crates/surface-grammar/tests/pbg.rs',NULL,NULL);

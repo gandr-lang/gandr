@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('certified-staging','staging','Certified staging',NULL,'implemented','notable',NULL,'An experimental stage universe in which a staged program normalizes strictly and its first-order residual is readmitted under a certificate.','kernel-core kernel-term core-nbe core-checker','crates/kernel-core/src/stage/tests.rs',NULL,NULL);

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('diagnostic-verbosity','diagnostics','Verbosity levels','rich-reports','implemented','ordinary',NULL,'A report renders at a chosen verbosity, in the terminal and the editor alike.','surface-diagnostics surface-lsp','crates/surface-diagnostics/src/verbosity.rs',NULL,'#116');

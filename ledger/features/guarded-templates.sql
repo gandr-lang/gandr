@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('guarded-templates','staging','Guarded families of staging equations','certified-staging','implemented','notable',NULL,'A family of staging equations is drafted from its last template and admitted under ordinary replay.','core-checker kernel-core','crates/core-checker-bridge/src/template/tests.rs',NULL,NULL);

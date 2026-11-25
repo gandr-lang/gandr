@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('directed-circle','directed','The directed circle','directed-paths','planned','unique','dependent provers','`loop : Base --> Base` as a one-way cell whose flows at the point are the naturals; a directed cell is refused by name today.',NULL,'corpus/pathological/identity/directed-cell.gandr',NULL,'#1679');

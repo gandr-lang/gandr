@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('nominal-automata','algorithms','Nominal automata',NULL,'implemented','notable',NULL,'Finite register presentations of nominal word and tree automata over caller-owned names.','theory-nominal-automata','crates/theory-nominal-automata/tests/lib.rs',NULL,NULL);

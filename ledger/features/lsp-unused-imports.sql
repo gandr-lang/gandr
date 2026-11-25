@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lsp-unused-imports','editor','Unused imports faded and removable','language-server','implemented','ordinary',NULL,'An import no lookup reaches is published as an unnecessary hint, and a code action offers its removal.','surface-lsp surface-lowering','corpus/model/cancellation/answered.gandr crates/surface-lsp/src/server.rs',NULL,'#1116');

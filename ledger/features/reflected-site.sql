@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('reflected-site','identity','The reflected site','univalence-theorem','planned','unique','dependent provers','Shapes, degrees, corollas and the Segal condition as gandr data, the virtual double category formers at the surface.',NULL,NULL,NULL,'#312');

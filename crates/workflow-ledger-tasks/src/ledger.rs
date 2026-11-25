@@ -219,7 +219,7 @@ pub enum LedgerTask
     /// status where named.
     List
     {
-        /// The tree holding `ledger/features.sql`.
+        /// The tree holding `ledger/features/`.
         root: PathBuf,
         /// The area, where one is named.
         area: Option<Area>,
@@ -230,7 +230,7 @@ pub enum LedgerTask
     /// its corpus witnesses.
     Show
     {
-        /// The tree holding `ledger/features.sql` and the paths it names.
+        /// The tree holding `ledger/features/` and the paths it names.
         root: PathBuf,
         /// The feature.
         id: FeatureId,

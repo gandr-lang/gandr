@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('semantic-highlighting','editor','Semantic highlighting','language-server','implemented','ordinary',NULL,'Every mold of the grammar carries a highlight role, served as semantic tokens and used to colour hovers.','surface-grammar surface-lsp','crates/surface-grammar/tests/highlight.rs',NULL,NULL);

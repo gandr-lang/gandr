@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('universe-families','universes','Value and computation universe families',NULL,'partial','notable',NULL,'Two universe families indexed by polarity and level over one level algebra, with an erased static core beneath the surface.','core-term core-checker','corpus/classifier/static-beta.gandr','corpus/ledger/features/universe-families.gandr','#315');

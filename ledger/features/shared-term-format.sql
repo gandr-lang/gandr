@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('shared-term-format','kernel','Canonical shared term encoding',NULL,'implemented','notable',NULL,'Artifacts encode terms as one subterm table, canonical by re-encoding, with decode budgets against amplification.','kernel-term','crates/kernel-term/tests/sharing_format.rs',NULL,NULL);

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('value-plane','storage','The content-addressed value plane',NULL,'implemented','notable',NULL,'A value commits as a typed chunk DAG and dereferences from any content pointer, every chunk verified against its identity.','storage-values','crates/storage-values/tests/values.rs crates/storage-values/tests/laws.rs',NULL,NULL);

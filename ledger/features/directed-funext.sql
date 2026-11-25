@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('directed-funext','directed','Directed function extensionality','directed-paths','implemented','notable',NULL,'A flow between functions is stated pointwise by variance.','core-checker kernel-core','corpus/model/identity/flow-function.gandr','corpus/model/identity/flow-function.gandr',NULL);

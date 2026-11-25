@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('generated-programs','corpus','Generated test programs',NULL,'planned','notable',NULL,'Type-directed generation of well-typed sources and free generation of ill-typed ones for testing the checker.',NULL,NULL,NULL,'#386');

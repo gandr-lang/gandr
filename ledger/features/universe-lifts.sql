@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('universe-lifts','universes','Universe lifts','universes','implemented','notable',NULL,'A type moves to a higher universe by a recorded lift whose strictness formation gates.','core-checker kernel-core','crates/core-checker-bridge/src/bridge/tests.rs','corpus/ledger/features/universe-lifts.gandr',NULL);

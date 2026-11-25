@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('commuting-conversions','calculus','Commuting conversions of returners','call-by-push-value','implemented','notable',NULL,'F-η and bind associativity hold definitionally in the normalizer and in the kernel''s replay.','core-nbe kernel-core','crates/core-nbe/src/machine/tests.rs crates/kernel-core/tests/replay_laws.rs','crate-tests',NULL);

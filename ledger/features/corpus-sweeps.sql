@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('corpus-sweeps','workflow','Corpus sweeps',NULL,'implemented','ordinary',NULL,'A corpus-wide property runs over a stated, hashed sample on a pull request and over the whole corpus nightly.','workflow-sweep','crates/workflow-sweep/src/lib.rs',NULL,NULL);

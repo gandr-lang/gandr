@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('fusion-pass','runtime','Fusion as a certified pass',NULL,'partial','notable',NULL,'Derived rewrite cells applied to the command IL before code generation, deforestation among them.','runtime-emitter runtime-stencils','crates/runtime-emitter/src/fuse.rs crates/runtime-emitter/tests/agreement.rs crates/runtime-stencils/tests/agreement.rs',NULL,'#339');

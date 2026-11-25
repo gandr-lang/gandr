@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('mutants-unwitnessed','workflow','Static unwitnessed mutant gaps','mutation-testing','implemented','ordinary',NULL,'A static list groups each listed mutant by its function. It records the names no witness reaches. The collector keeps one issue per crate.','core-checker','.config/mutants/cases.json',NULL,'#3211');

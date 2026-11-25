@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('termination-checker','recursion','A separate termination checker',NULL,'declined','notable',NULL,'Termination is evidence replayed by the kernel, never searched for by a checker; a fixpoint without evidence stays partial.',NULL,NULL,NULL,'#1685');

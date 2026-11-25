@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('typed-holes','checking','Typed holes and goals',NULL,'implemented','notable',NULL,'A hole stands for missing source, is typed where it stands, and is filled by name with the rest of the program still checking.','core-term core-checker','corpus/fragment/addressable-obligation.gandr','corpus/fragment/addressable-obligation.gandr',NULL);

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('identity-by-recursion','identity','Identity computed by the type''s structure','identity-types','implemented','notable',NULL,'The identity type of a structured type is computed from its formers, a path of pairs a pair of paths.','kernel-core core-checker','corpus/model/data/sigma-pair.gandr','corpus/model/data/sigma-pair.gandr',NULL);

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('vscode-extension','editor','The VS Code extension',NULL,'implemented','ordinary',NULL,'An extension that starts `gandr lsp` for VS Code, with role colours for hover.','contrib/gandr-vscode','contrib/gandr-vscode',NULL,NULL);

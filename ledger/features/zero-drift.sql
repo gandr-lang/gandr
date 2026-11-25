@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('zero-drift','incremental','Zero-drift verdicts','incremental-checking','partial','notable',NULL,'An unchanged input yields a byte-identical verdict on every incremental surface.','surface-session surface-lsp core-incremental','crates/surface-session/tests/incremental.rs crates/surface-lsp/tests/session.rs',NULL,'#320');

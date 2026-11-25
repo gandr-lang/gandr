@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('live-evaluation','checking','Evaluation through holes',NULL,'implemented','notable',NULL,'A program with holes evaluates as far as it can, holes standing as neutrals, and resumes after a fill.','core-nbe core-incremental','crates/core-nbe/src/live.rs','crate-tests',NULL);

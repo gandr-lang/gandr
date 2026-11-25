@@ -1,27 +1,41 @@
 #:tombi toml-version = "v1.0.0"
 #:schema https://mise.jdx.dev/schema/mise-task.json
 
-# The features ledger (`ledger/README.md`). `ledger/features.sql` is tracked;
-# `ledger/features.db` is built from it and ignored. The `feature` table is
-# `WITHOUT ROWID`, so `.dump` writes its rows in primary-key order: the dump
-# depends on the rows, never on the order they were written in, and two
-# branches adding rows touch different lines. `check:ledger` in
-# `mise-tasks-check.toml` holds the round trip and the paths.
+# The features ledger (`ledger/README.md`). `ledger/features-schema.sql` and
+# one file `ledger/features/<id>.sql` for each row are tracked;
+# `ledger/features.db` is built from them and ignored. The `feature` table is
+# `WITHOUT ROWID`, so `.dump` writes its rows in primary-key order, and
+# `ledger-split` of `gandr-workflow-ledger-split` writes each row to the file
+# of its id: two branches adding rows touch different files. `check:ledger`
+# in `mise-tasks-check.toml` holds the round trip and the paths.
 
 ["ledger:build"]
-description = "Build ledger/features.db from the tracked dump ledger/features.sql"
+description = "Build ledger/features.db from the tracked schema and rows of ledger/features/"
 # Built beside the target and moved over it, so a refused row leaves the
 # previous database in place.
 run = '''
 set -eu
 rm -f ledger/features.db.new
-sqlite3 -bail ledger/features.db.new < ledger/features.sql
+cat ledger/features-schema.sql ledger/features/*.sql | sqlite3 -bail ledger/features.db.new
 mv ledger/features.db.new ledger/features.db
 '''
 
 ["ledger:dump"]
-description = "Dump ledger/features.db to the tracked ledger/features.sql, rows in id order"
-run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
+description = "Dump ledger/features.db to the tracked schema and one file for each row of ledger/features/"
+# The rows go to a fresh directory, which takes the place of
+# `ledger/features`, so the dump of a removed row leaves no file.
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+mkdir "$fresh/features"
+sqlite3 ledger/features.db .dump > "$fresh/dump.sql"
+.config/gate-scope/tool.bash gandr-workflow-ledger-split ledger-split \
+  --schema ledger/features-schema.sql --rows "$fresh/features/{}.sql" "$fresh/dump.sql" > /dev/null
+rm -rf ledger/features
+mv "$fresh/features" ledger/features
+'''
 
 # The crate map: the per-crate dot graph and the category graph, from `cargo
 # metadata` and the sites of the concerns ledger, in the layering of the

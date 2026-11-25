@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('native-lists','types','Native lists and their fold',NULL,'implemented','ordinary',NULL,'A kernel `List` former with nil, cons and a pure annotated fold.','core-term core-checker kernel-core core-sequent','corpus/model/identity/transport-list.gandr','corpus/model/identity/transport-list.gandr',NULL);

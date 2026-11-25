@@ -1696,23 +1696,20 @@ fi
 echo 'sites check OK: the README carries the fat-object and one-site paragraphs as the wreath states them'
 '''
 
-# The features ledger (`ledger/features.sql`, `ledger/README.md`): the dump
-# round-trips and keeps its constraints, every path a row names exists, every
-# language feature names an exemplar, and every implemented row without a
-# witness rests on an open issue, its state read through `gh`
-# (`.config/ledger/check.bash` states each rule). An issue the change closes
-# owes nothing: a commit's `Closes` line or a closing keyword of the pull
-# request's body, from `LEDGER_BODY` or a pull request's CI event (#6767).
-# First the cases of `.config/ledger/cases.json` run the check over a stub
-# `gh` (#4018): a failed read stops it with the call and its error, never a
-# verdict on a row.
-#
-# `check:ledger` also runs the cases of `ledger:stamp`.
-# - see: #7978
+# The features ledger (`ledger/features-schema.sql`, `ledger/features/`,
+# `ledger/README.md`): the rows round-trip and keep their constraints, every
+# path a row names exists, every language feature names an exemplar, and
+# every implemented row without a witness rests on an open issue, its state
+# read through `gh` (`.config/ledger/check.bash` states each rule). An issue
+# the change closes owes nothing: a commit's `Closes` line or a closing
+# keyword of the pull request's body, from `LEDGER_BODY` or a pull request's
+# CI event (#6767). First the cases of `.config/ledger/cases.json` run the
+# check over a stub `gh` (#4018): a failed read stops it with the call and
+# its error, never a verdict on a row.
 ["check:ledger"]
 description = "The features ledger round-trips, keeps its constraints, names paths that exist, an exemplar for every language feature and a witness or an open gap for every implemented one"
 tools.jq = "1.8.1"
-run = [".config/ledger/cases.bash", ".config/ledger/stamp-cases.bash", ".config/ledger/check.bash"]
+run = [".config/ledger/cases.bash", ".config/ledger/check.bash"]
 
 # A refusal in the tree points at what resolves it (#2529). Every
 # `TrackingIssue` constant (`crates/core-term/src/failure.rs`), the issue an
@@ -1745,7 +1742,7 @@ trap 'rm -rf "$tmp"' EXIT
 .config/cases/run.bash tracking .config/tracking/cases.json --program .config/tracking/tracking.jq
 sed -nE 's/^ *pub const ([A-Z_]+): Self = Self\(([0-9]+)\);$/\1 \2/p' crates/core-term/src/failure.rs \
   | jq -R '[inputs | split(" ") | {name: .[0], number: (.[1] | tonumber)}]' -n > "$tmp/constants.json"
-{ cat ledger/features.sql; printf '%s\n' "SELECT id, coalesce(issue, '') AS issue FROM feature WHERE status = 'declined' ORDER BY id;"; } \
+{ cat ledger/features-schema.sql ledger/features/*.sql; printf '%s\n' "SELECT id, coalesce(issue, '') AS issue FROM feature WHERE status = 'declined' ORDER BY id;"; } \
   | sqlite3 -json | jq '[.[] | {id, refs: [.issue | scan("(?:^|\\s)#([0-9]+)") | .[0] | tonumber]}]' > "$tmp/rows.json"
 jq -r -n --slurpfile c "$tmp/constants.json" --slurpfile r "$tmp/rows.json" \
   '"{ repository(owner: \"gandr-lang\", name: \"gandr\") { " + ([$c[0][].number, $r[0][].refs[]] | unique
@@ -3727,11 +3724,12 @@ while IFS= read -r case; do
   git init --quiet --initial-branch=main "$repo"
   git -C "$repo" config commit.gpgsign false
   mkdir -p "$repo/ledger"
-  cp ledger/features.sql "$repo/ledger/features.sql"
+  cp -r ledger/features-schema.sql ledger/features "$repo/ledger/"
   git -C "$repo" add ledger && git -C "$repo" commit --quiet --no-verify -m base
   for (( i = 0; i < $(jq .padding <<< "$case"); i++ )); do
-    printf "INSERT INTO feature VALUES('padding-%05d','padding','A padded row',NULL,'planned','ordinary',NULL,'%s',NULL,NULL,NULL,'#2671',NULL);\n" "$i" "$line"
-  done >> "$repo/ledger/features.sql"
+    printf "INSERT INTO feature VALUES('padding-%05d','padding','A padded row',NULL,'planned','ordinary',NULL,'%s',NULL,NULL,NULL,'#2671');\n" "$i" "$line" \
+      > "$repo/ledger/features/padding-$(printf '%05d' "$i").sql"
+  done
   git -C "$repo" add ledger && git -C "$repo" commit --quiet --no-verify --allow-empty -m head
   got=0
   out=$(GIT_DIR="$repo/.git" GIT_WORK_TREE="$repo" mise run --quiet ledger:patched "$scratch/body.md" HEAD~1 2> "$scratch/err") || got=$?
