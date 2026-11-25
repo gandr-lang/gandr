@@ -1,0 +1,47 @@
+//! `std.os.linux`: the system calls of Linux.
+//!
+//! The kernel gives the answer of a system call as one word, in the register of
+//! the answer. A word from `-4095` to `-1`, read as a signed word, is the error
+//! number with its sign changed. Each other word is the result of the call.
+//! `split` makes the two cases two constructors of `Answer`, so a caller
+//! cannot read an error number as a result. A word of the kernel is a `u64`:
+//! the word `-1` is `18446744073709551615u64`.
+//!
+//! The calls themselves wait for the block of a system call.
+//!
+//! - see: #7837 — the answer of a system call
+
+/// The answer of a system call, split.
+pub data Answer : Type where
+  /// The call gives this result.
+  | Value : (result : u64) --> Answer
+  /// The call fails with this error number, from 1 to 4095.
+  | Error : (number : u64) --> Answer
+
+/// The least word that is an error: `-4095` as a word.
+def least_error() -> u64 = 18446744073709547521u64;
+
+/// The answer of a system call as the kernel gives `word`: an error number
+/// when the word is from `-4095` to `-1`, and the result otherwise.
+pub def split(word : u64) -> Answer =
+  if u64.ge word least_error {
+    pure Error (u64.wrapping_sub 0u64 word)
+  } else {
+    pure Value word
+  }
+
+/// `-4096` is one word below the errors, so it is a result.
+@[runs("Value 18446744073709547520u64")]
+def below_the_errors() -> Answer = split 18446744073709547520u64;
+
+/// `-4095` is the greatest error number.
+@[runs("Error 4095u64")]
+def greatest_error() -> Answer = split 18446744073709547521u64;
+
+/// `-1` is the error number 1, `EPERM`.
+@[runs("Error 1u64")]
+def least_error_number() -> Answer = split 18446744073709551615u64;
+
+/// `0` is a result.
+@[runs("Value 0u64")]
+def zero() -> Answer = split 0u64;

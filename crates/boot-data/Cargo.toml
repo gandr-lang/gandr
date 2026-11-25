@@ -1,0 +1,26 @@
+[package]
+name = "gandr-boot-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The data of the bootstrap that allocates: a vector of bytes over the heap of the boot layer"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["bytes", "gandr", "no-std", "vector"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One target for the vector, each area a module, so a witness path reads
+# `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+gandr-boot-alloc.workspace = true
+gandr-boot-core.workspace = true
+
+[lints]
+workspace = true

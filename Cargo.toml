@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/boot-alloc",
   "crates/boot-core",
+  "crates/boot-data",
   "crates/boot-io",
   "crates/core-checker",
   "crates/core-checker-base",
@@ -25,6 +26,7 @@ members = [
   "crates/kernel-strata",
   "crates/kernel-term",
   "crates/runtime-emitter",
+  "crates/runtime-mlir",
   "crates/runtime-net",
   "crates/runtime-rust-record",
   "crates/runtime-stencils",
@@ -181,6 +183,7 @@ default-features = false
 # - kernel-core
 # - kernel-strata
 # - kernel-term
+# - runtime-mlir
 # - runtime-net
 # - runtime-rust-record
 # - storage-artifact
@@ -423,6 +426,7 @@ default-features = false
 # The kernel's mapping calls with no C library, and a heap of size classes
 # over them.
 # consumers:
+# - boot-data
 # - runtime-emitter
 [workspace.dependencies.gandr-boot-alloc]
 path = "crates/boot-alloc"
@@ -430,6 +434,7 @@ path = "crates/boot-alloc"
 # The operations on a range of bytes that allocate nothing, with the range
 # that a function of the layer `boot` reads and the place that it writes.
 # consumers:
+# - boot-data
 # - boot-io
 # - surface-dispatcher (Linux x86-64)
 [workspace.dependencies.gandr-boot-core]
@@ -569,6 +574,7 @@ path = "crates/core-session"
 # - core-unify
 # - kernel-core (dev)
 # - runtime-emitter
+# - runtime-mlir (dev)
 # - runtime-stencils (dev)
 # - surface-corpus
 # - surface-diagnostics
@@ -905,6 +911,7 @@ path = "crates/surface-format"
 # DAG, the built-in surface the melder pushes over, and the table pairing
 # each glyph with its ASCII spelling.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus
 # - surface-diagnostics (dev)
 # - surface-dispatcher
@@ -939,6 +946,7 @@ path = "crates/surface-layout"
 # Lowering the surface into the core: resolution, module collection, the
 # attribute side table, the origin table and the refusal classifier.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -1064,6 +1072,7 @@ path = "crates/surface-lsp-navigation"
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus (dev)
 # - surface-diagnostics (dev)
 # - surface-dispatcher
@@ -1137,6 +1146,7 @@ path = "crates/surface-session"
 
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -1359,6 +1369,7 @@ default-features = false
 # - core-incremental
 # - core-term
 # - surface-corpus (dev)
+# - runtime-mlir
 # - surface-dispatcher (dev)
 # - surface-lowering
 # - surface-lowering-base

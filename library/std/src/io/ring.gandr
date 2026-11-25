@@ -1,0 +1,176 @@
+//! `std.io.ring`: the structures that the ring of `io_uring` shares with the
+//! kernel of Linux, as layout descriptions.
+//!
+//! Each structure is a `Structure`: its name, its size in bytes, and its
+//! fields in the order of the header. Each field is a `Field`: its name, its
+//! offset in bytes and its width in bytes. A field of a union is the first
+//! member of the union that the header names, and a nested structure is one
+//! field of the width of that structure. The flexible array at the end of
+//! `io_uring_cqe`, `big_cqe`, has no field: it has no width.
+//!
+//! The numbers are those of `include/uapi/linux/io_uring.h` of Linux, on each
+//! architecture: each field there is aligned to its width, so no field has a
+//! padding before it that an architecture changes. A read or a write of a
+//! field waits for the interface `Ptr` and the calls of the ring.
+//!
+//! - see: #7839 — the structures and the comparison
+//! - see: `crates/surface-dispatcher/tests/ring.rs` — the comparison of each
+//!   size and each offset with a `#[repr(C)]` declaration of Rust
+
+// The fields of a structure.
+import std.list (List);
+
+/// A field of a structure: its name, its offset in bytes from the start of
+/// the structure, and its width in bytes.
+pub data Field : Type where
+  /// The field `name`, `width` bytes at the offset `offset`.
+  | Field : (name : String, offset : Integer, width : Integer) --> Field
+
+/// A structure: its name, its size in bytes, and its fields in the order of
+/// the header.
+pub data Structure : Type where
+  /// The structure `name` of `size` bytes with `fields`.
+  | Structure : (name : String, size : Integer, fields : List Field) --> Structure
+
+/// `struct io_sqring_offsets`: the offset of each part of the submission
+/// queue in its map, which the kernel writes at the setup.
+pub def io_sqring_offsets() -> Structure =
+  Structure "io_sqring_offsets" 40 #[
+    Field "head" 0 4,
+    Field "tail" 4 4,
+    Field "ring_mask" 8 4,
+    Field "ring_entries" 12 4,
+    Field "flags" 16 4,
+    Field "dropped" 20 4,
+    Field "array" 24 4,
+    Field "resv1" 28 4,
+    Field "user_addr" 32 8
+  ]
+
+/// `struct io_cqring_offsets`: the offset of each part of the completion
+/// queue in its map, which the kernel writes at the setup.
+pub def io_cqring_offsets() -> Structure =
+  Structure "io_cqring_offsets" 40 #[
+    Field "head" 0 4,
+    Field "tail" 4 4,
+    Field "ring_mask" 8 4,
+    Field "ring_entries" 12 4,
+    Field "overflow" 16 4,
+    Field "cqes" 20 4,
+    Field "flags" 24 4,
+    Field "resv1" 28 4,
+    Field "user_addr" 32 8
+  ]
+
+/// `struct io_uring_params`: the parameters of `io_uring_setup`, which the
+/// kernel reads and then completes. `resv` is an array of three `__u32`.
+pub def io_uring_params() -> Structure =
+  Structure "io_uring_params" 120 #[
+    Field "sq_entries" 0 4,
+    Field "cq_entries" 4 4,
+    Field "flags" 8 4,
+    Field "sq_thread_cpu" 12 4,
+    Field "sq_thread_idle" 16 4,
+    Field "features" 20 4,
+    Field "wq_fd" 24 4,
+    Field "resv" 28 12,
+    Field "sq_off" 40 40,
+    Field "cq_off" 80 40
+  ]
+
+/// `struct io_uring_sqe`: one entry of the submission queue. Each union is
+/// its first member: `off`, `addr`, `rw_flags`, `buf_index`, `splice_fd_in`
+/// and `addr3`, and `__pad2` is the second word of the last union.
+pub def io_uring_sqe() -> Structure =
+  Structure "io_uring_sqe" 64 #[
+    Field "opcode" 0 1,
+    Field "flags" 1 1,
+    Field "ioprio" 2 2,
+    Field "fd" 4 4,
+    Field "off" 8 8,
+    Field "addr" 16 8,
+    Field "len" 24 4,
+    Field "rw_flags" 28 4,
+    Field "user_data" 32 8,
+    Field "buf_index" 40 2,
+    Field "personality" 42 2,
+    Field "splice_fd_in" 44 4,
+    Field "addr3" 48 8,
+    Field "__pad2" 56 8
+  ]
+
+/// `struct io_uring_cqe`: one entry of the completion queue. `res` is the
+/// result of the operation: a count, or a negative error number.
+pub def io_uring_cqe() -> Structure =
+  Structure "io_uring_cqe" 16 #[Field "user_data" 0 8, Field "res" 8 4, Field "flags" 12 4]
+
+/// The five structures of the ring.
+pub def structures() -> List Structure =
+  #[io_uring_params, io_sqring_offsets, io_cqring_offsets, io_uring_sqe, io_uring_cqe]
+
+/// The fields of the structure `name` among `all`, or no field when none has
+/// the name.
+def rec fields_of(all : List Structure, name : String) -> List Field =
+  match all where
+    | #[] => #[]
+    | #[structure, ..rest] => match structure where
+      | Structure(named, size, fields) => if named == name { fields } else {
+        fields_of[<] rest name
+      }
+
+/// The size of the structure `name` among `all`, or `-1` when none has the
+/// name.
+def rec size_of(all : List Structure, name : String) -> Integer =
+  match all where
+    | #[] => 0 - 1
+    | #[structure, ..rest] => match structure where
+      | Structure(named, size, fields) => if named == name { size } else { size_of[<] rest name }
+
+/// The field `name` of `fields` as its offset and its width, or `-1` and `-1`
+/// when no field has the name.
+def rec field_of(fields : List Field, name : String) -> Integer * Integer =
+  match fields where
+    | #[] => (0 - 1, 0 - 1)
+    | #[field, ..rest] => match field where
+      | Field(named, offset, width) => if named == name { (offset, width) } else {
+        field_of[<] rest name
+      }
+
+/// The count of `fields`.
+def rec counted(fields : List Field) -> Integer =
+  match fields where
+    | #[] => 0
+    | #[field, ..rest] => { let n = counted[<] rest; n + 1 }
+
+/// The size in bytes of the structure `structure`, or `-1` when the ring has
+/// no structure of the name.
+pub def size(structure : String) -> Integer = size_of structures structure;
+
+/// The count of the fields of the structure `structure`, or `0` when the ring
+/// has no structure of the name.
+pub def count(structure : String) -> Integer = counted (fields_of structures structure);
+
+/// The offset in bytes of the field `field` of the structure `structure`, or
+/// `-1` when the structure has no field of the name.
+pub def offset(structure : String, field : String) -> Integer =
+  let place = field_of (fields_of structures structure) field
+  pure place.0
+
+/// The width in bytes of the field `field` of the structure `structure`, or
+/// `-1` when the structure has no field of the name.
+pub def width(structure : String, field : String) -> Integer =
+  let place = field_of (fields_of structures structure) field
+  pure place.1
+
+/// The tail of the submission queue is at the byte 44 of the parameters: the
+/// offsets of the submission queue start at the byte 40, and `tail` is their
+/// byte 4.
+@[runs("44")]
+def sq_tail_in_the_parameters() -> Integer =
+  let parameters = offset "io_uring_params" "sq_off"
+  let tail = offset "io_sqring_offsets" "tail"
+  pure parameters + tail
+
+/// A structure that the ring does not have has the size `-1`.
+@[runs("- 1")]
+def no_such_structure() -> Integer = size "io_uring_rsrc_register";

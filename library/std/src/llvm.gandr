@@ -1,0 +1,235 @@
+//! `std.llvm`: the fragment of the `llvm` dialect of MLIR that `std` admits, as
+//! one `theory` block.
+//!
+//! The block is a signature: its sorts and its operations, with no rule and no
+//! model. It has each integer operation, the comparison, the select, the casts,
+//! the address arithmetic, the load and the store, the atomic access, inline
+//! assembly, the tail call and the return. A term of the sort `Body` is a
+//! sequence of operations of the dialect, one operation of the block for each.
+//!
+//! The block has three forms:
+//!
+//! - A value has its type as an index: `Val(t : Ty)`, with one constant of
+//!   `Ty` for each type.
+//! - An attribute is an input port of a sort of constants (`Ordering`,
+//!   `Predicate`, `AtomicOp`) or of a host type (`String`, `Integer`).
+//! - The rest of a body is a port of the sort `Body`. A port that binds a value
+//!   over `Body` is the rest after an operation that gives that value, so each
+//!   value of the term has one name, as in MLIR.
+//!
+//! An operation with a variable count of operands has one operation for each
+//! count that `std` uses. `acquire`, `release`, `select` and `return` are
+//! reserved words. So each ordering has the prefix `order_`, each operation of
+//! an atomic read-modify-write has the prefix `rmw_`, and the block names
+//! `llvm.select` and `llvm.return` as `choose` and `ret`. The documentation of
+//! each operation gives its text in the dialect.
+/// The admitted part of the `llvm` dialect.
+pub theory Llvm where
+  /// The types of values.
+  sort Ty : Type;
+  oper int1 : Ty;
+  oper int8 : Ty;
+  oper int16 : Ty;
+  oper int32 : Ty;
+  oper int64 : Ty;
+  oper ptr : Ty;
+  /// A value of the type `t`.
+  sort Val(t : Ty) : Type+;
+  /// The rest of a body: a term of this sort ends with a terminator.
+  sort Body : Type;
+  /// The ordering of an atomic access.
+  sort Ordering : Type;
+  oper order_monotonic : Ordering;
+  oper order_acquire : Ordering;
+  oper order_release : Ordering;
+  oper order_acq_rel : Ordering;
+  oper order_seq_cst : Ordering;
+  /// The predicate of a comparison of two integers.
+  sort Predicate : Type;
+  oper eq : Predicate;
+  oper ne : Predicate;
+  oper slt : Predicate;
+  oper sle : Predicate;
+  oper sgt : Predicate;
+  oper sge : Predicate;
+  oper ult : Predicate;
+  oper ule : Predicate;
+  oper ugt : Predicate;
+  oper uge : Predicate;
+  /// The operation of an atomic read-modify-write.
+  sort AtomicOp : Type;
+  oper rmw_xchg : AtomicOp;
+  oper rmw_add : AtomicOp;
+  oper rmw_sub : AtomicOp;
+  oper rmw_and : AtomicOp;
+  oper rmw_or : AtomicOp;
+  oper rmw_xor : AtomicOp;
+  /// `%c = llvm.mlir.constant(1 : i32) : i32`
+  oper constant : (t : Ty, value : Integer, rest : pi+ (c : Val t). Body) --> Body;
+  /// `%x = llvm.add %a, %b : i32`. Each integer operation of two operands of
+  /// one type has this form.
+  oper add : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper sub : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper mul : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper udiv : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper sdiv : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper urem : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper srem : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper and : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper or : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper xor : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper shl : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper lshr : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  oper ashr : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body;
+  /// `%b = llvm.icmp "ult" %a, %b : i32`
+  oper icmp : (
+    t : Ty,
+    predicate : Predicate,
+    left : Val t,
+    right : Val t,
+    rest : pi+ (b : Val int1). Body
+  ) --> Body;
+  /// `%x = llvm.select %b, %a, %c : i1, i32`
+  oper choose : (
+    t : Ty,
+    condition : Val int1,
+    yes : Val t,
+    no : Val t,
+    rest : pi+ (x : Val t). Body
+  ) --> Body;
+  /// `%w = llvm.zext %v : i8 to i64`. Each cast between two integer types has
+  /// this form.
+  oper zext : (from : Ty, to : Ty, value : Val from, rest : pi+ (x : Val to). Body) --> Body;
+  oper sext : (from : Ty, to : Ty, value : Val from, rest : pi+ (x : Val to). Body) --> Body;
+  oper trunc : (from : Ty, to : Ty, value : Val from, rest : pi+ (x : Val to). Body) --> Body;
+  /// `%p = llvm.inttoptr %a : i64 to !llvm.ptr`
+  oper inttoptr : (from : Ty, value : Val from, rest : pi+ (p : Val ptr). Body) --> Body;
+  /// The address `%p` at `%offset` elements of the type `element` after
+  /// `%base`:
+  /// `llvm.getelementptr %base[%offset] : (!llvm.ptr, i64) -> !llvm.ptr, i8`
+  oper getelementptr : (
+    element : Ty,
+    base : Val ptr,
+    offset : Val int64,
+    rest : pi+ (p : Val ptr). Body
+  ) --> Body;
+  /// `%x = llvm.load %p {alignment = 4 : i64} : !llvm.ptr -> i32`
+  oper load : (
+    t : Ty,
+    address : Val ptr,
+    alignment : Integer,
+    rest : pi+ (x : Val t). Body
+  ) --> Body;
+  /// `llvm.store %v, %p {alignment = 4 : i64} : i32, !llvm.ptr`
+  oper store : (
+    t : Ty,
+    value : Val t,
+    address : Val ptr,
+    alignment : Integer,
+    rest : Body
+  ) --> Body;
+  /// An atomic load with the ordering `order`:
+  /// `%x = llvm.load %p atomic acquire {alignment = 4 : i64}`
+  oper load_atomic : (
+    t : Ty,
+    order : Ordering,
+    address : Val ptr,
+    alignment : Integer,
+    rest : pi+ (x : Val t). Body
+  ) --> Body;
+  /// `llvm.store %v, %p atomic release {alignment = 4 : i64} : i32, !llvm.ptr`
+  oper store_atomic : (
+    t : Ty,
+    order : Ordering,
+    value : Val t,
+    address : Val ptr,
+    alignment : Integer,
+    rest : Body
+  ) --> Body;
+  /// `%old = llvm.atomicrmw add %p, %v seq_cst : !llvm.ptr, i32`
+  oper atomicrmw : (
+    t : Ty,
+    operation : AtomicOp,
+    address : Val ptr,
+    value : Val t,
+    order : Ordering,
+    rest : pi+ (old : Val t). Body
+  ) --> Body;
+  /// An inline assembly of one to seven operands of `i64`, with a result of
+  /// `i64`: `%r = llvm.inline_asm has_side_effects "syscall", "…" %a, …`
+  oper inline_asm1 : (
+    text : String,
+    constraints : String,
+    a : Val int64,
+    rest : pi+ (r : Val int64). Body
+  ) --> Body;
+  oper inline_asm2 : (
+    text : String,
+    constraints : String,
+    a : Val int64,
+    b : Val int64,
+    rest : pi+ (r : Val int64). Body
+  ) --> Body;
+  oper inline_asm3 : (
+    text : String,
+    constraints : String,
+    a : Val int64,
+    b : Val int64,
+    c : Val int64,
+    rest : pi+ (r : Val int64). Body
+  ) --> Body;
+  oper inline_asm4 : (
+    text : String,
+    constraints : String,
+    a : Val int64,
+    b : Val int64,
+    c : Val int64,
+    d : Val int64,
+    rest : pi+ (r : Val int64). Body
+  ) --> Body;
+  oper inline_asm5 : (
+    text : String,
+    constraints : String,
+    a : Val int64,
+    b : Val int64,
+    c : Val int64,
+    d : Val int64,
+    e : Val int64,
+    rest : pi+ (r : Val int64). Body
+  ) --> Body;
+  oper inline_asm6 : (
+    text : String,
+    constraints : String,
+    a : Val int64,
+    b : Val int64,
+    c : Val int64,
+    d : Val int64,
+    e : Val int64,
+    f : Val int64,
+    rest : pi+ (r : Val int64). Body
+  ) --> Body;
+  oper inline_asm7 : (
+    text : String,
+    constraints : String,
+    a : Val int64,
+    b : Val int64,
+    c : Val int64,
+    d : Val int64,
+    e : Val int64,
+    f : Val int64,
+    g : Val int64,
+    rest : pi+ (r : Val int64). Body
+  ) --> Body;
+  /// A tail call of one operand:
+  /// `%r = llvm.call tailcc musttail @next(%s) : (!llvm.ptr) -> i64`
+  oper tail_call1 : (
+    argument : Ty,
+    result : Ty,
+    callee : String,
+    a : Val argument,
+    rest : pi+ (r : Val result). Body
+  ) --> Body;
+  /// `llvm.return %v : i32`
+  oper ret : (t : Ty, value : Val t) --> Body;
+  /// `llvm.unreachable`
+  oper unreachable : Body;
