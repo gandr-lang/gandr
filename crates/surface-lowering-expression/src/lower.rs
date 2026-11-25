@@ -195,7 +195,6 @@ use crate::form::opens_expression;
 use crate::form::owed_tile;
 use crate::form::read_as_type;
 use crate::form::read_pieces;
-use crate::form::moded_call;
 use crate::form::run_reading;
 use crate::form::shape_of;
 use crate::form::tile_label;
@@ -343,7 +342,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ExtensionType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ExtensionType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -405,7 +404,6 @@ fn ending(former: Former) -> Ending
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType
-        | Former::ModedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
@@ -445,7 +443,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ExtensionType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ExtensionType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -2761,7 +2759,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   belongs to. Under an application spine `f x y`, which is read as the
     ///   pieces of one call, each application down its left side and each
     ///   argument's group also give their children that slot, because the
-    ///   spine's reader reads them as no forms of their own.
+    ///   spine's reader reads them as no forms of their own. Under a type's
+    ///   spine, each node under the head takes it too, because a call in
+    ///   parentheses at the head, `(f a) b`, is read as pieces of that call.
     /// - provides: the ownership half of the one-refusal-per-declaration rule.
     /// - fails: never.
     /// - panics: none.
@@ -2847,6 +2847,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             self.own_children(left, slot);
             self.own_children(right, slot);
             spine = left;
+        }
+        // A type's call in parentheses at the head, `(f a) b`, is read with
+        // the spine as one call, so each node under the head takes the slot.
+        if Some(application) == self.cx().pbg.application_in(gandr_surface_grammar::Sort::Type) {
+            self.own_written(spine, position);
         }
     }
 
@@ -3404,6 +3409,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             Former::TypeHead => self.type_head(site, cursor),
             Former::TypePath => self.type_path(site, pieces),
             Former::Universe => self.universe(site, cursor),
+            // A word before a type, `f a`, applies the word as its call
+            // spells it; a word alone is a type head.
+            Former::TypeApplication if site.name == FormName::MODED_TYPE => {
+                self.moded_application(site, pieces)
+            },
             // A juxtaposed application of a qualified type, `M.T a`, reads
             // as the path's call form `M.T(a)` its spine spells (#5753).
             Former::TypeApplication
@@ -3442,7 +3452,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             Former::AtType => Capability::new(self.host()).at_type(site, cursor),
             Former::StagedType => self.staged_type(site, cursor),
             Former::ExtensionType => self.extension_type(site, cursor),
-            Former::ModedType => self.moded_application(site, pieces),
             Former::Scope => Capability::new(self.host()).capability_scope(site, pieces),
             Former::Instantiation => Native::new(self.host()).instantiation(site, cursor),
             Former::SessionType => Capability::new(self.host()).session_type(site),
@@ -12287,6 +12296,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             let (name, relating) = named;
             return Identities::new(self.host()).carried_path(site, (name, head), cursor, relating);
         }
+        // A staged head applied to its element, `View[m] a`, is the view type
+        // a method answering a place records as its result: it stands as its
+        // place's index. Any other staged head applied is refused there.
+        if let Maybe::Present(Piece::Operand(staged)) = cursor.peek()
+            && let Some((_, Former::StagedType)) = self.cx().form_at(staged)?
+        {
+            let _frame = self.require(site, Produced::ValueType)?;
+            if !self.cx().view_types.contains(&site.at.node) {
+                return Err(LoweringRefusal::ViewNotPlace { span: site.at.span });
+            }
+            self.plan(site, Plan::Atom(TypeAtom::Integer));
+            return Ok(());
+        }
         let Maybe::Present(head) = cursor.type_head()
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -12392,25 +12414,20 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
 
     /// Classify a lowercase word before a type operand off a method's
     /// receiver as the head of an application: `f a b` reads as the call
-    /// `f(a, b)` and `el [<] a` as the descent `el[<](a)`, as [`moded_call`]
-    /// spells them. A word read alone, an argument the spine names, is a
-    /// type head.
+    /// `f(a, b)` and `el [<] a` as the descent `el[<](a)`, as [`read_pieces`]
+    /// spells them.
     ///
     /// # Specification
-    /// - requires: `site` is a moded type, or one of its words, read as a type
-    ///   or a value; `pieces` are its pieces.
+    /// - requires: `site` is a word before a type, read as a type or a value;
+    ///   `pieces` are its pieces.
     /// - ensures: the application [`Self::type_application`] plans over the
-    ///   call form the spine spells; a word alone as [`Self::type_head`]
-    ///   plans it.
+    ///   call form the spine spells.
     /// - fails: [`LoweringRefusal::StrayReceiverMode`] over the whole form when
     ///   its head names nothing; the application's own refusal otherwise.
     /// - panics: none.
     ///
     /// # Errors
     /// As `fails`.
-    ///
-    /// # Cost
-    /// - allocation: the call form's pieces, growth within the spine
     fn moded_application(
         &mut self,
         site: Site,
@@ -12418,23 +12435,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let head = match *pieces.pieces.as_slice() {
-            [Piece::Tile { at: head, .. }, Piece::Operand(_)] => head,
-            [Piece::Tile { label, at }] if label == TileName::TYPE_VARIABLE => {
-                let word = [Piece::Tile { label, at }];
-                return self.type_head(site, Cursor::new(&word, site.at.span));
+            [Piece::Tile { at: head, .. }, _, .., Piece::Tile { label, .. }]
+                if label == TileName::PAREN_CLOSE =>
+            {
+                head
             },
             _ => {
                 return CapabilityRef::new(self.host_ref())
                     .moded_type(site, Cursor::new(&pieces.pieces, site.at.span));
             },
         };
-        let mut call = Pieces::new();
-        if !moded_call(self.cx().pbg, self.cx().tree, site.at.node, &mut call)? {
-            return CapabilityRef::new(self.host_ref())
-                .moded_type(site, Cursor::new(&pieces.pieces, site.at.span));
-        }
         let mode = self.cx().name_at(head);
-        self.type_application(site, Cursor::new(&call.pieces, site.at.span))
+        self.type_application(site, Cursor::new(&pieces.pieces, site.at.span))
             .map_err(|refusal| match refusal {
                 LoweringRefusal::UnresolvedName { span, .. }
                 | LoweringRefusal::UnresolvedTypeHead { head: span, .. }

@@ -4593,7 +4593,6 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
                 | Former::AtType
                 | Former::StagedType
                 | Former::ExtensionType
-                | Former::ModedType
                 | Former::ManifestType
                 | Former::Scope
                 | Former::Declaration

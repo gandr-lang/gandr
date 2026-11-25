@@ -508,7 +508,6 @@ use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
-use crate::form::moded_call;
 use crate::form::shape_of;
 use crate::module::Ambiguity;
 use crate::module::AskedSort;
@@ -16458,17 +16457,7 @@ impl<'source> NativeRef<'_, '_, 'source>
                 Shape::Form { former, .. } => Some(former),
                 Shape::Root | Shape::Repair(_) | Shape::Layout => None,
             };
-            // A lowercase head applied by juxtaposition, `el [<] a`, reads as
-            // its call form, `el[<](a)`.
-            let former = if former == Some(Former::ModedType)
-                && moded_call(self.cx.pbg, self.cx.tree, at, scratch)?
-            {
-                Some(Former::TypeApplication)
-            }
-            else {
-                read_pieces(self.cx.pbg, self.cx.tree, at, scratch)?;
-                former
-            };
+            read_pieces(self.cx.pbg, self.cx.tree, at, scratch)?;
             operands.clear();
             operands.extend(scratch.pieces.iter().filter_map(|piece| match *piece {
                 Piece::Operand(operand) => Some(operand),
@@ -16603,15 +16592,7 @@ impl<'source> NativeRef<'_, '_, 'source>
                 Shape::Form { former, .. } => Some(former),
                 Shape::Root | Shape::Repair(_) | Shape::Layout => None,
             };
-            let former = if former == Some(Former::ModedType)
-                && moded_call(self.cx.pbg, self.cx.tree, at, scratch)?
-            {
-                Some(Former::TypeApplication)
-            }
-            else {
-                read_pieces(self.cx.pbg, self.cx.tree, at, scratch)?;
-                former
-            };
+            read_pieces(self.cx.pbg, self.cx.tree, at, scratch)?;
             let pieces = &scratch.pieces;
             let operands = pieces.iter().filter_map(|piece| match *piece {
                 Piece::Operand(operand) => Some(operand),

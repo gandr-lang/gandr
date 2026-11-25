@@ -1767,7 +1767,6 @@ pub fn spine_domains<'source>(
             | Former::AtType
             | Former::StagedType
             | Former::ExtensionType
-            | Former::ModedType
             | Former::Scope
             | Former::Declaration
             | Former::AttributeBlock

@@ -330,7 +330,6 @@ pub fn parse_literal(
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType
-        | Former::ModedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock

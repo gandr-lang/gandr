@@ -8,7 +8,7 @@
 use quenchant_shape::shape::Maybe;
 
 use crate::form::Cursor;
-use crate::form::Former;
+use crate::form::FormName;
 use crate::form::Piece;
 use crate::form::Placed;
 use crate::form::TileName;
@@ -49,7 +49,7 @@ pub enum ReceiverMode
 ///
 /// # Specification
 /// - requires: `header` stands just past the declaration's name; `name_of`
-///   reads a tile's name and `former_of` an operand's former.
+///   reads a tile's name and `form_of` an operand's form name.
 /// - ensures: past an implicit telescope `@[…]`, a parameter list whose first
 ///   parameter is `self : shared T`, `self : T`, `self : consumed T` or `self :
 ///   m T`, its type a moded type, answers that parameter's mode; anything else
@@ -67,7 +67,7 @@ pub enum ReceiverMode
 pub(super) fn receiver_of<'source>(
     header: &Cursor<'_>,
     name_of: impl Fn(Placed) -> SurfaceName<'source>,
-    former_of: impl Fn(Placed) -> Option<Former>,
+    form_of: impl Fn(Placed) -> Option<FormName>,
 ) -> Option<ReceiverMode>
 {
     let mut cursor = header.clone();
@@ -105,7 +105,7 @@ pub(super) fn receiver_of<'source>(
         ReceiverMode::Consumed
     }
     else if let Maybe::Present(Piece::Operand(declared)) = cursor.peek()
-        && former_of(declared) == Some(Former::ModedType)
+        && form_of(declared) == Some(FormName::MODED_TYPE)
     {
         ReceiverMode::Deduced
     }
