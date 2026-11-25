@@ -176,6 +176,12 @@ fn bracketed_field_member_and_binder_lists_hug_their_contents()
 }
 
 #[test]
+fn a_chain_of_pipeline_fields_breaks_before_each_field_7981()
+{
+    golden(Path::new("pipeline-fields"));
+}
+
+#[test]
 fn a_face_of_a_type_hugs_its_fields_6529()
 {
     let grammar = grammar();

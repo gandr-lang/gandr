@@ -1393,9 +1393,11 @@ fn held(
 /// The elements of `placed` on as few lines as their comments allow: two
 /// elements on one line are as far apart as the spacing table decides, and a
 /// line break follows a line comment and surrounds a comment the source wrote
-/// on its own line. In [`Mode::Best`] each juxtaposed spine is a choice
-/// (#5202): on its line as written, or broken before each operand
-/// ([`spine_doc`]). Under [`Held::Kept`] each spine keeps its line.
+/// on its own line. In [`Mode::Best`] a chain of pipeline fields is a choice
+/// ([`chain_doc`]): on its line, or broken before each `|>.`. Each other
+/// juxtaposed spine is a choice (#5202): on its line as written, or broken
+/// before each operand ([`spine_doc`]). Under [`Held::Kept`] each spine keeps
+/// its line.
 ///
 /// # Specification
 /// trivial.
@@ -1409,6 +1411,13 @@ fn run(
     (mode, held): (Mode, Held),
 ) -> Result<DocId, FormatError>
 {
+    let chained = match (mode, held) {
+        (Mode::Best, Held::Free | Held::Typed) => fields(placed),
+        (Mode::Flat, _) | (Mode::Best, Held::Kept) => Vec::new(),
+    };
+    if !chained.is_empty() {
+        return chain_doc(builder, placed, &chained, docs);
+    }
     let spines = match (mode, held) {
         (Mode::Best, Held::Free | Held::Typed) => spines(placed, docs, held),
         (Mode::Flat, _) | (Mode::Best, Held::Kept) => Vec::new(),
@@ -1430,6 +1439,83 @@ fn run(
         index = index.saturating_add(1);
     }
     Ok(builder.concat_all(parts)?)
+}
+
+/// The position of each pipeline field `|>.` of `placed` that the layout may
+/// break before: none when the run holds a comment, or a line break before
+/// its last code, which keep their lines, or when a field leads the run,
+/// which then starts the line already.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the positions, growth within the run's fields
+fn fields(placed: &[Placed<'_>]) -> Vec<usize>
+{
+    let code = placed
+        .iter()
+        .rposition(|element| !matches!(element.element, Element::Break))
+        .map_or(0, |last| last.saturating_add(1));
+    let plain = placed
+        .get(.. code)
+        .unwrap_or_default()
+        .iter()
+        .all(|element| {
+            element.element.kind() == Kind::Code && !matches!(element.element, Element::Break)
+        });
+    let fields: Vec<usize> = placed
+        .iter()
+        .enumerate()
+        .filter(|&(_, element)| {
+            matches!(element.element, Element::Text(text) if <&str>::from(text) == "|>.")
+        })
+        .map(|(at, _)| at)
+        .collect();
+    if plain && fields.first().is_some_and(|&first| first > 0) {
+        fields
+    }
+    else {
+        Vec::new()
+    }
+}
+
+/// The document of a chain of pipeline fields, `e |>.f a |>.g b`: a choice
+/// between the chain on one line, which wins a tie, and its receiver followed
+/// by each field on a line of its own, two columns deeper than the receiver.
+/// The next pass reads each such line as a line that continues its
+/// statement, so the layout formats once.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the lines of the chain, growth within its fields
+fn chain_doc(
+    builder: &mut DocBuilder<'_>,
+    placed: &[Placed<'_>],
+    fields: &[usize],
+    docs: &[Built],
+) -> Result<DocId, FormatError>
+{
+    let kept = line_run(builder, placed, docs, Mode::Flat)?;
+    let first = fields.first().copied().ok_or(FormatError::Unbalanced)?;
+    let receiver = placed.get(.. first).ok_or(FormatError::Unbalanced)?;
+    let receiver = line_run(builder, receiver, docs, Mode::Best)?;
+    let mut lines: Vec<DocId> = Vec::with_capacity(fields.len().saturating_mul(2));
+    for (at, &field) in fields.iter().enumerate() {
+        let until = fields
+            .get(at.saturating_add(1))
+            .copied()
+            .unwrap_or(placed.len());
+        let step = placed.get(field .. until).ok_or(FormatError::Unbalanced)?;
+        lines.push(builder.hard_line());
+        lines.push(line_run(builder, step, docs, Mode::Best)?);
+    }
+    let steps = builder.concat_all(lines)?;
+    let steps = builder.nest(NestAmount::from(INDENT), steps)?;
+    let broken = builder.concat(receiver, steps)?;
+    Ok(builder.choice(kept, broken)?)
 }
 
 /// The elements of `placed` on one line as [`run`] lays them, with no choice

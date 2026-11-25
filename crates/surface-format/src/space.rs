@@ -293,10 +293,11 @@ fn applied(left: Token<'_>) -> Wordlike
 ///   juxtaposition tile has one space before it and none after it, and none
 ///   before it either where the call is in call form; a `.` or a selector `.#[`
 ///   or `.*{` touches the word or bracket before it, and a `.` the word after
-///   it unless it ends a binder; a prefix operator touches what follows it; a
-///   `(` or `[` touches the word or hugging bracket before it, unless it opens
-///   an operand or the binders of `fun`, `fork`, `bind` or `pi+`; any other two
-///   are one space apart.
+///   it unless it ends a binder; a pipeline field `|>.` touches the method's
+///   name after it; a prefix operator touches what follows it; a `(` or `[`
+///   touches the word or hugging bracket before it, unless it opens an operand
+///   or the binders of `fun`, `fork`, `bind` or `pi+`; any other two are one
+///   space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.
@@ -360,6 +361,9 @@ pub fn join(
             | Context::TypeGlue
             | Context::CallGlue => Join::Touch,
         };
+    }
+    if left.kind == Kind::Token && left_text == "|>." {
+        return Join::Touch;
     }
     if left.kind == Kind::Token && left.context == Context::Prefix {
         return Join::Touch;

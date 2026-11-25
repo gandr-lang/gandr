@@ -32,7 +32,7 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 ## Provided features
 
 - `format`: a parsed source formatted at a page width. Witnesses: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`, `tests::format::top_level_forms_and_comments_keep_their_lines`, `tests::format::a_repaired_form_is_copied_as_written`, `tests::format::the_source_line_ending_is_kept`, `tests::format::pieces_place_each_top_level_form`.
-- The layout of a form. Witnesses: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`, `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `tests::format::attributes_and_documentation_keep_their_lines`, `tests::format::a_continuation_line_indents_under_its_statement`, `tests::format::strings_and_holes_are_copied_as_written`, `tests::format::the_printer_decides_every_inner_space`, `tests::format::a_terminator_touches_the_form_it_ends`.
+- The layout of a form. Witnesses: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`, `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `tests::format::attributes_and_documentation_keep_their_lines`, `tests::format::a_continuation_line_indents_under_its_statement`, `tests::format::strings_and_holes_are_copied_as_written`, `tests::format::the_printer_decides_every_inner_space`, `tests::format::a_terminator_touches_the_form_it_ends`, `tests::format::a_chain_of_pipeline_fields_breaks_before_each_field_7981`.
 - `Formatted`, `Piece`, `Layout`: the text, and each top-level form's source and formatted spans, for an editor that applies a formatting change form by form.
 - `FormatOptions`, and `PageWidth` re-exported from `gandr-surface-layout`.
 - `Form`, `Selection`, `REWRITES`, `RewriteName`: the spelling a source is laid out in — its own, every token kept, or the explicit or sugared one through the table's named rewrites — asked for by `FormatOptions` and declared at a source's head with `@[ form(explicit) ]` or `@[ form(sugared) ]`, the declaration winning (crate docs, § The form a source is spelled in). Witnesses: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`, `tests::rewrite::a_declared_form_wins_over_the_option`.
@@ -69,7 +69,7 @@ Only layout changes. Every token and comment is written once, in source order, w
 - **Separators.** A `,` or `;` touches what precedes it and is followed by one space: `f(a, b)`, `def a = 1;`.
 - **Brackets.** `(`, `[`, a record's `#{`, a sum's `+{`, a lazy record's `&{` and a face's `{` hug: `(x)`, `[r : Row]`, `#{a = 1}`, `face left = {tl, bl}`. A block's `{`, a boundary's `{`, an attribute block's `@[` and a module signature's `#{` pad: `{ x }`, `boundary Square { tl, bl }`, `@[ checks ]`, `#{ type T }`. An empty group hugs.
 - **Application.** A `(` or `[` touches the word or hugging bracket it applies to, `f(x)`, `f[Integer]`, `def f[r : Row](k : K)`; one opening an operand, a row, a world or a binder list stands apart: `-F (A)`, `-F [Partial] A`, `requires [Console]`, `fun (x)`.
-- **Dots and prefixes.** A path's `.` touches both sides, `r.a`; a binder's is followed by one space, `?x. end`. A prefix operator touches its operand: `-2`, `!A`.
+- **Dots and prefixes.** A path's `.` touches both sides, `r.a`; a binder's is followed by one space, `?x. end`. A pipeline field's `|>.` touches the method's name after it and stands one space from its receiver: `xs.map f |>.len`. A prefix operator touches its operand: `-2`, `!A`.
 - **Everything else.** One space, a comment included: `x : T`, `a = b`, `a + b`.
 
 Kept as written: a string the grammar reads as tiles between two `"` (an import's path), whose spacing is its text, and the spacing a rewrite writes between its own tokens.
@@ -89,6 +89,7 @@ A group is a bracket pair — `(`, `[`, `{`, `@[` or `#{` and its closer — mat
 - **Kept broken.** A group whose opener the source ended a line with, or that holds a line comment, stays broken, so the formatter never joins lines an author split a block over.
 - **Lists and blocks.** Only a `{` group and a group holding a separator break. A bracket around one item — a parenthesised type, a single argument — stays on the line around it, and a group inside it breaks instead; breaking it would only move one expression to a line of its own.
 - **Continuation.** A line the source indented deeper than the statement before it, after no separator, continues that statement and is indented two further columns.
+- **Chains.** A line that holds pipeline fields and passes the page breaks before each `|>.`, and each field after the first line is indented two further columns; the next pass reads each such line as a continuation.
 - **Flat means flat.** A group laid on one line lays every group inside it on one line too, unless an inner group must stay broken, which the outer line then holds as written.
 
 The engine chooses among the flat and broken layout of every group at once, by least overflow and then fewest lines, so the outermost list that does not fit breaks first only when breaking it saves lines.

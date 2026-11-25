@@ -1,0 +1,14 @@
+def chained(r : Repr) -> Integer =
+  r.grown 7 |>.grown 8 |>.len
+
+def long(r : Repr) -> Integer =
+  r.grown 7 |>.grown 8 |>.grown 9 |>.grown 10 |>.grown 11 |>.grown 12 |>.grown 13 |>.len ()
+
+def written(r : Repr) -> Integer =
+  r.grown 7
+    |>.grown 8
+    |>.len ()
+
+def held(r : Repr) -> Integer =
+  let n = r.grown 7 |>.grown 8 |>.grown 9 |>.grown 10 |>.grown 11 |>.len ()
+  (r |>.len ()) + n
