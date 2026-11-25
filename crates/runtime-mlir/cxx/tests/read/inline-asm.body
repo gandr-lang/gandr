@@ -1,0 +1,1 @@
+%result = llvm.inline_asm has_side_effects "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}" ${number}, ${a} : (i64, i64) -> i64

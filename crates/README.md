@@ -88,6 +88,7 @@ crates/
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor
+├── runtime-mlir/                  the MLIR shim: MLIR text and a triple to an object, and the facts of a machine body, through one C library built under the feature `full`
 ├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
 ├── runtime-rust-reader/           the reader of a Rust crate on rustc's own libraries: each requested function's symbol, convention and layouts, written as an entry of the record; no member, since it links rustc
 ├── runtime-rust-record/           the record of a Rust function: its symbol, each operand's passage and each layout under the toolchain's identity, its canonical bytes and its cache

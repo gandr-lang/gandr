@@ -78,6 +78,7 @@ digraph crates {
   subgraph "cluster_runtime" {
     label = "runtime";
     "runtime-emitter";
+    "runtime-mlir";
     "runtime-net";
     "runtime-rust-record";
     "runtime-stencils";

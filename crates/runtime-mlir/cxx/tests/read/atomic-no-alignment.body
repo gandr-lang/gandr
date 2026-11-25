@@ -1,0 +1,2 @@
+%place = llvm.inttoptr ${address} : i64 to !llvm.ptr
+%word = llvm.load %place atomic acquire : !llvm.ptr -> i32

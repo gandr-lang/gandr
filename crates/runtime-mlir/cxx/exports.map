@@ -1,0 +1,11 @@
+/* The shared library exports the C interface of `gandr_mlir_shim.h` only. The
+   MLIR and LLVM inside it stay local, so they cannot meet another LLVM of the
+   process, such as the one of rustc. */
+{
+  global:
+    gandr_mlir_compile;
+    gandr_mlir_output_free;
+    gandr_mlir_read;
+  local:
+    *;
+};

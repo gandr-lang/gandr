@@ -25,6 +25,7 @@ members = [
   "crates/kernel-strata",
   "crates/kernel-term",
   "crates/runtime-emitter",
+  "crates/runtime-mlir",
   "crates/runtime-net",
   "crates/runtime-rust-record",
   "crates/runtime-stencils",
@@ -180,6 +181,7 @@ default-features = false
 # - kernel-core
 # - kernel-strata
 # - kernel-term
+# - runtime-mlir (full)
 # - runtime-net
 # - runtime-rust-record
 # - storage-artifact

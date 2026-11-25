@@ -1,0 +1,7 @@
+operation llvm.inttoptr
+operand hole 0
+result !llvm.ptr
+operation llvm.load
+operand result 0 0
+attribute ordering 0 : i64
+result i8
