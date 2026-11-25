@@ -619,9 +619,10 @@ impl System
 /// - allocation: the paths and the texts, growth within the tree
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as the sweep.
+/// - hypothesis: L3 — as the two sweeps that read it.
 /// - witness: `kernel_export::convergence::sweeps::each_admitted_block_with_rules_joins_its_critical_pairs`
-fn sources(directory: &Path) -> Vec<(PathBuf, String)>
+/// - witness: `rule_census::sweeps::each_refused_rule_has_its_row_in_the_census`
+pub fn sources(directory: &Path) -> Vec<(PathBuf, String)>
 {
     let mut found = Vec::new();
     let mut pending = Vec::from([directory.to_path_buf()]);

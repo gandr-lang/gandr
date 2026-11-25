@@ -35,9 +35,7 @@ use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::fmt;
-use std::fs;
 use std::path::Path;
-use std::path::PathBuf;
 
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
@@ -58,6 +56,8 @@ use gandr_theory_computads::read_command;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
+
+use crate::kernel_export::convergence::sources;
 
 /// The form of a rule that the check refuses.
 ///
@@ -366,53 +366,6 @@ fn written_at(
                 )
             },
         )
-}
-
-/// Every `.gandr` file under `directory` that writes a rule, beside its text.
-///
-/// # Specification
-/// - requires: the directory remains readable during the sweep.
-/// - ensures: one entry for each `.gandr` file under `directory`, reached
-///   without a symbolic link or a `target` directory, whose text holds `==>` or
-///   `<=>`.
-/// - panics: when a directory, an entry or a source cannot be read.
-///
-/// # Cost
-/// - allocation: the paths and the texts, growth within the directory
-///
-/// # Adequacy
-/// - hypothesis: L3 — as the sweep.
-/// - witness: `rule_census::sweeps::each_refused_rule_has_its_row_in_the_census`
-fn sources(directory: &Path) -> Vec<(PathBuf, String)>
-{
-    let mut found = Vec::new();
-    let mut pending = Vec::from([directory.to_path_buf()]);
-    while let Some(here) = pending.pop() {
-        let entries = fs::read_dir(&here)
-            .unwrap_or_else(|error| panic!("{}: the directory lists: {error}", here.display()));
-        for entry in entries {
-            let entry = entry.expect("an entry reads");
-            let kind = entry.file_type().expect("an entry has a type");
-            let path = entry.path();
-            if kind.is_dir() && !path.ends_with("target") {
-                pending.push(path);
-            }
-            else if !kind.is_dir()
-                && !kind.is_symlink()
-                && path
-                    .extension()
-                    .is_some_and(|extension| extension == "gandr")
-            {
-                let text = fs::read_to_string(&path).unwrap_or_else(|error| {
-                    panic!("{}: the source reads: {error}", path.display())
-                });
-                if text.contains("==>") || text.contains("<=>") {
-                    found.push((path, text));
-                }
-            }
-        }
-    }
-    found
 }
 
 /// The rules that the check refuses in the source at `path`, read as `text`;
