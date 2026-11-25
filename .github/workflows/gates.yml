@@ -1,27 +1,32 @@
-# The four gates of a landing, on the hosted runners for Linux x86-64. Each
-# gate is one job, and the name of the job is the name of its required check.
-# The merge queue runs the gates again on the tree that lands.
+# The four whole gates of the trunk, on the hosted runners for Linux x86-64.
+# Each gate is one job, and the name of the job is the name of its check.
+#
+# The queue of the maintainers lands each pull request of a branch of this
+# repository after its own gates. This workflow runs the four gates on each
+# push to `main` after the landing, and on each pull request of a fork, which
+# that queue does not gate. A pull request of a branch of this repository runs
+# no job.
 #
 # The gates restore the Cargo target directory of their own gate. Cargo
 # compares sources by content (`.cargo/config.toml`), so a restored unit whose
 # source did not change stays fresh under the new dates of the checkout. Only
-# a run on `main` saves a cache: a cache of `main` is the one cache that a pull
-# request and a merge group can both read.
+# a run on `main` saves a cache: a pull request of a fork reads the cache of
+# `main`.
 name: gates
 
 on:
   # A draft runs no gate. Marking it ready starts the first run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  merge_group:
   push:
     branches: [main]
 
 permissions:
   contents: read
 
-# A push to a pull request ends its run that is not done. A merge group and
-# `main` have one run for each commit.
+# `main` has one run at a time. A push while a run is in progress waits, and
+# a newer push replaces the push that waits, so the run after it gates the
+# newest `main`. A push to a pull request ends its run that is not done.
 concurrency:
   group: gates-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -35,7 +40,11 @@ env:
 jobs:
   gate:
     name: ${{ matrix.gate }}
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    # A pull request runs only from a fork, and not as a draft.
+    if: >-
+      ${{ github.event_name == 'push'
+      || (github.event.pull_request.head.repo.full_name != github.repository
+      && !github.event.pull_request.draft) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
