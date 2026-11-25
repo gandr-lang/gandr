@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('build-state-pruning','workflow','Build state pruned to one build','lane-budgets','implemented','ordinary',NULL,'The build state CI carries between landings is pruned to the units the recorded builds used.','workflow-build-state','crates/workflow-build-state/tests/cli.rs',NULL,NULL);

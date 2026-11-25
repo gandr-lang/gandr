@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('debug-adapter','editor','A debug adapter',NULL,'planned','notable',NULL,'A Debug Adapter Protocol server stepping the sequent machine and the kernel''s replay, stopping at a refusal with its values.',NULL,NULL,NULL,'#448');

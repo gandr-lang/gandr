@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('instantiation-by-staging','staging','Instantiation by staging',NULL,'planned','notable',NULL,'A static code specialises by staging into a certified instance memoized by content, a dynamic one passed with its layout witness.',NULL,NULL,NULL,'#342');

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('records','types','Structural records',NULL,'implemented','ordinary',NULL,'Labelled records with projection, checked structurally and given a command-IL image.','core-checker core-sequent','corpus/model/data/data-record.gandr','corpus/model/data/data-record.gandr',NULL);

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('compile-host-images','runtime','Program images for a compilation host',NULL,'declined','notable',NULL,'Retired by #569: the compilation host and its versioned C boundary are deleted; its programs live on as the agreement suite''s named programs, and the native route is native-emitter.',NULL,NULL,NULL,'#2678');

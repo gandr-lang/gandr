@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('kernel-admission','kernel','The kernel admission choke point',NULL,'implemented','notable',NULL,'Every declaration enters the trusted environment by staging and admission, an abandoned one truncating its content; each admitted entry keeps the positions its content names.','kernel-core','crates/kernel-core/tests/acceptance.rs',NULL,NULL);

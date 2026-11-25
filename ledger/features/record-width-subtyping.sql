@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('record-width-subtyping','types','Record width subtyping','records','implemented','ordinary',NULL,'A record with more labels stands where one with fewer is expected, the empty record the top.','core-checker','crates/core-checker-base/tests/native_formers.rs','corpus/ledger/features/record-width-subtyping.gandr','#2273');

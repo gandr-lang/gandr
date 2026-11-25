@@ -1,0 +1,4 @@
+INSERT INTO purpose VALUES('surface-render-terminal','render::render','function','Lays a diagnostic out for a terminal, so the snippet `gandr check` and `gandr test` print is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-terminal','style::RenderStyle','enum','Names how a report is laid out, so a diagnostic''s plain or styled text is chosen.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-terminal','style::Rendered','struct','Holds the presentation text a diagnostic becomes, so the text''s bytes are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-terminal','style::TerminalCapability','enum','Names whether an output destination is a terminal capable of styled rendering, so a style is chosen from the capability.',NULL,'fits','sound',NULL);

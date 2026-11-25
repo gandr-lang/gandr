@@ -216,10 +216,14 @@
       ],
       "check:landing-rebase": [".config/cases/", ".config/landing/"],
       "check:ledger": [
+        ".cargo/",
         ".config/cases/",
+        ".config/gate-scope/tool.bash",
         ".config/ledger/",
         ".config/mise/tasks/mise-tasks-ledger.toml",
         ".config/pr-stack/",
+        "Cargo.lock",
+        "Cargo.toml",
         "contrib/",
         "corpus/",
         "crates/",
@@ -264,6 +268,7 @@
       "check:purposes": [
         ".cargo/",
         ".config/cases/",
+        ".config/gate-scope/tool.bash",
         ".config/mise/scope",
         ".config/mise/tasks/mise-tasks-ledger.toml",
         ".config/purposes/",
@@ -361,7 +366,8 @@
         ".config/gh/budget.bash",
         ".config/tracking/",
         "crates/core-term/",
-        "ledger/features.sql"
+        "ledger/features-schema.sql",
+        "ledger/features/"
       ],
       "check:unsafe-skips": [
         ".cargo/",

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lsp-ghost-text','editor','Ghost texts','language-server','implemented','ordinary',NULL,'A one-line ghost text at the cursor: the continuation the parser expects to close an open form — a line comment left open, an open call — offered as inline text, withdrawn at the next change.','surface-lsp','crates/surface-lsp/src/server.rs',NULL,'#764');

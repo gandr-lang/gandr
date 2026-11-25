@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('intersection-types','types','Intersection types A /\ B',NULL,'declined','ordinary',NULL,'Declined: intersection types do not return, and the `intersection_type` rule and its `/\` operator are deleted. The union type `A | B` stays reserved, tracked by #2273.',NULL,NULL,NULL,'#2680');

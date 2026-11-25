@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('interactive-session','tooling','Interactive sessions',NULL,'implemented','notable',NULL,'Each revision of a source is lowered, judged as `gandr check` judges it, resumed through the incremental checker and checkpointed.','surface-session','crates/surface-session/tests/session.rs',NULL,NULL);

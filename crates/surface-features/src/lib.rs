@@ -1,10 +1,11 @@
 //! The features ledger, read as the guide an author writes from.
 //!
-//! `ledger/features.sql` holds one row per feature of gandr: its area, its
-//! name, its status, one sentence on what it is, and the exemplar and corpus
-//! sources that show it. [`FeatureLedger::read`] reads it under a tree's root,
-//! and [`FeatureLedger::built_in`] reads the copy the binary was built with:
-//! what the running toolchain implements, which a package's constraints are
+//! `ledger/features/<id>.sql` holds one row per feature of gandr: its area,
+//! its name, its status, one sentence on what it is, and the exemplar and
+//! corpus sources that show it. `ledger/features-schema.sql` defines the
+//! table. [`FeatureLedger::read`] reads them under a tree's root, and
+//! [`FeatureLedger::built_in`] reads the copy the binary was built with: what
+//! the running toolchain implements, which a package's constraints are
 //! checked against wherever the package stands.
 //! `ledger list` prints a line per feature, narrowed to an area and a
 //! status; `ledger show <id>` prints a feature's row, then each of its
@@ -18,14 +19,16 @@
 //!
 //! # Boundaries
 //!
-//! The ledger's one copy is a SQLite dump. The reader reads the two statements
-//! the dump writes for the table: the `CREATE TABLE feature(…)`, whose column
-//! names it checks against its own, and one `INSERT INTO feature VALUES(…);`
-//! per line, each value `NULL` or a quoted string with `''` for a quote. Every
-//! column is `TEXT`, and the table's own constraints keep a newline out of a
-//! name and a line. Every other line is the dump's frame and is passed over; a
-//! row of any other shape refuses the ledger naming its line
-//! ([`FeaturesFault::Features`]).
+//! The ledger's files are the parts of one SQLite dump: the schema, and one
+//! file for each row. The reader reads the two statements the dump writes for
+//! the table: the `CREATE TABLE feature(…)`, whose column names it checks
+//! against its own, and one `INSERT INTO feature VALUES(…);` per line, each
+//! value `NULL` or a quoted string with `''` for a quote. Every column is
+//! `TEXT`, and the table's own constraints keep a newline out of a name and a
+//! line. Every other line is the dump's frame and is passed over; a row of
+//! any other shape refuses the ledger naming its file and its line
+//! ([`FeaturesFault::Features`]). A file of rows holds one row, whose id is
+//! the name of the file.
 
 use core::fmt;
 use core::str::FromStr;
@@ -120,11 +123,16 @@ impl fmt::Display for FeaturesFault
     }
 }
 
-/// The ledger's file, from a tree's root.
-const LEDGER: &str = "ledger/features.sql";
+/// The ledger's schema, from a tree's root.
+const SCHEMA: &str = "ledger/features-schema.sql";
 
-/// The ledger the binary was built with.
-const BUILT_IN: &str = include_str!("../../../ledger/features.sql");
+/// The directory of the ledger's rows, from a tree's root: one file
+/// `<id>.sql` for each row.
+const ROWS: &str = "ledger/features";
+
+/// The ledger the binary was built with: the schema, then each row in the
+/// order of its id, which the build script writes.
+const BUILT_IN: &str = include_str!(concat!(env!("OUT_DIR"), "/features.sql"));
 
 /// The statement that opens the table's definition.
 const CREATE: &str = "CREATE TABLE feature(";
@@ -136,7 +144,7 @@ const INSERT: &str = "INSERT INTO feature VALUES(";
 const CRATE_TESTS: &str = "crate-tests";
 
 /// The table's columns, in the order the dump writes them.
-const COLUMNS: [&str; 13] = [
+const COLUMNS: [&str; 12] = [
     "id",
     "area",
     "name",
@@ -149,7 +157,6 @@ const COLUMNS: [&str; 13] = [
     "corpus",
     "exemplar",
     "issue",
-    "since",
 ];
 
 /// Where a feature stands.
@@ -278,8 +285,6 @@ pub struct Feature
     exemplar: Option<String>,
     /// `issue`.
     issue: Option<String>,
-    /// `since`, the pull requests it landed in.
-    since: Option<String>,
 }
 
 /// The value of a cell: the closed set of the kinds a row holds.
@@ -326,7 +331,7 @@ impl Feature
     ///
     /// # Specification
     /// trivial.
-    fn cells(&self) -> [Cell<'_>; 13]
+    fn cells(&self) -> [Cell<'_>; 12]
     {
         [
             Cell {
@@ -376,10 +381,6 @@ impl Feature
             Cell {
                 column: "issue",
                 value: self.issue.as_deref().map(Shown::Text),
-            },
-            Cell {
-                column: "since",
-                value: self.since.as_deref().map(Shown::Text),
             },
         ]
     }
@@ -528,6 +529,9 @@ pub enum Malformed
     Required,
     /// The table's columns are not the ones the reader reads, in its order.
     Columns,
+    /// A file of rows holds not one row, or its row's id is not the name of
+    /// the file.
+    File,
 }
 
 impl fmt::Display for Malformed
@@ -549,6 +553,7 @@ impl fmt::Display for Malformed
             Self::Width => "the row's values are not one per column",
             Self::Required => "a column the table requires is NULL",
             Self::Columns => "the table's columns are not the ones the reader reads",
+            Self::File => "the file holds not one row, or its row's id is not the file's name",
         })
     }
 }
@@ -587,9 +592,8 @@ fn feature(values: Vec<Option<String>>) -> Result<Feature, Malformed>
             corpus,
             exemplar,
             issue,
-            since,
         ],
-    ) = <[Option<String>; 13]>::try_from(values)
+    ) = <[Option<String>; 12]>::try_from(values)
     else {
         return Err(Malformed::Width);
     };
@@ -611,7 +615,6 @@ fn feature(values: Vec<Option<String>>) -> Result<Feature, Malformed>
         corpus,
         exemplar,
         issue,
-        since,
     })
 }
 
@@ -650,15 +653,17 @@ pub struct ShownFeature
 
 impl FeatureLedger
 {
-    /// Read the ledger under the tree `root`, at `ledger/features.sql`.
+    /// Read the ledger under the tree `root`: the schema at
+    /// `ledger/features-schema.sql`, and each row file of `ledger/features/`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one feature per `INSERT INTO feature` line, in the file's
-    ///   order, each column read from its value.
-    /// - fails: the file cannot be read; its table's columns are not
+    /// - ensures: one feature per row file, in the order of the ids, each
+    ///   column read from its value.
+    /// - fails: a file cannot be read; the schema's columns are not
     ///   [`COLUMNS`]; a row is not one `NULL` or quoted string per column with
-    ///   every required column set and a status of the four.
+    ///   every required column set and a status of the four; a file of rows
+    ///   holds not one row, or a row that its name does not name.
     /// - panics: none.
     ///
     /// # Errors
@@ -666,22 +671,58 @@ impl FeatureLedger
     /// [`FeaturesFault::Features`] naming the file, the line and what is
     /// wrong with it.
     ///
+    /// # Cost
+    /// - allocation: the text of each file and the paths of the rows, setup
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the committed ledger reads every row with its count
-    ///   of statements, and a scratch ledger with a malformed row is refused
-    ///   naming its line.
+    /// - hypothesis: L3 — the committed ledger reads every row file, a scratch
+    ///   ledger with a malformed row is refused naming its line, and a file
+    ///   whose row its name does not name is refused.
     /// - witness: `tests::the_committed_ledger_reads_every_row`
     /// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
+    /// - witness: `tests::a_row_stands_in_the_file_of_its_id`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == root))]
     #[inline]
     pub fn read(root: &Path) -> Result<Self, FeaturesFault>
     {
-        let path = root.join(LEDGER);
-        let text = std::fs::read_to_string(&path).map_err(|error| FeaturesFault::Unread {
-            path: path.clone(),
-            error,
-        })?;
-        Self::parsed(root, &path, Dump(&text))
+        let unread = |path: &Path| {
+            let path = path.to_path_buf();
+            move |error| FeaturesFault::Unread { path, error }
+        };
+        let schema = root.join(SCHEMA);
+        let text = std::fs::read_to_string(&schema).map_err(unread(&schema))?;
+        let _columns = Self::parsed(root, &schema, Dump(&text))?;
+        let directory = root.join(ROWS);
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(&directory)
+            .and_then(|entries| {
+                entries
+                    .map(|entry| entry.map(|entry| entry.path()))
+                    .collect()
+            })
+            .map_err(unread(&directory))?;
+        paths.retain(|path| path.extension().is_some_and(|extension| extension == "sql"));
+        paths.sort_by(|left, right| left.file_stem().cmp(&right.file_stem()));
+        let mut features = Vec::with_capacity(paths.len());
+        for path in paths {
+            let text = std::fs::read_to_string(&path).map_err(unread(&path))?;
+            let mut rows = Self::parsed(root, &path, Dump(&text))?.features;
+            let named = match *rows.as_slice() {
+                [ref row] => path.file_stem().is_some_and(|stem| stem == row.id.as_str()),
+                _ => false,
+            };
+            if !named {
+                return Err(FeaturesFault::Features {
+                    path,
+                    line: 1,
+                    malformed: Malformed::File,
+                });
+            }
+            features.append(&mut rows);
+        }
+        Ok(Self {
+            root: root.to_path_buf(),
+            features,
+        })
     }
 
     /// The ledger the binary was built with, its exemplars read under the
@@ -689,8 +730,8 @@ impl FeatureLedger
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::read`] reads the tree's own ledger, over the text
-    ///   of `ledger/features.sql` as the binary was built.
+    /// - ensures: as [`Self::read`] reads the tree's own ledger, over the
+    ///   schema and the rows of `ledger/features/` as the binary was built.
     /// - provides: what the running toolchain implements, read wherever the
     ///   checked package stands.
     /// - fails: as [`Self::read`] for a malformed row; never for the file,
@@ -708,7 +749,7 @@ impl FeatureLedger
     #[inline]
     pub fn built_in() -> Result<Self, FeaturesFault>
     {
-        Self::parsed(Path::new("."), Path::new(LEDGER), Dump(BUILT_IN))
+        Self::parsed(Path::new("."), Path::new(ROWS), Dump(BUILT_IN))
     }
 
     /// The ledger `dump` holds, read from `path` under `root`.
@@ -1049,7 +1090,8 @@ mod tests
 
     impl Scratch
     {
-        /// A tree named for `name`, its ledger the frame around `rows`.
+        /// A tree named for `name`: the schema of the reader's columns, and
+        /// each line of `rows` in the file of the first value that it quotes.
         ///
         /// # Specification
         /// trivial.
@@ -1063,18 +1105,39 @@ mod tests
                 name.display(),
                 std::process::id()
             ));
-            std::fs::create_dir_all(root.join("ledger")).expect("the scratch tree is created");
-            let mut text = String::from(
-                "PRAGMA foreign_keys=OFF;\nBEGIN TRANSACTION;\nCREATE TABLE feature(\n",
-            );
+            std::fs::create_dir_all(root.join(super::ROWS)).expect("the scratch tree is created");
+            let mut text = String::from("CREATE TABLE feature(\n");
             for column in super::COLUMNS {
                 writeln!(text, "  {column} TEXT,").expect("a string takes a line");
             }
             text.push_str("  CHECK(line <> '')\n) WITHOUT ROWID;\n");
-            text.push_str(rows.0);
-            text.push_str("COMMIT;\n");
-            std::fs::write(root.join(super::LEDGER), text).expect("the scratch ledger is written");
-            Self(root)
+            std::fs::write(root.join(super::SCHEMA), text).expect("the scratch schema is written");
+            let scratch = Self(root);
+            for row in rows.0.lines() {
+                let id = row
+                    .split('\'')
+                    .nth(1)
+                    .expect("a scratch row quotes its id first");
+                scratch.row(id, row);
+            }
+            scratch
+        }
+
+        /// Write `row` as the file of rows `<file>.sql`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn row(
+            &self,
+            file: &str,
+            row: &str,
+        )
+        {
+            std::fs::write(
+                self.0.join(super::ROWS).join(format!("{file}.sql")),
+                format!("{row}\n"),
+            )
+            .expect("the scratch row is written");
         }
     }
 
@@ -1095,12 +1158,10 @@ mod tests
     {
         let root = committed();
         let ledger = FeatureLedger::read(&root).expect("the committed ledger reads");
-        let text = std::fs::read_to_string(root.join(super::LEDGER)).expect("the ledger reads");
-        let rows = text
-            .lines()
-            .filter(|line| line.starts_with(super::INSERT))
+        let rows = std::fs::read_dir(root.join(super::ROWS))
+            .expect("the rows list")
             .count();
-        assert_eq!(ledger.features.len(), rows, "one feature per row");
+        assert_eq!(ledger.features.len(), rows, "one feature per row file");
         let ids: Vec<&str> = ledger
             .features
             .iter()
@@ -1108,7 +1169,7 @@ mod tests
             .collect();
         assert!(
             ids.is_sorted_by(|earlier, later| earlier < later),
-            "the dump orders rows by id"
+            "the ledger orders rows by id"
         );
         assert!(
             ledger
@@ -1147,14 +1208,14 @@ mod tests
             );
             let refused = FeatureLedger::read(&scratch.0);
             assert!(
-                matches!(refused, Err(FeaturesFault::Features { line: 19, malformed: named, .. }) if named == malformed),
+                matches!(refused, Err(FeaturesFault::Features { line: 1, malformed: named, .. }) if named == malformed),
                 "{row}: {refused:?}"
             );
         }
         let required = Scratch::new(
             Path::new("required"),
             Rows(
-                "INSERT INTO feature VALUES('a','b','c',NULL,'implemented','ordinary',NULL,NULL,'d',NULL,NULL,NULL,NULL);\n",
+                "INSERT INTO feature VALUES('a','b','c',NULL,'implemented','ordinary',NULL,NULL,'d',NULL,NULL,NULL);\n",
             ),
         );
         assert!(matches!(
@@ -1164,6 +1225,39 @@ mod tests
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn a_row_stands_in_the_file_of_its_id()
+    {
+        let row = "INSERT INTO feature VALUES('a','syntax','A',NULL,'planned','ordinary',NULL,'What a is.',NULL,NULL,NULL,'#1');";
+        let scratch = Scratch::new(Path::new("named"), Rows(""));
+        scratch.row("b", row);
+        let elsewhere = FeatureLedger::read(&scratch.0);
+        assert!(
+            matches!(elsewhere, Err(FeaturesFault::Features { ref path, malformed: Malformed::File, .. }) if path.ends_with("b.sql")),
+            "a row in the file of another id: {elsewhere:?}"
+        );
+        scratch.row("b", &format!("{row}\n{}", row.replace("'a'", "'b'")));
+        let two = FeatureLedger::read(&scratch.0);
+        assert!(
+            matches!(
+                two,
+                Err(FeaturesFault::Features {
+                    malformed: Malformed::File,
+                    ..
+                })
+            ),
+            "two rows in one file: {two:?}"
+        );
+        scratch.row("b", &row.replace("'a'", "'b'"));
+        assert_eq!(
+            FeatureLedger::read(&scratch.0)
+                .expect("each row in the file of its id reads")
+                .features
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1225,7 +1319,7 @@ mod tests
         let scratch = Scratch::new(
             Path::new("object"),
             Rows(
-                "INSERT INTO feature VALUES('a','syntax','A',NULL,'planned','ordinary',NULL,'What a is.',NULL,NULL,NULL,'#1',NULL);\n",
+                "INSERT INTO feature VALUES('a','syntax','A',NULL,'planned','ordinary',NULL,'What a is.',NULL,NULL,NULL,'#1');\n",
             ),
         );
         let ledger = FeatureLedger::read(&scratch.0).expect("the scratch ledger reads");
@@ -1263,10 +1357,10 @@ mod tests
         let scratch = Scratch::new(
             Path::new("status"),
             Rows(concat!(
-                "INSERT INTO feature VALUES('declined','syntax','D',NULL,'declined','ordinary',NULL,'What d is.',NULL,NULL,NULL,'#1',NULL);\n",
-                "INSERT INTO feature VALUES('implemented','syntax','I',NULL,'implemented','ordinary',NULL,'What i is.',NULL,NULL,'crate-tests',NULL,'#2');\n",
-                "INSERT INTO feature VALUES('partial','syntax','P',NULL,'partial','ordinary',NULL,'What p is.',NULL,NULL,'crate-tests','#3','#4');\n",
-                "INSERT INTO feature VALUES('planned','syntax','Q',NULL,'planned','ordinary',NULL,'What q is.',NULL,NULL,NULL,'#5',NULL);\n",
+                "INSERT INTO feature VALUES('declined','syntax','D',NULL,'declined','ordinary',NULL,'What d is.',NULL,NULL,NULL,'#1');\n",
+                "INSERT INTO feature VALUES('implemented','syntax','I',NULL,'implemented','ordinary',NULL,'What i is.',NULL,NULL,'crate-tests',NULL);\n",
+                "INSERT INTO feature VALUES('partial','syntax','P',NULL,'partial','ordinary',NULL,'What p is.',NULL,NULL,'crate-tests','#3');\n",
+                "INSERT INTO feature VALUES('planned','syntax','Q',NULL,'planned','ordinary',NULL,'What q is.',NULL,NULL,NULL,'#5');\n",
             )),
         );
         let ledger = FeatureLedger::read(&scratch.0).expect("the scratch ledger reads");
@@ -1300,8 +1394,8 @@ mod tests
         let scratch = Scratch::new(
             Path::new("shown"),
             Rows(
-                "INSERT INTO feature VALUES('a','syntax','A',NULL,'implemented','ordinary',NULL,'What a is.','surface-parser','tests/a.rs fixture/a.gandr::a','ledger/a.gandr',NULL,'#2');\n\
-             INSERT INTO feature VALUES('b','syntax','B',NULL,'implemented','ordinary',NULL,'What b is.','surface-parser','tests/b.rs','crate-tests',NULL,'#3');\n",
+                "INSERT INTO feature VALUES('a','syntax','A',NULL,'implemented','ordinary',NULL,'What a is.','surface-parser','tests/a.rs fixture/a.gandr::a','ledger/a.gandr',NULL);\n\
+             INSERT INTO feature VALUES('b','syntax','B',NULL,'implemented','ordinary',NULL,'What b is.','surface-parser','tests/b.rs','crate-tests',NULL);\n",
             ),
         );
         std::fs::write(
@@ -1316,7 +1410,7 @@ mod tests
         assert_eq!(
             shown.to_string(),
             "id: a\narea: syntax\nname: A\nstatus: implemented\nnotability: ordinary\nline: What a is.\n\
-             crate: surface-parser\ncorpus: tests/a.rs fixture/a.gandr::a\nexemplar: ledger/a.gandr\nsince: #2\n\
+             crate: surface-parser\ncorpus: tests/a.rs fixture/a.gandr::a\nexemplar: ledger/a.gandr\n\
              --- ledger/a.gandr\n/// `a`: shown.\ndef a = 1 ;\n--- corpus\ntests/a.rs\nfixture/a.gandr::a\n"
         );
         assert_eq!(

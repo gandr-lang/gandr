@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('certificate-step-identity','storage','Canonical certificate-step identities','artifact-store','implemented','notable',NULL,'A certificate step has one canonical encoding and a durable content identity, collisions checked.','storage-artifact','crates/storage-artifact/tests/certificate_transport.rs',NULL,NULL);

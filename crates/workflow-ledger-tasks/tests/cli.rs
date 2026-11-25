@@ -251,19 +251,34 @@ fn the_recovery_sweep_reports_its_table_and_count()
 fn the_features_ledger_lists_and_shows_1827()
 {
     let scratch = Scratch::new(Text("features"));
-    let _ledger = scratch.file(
-        Path::new("ledger/features.sql"),
+    let _schema = scratch.file(
+        Path::new("ledger/features-schema.sql"),
         Text(
-            "PRAGMA foreign_keys=OFF;\nBEGIN TRANSACTION;\nCREATE TABLE feature(\n  id TEXT PRIMARY KEY,\n  area \
-         TEXT NOT NULL,\n  name TEXT NOT NULL,\n  parent TEXT,\n  status TEXT NOT NULL,\n  notability TEXT NOT \
-         NULL,\n  compared_to TEXT,\n  line TEXT NOT NULL CHECK(line <> ''),\n  crate TEXT,\n  corpus TEXT,\n  \
-         exemplar TEXT,\n  issue TEXT,\n  since TEXT\n) WITHOUT ROWID;\n\
-         INSERT INTO feature VALUES('answers','syntax','Answers',NULL,'implemented','ordinary',NULL,'A \
-         definition''s answer.','surface-parser','tests/answers.rs','ledger/answers.gandr',NULL,'#2');\n\
-         INSERT INTO feature VALUES('questions','syntax','Questions',NULL,'planned','ordinary',NULL,'A \
-         question.',NULL,NULL,NULL,'#3',NULL);\n\
-         INSERT INTO feature VALUES('reels','storage','Reels',NULL,'implemented','ordinary',NULL,'A \
-         reel.','storage-records',NULL,'crate-tests',NULL,'#4');\nCOMMIT;\n",
+            "CREATE TABLE feature(\n  id TEXT PRIMARY KEY,\n  area TEXT NOT NULL,\n  name TEXT NOT NULL,\n  \
+         parent TEXT,\n  status TEXT NOT NULL,\n  notability TEXT NOT NULL,\n  compared_to TEXT,\n  line \
+         TEXT NOT NULL CHECK(line <> ''),\n  crate TEXT,\n  corpus TEXT,\n  exemplar TEXT,\n  issue TEXT\n) \
+         WITHOUT ROWID;\n",
+        ),
+    );
+    let _answers = scratch.file(
+        Path::new("ledger/features/answers.sql"),
+        Text(
+            "INSERT INTO feature VALUES('answers','syntax','Answers',NULL,'implemented','ordinary',NULL,'A \
+         definition''s answer.','surface-parser','tests/answers.rs','ledger/answers.gandr',NULL);\n",
+        ),
+    );
+    let _questions = scratch.file(
+        Path::new("ledger/features/questions.sql"),
+        Text(
+            "INSERT INTO feature VALUES('questions','syntax','Questions',NULL,'planned','ordinary',NULL,'A \
+         question.',NULL,NULL,NULL,'#3');\n",
+        ),
+    );
+    let _reels = scratch.file(
+        Path::new("ledger/features/reels.sql"),
+        Text(
+            "INSERT INTO feature VALUES('reels','storage','Reels',NULL,'implemented','ordinary',NULL,'A \
+         reel.','storage-records',NULL,'crate-tests',NULL);\n",
         ),
     );
     let _exemplar = scratch.file(
@@ -303,7 +318,7 @@ fn the_features_ledger_lists_and_shows_1827()
         stdout(&shown),
         "id: answers\narea: syntax\nname: Answers\nstatus: implemented\nnotability: ordinary\nline: A \
          definition's answer.\ncrate: surface-parser\ncorpus: tests/answers.rs\nexemplar: \
-         ledger/answers.gandr\nsince: #2\n--- ledger/answers.gandr\n/// `answers`: a definition.\n@[ checks \
+         ledger/answers.gandr\n--- ledger/answers.gandr\n/// `answers`: a definition.\n@[ checks \
          ]\ndef answer = 42 ;\n--- corpus\ntests/answers.rs\n"
     );
 

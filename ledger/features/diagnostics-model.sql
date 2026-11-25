@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('diagnostics-model','diagnostics','Diagnostics as one model',NULL,'implemented','notable',NULL,'A refusal, an unsettled declaration, a goal, a warning and a ledger line are built once as data every face projects.','surface-diagnostics','crates/surface-diagnostics/src/model.rs crates/surface-diagnostics/tests/diagnostics.rs',NULL,'#231');

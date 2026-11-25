@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('recursive-data','recursion','Recursive data types',NULL,'implemented','ordinary',NULL,'A data declaration names its own family in strictly positive fields, with eliminators derived for it.','core-checker kernel-core','corpus/model/data/recursive-lists.gandr','corpus/model/data/recursive-lists.gandr',NULL);

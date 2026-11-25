@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('formatter-corpus-gate','printing','The formatter over the corpus','formatter','implemented','ordinary',NULL,'Every corpus source held to `gandr fmt --check`, an explicit-spelling subset kept as written.','surface-driver','.config/mise/tasks/mise-tasks-check.toml',NULL,'#491');

@@ -1087,7 +1087,7 @@ mod tests
             (
                 "ledger_show",
                 json!({ "root": "/nonexistent", "id": "a" }),
-                "/nonexistent/ledger/features.sql: cannot read",
+                "/nonexistent/ledger/features-schema.sql: cannot read",
             ),
             (
                 "subscribe_diagnostics",

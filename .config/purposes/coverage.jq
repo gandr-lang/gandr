@@ -1,6 +1,6 @@
 # The items tagged with a concern that no site of that concern covers, one
 # finding per item, from `{tags: [{crate, path, kind, tag}], sites: [{concern,
-# crate, module}]}`: `tags` from `ledger/purposes.sql`, `sites` from
+# crate, module}]}`: `tags` from `crates/<crate>/purposes.sql`, `sites` from
 # `ledger/concerns.sql`. A site covers its module, the modules below it and
 # the items they define; a site at the empty module covers its whole crate.
 

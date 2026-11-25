@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('inline-completion','editor','Inline completion','language-server','implemented','notable',NULL,'A ghost text at every cursor completes the form being typed.','surface-lsp surface-lsp-base surface-parser','crates/surface-lsp-base/src/inline.rs',NULL,'#233');

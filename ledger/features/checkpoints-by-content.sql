@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('checkpoints-by-content','storage','Checkpoints keyed by content pointers',NULL,'planned','notable',NULL,'Session checkpoints and certificate transport addresses held as content pointers into the value plane.',NULL,NULL,NULL,'#317');

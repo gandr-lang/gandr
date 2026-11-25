@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lsp-document-highlight','editor','Document highlight','language-server','implemented','ordinary',NULL,'The declaration of the name at the cursor and every use referring to it in the document, from the reverse referent index.','surface-lsp surface-lsp-navigation surface-dispatcher','crates/surface-lsp-navigation/src/uses.rs',NULL,'#764');

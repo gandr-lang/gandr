@@ -1,0 +1,20 @@
+CREATE TABLE feature(
+  id          TEXT PRIMARY KEY CHECK(id GLOB '[a-z0-9]*' AND id NOT GLOB '*[^a-z0-9-]*'),
+  area        TEXT NOT NULL CHECK(area GLOB '[a-z]*' AND area NOT GLOB '*[^a-z-]*'),
+  name        TEXT NOT NULL,
+  parent      TEXT REFERENCES feature(id) CHECK(parent <> id),
+  status      TEXT NOT NULL CHECK(status IN ('implemented','partial','planned','declined')),
+  notability  TEXT NOT NULL CHECK(notability IN ('ordinary','notable','uncommon','unique')),
+  compared_to TEXT CHECK(compared_to IN ('mainstream languages','mainstream editors','dependent provers')),
+  line        TEXT NOT NULL CHECK(line <> ''),
+  crate       TEXT,
+  corpus      TEXT,
+  exemplar    TEXT,
+  issue       TEXT,
+  CHECK((notability IN ('uncommon','unique')) = (compared_to IS NOT NULL)),
+  CHECK(status NOT IN ('implemented','partial') OR coalesce(crate, corpus) IS NOT NULL),
+  CHECK(status <> 'partial' OR issue IS NOT NULL OR corpus LIKE '%pathological/%'),
+  CHECK(status NOT IN ('planned','declined') OR issue IS NOT NULL),
+  CHECK(instr(name || line, char(10)) = 0),
+  CHECK(exemplar IS NOT 'crate-tests' OR (corpus LIKE '%.rs%' AND corpus NOT LIKE '%fixture/%' AND corpus NOT LIKE '%strict/%'))
+) WITHOUT ROWID;

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('ornaments','descriptions','Ornaments','levitated-descriptions','planned','notable',NULL,'Descriptions related by ornaments so a datatype''s structure and its functions transfer to its refinements.',NULL,NULL,NULL,'#312');

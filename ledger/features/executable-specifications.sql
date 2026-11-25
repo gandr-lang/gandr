@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('executable-specifications','workflow','Executable specifications',NULL,'implemented','notable',NULL,'Every crate states its items'' contracts as specification clauses, checked at runtime by an enforcing test lane.','workflow-spec-cost','crates/core-nbe-base/src/arena.rs',NULL,NULL);

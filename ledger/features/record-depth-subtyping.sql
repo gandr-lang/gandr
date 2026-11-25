@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('record-depth-subtyping','types','Record depth subtyping','records','planned','ordinary',NULL,'A record whose fields are subtypes stands for the wider record, waiting on the graded thunk former.',NULL,NULL,NULL,'#1680');

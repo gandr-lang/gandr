@@ -36,4 +36,4 @@ def described:
     | "crates/core-term/src/failure.rs: `TrackingIssue::\(.name)` names #\(.number), which \($s | described): name the open issue whose landing builds the feature, or the decision closed as not planned"),
   ((.rows // [])[]
     | select(any(.refs[]; $states[tostring] | holds) | not)
-    | "ledger/features.sql: the declined row `\(.id)` names \(if (.refs | length) == 0 then "no issue" else (.refs | map("#\(.)") | join(", ")) + ", " + (.refs | map(($states[tostring] | described)) | join("; ")) end): name its decision, an issue closed as not planned")
+    | "ledger/features/\(.id).sql: the declined row `\(.id)` names \(if (.refs | length) == 0 then "no issue" else (.refs | map("#\(.)") | join(", ")) + ", " + (.refs | map(($states[tostring] | described)) | join("; ")) end): name its decision, an issue closed as not planned")

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('extension-gate','workflow','The extension''s CI gate',NULL,'planned','ordinary',NULL,'The VS Code extension compiled, bundled, packaged and linted in CI.',NULL,NULL,NULL,'#248');

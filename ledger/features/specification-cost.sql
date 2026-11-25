@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('specification-cost','workflow','Bounded specification cost','executable-specifications','partial','ordinary',NULL,'Specifications ranked by what they cost the enforcing lane, the quadratic ones made linear.','workflow-spec-cost','crates/workflow-spec-cost/tests/ratio.rs crates/workflow-spec-cost/src/ledger.rs',NULL,'#104');

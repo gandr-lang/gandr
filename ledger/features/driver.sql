@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('driver','tooling','The gandr driver',NULL,'implemented','ordinary',NULL,'One `gandr` binary runs `check`, `test`, `run`, `stage`, `fmt`, `lsp`, `serve`, `mcp`, `view`, `repl` and `tui`, a run''s verdict its exit code.','surface-driver surface-dispatcher','crates/surface-driver/tests/cli.rs',NULL,NULL);

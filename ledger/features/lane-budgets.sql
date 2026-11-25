@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lane-budgets','workflow','CI lane budgets',NULL,'implemented','ordinary',NULL,'Each CI lane''s median time is held to a budget the nightly checks, set by the landing''s cone.','workflow-lane-budget','crates/workflow-lane-budget/tests/cli.rs',NULL,'#374');

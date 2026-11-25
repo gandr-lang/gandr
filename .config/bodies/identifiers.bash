@@ -12,7 +12,7 @@
 # with no vault prints one `note:` and refuses nothing.
 
 identifiers_check() {
-  local here=${BASH_SOURCE[0]%/*} root vault rows crates design mark manifest
+  local here=${BASH_SOURCE[0]%/*} root vault row rows crates design mark manifest
   local -a marks=() args=() found=()
   root=$(cd "$here/../.." && pwd)
   vault=$(vault_checkout)
@@ -21,9 +21,12 @@ identifiers_check() {
     return 0
   fi
   # Each list is one name a line, which jq splits: a run of jq costs about
-  # 10 ms, so the function runs three. `ledger/features.sql` is a dump, one
-  # `INSERT` a row with its id first, so awk reads the ids without sqlite.
-  rows=$(awk -F"'" '/^INSERT INTO feature VALUES\(/ { print $2 }' "$root/ledger/features.sql")
+  # 10 ms, so the function runs three. Each row of the features ledger is the
+  # file `ledger/features/<id>.sql`, so the names of the files are the ids.
+  for row in "$root"/ledger/features/*.sql; do
+    row=${row##*/}
+    rows+=${row%.sql}$'\n'
+  done
   for manifest in "$root"/crates/*/Cargo.toml; do
     manifest=${manifest%/Cargo.toml}
     crates+=${manifest##*/}$'\n'

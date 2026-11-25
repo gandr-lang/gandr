@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('propositional-truncation','identity','Propositional truncation',NULL,'declined','notable',NULL,'Identity is certificate-first and deliberately untruncated, so no truncation former exists.',NULL,NULL,NULL,'#1684');

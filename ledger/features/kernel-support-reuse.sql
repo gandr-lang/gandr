@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('kernel-support-reuse','incremental','Support-tracked reuse in the kernel','incremental-checking','planned','notable',NULL,'The per-node verdict memo consumed by kernel admission, keyed on content rather than position.',NULL,NULL,NULL,'#320');

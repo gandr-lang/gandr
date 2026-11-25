@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('bounded-model-checking','workflow','Bounded model checking',NULL,'planned','notable',NULL,'Model-checking harnesses with stated bounds over the codecs, the chunker and the order structures, authored from the same specifications.',NULL,NULL,NULL,'#319');

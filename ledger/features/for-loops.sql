@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('for-loops','effects','For loops over lists','loops','implemented','ordinary',NULL,'`for` over a native list lowers to the list case former applied through the tail-recursive fixpoint, its termination the list''s own structure.','surface-lowering','corpus/surface/control-flow.gandr','corpus/surface/control-flow.gandr',NULL);

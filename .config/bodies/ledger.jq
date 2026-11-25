@@ -2,40 +2,30 @@
 # (#2525, `tracker.md` § the record): one line per refusal, or nothing.
 #
 # Input:
-#   pr       the pull request's number, or null before it has one (`pr:open`)
-#   from     the commit the change is read from, which the refusal of a row
-#            without the number names to `ledger:stamp`, or null
 #   body     the body's text
-#   rows     the ids of `ledger/features.sql` at the head
+#   rows     the ids of `ledger/features/` at the head
 #   touched  the rows the change adds, edits or removes:
-#            [{id, since, status, issue}], each the head's (null for a removed
-#            row)
+#            [{id, status, issue}], each the head's (null for a removed row)
 #
 # The body's `## Ledger` names a row by an item opening with its id,
 # `` - `<id>` — <witness> ``; `None.` or no section names none. A named row
-# must exist and be touched, and once the pull request has a number its
-# `since` carries `#<pr>` where the row has a `since`: an implemented or
-# partial row (a planned or declined one keeps `since` NULL, the table's
-# CHECK); a touched row the body does not name is refused. A declined row the
-# change touches names its decision beside the issues the body closes
-# (`Closes`, `Fixes` or `Resolves` `#n`): the merge closes those as
-# completed, and `check:tracking` holds a declined row only by an issue open
-# or closed as not planned (#2848).
+# must exist and be touched; a touched row the body does not name is
+# refused. A declined row the change touches names its decision beside the
+# issues the body closes (`Closes`, `Fixes` or `Resolves` `#n`): the merge
+# closes those as completed, and `check:tracking` holds a declined row only
+# by an issue open or closed as not planned (#2848).
 
 include "sections";
 
-(.pr) as $pr
-| (.from // "<base>") as $from
-| (.rows // []) as $rows
+(.rows // []) as $rows
 | (.touched // []) as $touched
 | [.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s+#([0-9]+)") | .[0] | tonumber] as $closes
 | [(.body | section("Ledger") // []) | items | capture("^[-*] `(?<id>[a-z0-9][a-z0-9-]*)`").id] | unique as $named
 | ($named[]
     | . as $id
     | ([$touched[] | select(.id == $id)] | first) as $row
-    | if ($rows | index($id)) == null and $row == null then "`## Ledger` names `\($id)`, no row of `ledger/features.sql`: name a row by its id, then run the task again"
-      elif $row == null then "`## Ledger` names `\($id)`, and the change does not touch its row: patch the row (its `since` with this pull request's number), or drop the item, then run the task again"
-      elif $pr != null and ($row.status | IN("implemented", "partial")) and (($row.since // "") | test("#\($pr)\\b") | not) then "`## Ledger` names `\($id)`, and its `since` (`\($row.since // "NULL")`) lacks #\($pr): run `mise run ledger:stamp \($pr) \($from)` and push, then run the task again"
+    | if ($rows | index($id)) == null and $row == null then "`## Ledger` names `\($id)`, no row of `ledger/features/`: name a row by its id, then run the task again"
+      elif $row == null then "`## Ledger` names `\($id)`, and the change does not touch its row: patch the row, or drop the item, then run the task again"
       else empty
       end),
   ($touched[]

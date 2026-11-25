@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('repl','tooling','The read-evaluate loop','interactive-session','implemented','notable',NULL,'`gandr repl` submits each complete form and answers in a transcript with types, goals and live match analysis.','surface-repl','crates/surface-repl/tests/repl_loop.rs crates/surface-repl/tests/live_match.rs',NULL,NULL);

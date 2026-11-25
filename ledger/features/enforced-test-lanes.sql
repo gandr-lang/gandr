@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('enforced-test-lanes','workflow','Plain and enforcing test lanes','executable-specifications','implemented','notable',NULL,'Every pull request runs each test plainly and with specifications enforced, each held to 30 s.','workflow-test-timing','crates/workflow-test-timing/tests/cli.rs',NULL,NULL);

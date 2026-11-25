@@ -16,7 +16,7 @@ rustc-ice-*.txt
 /coverage-plain.lcov
 # `mise run mutants` outcomes.
 /mutants.out
-# The features ledger database, built from the tracked `ledger/features.sql`.
+# The features ledger database, built from the tracked `ledger/features/`.
 /ledger/features.db
 /ledger/features.db.new
 # `wt:warm`'s clone probe, written outside the tree since #3222; a branch

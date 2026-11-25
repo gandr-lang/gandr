@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('products-and-sums','types','N-ary products and sums',NULL,'implemented','ordinary',NULL,'Tuples and tagged sums take any number of components, the unit and the empty sum their nullary cases.','core-term core-checker core-sequent','corpus/model/data/data-either.gandr','corpus/model/data/data-either.gandr','#134');

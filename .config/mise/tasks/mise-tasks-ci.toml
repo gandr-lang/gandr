@@ -2936,25 +2936,24 @@ echo "claim:take: $lane claims #$number" >&2
 '''
 
 # A landing patches the features ledger rows it names, in the landing (#2525):
-# `ledger:patched <body> <base> [--head <ref>] [--pr <n>]` reads the rows the
-# change from `<base>` to the head (`HEAD` by default) adds, edits or removes
-# in `ledger/features.sql`, and the rows the body's `## Ledger` names, and
-# prints one refusal per row out of step (`.config/bodies/ledger.jq`): a
-# named row untouched or unknown, a touched row unnamed, a touched declined
-# row naming only issues the body closes (#2848), and with `--pr` a named row
-# whose `since` lacks `#<n>`. Exits 1 on a refusal. `pr:land` runs
-# it on the pull request with its number and refuses; `pr:open` runs it
-# without one and prints each line as a note. The tables reach jq through
-# files, never as arguments: a table past the argument limit (#2671) would
-# refuse every landing with `Argument list too long`. The repository read is
-# the caller's (`GIT_DIR` honoured); the reading is this checkout's.
+# `ledger:patched <body> <base> [--head <ref>]` reads the rows the change from
+# `<base>` to the head (`HEAD` by default) adds, edits or removes in
+# `ledger/features/`, and the rows the body's `## Ledger` names, and prints
+# one refusal per row out of step (`.config/bodies/ledger.jq`): a named row
+# untouched or unknown, a touched row unnamed, and a touched declined row
+# naming only issues the body closes (#2848). Exits 1 on a refusal.
+# `pr:open` runs it and prints each line as a note. The rows at a revision
+# are the schema and each row file, which one `git cat-file --batch` reads.
+# The tables reach jq through files, never as arguments: a table past the
+# argument limit (#2671) would refuse every landing with `Argument list too
+# long`. The repository read is the caller's (`GIT_DIR` honoured); the
+# reading is this checkout's.
 ["ledger:patched"]
 description = "Refuse a landing whose ledger rows and its body's ## Ledger disagree"
 usage = '''
 arg "<body>" help="the body file"
 arg "<base>" help="the commit the change is read from"
 flag "--head <ref>" help="the change's head; HEAD by default"
-flag "--pr <number>" help="the pull request's number, which each named row's since carries"
 '''
 tools.jq = "1.8.1"
 env.LEDGER_READING_ROOT = "{{ config_root }}"
@@ -2964,34 +2963,25 @@ set -euo pipefail
 root=$LEDGER_READING_ROOT
 tables=$(mktemp -d)
 trap 'rm -rf "$tables"' EXIT
-rows_at() { { git show "$1:ledger/features.sql" 2> /dev/null || true; printf '%s\n' 'SELECT * FROM feature ORDER BY id;'; } | sqlite3 -json; }
+# `git cat-file` writes the line `--` before each file, a comment to sqlite3.
+rows_at() {
+  {
+    git ls-tree -r --format='%(objectname)' "$1" -- ledger/features-schema.sql ledger/features/ \
+      | git cat-file --batch='--'
+    printf '%s\n' 'SELECT * FROM feature ORDER BY id;'
+  } | sqlite3 -json
+}
 rows_at "${usage_base:?}" > "$tables/base.json"
 rows_at "${usage_head:-HEAD}" > "$tables/head.json"
-findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null}" --arg from "$(git rev-parse --short=12 "${usage_base:?}")" \
+findings=$(jq -n --rawfile body "${usage_body:?}" \
   --slurpfile base "$tables/base.json" --slurpfile head "$tables/head.json" \
   '($base | add // []) as $base | ($head | add // []) as $head
    | (INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
-   | {pr: $pr, from: $from, body: $body, rows: [$head[].id],
-      touched: ([$head[] | select($was[.id] != .) | {id, since, status, issue}] + [$base[] | select($now[.id] == null) | {id, since: null, status: null, issue: null}])}' \
+   | {body: $body, rows: [$head[].id],
+      touched: ([$head[] | select($was[.id] != .) | {id, status, issue}] + [$base[] | select($now[.id] == null) | {id, status: null, issue: null}])}' \
   | jq -r -L "$root/.config/bodies" -f "$root/.config/bodies/ledger.jq")
 [[ -z "$findings" ]] || { echo "$findings"; exit 1; }
 {% endraw %}'''
-
-# `ledger:stamp <pr> <base>` adds `#<pr>` to the `since` of each touched row.
-# A touched row is one that the change from `<base>` to `HEAD` adds or edits.
-# It has the status implemented or partial, and its `since` lacks the number.
-# The task commits the ledger file alone, signed. A second run writes nothing.
-#
-# `pr:open` runs it once `gh pr create` gives the number. The refusal of
-# `pr:land` names it with the base that `pr:land` reads.
-# - see: #7978, `.config/ledger/stamp.bash`
-["ledger:stamp"]
-description = "Write a pull request's number into the since of each ledger row its change touches, and commit it"
-usage = '''
-arg "<pr>" help="the pull request's number"
-arg "<base>" help="the commit the change is read from"
-'''
-run = '.config/ledger/stamp.bash "${usage_pr:?}" "${usage_base:?}"'
 
 # A reserved grammar rule is not lowered (#2528): `ledger:reserved <base>
 # [--head <ref>]` reads the syntax ledger's rows at `<base>` and at the head
@@ -3863,7 +3853,7 @@ jq -n -c --slurpfile open "$scratch/open.json" --slurpfile graph "$scratch/graph
   | jq -c -f "$config_dir/reports/reads.jq" > "$scratch/issues.jsonl"
 issue_found "$title" > "$scratch/filed.json"
 labels_defaults > "$scratch/defaults.json"
-sqlite3 -bail "$scratch/features.db" < "$root/ledger/features.sql"
+cat "$root/ledger/features-schema.sql" "$root"/ledger/features/*.sql | sqlite3 -bail "$scratch/features.db"
 (cd "$root" && ledger_owing "$scratch/features.db") \
   | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t") | {row: .[0], issues: (.[1] | split(" ") | map(select(. != "") | tonumber))})' > "$scratch/owing.json"
 jq -n --slurpfile open "$scratch/open.json" --slurpfile issues "$scratch/issues.jsonl" --slurpfile filed "$scratch/filed.json" \
@@ -5183,28 +5173,6 @@ git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
 echo "$url"
-# The ledger rows that the change touches carry the number of the pull
-# request. `pr:land` refuses a named row without it. GitHub gives the number
-# only now, and `ledger:stamp` commits it.
-#
-# Then `check:ledger` alone runs on the stamped tree, and no gate does. The
-# stamp changes `since` values alone. The hosted run of the stamped head is
-# the proof. The push sends the stamped head.
-# - see: #7978, #8224
-number=${url##*/}
-pushed=$(git rev-parse HEAD)
-# The restack above moves the fork, so the stamp reads the change from the
-# fork of the pushed head.
-stamp_base=$(git merge-base HEAD "origin/$base")
-if ! mise run --quiet ledger:stamp "$number" "$stamp_base"; then
-  echo "#$number is open, and its ledger rows lack its number. Run \`mise run ledger:stamp $number $stamp_base\` and push, then run \`pr:land\`" >&2
-  exit 2
-fi
-if [[ $(git rev-parse HEAD) != "$pushed" ]]; then
-  mise run --quiet check:ledger || { echo "#$number is open, and the check of its stamped ledger fails. Fix it and push, then run \`pr:land\`" >&2; exit 2; }
-  git push --quiet --force-with-lease origin HEAD
-  gated=$(git rev-parse HEAD)
-fi
 # Held from its opening (#3253): a held pull request is no member of a stack,
 # so it is not linked, and nothing lands it until `pr:release`.
 if [[ -n "$hold" ]]; then

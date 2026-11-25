@@ -157,6 +157,6 @@
         }
       }
     },
-    "output": "ledger/features.sql: the declined row `compile-host-images` names #569, is a pull request: name its decision, an issue closed as not planned\nledger/features.sql: the declined row `intersection-types` names #1056, is closed as completed: name its decision, an issue closed as not planned\nledger/features.sql: the declined row `bare` names no issue: name its decision, an issue closed as not planned"
+    "output": "ledger/features/compile-host-images.sql: the declined row `compile-host-images` names #569, is a pull request: name its decision, an issue closed as not planned\nledger/features/intersection-types.sql: the declined row `intersection-types` names #1056, is closed as completed: name its decision, an issue closed as not planned\nledger/features/bare.sql: the declined row `bare` names no issue: name its decision, an issue closed as not planned"
   }
 ]

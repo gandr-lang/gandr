@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# `check:ledger`: the features ledger (`ledger/features.sql`,
-# `ledger/README.md`). The dump builds with every CHECK constraint holding (a
-# refused row stops the build), re-dumps byte-identical, and every `parent`
+# `check:ledger`: the features ledger (`ledger/features-schema.sql`,
+# `ledger/features/<id>.sql`, `ledger/README.md`). The schema and the rows
+# build with every CHECK constraint holding (a refused row stops the build),
+# re-dump and split (`ledger-split`) into the same files, and every `parent`
 # resolves. Every path a row names exists: a `crate` a directory under
 # `crates/` or a `contrib/` path, a `corpus` entry a path from the root (a
 # `::item` suffix naming a test inside it), an `exemplar` a file outside
@@ -41,12 +42,15 @@ if [[ -z $syntax ]]; then
     syntax --write "$tmp/syntax" --exemplars corpus/ledger > /dev/null
   syntax=$tmp/syntax/syntax.json
 fi
-sqlite3 -bail "$db" < ledger/features.sql
-sqlite3 "$db" .dump > "$tmp/features.sql"
+cat ledger/features-schema.sql ledger/features/*.sql | sqlite3 -bail "$db"
+mkdir -p "$tmp/split/ledger/features"
+sqlite3 "$db" .dump > "$tmp/dump.sql"
+"$(dirname "${BASH_SOURCE[0]}")/../gate-scope/tool.bash" gandr-workflow-ledger-split ledger-split \
+  --schema "$tmp/split/ledger/features-schema.sql" --rows "$tmp/split/ledger/features/{}.sql" "$tmp/dump.sql" > /dev/null
 failed=0
-if ! cmp -s "$tmp/features.sql" ledger/features.sql; then
-  diff -u ledger/features.sql "$tmp/features.sql" >&2 || true
-  echo 'ledger/features.sql is not its own re-dump; normalize it with `mise run ledger:build && mise run ledger:dump`' >&2
+if ! diff -u ledger/features-schema.sql "$tmp/split/ledger/features-schema.sql" >&2 \
+  || ! diff -ru ledger/features "$tmp/split/ledger/features" >&2; then
+  echo 'the features ledger is not its own re-dump; normalize it with `mise run ledger:build && mise run ledger:dump`' >&2
   failed=1
 fi
 if [ -n "$(sqlite3 "$db" 'PRAGMA foreign_key_check;')" ]; then

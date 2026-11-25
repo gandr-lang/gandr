@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('shape-resolution','descriptions','Resolution by shape','signatures-as-values','planned','notable',NULL,'A module found by the signature it models, so a generic program instantiates at any module of its shape.',NULL,NULL,NULL,'#312 #315');
