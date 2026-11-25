@@ -409,31 +409,27 @@ fn a_pattern_below_a_presented_rule_is_decided_against_it()
     );
 }
 
-/// `Low`, `High` and `Pair` of two fields, presented by the symmetry
-/// `Pair(x, y) <=> Pair(y, x)` and the step `Pair(Low, x) ==> Low`, with the
-/// symmetry written first or last.
+/// The symmetry `Pair(x, y) <=> Pair(y, x)` of the test family, whose
+/// constructor 2 is `Pair`.
 ///
 /// # Specification
 /// trivial.
-fn unordered_pairs(symmetry_first: bool) -> Scope
+fn pair_symmetry() -> PresentedRule
 {
-    let side = |nodes: &[RuleNode]| Box::from(nodes);
-    let constructor = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    let constructor = RuleNode::Constructor(ConstructorTag::from(2_usize));
     let variable = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
-    let symmetry = PresentedRule::new(
-        side(&[constructor(2), variable(0), variable(1)]),
-        side(&[constructor(2), variable(1), variable(0)]),
-    );
-    let step = PresentedRule::new(
-        side(&[constructor(2), constructor(0), variable(0)]),
-        side(&[constructor(0)]),
-    );
-    let rules = if symmetry_first {
-        [symmetry, step]
-    }
-    else {
-        [step, symmetry]
-    };
+    PresentedRule::new(
+        Box::from([constructor, variable(0), variable(1)]),
+        Box::from([constructor, variable(1), variable(0)]),
+    )
+}
+
+/// `Low`, `High` and `Pair` of two fields, presented by `rules`.
+///
+/// # Specification
+/// trivial.
+fn pairs(rules: impl IntoIterator<Item = PresentedRule>) -> Scope
+{
     Scope {
         families: SmallVec::<_, 0, Global>::from_iter([(
             ConstantIndex::from(FAMILY),
@@ -444,8 +440,32 @@ fn unordered_pairs(symmetry_first: bool) -> Scope
     }
 }
 
+/// `Low`, `High` and `Pair` of two fields, presented by the symmetry
+/// `Pair(x, y) <=> Pair(y, x)` and the step `Pair(Low, x) ==> Low`, with the
+/// symmetry written first or last.
+///
+/// # Specification
+/// trivial.
+fn unordered_pairs(symmetry_first: bool) -> Scope
+{
+    let step = PresentedRule::new(
+        Box::from([
+            RuleNode::Constructor(ConstructorTag::from(2_usize)),
+            RuleNode::Constructor(ConstructorTag::from(0_usize)),
+            RuleNode::Variable(RuleVariable::from(0_u32)),
+        ]),
+        Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]),
+    );
+    if symmetry_first {
+        pairs([pair_symmetry(), step])
+    }
+    else {
+        pairs([step, pair_symmetry()])
+    }
+}
+
 #[test]
-fn a_pair_that_joins_only_under_a_symmetry_is_refused()
+fn a_pair_that_joins_only_under_a_symmetry_converges()
 {
     // `g(Low) ==> Low`, `g(High) ==> High`, `g(Pair(x, y)) ==> Pair(y, x)`:
     // `g` turns a pair, which the symmetry of `Pair` makes the identity.
@@ -465,19 +485,113 @@ fn a_pair_that_joins_only_under_a_symmetry_is_refused()
         ])
     };
     for symmetry_first in [true, false] {
-        let scope = unordered_pairs(symmetry_first);
         assert_eq!(
-            decide!(turn(), 1_usize, &scope),
+            decide!(turn(), 1_usize, &unordered_pairs(symmetry_first)),
+            Ok(()),
+            "`g(Pair(Low, x))` is `Pair(x, Low)` by g's rule and `Low` by the step; the step \
+             matches `Pair(x, Low)` in the other order, so both reach `Low` (symmetry first: \
+             {symmetry_first})"
+        );
+    }
+}
+
+#[test]
+fn a_pair_in_the_other_order_of_a_symmetry_is_refused()
+{
+    let scope = pairs([pair_symmetry()]);
+    // `g(Pair(Low, x)) ==> Low` and `g(Pair(High, x)) ==> High` overlap only
+    // in the other order: both rewrite `g(Pair(Low, High))`.
+    let sides = SmallVec::<_, 0, Global>::from_iter([
+        rule(
+            &[
+                op!(1_usize, 1_usize),
+                ctor!(2_usize),
+                ctor!(0_usize),
+                var!(0_u32),
+            ],
+            &[ctor!(0_usize)],
+        ),
+        rule(
+            &[
+                op!(1_usize, 1_usize),
+                ctor!(2_usize),
+                ctor!(1_usize),
+                var!(0_u32),
+            ],
+            &[ctor!(1_usize)],
+        ),
+    ]);
+    assert_eq!(
+        decide!(sides, 1_usize, &scope),
+        Err(OperationRuleRefusal {
+            rule: RuleIndex::from(1_usize),
+            fault: OperationRuleFault::Diverges(Overlapped::Operation(RuleIndex::from(0_usize))),
+        }),
+        "`g(Pair(Low, High))` is `Low` by the first rule and `High` by the second"
+    );
+    // `g(Pair(x, y)) ==> x` overlaps its own other order at the root.
+    let first = SmallVec::<_, 0, Global>::from_iter([rule(
+        &[
+            op!(1_usize, 1_usize),
+            ctor!(2_usize),
+            var!(0_u32),
+            var!(1_u32),
+        ],
+        &[var!(0_u32)],
+    )]);
+    assert_eq!(
+        decide!(first, 1_usize, &scope),
+        Err(OperationRuleRefusal {
+            rule: RuleIndex::from(0_usize),
+            fault: OperationRuleFault::Diverges(Overlapped::Operation(RuleIndex::from(0_usize))),
+        }),
+        "`g(Pair(x, y))` is `x` in the written order and `y` in the other"
+    );
+    // `g(Pair(x, y)) ==> Pair(y, x)` joins its own other order.
+    let turned = SmallVec::<_, 0, Global>::from_iter([rule(
+        &[
+            op!(1_usize, 1_usize),
+            ctor!(2_usize),
+            var!(0_u32),
+            var!(1_u32),
+        ],
+        &[ctor!(2_usize), var!(1_u32), var!(0_u32)],
+    )]);
+    assert_eq!(
+        decide!(turned, 1_usize, &scope),
+        Ok(()),
+        "`Pair(y, x)` and `Pair(x, y)` are one term under the symmetry"
+    );
+}
+
+#[test]
+fn a_pair_against_a_presented_step_names_its_position_among_the_rules()
+{
+    // `h(Pair(Low, x)) ==> High`: the step rewrites the pattern to `Low`, and
+    // `h(Low)` is a normal form.
+    let high = || {
+        SmallVec::<_, 0, Global>::from_iter([rule(
+            &[
+                op!(1_usize, 1_usize),
+                ctor!(2_usize),
+                ctor!(0_usize),
+                var!(0_u32),
+            ],
+            &[ctor!(1_usize)],
+        )])
+    };
+    for (symmetry_first, step) in [(true, 1_usize), (false, 0_usize)] {
+        assert_eq!(
+            decide!(high(), 1_usize, &unordered_pairs(symmetry_first)),
             Err(OperationRuleRefusal {
-                rule: RuleIndex::from(2_usize),
+                rule: RuleIndex::from(0_usize),
                 fault: OperationRuleFault::Diverges(Overlapped::Presented {
                     family: ConstantIndex::from(FAMILY),
-                    rule: RuleIndex::from(0_usize),
+                    rule: RuleIndex::from(step),
                 }),
             }),
-            "`g(Pair(Low, x))` is `Pair(x, Low)` by g's rule and `Low` by the step; the reader \
-             holds no symmetry, so `Pair(x, Low)` is not `Pair(Low, x)` for it, and it counts \
-             the step among the steps alone (symmetry first: {symmetry_first})"
+            "the step stands at position {step} among the rules (symmetry first: \
+             {symmetry_first})"
         );
     }
 }
