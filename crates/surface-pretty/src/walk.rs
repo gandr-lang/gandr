@@ -1963,10 +1963,11 @@ enum Elaboration
 #[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::Lambda(_) | Former::LinearLambda(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
     || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
     Surface::Expression
-} else if !matches!(*former,
-    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
-    && matches!(kind(former), Kind::Value | Kind::Computation)
-    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
+} else if matches!(*former, Former::Arrow { .. } | Former::Pi { .. } | Former::LinearArrow { .. })
+    || (!matches!(*former,
+        Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
+        && matches!(kind(former), Kind::Value | Kind::Computation)
+        && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
 {
     Surface::Type
 } else if !matches!(*former,
@@ -2002,6 +2003,15 @@ where
     ) || braced(source, former).is_some()
     {
         return Surface::Expression;
+    }
+    // An arrow is a type form wherever it stands, `(x : A) -> C` in a body's
+    // parentheses too, so the grammar reads its domain and its codomain in the
+    // type's sort.
+    if matches!(
+        *former,
+        Former::Arrow { .. } | Former::Pi { .. } | Former::LinearArrow { .. }
+    ) {
+        return Surface::Type;
     }
     // A path type's endpoints are expressions wherever the type stands, but
     // over a universe: the grammar reads `Path[.A = A](x, y)`'s endpoints so,
@@ -7638,7 +7648,9 @@ impl Walk<'_, '_>
             match position.and_then(|at| self.context.get(at.0).copied().flatten()) {
                 Some(name) => match (unwritable(name, self.spelling), self.recursive) {
                     // A recursive definition's call of itself writes its
-                    // claim.
+                    // claim: glued in an expression, `f[<]`, and apart where a
+                    // type's sort reads it, `f [<]`, as the descent stands
+                    // there as an operand of its own.
                     (None, Some(recursive))
                         if position == Some(ContextPosition(usize::from(recursive.uniform))) =>
                     {
@@ -8663,12 +8675,16 @@ impl Walk<'_, '_>
     /// [`Walk::alias`] read, as the box `(A1, …, An) -> C`:
     /// the join, an unbind for each dependent arrow, the codomain, then each
     /// domain under the binders before it, so the domains are visited first.
+    /// The domains and the codomain are read in the type's sort, where no
+    /// checker elaborates, since an arrow is a type form wherever it stands;
+    /// `restored` is the surface and the elaboration the join is written in.
     ///
     /// # Specification
     /// trivial.
     fn aliased<N>(
         (links, dependent, codomain, first): AliasChain<N>,
         depth: ValueDepth,
+        restored: (Surface, Elaboration),
         tasks: &mut Vec<Task<N>>,
     )
     {
@@ -8679,6 +8695,8 @@ impl Walk<'_, '_>
                 Join::ValueFunction(Arity(links.len()), dependent, first),
             ),
         )));
+        tasks.push(Task::Elaboration(restored.1));
+        tasks.push(Task::Surface(restored.0));
         for _ in 0_u32 .. dependent.0.count_ones() {
             tasks.push(Task::Unbind);
         }
@@ -8700,6 +8718,8 @@ impl Walk<'_, '_>
                 depth,
             });
         }
+        tasks.push(Task::Surface(Surface::Type));
+        tasks.push(Task::Elaboration(Elaboration::Read));
     }
 
     /// The dependent box, `(a : A, B) -> C`, over its spelled
@@ -10069,7 +10089,7 @@ impl Walk<'_, '_>
                     && let Some(chain) = self.alias(source, node)
                     && !chain.0.is_empty()
                 {
-                    Self::aliased(chain, depth, tasks);
+                    Self::aliased(chain, depth, (self.surface, self.elaboration), tasks);
                     return Ok(());
                 }
                 shaped = Some(Vec::from([Slot::of(node, Admits::CompType, Binds::NONE)]));
@@ -10851,7 +10871,7 @@ impl Walk<'_, '_>
                 if self.form == Form::Sugared
                     && let Some(chain) = self.alias(source, body)
                 {
-                    Self::aliased(chain, depth, tasks);
+                    Self::aliased(chain, depth, (self.surface, self.elaboration), tasks);
                     return Ok(());
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
