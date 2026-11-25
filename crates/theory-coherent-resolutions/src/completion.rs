@@ -1407,15 +1407,17 @@ where
     ///   first that does not, as `join_critical_pairs` reports it, the joining
     ///   stopped at it so the next resume decides it first. A pair that
     ///   `scheme` classes [`PairClass::Composite`] is skipped, and its witness
-    ///   is kept for [`Self::take_composites`]. A pair that it classes
-    ///   [`PairClass::Unclassed`] is joined. Each pair reached adds one to
-    ///   [`Self::decided`]. Each reduct is normalized by [`normalize_past`] the
-    ///   idle cells of [`Self::past`], and a pair of two idle cells is not
-    ///   reached. Each pair of an idle cell and another cell of `store` is
-    ///   decided before each pair of two other cells that the joining has not
-    ///   decided. So a completion derives each rule that an idle cell gives
-    ///   before it joins a pair that needs that rule, and the place of the idle
-    ///   cell in the store does not decide the verdict of such a pair.
+    ///   is kept for [`Self::take_composites`]. A witness whose cell is idle is
+    ///   no witness: an idle cell rewrites nothing, so the pair is joined. A
+    ///   pair that it classes [`PairClass::Unclassed`] is joined. Each pair
+    ///   reached adds one to [`Self::decided`]. Each reduct is normalized by
+    ///   [`normalize_past`] the idle cells of [`Self::past`], and a pair of two
+    ///   idle cells is not reached. Each pair of an idle cell and another cell
+    ///   of `store` is decided before each pair of two other cells that the
+    ///   joining has not decided. So a completion derives each rule that an
+    ///   idle cell gives before it joins a pair that needs that rule, and the
+    ///   place of the idle cell in the store does not decide the verdict of
+    ///   such a pair.
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
@@ -1438,12 +1440,15 @@ where
     ///   alone that is idle has no pair. With a symmetry that is idle after two
     ///   rules that part, the pair of the symmetry and the first rule is the
     ///   first that parts, where the same store with no idle cell parts first
-    ///   at the pair of the two rules.
+    ///   at the pair of the two rules. Two rules that part at a peak with a
+    ///   redex of an idle symmetry below its seam part, where the same store
+    ///   with no idle cell skips that pair as a composite one.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
     /// - witness: `completion::tests::an_idle_cell_forms_peaks_and_normalizes_nothing`
     /// - witness: `completion::tests::a_pair_with_an_idle_cell_is_decided_before_each_other_pair`
+    /// - witness: `completion::tests::a_step_of_an_idle_cell_is_no_witness_of_a_composite_pair`
     #[spec(
         captures: before = (self.decided, self.composites.len()),
         ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1 && match output {
@@ -1556,7 +1561,15 @@ where
                     .skip(place.within);
                 for overlap in pairs {
                     self.decided = self.decided.saturating_add(1);
-                    if let PairClass::Composite(below) = scheme.class(store, &overlap) {
+                    // A step of an idle cell rewrites nothing, so it is no
+                    // witness of a composite pair.
+                    let witness = match scheme.class(store, &overlap) {
+                        PairClass::Composite(below) if !self.idle.contains(&below.cell) => {
+                            Some(below)
+                        },
+                        PairClass::Composite(_) | PairClass::Unclassed => None,
+                    };
+                    if let Some(below) = witness {
                         self.keep_composite(store, CompositePair { overlap, below });
                         place.within = place.within.saturating_add(1);
                         continue;
@@ -2142,42 +2155,101 @@ mod tests
         );
     }
 
+    /// The criterion as its definition states it: the first position strictly
+    /// below the seam, in the listing's order, at which a cell fires, and the
+    /// first such cell.
+    struct Below;
+
+    impl PairScheme<ToyAlphabet> for Below
+    {
+        /// The first step below the seam.
+        ///
+        /// # Specification
+        /// trivial.
+        fn class(
+            &mut self,
+            store: &CellStore<ToyAlphabet>,
+            overlap: &Overlap<ToyAlphabet>,
+        ) -> PairClass<ToyAlphabet>
+        {
+            for at in ToyAlphabet::command_positions(&overlap.peak) {
+                if ToyAlphabet::position_order(&overlap.seam, &at) != PositionOrder::Encloses {
+                    continue;
+                }
+                for (cell, rule) in store.iter() {
+                    if let Maybe::Present(fired) =
+                        crate::rewrite::fire_at(cell, rule, &overlap.peak, at.clone())
+                    {
+                        return PairClass::Composite(fired.step);
+                    }
+                }
+            }
+            PairClass::Unclassed
+        }
+    }
+
+    #[test]
+    fn a_step_of_an_idle_cell_is_no_witness_of_a_composite_pair()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let mut store = CellStore::<ToyAlphabet>::new();
+        // Two rules that part at `succ(add(x, y))`, `Zero` against
+        // `add(x, y)`, then the symmetry, which fires below the root of that
+        // peak.
+        for (lhs, rhs) in [
+            (
+                Toy::succ(Toy::add(Toy::var("x"), Toy::var("y"))),
+                Toy::zero(),
+            ),
+            (Toy::succ(Toy::var("z")), Toy::var("z")),
+            (
+                Toy::add(Toy::var("x"), Toy::var("y")),
+                Toy::add(Toy::var("y"), Toy::var("x")),
+            ),
+        ] {
+            let _id = store.insert(toy_cell(lhs, rhs));
+        }
+        let (first, second, symmetry) = (
+            CellId::from(0_usize),
+            CellId::from(1_usize),
+            CellId::from(2_usize),
+        );
+        let mut joining = PairJoining::past(BTreeSet::from([symmetry]));
+        let Joinability::Diverges {
+            overlap,
+            left,
+            right,
+            ..
+        } = joining.resume_with(&store, budget, &mut Below)
+        else {
+            panic!("the two rules part at `succ(add(x, y))`");
+        };
+        let mut cells = [overlap.left, overlap.right];
+        cells.sort_unstable();
+        assert_eq!(
+            cells,
+            [first, second],
+            "the pair of the two rules is decided: {left:?} against {right:?}"
+        );
+        assert!(
+            joining.take_composites().is_empty(),
+            "the step of the idle symmetry makes no pair composite"
+        );
+        let mut every = PairJoining::new();
+        let _verdict = every.resume_with(&store, budget, &mut Below);
+        assert!(
+            every.take_composites().iter().any(|composite| {
+                composite.below.cell == symmetry
+                    && [composite.overlap.left, composite.overlap.right].contains(&first)
+                    && [composite.overlap.left, composite.overlap.right].contains(&second)
+            }),
+            "with no idle cell, the symmetry makes the pair of the two rules composite"
+        );
+    }
+
     #[test]
     fn a_composite_pair_is_skipped_and_its_witness_is_checked()
     {
-        /// The criterion as its definition states it: the first position
-        /// strictly below the seam, in the listing's order, at which a cell
-        /// fires, and the first such cell.
-        struct Below;
-
-        impl PairScheme<ToyAlphabet> for Below
-        {
-            /// The first step below the seam.
-            ///
-            /// # Specification
-            /// trivial.
-            fn class(
-                &mut self,
-                store: &CellStore<ToyAlphabet>,
-                overlap: &Overlap<ToyAlphabet>,
-            ) -> PairClass<ToyAlphabet>
-            {
-                for at in ToyAlphabet::command_positions(&overlap.peak) {
-                    if ToyAlphabet::position_order(&overlap.seam, &at) != PositionOrder::Encloses {
-                        continue;
-                    }
-                    for (cell, rule) in store.iter() {
-                        if let Maybe::Present(fired) =
-                            crate::rewrite::fire_at(cell, rule, &overlap.peak, at.clone())
-                        {
-                            return PairClass::Composite(fired.step);
-                        }
-                    }
-                }
-                PairClass::Unclassed
-            }
-        }
-
         let budget = NormalizationBudget::from(8_usize);
         let mut store = CellStore::<ToyAlphabet>::new();
         // The second rule meets the first's addition at the addition's root,

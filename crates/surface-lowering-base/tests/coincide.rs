@@ -1269,6 +1269,68 @@ fn a_pair_that_needs_the_other_order_of_a_rule_joins_in_each_place_of_the_symmet
     }
 }
 
+/// A pair is decided where a symmetry has a redex below its seam. A symmetry
+/// rewrites nothing, so its redex does not make a pair composite. The rule
+/// takes a pair of a pair with a unit to its second field. It overlaps itself
+/// at a peak that holds a pair below the seam, and the two normal forms of
+/// that peak part. The block is refused in each place of the symmetry, as a
+/// `data` block and as a `theory` block.
+#[test]
+fn a_pair_above_a_redex_of_a_symmetry_is_decided()
+{
+    for (source, block, peak) in [
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-data-first.gandr"
+            ),
+            "a `data` block with the symmetry first",
+            "Two(Two(Two(x, Z), Z), y)",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-data-last.gandr"
+            ),
+            "a `data` block with the symmetry last",
+            "Two(Two(Two(x, Z), Z), y)",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-theory-first.gandr"
+            ),
+            "a `theory` block with the symmetry first",
+            "two(two(x, z), two(x, z))",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-theory-last.gandr"
+            ),
+            "a `theory` block with the symmetry last",
+            "two(two(x, z), two(x, z))",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+            else {
+                panic!(
+                    "{block}: one cell diagnostic: {:?}",
+                    module.cells().diagnostics
+                )
+            };
+            let CellFault::Coherence(CoherenceFault::Uncompleted {
+                peak: ref parted, ..
+            }) = diagnostic.fault
+            else {
+                panic!("{block}: the pair parts: {:?}", diagnostic.fault)
+            };
+            assert_eq!(
+                parted.to_string().replace('\'', ""),
+                peak,
+                "{block}: the peak with a pair below its seam"
+            );
+        });
+    }
+}
+
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
 /// failure passed for a cut is ill sorted. Over 2-cells a vertical composite

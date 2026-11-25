@@ -62,7 +62,8 @@
 //! refused as [`LoweringRefusal::RulesUncompleted`]. The kernel gets the
 //! written rules of a presented type, and it reads each left side in each
 //! order of the two fields by its own decision. So the derived rule of a
-//! constructor is a cell of this check.
+//! constructor is a cell of this check. A redex of a symmetry below the seam
+//! of a pair does not make the pair composite: the check joins that pair.
 //!
 //! A block that passes is orthogonal — no two of its rules overlap — or
 //! joined, with one replaying certificate per critical pair and one per
@@ -828,7 +829,9 @@ impl fmt::Display for PairTerm
 ///   the other order of the rule, and the reading derives that order as a rule.
 ///   Each pair with a symmetry is decided before each other pair, so a pair of
 ///   two rules is joined with each other order in the store. Thus the place of
-///   the symmetry among the rules decides nothing.
+///   the symmetry among the rules decides nothing. A pair with a redex of a
+///   symmetry below its seam, and no redex of a rule before it, is joined and
+///   not skipped as a composite pair.
 /// - panics: none.
 ///
 /// # Errors
@@ -854,12 +857,14 @@ impl fmt::Display for PairTerm
 ///   constructor joins so with the symmetry written first, between its rules or
 ///   last; a rule that gives two results in its two orders under the symmetry
 ///   of a constructor is uncompleted; a pair of two rules that joins only by
-///   the other order of a rule joins with the symmetry written first or last;
-///   reporting the earlier rule's span, deciding joinability first, reading the
-///   circle in the sequent store alone, normalizing by the symmetry, deciding a
-///   pair of two rules before the pairs of the symmetry, or deriving a rule
-///   between two constructor terms that are not the two orders of one rule
-///   changes one of them.
+///   the other order of a rule joins with the symmetry written first or last; a
+///   rule that parts from itself at a peak with a redex of a symmetry below the
+///   seam is uncompleted, in a `data` block and in a `theory` block; reporting
+///   the earlier rule's span, deciding joinability first, reading the circle in
+///   the sequent store alone, normalizing by the symmetry, deciding a pair of
+///   two rules before the pairs of the symmetry, skipping a pair as composite
+///   by a redex of a symmetry, or deriving a rule between two constructor terms
+///   that are not the two orders of one rule changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -874,6 +879,7 @@ impl fmt::Display for PairTerm
 /// - witness: `tests::coincide::a_symmetry_of_a_constructor_is_no_rewrite_in_each_place`
 /// - witness: `tests::coincide::a_rule_that_tears_under_the_symmetry_of_a_constructor_is_uncompleted`
 /// - witness: `tests::coincide::a_pair_that_needs_the_other_order_of_a_rule_joins_in_each_place_of_the_symmetry`
+/// - witness: `tests::coincide::a_pair_above_a_redex_of_a_symmetry_is_decided`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
