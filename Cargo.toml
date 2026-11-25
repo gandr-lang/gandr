@@ -1243,6 +1243,7 @@ default-features = false
 # features:
 # - none: the certificate fixtures use the alloc-only elaborator.
 # consumers:
+# - surface-corpus (dev)
 # - surface-lowering
 # - surface-lowering-expression
 # - theory-decomposition-spaces (dev)
@@ -1349,6 +1350,7 @@ default-features = false
 # - core-checker (dev)
 # - core-incremental
 # - core-term
+# - surface-corpus (dev)
 # - surface-dispatcher (dev)
 # - surface-lowering
 # - surface-lowering-base

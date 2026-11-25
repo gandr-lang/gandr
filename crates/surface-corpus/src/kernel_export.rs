@@ -990,7 +990,7 @@ fn commit(exported: &Exported) -> (ArtifactManifest, InMemoryBlockStore)
 
 /// The convergence sweep: each admitted block with rules joins its critical
 /// pairs, by an oracle that no admission calls.
-mod convergence;
+pub mod convergence;
 
 /// The export gate: every source's artifact is a function of its text, and
 /// reads back through the record plane and the decoder as itself.

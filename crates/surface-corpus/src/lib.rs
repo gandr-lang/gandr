@@ -345,6 +345,8 @@ mod kernel_export;
 mod refusal;
 mod report;
 mod root;
+#[cfg(test)]
+mod rule_census;
 mod run;
 mod settle;
 
