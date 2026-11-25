@@ -235,7 +235,7 @@ fn a_type_member_never_reads_its_parameter_s_value()
     );
     let found = rows(&lower(pinned));
     let phase = LoweringRefusal::PhaseDependence {
-        span: span_of(pinned, "S.z", 0_usize),
+        span: span_of(pinned, "S.z", 1_usize),
         member: name("P"),
         reached: name("z"),
     };
