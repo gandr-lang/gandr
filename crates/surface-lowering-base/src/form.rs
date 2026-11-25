@@ -801,6 +801,9 @@ impl TileName
     /// The plugging `left |> right`: every output of `left` into the inputs
     /// of `right`, in order.
     pub const PLUG: Self = Self("|>");
+    /// The pipeline field `e |>.m a`: the call of the method `m` on the
+    /// answer of `e`.
+    pub const PIPE_FIELD: Self = Self("|>.");
     /// The equivalence `A ≃ B` between two types, the tile its ASCII
     /// spelling `<~>` molds too.
     pub const EQUIVALENCE: Self = Self("≃");

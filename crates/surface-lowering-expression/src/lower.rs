@@ -10007,10 +10007,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   composite of two paths, or of two flows where a flow is answered, as
     ///   [`Identities::derive`] plans it; the cons `g ∷ p` is a word, as
     ///   `Native::cons` plans it; `left |> right` plugs every output of `left`
-    ///   into `right`, as `Models::plug` plans it.
+    ///   into `right`, as `Models::plug` plans it; the pipeline field `e |>.m
+    ///   a` is the call of the method `m` on the answer of `e`, as
+    ///   [`Capability::pipeline_field`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Identities::derive`] does, and the
-    ///   cons as `Native::cons` does.
+    ///   cons as `Native::cons` does, and the pipeline field as
+    ///   [`Capability::pipeline_field`] does.
     /// - panics: none.
     ///
     /// # Errors
@@ -10031,7 +10034,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_decimal_reads_as_its_exact_value_4807`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Plugged { .. } | Plan::Literal(Literal::Integer(_) | Literal::Numeric(_)))))]
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_pipeline_field_is_the_dot_call_at_every_mode_7981`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Plugged { .. } | Plan::Method(_) | Plan::Literal(Literal::Integer(_) | Literal::Numeric(_)))))]
     fn operator(
         &mut self,
         site: Site,
@@ -10058,6 +10062,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             && label == TileName::PLUG
         {
             return Models::new(self.host()).plug(site, left, right);
+        }
+        if let &[
+            Piece::Operand(receiver),
+            Piece::Tile { label, .. },
+            Piece::Operand(called),
+        ] = pieces.pieces.as_slice()
+            && label == TileName::PIPE_FIELD
+        {
+            return Capability::new(self.host()).pipeline_field(site, receiver, called);
         }
         // `-n` written on a natural literal is one negative literal: a value,
         // primitive at `Integer` and read through `FromNeg` at another type.

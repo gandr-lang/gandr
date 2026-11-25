@@ -1,0 +1,41 @@
+module Counter where
+  def read(self : shared Integer) -> -F Integer = pure self
+  def bump(self : Integer, by : Integer) -> -F Unit =
+    access self as v { resume v (v + by) }
+  def spend(self : consumed Integer) -> -F Integer = pure self + 1
+  def grown(self : consumed Integer, by : Integer) -> -F Integer = pure self + by
+
+def dotted() -> -F Integer =
+  var s = 1
+  let n = s.read ()
+  let _ = s.bump 2
+  let m = s.spend ()
+  pure n + m
+
+def piped() -> -F Integer =
+  var s = 1
+  let n = s |>.read ()
+  let _ = s |>.bump 2
+  let m = s |>.spend ()
+  pure n + m
+
+def passedDot(t : Integer) -> -F Integer = t.grown 2
+
+def passedPipe(t : Integer) -> -F Integer = t |>.grown 2
+
+def readDot(t : Integer) -> -F Integer = t.read ()
+
+def readBare(t : Integer) -> -F Integer = t |>.read
+
+def unheld(t : Integer) -> -F Unit = t |>.bump 1
+
+def nothing(t : Integer) -> -F Integer = t |>.size ()
+
+def summed(t : Integer) -> -F Integer = t |>.read () + 1
+
+def chained(t : Integer) -> -F Integer = t.grown 1 |>.grown 2 |>.read ()
+
+def chainedOnLines(t : Integer) -> -F Integer =
+  t.grown 1
+    |>.grown 2
+    |>.read ()

@@ -2,12 +2,14 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
+use gandr_core_term::equal_computation_syntax_up_to_free;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -25,11 +27,13 @@ use crate::lower::native::tests::assert_accepted;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
 use crate::lower::native::tests::lowered;
+use crate::lower::native::tests::outcome_of;
 use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
 use crate::module::DeclarationOutcome;
 use crate::module::ReceiverMode;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 
 /// A counter's methods, one per receiver mode, and a block calling each on
 /// one held count.
@@ -585,4 +589,135 @@ fn a_method_needing_its_hold_is_no_value_7980()
             declaration.outcome()
         );
     }
+}
+
+/// The calls of `Counter`'s methods, each through a pipeline field and
+/// through the dot call it stands for, and the refusals of a field.
+const PIPED: &str = include_str!("tests/fixtures/a-pipeline-field-calls-its-method-7981.gandr");
+
+/// Whether the bodies of `left` and `right` in `module` are one core term,
+/// each reading its parameters at the same indices.
+///
+/// # Specification
+/// trivial.
+fn one_core(
+    module: &crate::module::LoweredModule<'_>,
+    arena: &CoreArena,
+    (left, right): (&str, &str),
+) -> bool
+{
+    let mut free = Vec::new();
+    let equal = equal_computation_syntax_up_to_free(
+        arena,
+        tail_of(arena, body_named(module, SurfaceName::from(left))),
+        tail_of(arena, body_named(module, SurfaceName::from(right))),
+        &mut free,
+    );
+    equal == CertificateEquality::Equal && free.iter().all(|pair| pair.left == pair.right)
+}
+
+#[test]
+fn a_pipeline_field_is_the_dot_call_at_every_mode_7981()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(PIPED), &mut arena);
+    assert_eq!(
+        forms(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from("piped")))
+        ),
+        [
+            "hold",
+            "access shared @0",
+            "access @0",
+            "resume @0",
+            "consume @0",
+        ],
+        "a field lends its held receiver at each mode as the dot call does"
+    );
+    for pair in [
+        ("dotted", "piped"),
+        ("passedDot", "passedPipe"),
+        ("readDot", "readBare"),
+    ] {
+        assert!(
+            one_core(&module, &arena, pair),
+            "`{}` and `{}` lower to one core term",
+            pair.0,
+            pair.1
+        );
+    }
+}
+
+#[test]
+fn a_pipeline_field_calls_the_method_on_any_answer_7981()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(PIPED), &mut arena);
+    assert!(
+        one_core(&module, &arena, ("chained", "chainedOnLines")),
+        "a chain on one line and on three lines lowers to one core term"
+    );
+    for name in [
+        "piped",
+        "passedPipe",
+        "readBare",
+        "chained",
+        "chainedOnLines",
+    ] {
+        assert!(
+            matches!(
+                outcome_of(&module, SurfaceName::from(name)),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers"
+        );
+    }
+    let report = judged(&module, &mut arena);
+    let refused = ["unheld", "nothing", "summed"];
+    let checked = module
+        .declarations()
+        .iter()
+        .filter(|declaration| !refused.contains(&declaration.name().as_ref()))
+        .count();
+    assert_eq!(report.judged().len(), checked, "{report:?}");
+    assert_accepted(&report);
+}
+
+#[test]
+fn a_pipeline_field_refuses_what_names_no_method_call_7981()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(PIPED), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("unheld")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Held,
+                ..
+            }
+        ),
+        "nothing holds what a write through a field would write back: {:?}",
+        refusal_of(&module, SurfaceName::from("unheld"))
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("nothing")),
+            LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("size")
+        ),
+        "a field names a method a module declares: {:?}",
+        refusal_of(&module, SurfaceName::from("nothing"))
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("summed")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::MethodCall),
+                ..
+            }
+        ),
+        "a sum after a field is no call of the method's name, since the field binds looser: \
+         {:?}",
+        refusal_of(&module, SurfaceName::from("summed"))
+    );
 }

@@ -222,6 +222,41 @@ struct Candidate<'source>
     path: NamePath,
 }
 
+/// The method a call names, as the reading of the call chose it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Chosen<'source>
+{
+    /// The method's slot.
+    slot: SlotIndex,
+    /// The method's receiver mode.
+    mode: ReceiverMode,
+    /// The method's name.
+    method: SurfaceName<'source>,
+    /// The name of the method at the call.
+    selected: Placed,
+    /// The node whose origin the method's constant takes.
+    head: NodeIndex,
+}
+
+/// The receiver a call passes, as the reading of the call found it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Received
+{
+    /// The receiver's form.
+    at: Placed,
+    /// The binder or the declaration the receiver answers by its name.
+    resolved: Maybe<Resolved, unreceived::Absent>,
+    /// How many of the call's arguments are the receiver: one for a qualified
+    /// call, none for a dot call and a pipeline field.
+    skipped: usize,
+}
+
 /// The link a selection writes: `s.f`, `M.f`, or `B.f` in `A.B.f`.
 ///
 /// # Specification
@@ -768,6 +803,78 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 (first, resolved, 1_usize)
             },
         };
+        self.method_call(
+            site,
+            frame,
+            Chosen {
+                slot,
+                mode,
+                method,
+                selected,
+                head: head.node,
+            },
+            Received {
+                at,
+                resolved,
+                skipped,
+            },
+            Some(&mut ahead),
+            view,
+        )?;
+        Ok(Planned(true))
+    }
+
+    /// Plan the call of the method `chosen` names on the receiver `received`
+    /// names, at `site`.
+    ///
+    /// # Specification
+    /// - requires: `frame` is the computation frame `site` stands in; `chosen`
+    ///   is the one method in scope that the call names; `inputs`, when given,
+    ///   stands at the `(` of the call's arguments, the first `skipped` of them
+    ///   the receiver's own; `view`, when given, names the call's node and
+    ///   stands at the `as` of the view block the call heads.
+    /// - ensures: as [`Self::method_at`] from the method on: the call stands as
+    ///   the computation its receiver mode makes of a receiver held in a slot,
+    ///   or of one passed as a value; each argument after the receiver reads as
+    ///   a value under the binder that call opens. No `inputs` passes no
+    ///   argument after the receiver.
+    /// - fails: as [`Self::method_at`] from the method on.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::method_at`] and [`Self::pipeline_field`],
+    ///   which plan each of their calls here.
+    /// - witness: `gandr-surface-lowering::lower::method::tests::each_mode_lowers_to_its_access`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_pipeline_field_is_the_dot_call_at_every_mode_7981`
+    ///
+    /// # Cost
+    /// - allocation: the call's plan, growth within the module's calls
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Method(_))))]
+    fn method_call(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        chosen: Chosen<'source>,
+        received: Received,
+        inputs: Option<&mut Cursor<'_>>,
+        view: Option<(NodeIndex, &mut Cursor<'_>)>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Chosen {
+            slot,
+            mode,
+            method,
+            selected,
+            head,
+        } = chosen;
+        let Received {
+            at,
+            resolved,
+            skipped,
+        } = received;
         let receiver = Site {
             at,
             name: FormName::IDENTIFIER,
@@ -877,7 +984,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             },
         };
         let start = self.cx().operands.entries().len();
-        arguments(site, &mut ahead, &mut self.cx_mut().operands)?;
+        if let Some(inputs) = inputs {
+            arguments(site, inputs, &mut self.cx_mut().operands)?;
+        }
         let end = self.cx().operands.entries().len();
         let written = Stretch {
             start: start.saturating_add(skipped).min(end),
@@ -896,12 +1005,123 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 method: constant,
                 receiving,
                 arguments: kept,
-                head: head.node,
+                head,
                 receiver: receiver.at.node,
             }),
         );
 
-        Ok(Planned(true))
+        Ok(())
+    }
+
+    /// Classify the pipeline field `e |>.m a` at `site`: the call of the
+    /// method `m` on the answer of `e`, with the inputs after `self` given by
+    /// `a`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a pipeline field, `receiver` its operand on the
+    ///   left and `called` its operand on the right.
+    /// - ensures: a `called` that is a name `m`, or a call `m a …` of one,
+    ///   where one module in scope declares `m` as a method, stands as the call
+    ///   of that method on `receiver`, its inputs after `self` the call's
+    ///   arguments, planned as [`Self::method_call`] plans it. A `receiver`
+    ///   that is a name is read as the dot call `receiver.m a …` reads its
+    ///   receiver, so the two plan one call. Any other `receiver` is passed as
+    ///   a value.
+    /// - fails: the unadmitted method call when `called` is no name and no call
+    ///   of a name, or when the field stands in a module's body;
+    ///   [`LoweringRefusal::UnresolvedName`] at `m` when no module in scope
+    ///   declares a method `m`; [`LoweringRefusal::AmbiguousMethod`] at `m`
+    ///   when more than one does; the refusals of [`Self::method_call`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The field's refusal.
+    ///
+    /// # Cost
+    /// - allocation: the pieces of `called` and the candidates of its name,
+    ///   growth within the call's arguments and the methods of that name
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field at each mode on a held name, against the dot
+    ///   call of the same method; a field of no input; a chain of two fields
+    ///   whose first answer is the second's receiver; a field on a call's
+    ///   answer; a write on a receiver no slot holds, a name no module declares
+    ///   as a method, and an operand that is no call of a name.
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_pipeline_field_is_the_dot_call_at_every_mode_7981`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_pipeline_field_calls_the_method_on_any_answer_7981`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_pipeline_field_refuses_what_names_no_method_call_7981`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Method(_))))]
+    #[inline]
+    pub fn pipeline_field(
+        &mut self,
+        site: Site,
+        receiver: Placed,
+        called: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let unadmitted = || site.out(FragmentBoundary::Unadmitted(Unbuilt::MethodCall));
+        let mut pieces = Pieces::new();
+        let selected = match self.cx().form_at(called)? {
+            Some((_, Former::Name)) => called,
+            Some((_, Former::Call)) => {
+                read_pieces(self.cx().pbg, self.cx().tree, called.node, &mut pieces)?;
+                match pieces.pieces.first() {
+                    Some(&Piece::Operand(head))
+                        if matches!(self.cx().form_at(head)?, Some((_, Former::Name))) =>
+                    {
+                        head
+                    },
+                    _ => return Err(unadmitted()),
+                }
+            },
+            _ => return Err(unadmitted()),
+        };
+        let method = self.cx().name_at(selected);
+        let Container::TopLevel(here) = self.cx().collected.top(selected.span.start())
+        else {
+            return Err(unadmitted());
+        };
+        let candidates = self.methods_named(method, here)?;
+        let (slot, mode) = match *candidates.as_slice() {
+            [] => {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: selected.span,
+                    name: method,
+                });
+            },
+            [ref only] => (only.slot, only.mode),
+            [ref first, ref second, ref rest @ ..] => {
+                return Err(LoweringRefusal::AmbiguousMethod {
+                    span: selected.span,
+                    method,
+                    first: first.module,
+                    second: second.module,
+                    more: CandidateCount::from(rest.len()),
+                });
+            },
+        };
+        let frame = self.host().require(site, Produced::Computation)?;
+        let resolved = self.receiver_resolved(receiver, frame)?;
+        let mut inputs = Cursor::new(&pieces.pieces, called.span);
+        let _head = inputs.operands();
+        self.method_call(
+            site,
+            frame,
+            Chosen {
+                slot,
+                mode,
+                method,
+                selected,
+                head: selected.node,
+            },
+            Received {
+                at: receiver,
+                resolved,
+                skipped: 0,
+            },
+            (!pieces.pieces.is_empty()).then_some(&mut inputs),
+            None,
+        )
     }
 }
 
