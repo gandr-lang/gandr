@@ -800,7 +800,7 @@ fn a_named_index_telescope_counts_its_indices_4022()
     assert_eq!(diagnostic.fault, DescriptionFault::NonUniformResult);
     assert_eq!(
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("Short(n)")
+        Some("Short n")
     );
 }
 

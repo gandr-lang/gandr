@@ -933,7 +933,7 @@ mod tests
             "a recursive call, headed by its claim"
         );
         assert_eq!(
-            at("a)\n"),
+            at("a\n"),
             answer("List", 0),
             "a family's application in a type"
         );

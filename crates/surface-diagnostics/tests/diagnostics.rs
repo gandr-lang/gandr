@@ -1073,7 +1073,7 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
 
 /// A dependent record's field variable under `≃` is one node in each copy of
 /// the record the relation abbreviates; at the depth its type was judged, the
-/// written side's `Path[.A = b](x, y)`, it stands under the parameter and the
+/// written side's `Path[.A = b] x y`, it stands under the parameter and the
 /// fields before it, not under the first copy the walk reached (#1515).
 #[test]
 fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
@@ -1090,9 +1090,9 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
         panic!("the source is one module");
     };
     let used = <&str>::from(text)
-        .find("Path[.A = b](x, y)")
+        .find("Path[.A = b] x y")
         .expect("the record's last field reads the earlier ones")
-        .saturating_add("Path[.A = b](".len());
+        .saturating_add("Path[.A = b] ".len());
     let variables: Vec<_> = module
         .origins()
         .values()

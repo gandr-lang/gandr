@@ -7759,12 +7759,12 @@ mod tests
             "the loop's target, the point it writes"
         );
         assert_eq!(
-            at("Circle](Base"),
+            at("Circle] Base"),
             named("Circle : Type", "Circle"),
             "a use of the family outside its declaration"
         );
         assert_eq!(
-            at("Base, Base))"),
+            at("Base Base)"),
             named("Base : Circle", "Base"),
             "a use of the point outside its declaration"
         );
@@ -7796,27 +7796,27 @@ mod tests
             "a constructor's result after its fields, its family"
         );
         assert_eq!(
-            at("Vec(a, Zero)"),
+            at("Vec a Zero"),
             named("Vec(a : Type)", "Vec"),
             "an indexed constructor's result, its family"
         );
         assert_eq!(
-            at("Vec(a, Succ(n))\n"),
+            at("Vec a (Succ n)\n"),
             named("Vec(a : Type)", "Vec"),
             "an indexed result after its fields, its family"
         );
         assert_eq!(
-            at("Zero)\n"),
+            at("Zero\n"),
             named("Zero : Nat", "Zero"),
             "a result's index, the constructor it writes"
         );
         assert_eq!(
-            at("Succ(n))\n"),
+            at("Succ n)\n"),
             named("Succ : (n :", "Succ"),
             "a result's index applying a constructor, that constructor"
         );
         assert_eq!(
-            at("a, Zero"),
+            at("a Zero"),
             named("a : Type", "a"),
             "a result's argument repeating a parameter, the parameter's binder"
         );
@@ -9665,7 +9665,7 @@ mod tests
             "the function the call heads crosses by nothing"
         );
         assert_eq!(
-            crossed("m : Model(Monoid)", 0),
+            crossed("m : Model Monoid", 0),
             Err(Some(crossed::Absent::Uncrossed)),
             "the parameter's binder is no term"
         );
@@ -10287,7 +10287,7 @@ mod tests
             ("Hom(dom", Subject::Binder, "+U (Ob -> Ob -> -F Type)"),
             ("dom", Subject::Binder, "Ob"),
             ("id :", Subject::Binder, "+U ((a : Ob) -> -F Hom(a, a))"),
-            ("Hom(a, a);", Subject::Type, "Type"),
+            ("Hom a a;", Subject::Type, "Type"),
             ("id a ==>", Subject::Term, "+U ((a : Ob) -> -F Hom(a, a))"),
             (" a ==>", Subject::Term, "Hom(a, a)"),
         ];
@@ -10315,7 +10315,7 @@ mod tests
             Maybe::Absent(typing::Absent::Untyped)
         );
         assert_eq!(
-            answer(&table, source, SourceText::from("id p) f,")),
+            answer(&table, source, SourceText::from("id p) f)")),
             agreed(
                 Subject::Term,
                 SourceText::from("+U ((a : Type) -> -F (+U (a -> -F a)))")
@@ -11536,13 +11536,13 @@ mod tests
         let table = table(source);
         assert!(
             matches!(
-                answer(&table, source, SourceText::from("el(c)) -> el(")),
+                answer(&table, source, SourceText::from("el c) -> el (")),
                 Maybe::Present(Answer {
                     subject: Subject::Type,
                     ..
                 })
             ),
-            "the decode of `el(c)` answers, a type"
+            "the decode of `el c` answers, a type"
         );
     }
 

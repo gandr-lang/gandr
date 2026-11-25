@@ -2727,7 +2727,7 @@ mod tests
         );
         assert_eq!(names(&detailed), ["class", "detail", "expression"]);
         assert!(
-            detailed.message.ends_with("expression: `Vec(Integer)`"),
+            detailed.message.ends_with("expression: `Vec Integer`"),
             "the detailed level quotes the offending source: {:?}",
             detailed.message
         );
