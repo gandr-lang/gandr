@@ -1,0 +1,140 @@
+//! `std.decreasing`: the measure of a path of labelled steps, and the multiset
+//! order of measures.
+//!
+//! A step of a rewriting system has a label, a binary natural here. The
+//! measure of a path is the multiset of the labels that are not below a label
+//! on their left. A multiset is a list of labels, read with no order. The
+//! measure of a peak is the union of the measures of its two steps. A diagram
+//! that closes the peak is decreasing when the measure of each of its sides is
+//! at most the measure of the peak, in the multiset order.
+//!
+//! The multiset order is a function to `Bool` over closed data. So a bound is
+//! a path from the order to `true`: `gandr check` decides it by conversion,
+//! and the kernel replays the decision.
+//!
+//! - cites: [Youssef-2025-coherence_algebraic_rewriting_systems_decreasingness]
+//!   — 3.3.3, the measure of a path and of a branching; Example 3.3.12; and
+//!   3.4.1, the decreasing condition
+//! - cites: [Dershowitz-1979-proving_termination_multiset_orderings] — the
+//!   multiset order
+//!
+//! [Youssef-2025-coherence_algebraic_rewriting_systems_decreasingness]: https://doi.org/10.70675/ac84f832z1632z49d3za008zba5df4cfed2e "Youssef, Coherence of algebraic rewriting systems by decreasingness"
+//! [Dershowitz-1979-proving_termination_multiset_orderings]: https://doi.org/10.1145/359138.359142 "Dershowitz and Manna, Proving Termination with Multiset Orderings"
+
+// `Count`, the order of the binary naturals.
+import "./grade.gandr";
+
+/// The labels of the steps of a path, in order, or a multiset of labels.
+pub data Labels : Type where
+  /// No label.
+  | Done : Labels
+  /// A label, then the labels after it.
+  | Then : (label : Nat, rest : Labels) --> Labels
+
+/// Whether `a` is below `b`.
+def below(a : Nat, b : Nat) -> Bool =
+  match Count.le b a where
+    | true => false
+    | false => true
+
+/// Whether `a` and `b` are one label.
+def same(a : Nat, b : Nat) -> Bool =
+  match Count.le a b where
+    | true => Count.le b a
+    | false => false
+
+/// The labels of `ls` that are below neither `top` nor a label on their left.
+/// A label that is not below `top` is at least `top`, so it is the next `top`.
+def rec dominant(ls : Labels, top : Nat) -> Labels =
+  match ls where
+    | Done => Done
+    | Then(l, rest) => match below l top where
+      | true => dominant[<] rest top
+      | false => Then l (dominant[<] rest l)
+
+/// The measure of a path: the labels of its steps that are not below a label
+/// on their left. No label is below zero.
+pub def measure(ls : Labels) -> Labels = dominant ls Zero
+
+/// The union of two multisets: the measure of a peak from the measures of its
+/// two steps.
+pub def rec union(a : Labels, b : Labels) -> Labels =
+  match a where
+    | Done => b
+    | Then(l, rest) => Then l (union[<] rest b)
+
+/// `ls` with one label equal to `l` taken out, when it holds one.
+def rec without(ls : Labels, l : Nat) -> Labels =
+  match ls where
+    | Done => Done
+    | Then(k, rest) => match same k l where
+      | true => rest
+      | false => Then k (without[<] rest l)
+
+/// The multiset difference: `a` with one label taken out for each label of
+/// `b`.
+def rec minus(a : Labels, b : Labels) -> Labels =
+  match b where
+    | Done => a
+    | Then(l, rest) => minus[<] (without a l) rest
+
+/// The greatest label of `ls`, at least `top`.
+def rec greatest(ls : Labels, top : Nat) -> Nat =
+  match ls where
+    | Done => top
+    | Then(l, rest) => match below top l where
+      | true => greatest[<] rest l
+      | false => greatest[<] rest top
+
+/// Whether `a` is below `b` in the multiset order. Take out of each the labels
+/// the two share. Then `b` keeps a label, and each label that `a` keeps is
+/// below one that `b` keeps. Over a total order, that is: the greatest label
+/// that `a` keeps is below the greatest that `b` keeps.
+pub def lower(a : Labels, b : Labels) -> Bool =
+  match minus b a where
+    | Done => false
+    | Then(l, rest) => match minus a b where
+      | Done => true
+      | Then(k, others) => below (greatest others k) (greatest rest l)
+
+/// Whether `a` is at most `b` in the multiset order: below it, or the same
+/// multiset.
+pub def atMost(a : Labels, b : Labels) -> Bool =
+  match minus b a where
+    | Done => match minus a b where
+      | Done => true
+      | Then(_k, _others) => false
+    | Then(_l, _rest) => lower a b
+
+/// The measure of the peak `(v', v ⋆ u)` of the system `X` of Example 3.3.2:
+/// the labels `0` and `21` give `[0, 2]` (Example 3.3.12).
+def peakMeasureOfX : Labels = union
+  (measure (Then (0 : Nat) Done))
+  (measure (Then (2 : Nat) (Then (1 : Nat) Done)));
+
+/// The measure of the peak `(v', v ⋆ u)` of `X`, run.
+@[runs("Then Zero (Then (Positive (Bit0 One)) Done)")]
+def peakOfX() -> Labels = peakMeasureOfX;
+
+/// The measure of the peak `(u ⋆ v, u')` of the system `Y` of Example 3.3.2:
+/// the labels `12` and `1` give `[1, 2, 1]`, the multiset `[1, 1, 2]`
+/// (Example 3.3.12).
+def peakMeasureOfY : Labels = union
+  (measure (Then (1 : Nat) (Then (2 : Nat) Done)))
+  (measure (Then (1 : Nat) Done));
+
+/// The measure of the peak `(u ⋆ v, u')` of `Y`, run.
+@[runs("Then (Positive One) (Then (Positive (Bit0 One)) (Then (Positive One) Done))")]
+def peakOfY() -> Labels = peakMeasureOfY;
+
+/// The labels of the side `u ⋆ v ⋆ u ⋆ v'` of the peak `(u ⋆ v, u')` of `Y`:
+/// `1210`.
+def sideOfY : Labels = Then (1 : Nat) (Then (2 : Nat) (Then (1 : Nat) (Then (0 : Nat) Done)));
+
+/// Example 3.4.6: the measure of the side, `[1, 2]`, is at most the measure of
+/// the peak, `[1, 1, 2]`.
+def boundOfY : Path[.A = Bool] (atMost (measure sideOfY) peakMeasureOfY) true = Path.here true;
+
+/// The converse: the measure of the peak is not below the measure of the side.
+def peakNotBelowSideOfY : Path[.A = Bool] (lower peakMeasureOfY (measure sideOfY)) false = Path.here
+  false;
