@@ -99,6 +99,7 @@ members = [
   "crates/workflow-host-tools",
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
+  "crates/workflow-ledger-split",
   "crates/workflow-ledger-tasks",
   "crates/workflow-parser-report",
   "crates/workflow-prose",
@@ -245,6 +246,7 @@ default-features = false
 # - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-ledger-split
 # - workflow-ledger-tasks
 # - workflow-spec-cost
 # - workflow-sweep
@@ -332,6 +334,7 @@ default-features = false
 # - workflow-host-tools
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-ledger-split
 # - workflow-ledger-tasks
 # - workflow-prose
 # - workflow-spec-cost

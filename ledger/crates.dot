@@ -127,6 +127,7 @@ digraph crates {
     "workflow-host-tools";
     "workflow-hotpath-guard";
     "workflow-lane-budget";
+    "workflow-ledger-split";
     "workflow-ledger-tasks";
     "workflow-parser-report";
     "workflow-prose";
