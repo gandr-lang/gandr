@@ -1526,4 +1526,435 @@ mod sweeps
             failures.join("\n")
         );
     }
+
+    /// One past the largest symbol that `term` holds, or zero.
+    ///
+    /// # Specification
+    /// trivial.
+    fn width(term: &Term) -> usize
+    {
+        match *term {
+            Term::Variable(_) => 0,
+            Term::Apply(symbol, ref fields) => fields
+                .iter()
+                .map(width)
+                .fold(symbol.saturating_add(1), usize::max),
+        }
+    }
+
+    /// An apartness question: the source and the name of the question, the
+    /// type, the two terms by the count of each symbol, and whether the
+    /// kernel finds them apart.
+    type Question = (
+        &'static str,
+        &'static str,
+        &'static [i128],
+        &'static [i128],
+        bool,
+    );
+
+    /// The differences of the rules of one system, one row for each rule.
+    type Rows = Vec<Vec<i128>>;
+
+    /// The apartness questions of the corpus over a presented type: the
+    /// source, the type as the sweep names it, the two terms by the count of
+    /// each symbol in written order, and whether the kernel finds them apart.
+    /// The circle's words are `Words`: `Base`, `loop` and its inverse over a
+    /// word, which the two cancellations present.
+    const QUESTIONS: [Question; 17] = [
+        (
+            "model/data/empty.gandr: not_zero",
+            "Int",
+            &[1, 1, 0],
+            &[1, 0, 0],
+            true,
+        ),
+        (
+            "model/data/empty.gandr: one_not_two",
+            "Int",
+            &[1, 1, 0],
+            &[1, 2, 0],
+            true,
+        ),
+        (
+            "model/data/empty.gandr: signs",
+            "Int",
+            &[1, 1, 2],
+            &[1, 1, 0],
+            true,
+        ),
+        (
+            "ledger/diagnostics/NotApart.gandr: agree",
+            "Int",
+            &[1, 1, 1],
+            &[1, 0, 0],
+            false,
+        ),
+        (
+            "pathological/data/absurd-not-apart.gandr: agree",
+            "Int",
+            &[1, 1, 1],
+            &[1, 0, 0],
+            false,
+        ),
+        (
+            "model/identity/circle-apart.gandr: loop_apart",
+            "Words",
+            &[1, 1, 0],
+            &[1, 0, 0],
+            true,
+        ),
+        (
+            "model/identity/circle-apart.gandr: twice_apart",
+            "Words",
+            &[1, 2, 0],
+            &[1, 1, 0],
+            true,
+        ),
+        (
+            "model/identity/circle-apart.gandr: inverse_apart",
+            "Words",
+            &[1, 1, 0],
+            &[1, 0, 1],
+            true,
+        ),
+        (
+            "pathological/data/absurd-not-apart.gandr: cancelled",
+            "Words",
+            &[1, 1, 1],
+            &[1, 0, 0],
+            false,
+        ),
+        (
+            "model/desc/rule-keeps-count.gandr: redApart",
+            "Signal",
+            &[0, 0, 1],
+            &[0, 1, 0],
+            true,
+        ),
+        (
+            "model/desc/rule-keeps-count.gandr: redNotAmber",
+            "Signal",
+            &[0, 0, 1],
+            &[1, 0, 0],
+            true,
+        ),
+        (
+            "pathological/desc/rule-keeps-count.gandr: joinedApart",
+            "Signal",
+            &[1, 0, 0],
+            &[0, 1, 0],
+            false,
+        ),
+        (
+            "model/desc/rule-symmetry-apart.gandr: picksApart",
+            "Pick",
+            &[0, 1, 0],
+            &[0, 0, 1],
+            true,
+        ),
+        (
+            "ledger/features/rule-symmetry.gandr: twoPicksApart",
+            "Pick",
+            &[0, 1, 0],
+            &[0, 0, 1],
+            true,
+        ),
+        (
+            "model/desc/rule-symmetry-apart.gandr: meetsApart",
+            "Pick",
+            &[1, 2, 0],
+            &[1, 0, 2],
+            true,
+        ),
+        (
+            "pathological/desc/rule-symmetry-apart.gandr: ordersNotApart",
+            "Pick",
+            &[1, 1, 1],
+            &[1, 1, 1],
+            false,
+        ),
+        (
+            "pathological/desc/rule-symmetry-apart.gandr: tornApart",
+            "Torn",
+            &[0, 0, 1, 0],
+            &[0, 0, 0, 1],
+            false,
+        ),
+    ];
+
+    /// The rank of `rows` over the rationals, by fraction-free elimination.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rank(mut rows: Vec<Vec<i128>>) -> usize
+    {
+        let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+        for row in &mut rows {
+            row.resize(columns, 0);
+        }
+        let mut found = 0_usize;
+        for column in 0 .. columns {
+            let Some(pivot) = (found .. rows.len()).find(|&row| rows[row][column] != 0)
+            else {
+                continue;
+            };
+            rows.swap(found, pivot);
+            let top = rows[found].clone();
+            for row in rows.iter_mut().skip(found.saturating_add(1)) {
+                let factor = row[column];
+                if factor == 0 {
+                    continue;
+                }
+                for (cell, &above) in row.iter_mut().zip(&top) {
+                    *cell = cell
+                        .checked_mul(top[column])
+                        .and_then(|scaled| scaled.checked_sub(above.checked_mul(factor)?))
+                        .expect("the counts of a rule stay far below the integers");
+                }
+                let divisor = row.iter().fold(0_i128, |held, &cell| gcd(held, cell));
+                if divisor > 1 {
+                    for cell in row.iter_mut() {
+                        *cell = cell.checked_div(divisor).expect("the divisor is positive");
+                    }
+                }
+            }
+            found = found.saturating_add(1);
+        }
+        found
+    }
+
+    /// The greatest common divisor of `left` and `right`, not negative.
+    ///
+    /// # Specification
+    /// trivial.
+    fn gcd(
+        left: i128,
+        right: i128,
+    ) -> i128
+    {
+        let (mut left, mut right) = (left.unsigned_abs(), right.unsigned_abs());
+        while right != 0 {
+            (left, right) = (
+                right,
+                left.checked_rem(right).expect("the divisor is positive"),
+            );
+        }
+        i128::try_from(left).expect("a count of a rule fits")
+    }
+
+    /// The count of each symbol on the left side of `rule`, less its count on
+    /// the right, over `columns` symbols; none when a variable stands a
+    /// different number of times on the two sides, so no map that adds the
+    /// values of the fields keeps the rule.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kept(
+        rule: &(Term, Term),
+        columns: usize,
+    ) -> Option<Vec<i128>>
+    {
+        fn walk(
+            term: &Term,
+            sign: i128,
+            row: &mut Vec<i128>,
+            variables: &mut BTreeMap<u32, i128>,
+        )
+        {
+            match *term {
+                Term::Variable(variable) => {
+                    let count = variables.entry(variable).or_default();
+                    *count = count
+                        .checked_add(sign)
+                        .expect("a count of a variable is small");
+                },
+                Term::Apply(symbol, ref fields) => {
+                    if row.len() <= symbol {
+                        row.resize(symbol.saturating_add(1), 0);
+                    }
+                    if let Some(cell) = row.get_mut(symbol) {
+                        *cell = cell
+                            .checked_add(sign)
+                            .expect("a count of a symbol is small");
+                    }
+                    for field in fields {
+                        walk(field, sign, row, variables);
+                    }
+                },
+            }
+        }
+        let mut row = vec![0_i128; columns];
+        let mut variables = BTreeMap::new();
+        walk(&rule.0, 1, &mut row, &mut variables);
+        walk(&rule.1, -1, &mut row, &mut variables);
+        variables.values().all(|&count| count == 0).then_some(row)
+    }
+
+    /// The words of the circle as a presented type: `Base`, then `loop` and
+    /// its inverse over a word, with the two cancellations.
+    ///
+    /// # Specification
+    /// trivial.
+    fn words() -> Vec<(Term, Term)>
+    {
+        let x = || Term::Variable(0);
+        vec![
+            (Term::Apply(1, vec![Term::Apply(2, vec![x()])]), x()),
+            (Term::Apply(2, vec![Term::Apply(1, vec![x()])]), x()),
+        ]
+    }
+
+    /// The count of the distinct systems of the repository, of those with an
+    /// additive shadow by the dimension of their shadows, and of those with
+    /// none: a rule erases or copies a variable, a rule is second-order, or
+    /// the rules do not read.
+    const SUMMARY: &str = "189 systems: 109 with shadows, by dimension {0: 51, 1: 37, 2: 12, 3: 8, 7: 1}; 80 with none";
+
+    /// The answer of the shadows to each apartness question of `QUESTIONS`,
+    /// with the differences of the rules. `apart` is a question that the
+    /// shadows refute with no normal form. `not answered` is a question that
+    /// the shadows cannot refute: each of them is a question that the kernel
+    /// finds not apart. `no shadow` is a question whose type the sweep does
+    /// not hold in the source that asks it.
+    const RECORD: [&str; 17] = [
+        "model/data/empty.gandr: not_zero: no shadow of Int",
+        "model/data/empty.gandr: one_not_two: no shadow of Int",
+        "model/data/empty.gandr: signs: no shadow of Int",
+        "ledger/diagnostics/NotApart.gandr: agree: not answered [[0, 1, 1], [0, 1, 1]]",
+        "pathological/data/absurd-not-apart.gandr: agree: not answered [[0, 1, 1], [0, 1, 1]]",
+        "model/identity/circle-apart.gandr: loop_apart: apart [[0, 1, 1], [0, 1, 1]]",
+        "model/identity/circle-apart.gandr: twice_apart: apart [[0, 1, 1], [0, 1, 1]]",
+        "model/identity/circle-apart.gandr: inverse_apart: apart [[0, 1, 1], [0, 1, 1]]",
+        "pathological/data/absurd-not-apart.gandr: cancelled: not answered [[0, 1, 1], [0, 1, 1]]",
+        "model/desc/rule-keeps-count.gandr: redApart: apart [[1, -1]]",
+        "model/desc/rule-keeps-count.gandr: redNotAmber: apart [[1, -1]]",
+        "pathological/desc/rule-keeps-count.gandr: joinedApart: not answered [[1, -1]]",
+        "model/desc/rule-symmetry-apart.gandr: picksApart: apart []",
+        "ledger/features/rule-symmetry.gandr: twoPicksApart: no shadow of Pick",
+        "model/desc/rule-symmetry-apart.gandr: meetsApart: apart []",
+        "pathological/desc/rule-symmetry-apart.gandr: ordersNotApart: not answered []",
+        "pathological/desc/rule-symmetry-apart.gandr: tornApart: no shadow of Torn",
+    ];
+
+    /// Each presented type of the repository has its additive shadows: the
+    /// maps that give each symbol a weight, add the values of the fields,
+    /// and that each rule keeps. Two terms are apart under the shadows
+    /// exactly when their difference of counts is outside the span of the
+    /// rules' differences. The record is the dimension of the shadows of each
+    /// type, and the apartness questions of the corpus that they answer with
+    /// no normal form.
+    #[test]
+    fn a_shadow_answers_the_apartness_questions_of_the_corpus_with_no_normal_form()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut texts = Vec::new();
+        for root in ["corpus", "library", "crates"] {
+            texts.extend(sources(&repository.join(root)));
+        }
+        // Each type by the source that admits it and its name, and each
+        // distinct system once, by its name and its rules.
+        let mut at: BTreeMap<(String, String), Option<Rows>> = BTreeMap::new();
+        let mut distinct: BTreeMap<String, Option<(usize, Rows)>> = BTreeMap::new();
+        let _words = at.insert(
+            (String::new(), String::from("Words")),
+            Some(words().iter().filter_map(|rule| kept(rule, 3)).collect()),
+        );
+        for &(ref path, ref text) in &texts {
+            let Some(crossed) = admitted(&pbg, path, text)
+            else {
+                continue;
+            };
+            let shown = path
+                .strip_prefix(&repository)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .into_owned();
+            for (system, fault) in systems(&crossed.arena, &crossed.declarations) {
+                let columns = system
+                    .rules
+                    .iter()
+                    .flat_map(|rule| [&rule.0, &rule.1])
+                    .map(width)
+                    .chain(
+                        system
+                            .symmetric
+                            .iter()
+                            .map(|&symbol| symbol.saturating_add(1)),
+                    )
+                    .max()
+                    .unwrap_or(0);
+                let rows: Option<Vec<Vec<i128>>> = system
+                    .rules
+                    .iter()
+                    .map(|rule| kept(rule, columns))
+                    .collect();
+                let entry = (fault.is_none() && system.unread == 0)
+                    .then_some(rows)
+                    .flatten();
+                let key = format!("{} {:?} {:?}", system.name, system.symmetric, system.rules);
+                let _once = distinct
+                    .entry(key)
+                    .or_insert_with(|| entry.clone().map(|rows| (columns, rows)));
+                let _held = at.insert((shown.clone(), system.name), entry);
+            }
+        }
+        let (mut with, mut none) = (0_usize, 0_usize);
+        let mut dimensions: BTreeMap<usize, usize> = BTreeMap::new();
+        for entry in distinct.values() {
+            match *entry {
+                Some((columns, ref rows)) => {
+                    with = with.saturating_add(1);
+                    let count = dimensions
+                        .entry(columns.saturating_sub(rank(rows.clone())))
+                        .or_default();
+                    *count = count.saturating_add(1);
+                },
+                None => none = none.saturating_add(1),
+            }
+        }
+        let mut answered = Vec::new();
+        for &(question, name, left, right, apart) in &QUESTIONS {
+            let source = question
+                .split_once(": ")
+                .map_or(String::new(), |(source, _)| format!("corpus/{source}"));
+            let key = if name == "Words" {
+                String::new()
+            }
+            else {
+                source
+            };
+            let Some(&Some(ref rows)) = at.get(&(key, String::from(name)))
+            else {
+                answered.push(format!("{question}: no shadow of {name}"));
+                continue;
+            };
+            let difference: Vec<i128> = left
+                .iter()
+                .zip(right)
+                .map(|(&one, &other)| one.checked_sub(other).expect("a count is small"))
+                .collect();
+            let mut asked = rows.clone();
+            asked.push(difference);
+            let refutes = rank(asked) > rank(rows.clone());
+            answered.push(format!("{question}: {} {rows:?}", match (refutes, apart) {
+                (true, true) => "apart",
+                (true, false) => "PARTS A JOIN",
+                (false, _) => "not answered",
+            }));
+        }
+        let summary = format!(
+            "{} systems: {with} with shadows, by dimension {dimensions:?}; {none} with none",
+            distinct.len()
+        );
+        assert_eq!(
+            (
+                summary.as_str(),
+                answered.iter().map(String::as_str).collect::<Vec<_>>()
+            ),
+            (SUMMARY, RECORD.to_vec()),
+            "the shadows of the presented types differ from the record"
+        );
+    }
 }
