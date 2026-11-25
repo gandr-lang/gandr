@@ -27,25 +27,29 @@
 //! order. So after the last removal each rewrite lowers the multiset, and the
 //! rewrites end. Each reader runs them under its own budget.
 //!
-//! Confluence is not checked at admission. The normal form is taken
-//! by one fixed strategy (`Presentation::normalize` names it), so conversion
-//! is an equivalence and sound for the equational theory whether or not the
-//! rules are confluent; confluence makes it complete, and the producer's
-//! coincidence check is where a presentation's convergence is established for
-//! conversion. The apartness rule below does not lean on it: it joins every
-//! critical pair itself before it reads two normal forms as two elements.
+//! The rules converge at admission. [`Presentation::validate`] joins every
+//! critical pair after it reads the rules, so each term of an admitted type
+//! has one normal form. A type whose rules part is refused, and the refusal
+//! names the two rules that overlap
+//! ([`gandr_kernel_term::RuleFault::Diverges`]). Conversion
+//! takes the normal form by one fixed strategy (`Presentation::normalize`
+//! names it), and two terms are then equal exactly when their normal forms
+//! are. The apartness rule below joins every critical pair again, so it holds
+//! for a presentation that no admission read.
 //!
 //! **Alternatives.** A lexicographic path order over the ranks of the theory
 //! value would admit associativity. It lost because a swap by a symmetry does
 //! not keep a lexicographic comparison: associativity beside commutativity
-//! does not end. The multiset of the constructors is the same after a swap. A
-//! critical-pair check at admission would make conversion complete for every
-//! admitted presentation, at the price of joining every overlap of every
-//! presented type, used or not. **Reversal.** The first presented type that
-//! needs associativity takes the path order of its theory where its table
-//! holds no symmetry; the first conversion the fixed strategy separates
-//! though the theory equates moves the critical-pair check of [`apart`] to
-//! admission.
+//! does not end. The multiset of the constructors is the same after a swap.
+//! Admission with no critical-pair check, and conversion by the fixed strategy
+//! over rules that need not converge, is sound for the equational theory. It
+//! lost because conversion then does not decide each equation that the rules
+//! prove, a conversion that holds at a term can fail at an instance, and the
+//! kernel takes the convergence of a type on the word of its producer.
+//! **Reversal.** The first presented type that needs associativity takes the
+//! path order of its theory where its table holds no symmetry; a presented
+//! type whose critical pairs cost more at admission than its bound moves the
+//! check to the first apartness or conversion that reads the type.
 //!
 //! A family is one type at each index. Its rules are admitted as above, and
 //! each one keeps the index of each term ([`admit_indices`]): a constructor
@@ -990,10 +994,12 @@ fn spells(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's rules admit, a rule placing a constructor
-///   under another type's field is refused by name, and the words of the
-///   circle's loop admit where words with their rules dropped are refused.
+///   under another type's field is refused by name, two rules that rewrite one
+///   redex apart are refused at the pair that does not join, and the words of
+///   the circle's loop admit where words with their rules dropped are refused.
 /// - witness: `presented::tests::admission_reads_the_own_type_from_the_table`
 /// - witness: `gandr-kernel-core::environment::presented_tests::words_admit_only_as_their_cells_mint_them`
+/// - witness: `gandr-surface-corpus::kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::RuleNotPresentable(_) | KernelError::WordsRefused(_))))]
 #[inline]
 pub fn admit(

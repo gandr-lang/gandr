@@ -3049,6 +3049,15 @@ fn every_refusal_holding(ty: &impl Fn() -> TypeContent) -> Vec<Refusal>
                 fault: super::RULE_FAULTS[1],
             },
         },
+        Refusal::RuleNotPresentable {
+            kind: at,
+            refusal: RuleRefusal {
+                rule,
+                fault: gandr_kernel_term::RuleFault::Diverges {
+                    with: RuleIndex::from(0_usize),
+                },
+            },
+        },
         Refusal::RuleNotRespected {
             at,
             rule,

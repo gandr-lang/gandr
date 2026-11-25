@@ -3937,8 +3937,9 @@ fn read_standing(reader: &mut Reader<'_>) -> Result<Standing, CodecError>
     }
 }
 
-/// The faults a presented type's rule is refused for, in stable wire order.
-const RULE_FAULTS: [gandr_kernel_term::RuleFault; 10] = [
+/// The faults a presented type's rule is refused for that carry no field, in
+/// stable wire order.
+const RULE_FAULTS: [gandr_kernel_term::RuleFault; 11] = [
     gandr_kernel_term::RuleFault::VariableHeaded,
     gandr_kernel_term::RuleFault::UnknownConstructor,
     gandr_kernel_term::RuleFault::Arity,
@@ -3949,7 +3950,13 @@ const RULE_FAULTS: [gandr_kernel_term::RuleFault; 10] = [
     gandr_kernel_term::RuleFault::SlotMismatch,
     gandr_kernel_term::RuleFault::NotDecreasing,
     gandr_kernel_term::RuleFault::DependentSlot,
+    gandr_kernel_term::RuleFault::Undecided,
 ];
+
+/// The tag of [`gandr_kernel_term::RuleFault::Diverges`], the one fault with
+/// a field, after the tags of [`RULE_FAULTS`]. The rule that it names follows
+/// the tag.
+const RULE_DIVERGES: Tag = Tag(11);
 
 /// Why an omitted implicit is unsolved, in stable wire order.
 const UNSOLVED: [gandr_core_checker::Unsolved; 15] = [
@@ -4630,11 +4637,40 @@ field!(
     gandr_kernel_term::RuleRefusal,
     |refusal, writer| {
         writer.count(Count(usize::from(refusal.rule)))?;
-        write_listed(writer, &RULE_FAULTS, &refusal.fault)
+        match refusal.fault {
+            gandr_kernel_term::RuleFault::Diverges { with } => {
+                writer.tag(RULE_DIVERGES);
+                writer.count(Count(usize::from(with)))
+            },
+            gandr_kernel_term::RuleFault::VariableHeaded
+            | gandr_kernel_term::RuleFault::UnknownConstructor
+            | gandr_kernel_term::RuleFault::Arity
+            | gandr_kernel_term::RuleFault::NotOwnPosition
+            | gandr_kernel_term::RuleFault::NonLinear
+            | gandr_kernel_term::RuleFault::Unbound
+            | gandr_kernel_term::RuleFault::Duplicated
+            | gandr_kernel_term::RuleFault::SlotMismatch
+            | gandr_kernel_term::RuleFault::NotDecreasing
+            | gandr_kernel_term::RuleFault::DependentSlot
+            | gandr_kernel_term::RuleFault::Undecided => {
+                write_listed(writer, &RULE_FAULTS, &refusal.fault)
+            },
+        }
     },
     |reader| {
         let rule = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
-        let fault = read_listed(reader, &RULE_FAULTS)?;
+        let tag = reader.tag()?;
+        let fault = if tag == RULE_DIVERGES {
+            gandr_kernel_term::RuleFault::Diverges {
+                with: gandr_kernel_term::RuleIndex::from(reader.count()?.0),
+            }
+        }
+        else {
+            RULE_FAULTS
+                .get(usize::from(tag.0))
+                .copied()
+                .ok_or(CodecError::Corrupt)?
+        };
         Ok(gandr_kernel_term::RuleRefusal { rule, fault })
     }
 );

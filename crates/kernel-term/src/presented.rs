@@ -578,34 +578,99 @@ impl Presentation
     ///   side holds fewer constructors than the left, or as many where the
     ///   rules of that kind order the constructors: the root of the left side
     ///   of each one stands above each constructor of its right side, and no
-    ///   constructor stands above itself. A symmetry owes no decrease.
-    ///   Otherwise the first failing rule and its first fault.
+    ///   constructor stands above itself. A symmetry owes no decrease. Then the
+    ///   rules converge: [`Self::converges`] gives [`Convergence::Converges`]
+    ///   within the fuel that [`Self::apart`] spends. Otherwise the first
+    ///   failing rule and its first fault; for rules that part, the overlapped
+    ///   rule with [`RuleFault::Diverges`] naming the rule that overlaps it,
+    ///   and for fuel that runs out, the first rule with
+    ///   [`RuleFault::Undecided`].
     /// - provides: the admission check the kernel and the checker share, and
-    ///   with it termination of [`Self::normalize`]. A rule is linear and it
-    ///   copies no variable, so it removes a constructor from a term or it
-    ///   keeps the count. A rule that keeps the count lowers the multiset of
-    ///   the constructors of the term in the order above. A swap by a symmetry
-    ///   keeps the count and the multiset. So after the last removal each
-    ///   rewrite lowers the multiset, and the rewrites end.
+    ///   with it termination of [`Self::normalize`] and one normal form for
+    ///   each term. A rule is linear and it copies no variable, so it removes a
+    ///   constructor from a term or it keeps the count. A rule that keeps the
+    ///   count lowers the multiset of the constructors of the term in the order
+    ///   above. A swap by a symmetry keeps the count and the multiset. So after
+    ///   the last removal each rewrite lowers the multiset, and the rewrites
+    ///   end. The rules terminate, so joining every critical pair makes them
+    ///   confluent (the critical pair lemma with Newman's lemma).
     /// - fails: [`RuleRefusal`] naming the rule and its [`RuleFault`].
     /// - panics: none.
     ///
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Termination
+    /// - reason: one `for` loop over the finite rules, each read by bounded
+    ///   walks of its sides; then [`Self::converges`], which spends its fuel.
+    /// - measure: the rules left; the fuel.
+    ///
     /// # Cost
     /// - allocation: the binding table and use mask of each rule's variables,
-    ///   growth within the rule's sides
+    ///   growth within the rule's sides; the arities of the table and the
+    ///   critical pairs of [`Self::converges`]
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the circle's two rules pass, and one rule per fault
-    ///   is refused by that fault and no other.
+    /// - hypothesis: L3 — the circle's two rules pass, one rule per fault is
+    ///   refused by that fault and no other, two rules that rewrite one redex
+    ///   apart are refused at the first with the second named, and a rule that
+    ///   tears under a symmetry is refused at its own other order.
     /// - witness: `presented::tests::validation_names_each_fault`
-    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules().len()))]
+    /// - witness: `presented::tests::a_symmetry_keeps_apartness_of_distinct_classes_8323`
+    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules().len()
+        && match refusal.fault {
+            RuleFault::Diverges { with } => usize::from(with) < self.rules().len(),
+            RuleFault::VariableHeaded
+            | RuleFault::UnknownConstructor
+            | RuleFault::Arity
+            | RuleFault::NotOwnPosition
+            | RuleFault::NonLinear
+            | RuleFault::Unbound
+            | RuleFault::Duplicated
+            | RuleFault::SlotMismatch
+            | RuleFault::NotDecreasing
+            | RuleFault::DependentSlot
+            | RuleFault::Undecided => true,
+        }))]
     #[inline]
     pub fn validate<T>(
         &self,
         table: &[SmallVec<RuleSlot<T>, 0, Global>],
+    ) -> Result<(), RuleRefusal>
+    where
+        T: Copy + Eq,
+    {
+        self.validate_within(table, &mut RewriteFuel(DECISION_FUEL))
+    }
+
+    /// [`Self::validate`], with `fuel` for the decision of convergence.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::validate`], [`RuleFault::Undecided`] where `fuel`
+    ///   runs out in place of the fuel of [`Self::apart`].
+    /// - fails: as [`Self::validate`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: as [`Self::validate`].
+    /// - measure: the rules left; `fuel`.
+    ///
+    /// # Cost
+    /// - allocation: as [`Self::validate`]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::validate`]; the circle's rules with too
+    ///   little fuel are refused as undecided.
+    /// - witness: `presented::tests::validation_names_each_fault`
+    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules().len()))]
+    fn validate_within<T>(
+        &self,
+        table: &[SmallVec<RuleSlot<T>, 0, Global>],
+        fuel: &mut RewriteFuel,
     ) -> Result<(), RuleRefusal>
     where
         T: Copy + Eq,
@@ -663,7 +728,21 @@ impl Presentation
                 order.admit(rule).map_err(refuse)?;
             }
         }
-        Ok(())
+        let arities: SmallVec<FieldCount, 0, Global> = table
+            .iter()
+            .map(|fields| FieldCount(fields.len()))
+            .collect();
+        match self.converges(&arities, fuel) {
+            Ok(Convergence::Converges) => Ok(()),
+            Ok(Convergence::Diverges { outer, inner }) => Err(RuleRefusal {
+                rule: outer,
+                fault: RuleFault::Diverges { with: inner },
+            }),
+            Err(Exhausted) => Err(RuleRefusal {
+                rule: RuleIndex(0),
+                fault: RuleFault::Undecided,
+            }),
+        }
     }
 
     /// Check that every rule of a family keeps the index of each node, in
@@ -1208,9 +1287,12 @@ impl Presentation
     /// - hypothesis: L3 — the circle's two cancellations and the integers'
     ///   converge; two rules rewriting one redex to two normal forms diverge,
     ///   named in order; a rule overlapping itself below its root is checked; a
-    ///   table that holds a symmetry diverges at the symmetry.
+    ///   symmetry is no rule of a pair, so a table of one symmetry converges,
+    ///   and a rule that tears under a symmetry diverges at its own other
+    ///   order.
     /// - witness: `presented::tests::critical_pairs_decide_convergence`
     /// - witness: `presented::tests::a_rule_that_swaps_two_fields_is_a_symmetry`
+    /// - witness: `presented::tests::a_symmetry_keeps_apartness_of_distinct_classes_8323`
     #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
         && match ret {
             Ok(Convergence::Diverges { outer, inner }) => outer.0 < self.rules().len() && inner.0 < self.rules().len(),
@@ -2948,6 +3030,16 @@ pub enum RuleFault
     /// A variable stands at a [`RuleSlot::Dependent`] field, whose classifier
     /// is read only in its constructor's telescope.
     DependentSlot,
+    /// The rule and the rule `with` overlap at a term that they rewrite to two
+    /// normal forms, so the rules do not converge.
+    Diverges
+    {
+        /// The rule that overlaps it, by written position.
+        with: RuleIndex,
+    },
+    /// The decision of convergence ran out of its fuel before it joined each
+    /// critical pair.
+    Undecided,
 }
 
 /// The first rule of a presentation that does not present its type, and why.
@@ -3041,6 +3133,16 @@ impl core::fmt::Display for RuleRefusal
                 f,
                 "a variable of the rule at position {rule} stands at a field whose classifier \
                  is read only in the telescope of its constructor"
+            ),
+            RuleFault::Diverges { with } => write!(
+                f,
+                "the rule at position {rule}, overlapped by the rule at position {}, rewrites one \
+                 term to two normal forms",
+                usize::from(with)
+            ),
+            RuleFault::Undecided => write!(
+                f,
+                "the decision of convergence ran out of its fuel at the rule at position {rule}"
             ),
         }
     }
@@ -3892,6 +3994,25 @@ mod tests
             }),
             "the second rule's right side is two terms, and it is named by position"
         );
+        let forked = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+            PresentedRule::new([c(1), c(2), v(0)].into(), [v(0)].into()),
+            PresentedRule::new([c(1), c(2), v(0)].into(), [c(0)].into()),
+        ]));
+        assert_eq!(
+            forked.validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::Diverges {
+                    with: RuleIndex::from(1_usize),
+                },
+            }),
+            "two rules that rewrite one redex apart are refused at the first, the second named"
+        );
+        assert_eq!(
+            circle().validate_within(&table, &mut RewriteFuel::from(2_u64)),
+            refused(RuleFault::Undecided),
+            "a decision of convergence that runs out of fuel admits nothing"
+        );
     }
 
     #[test]
@@ -3910,6 +4031,10 @@ mod tests
             RuleFault::SlotMismatch,
             RuleFault::NotDecreasing,
             RuleFault::DependentSlot,
+            RuleFault::Diverges {
+                with: RuleIndex::from(3_usize),
+            },
+            RuleFault::Undecided,
         ];
         let texts = faults.map(|fault| {
             RuleRefusal {
@@ -4783,7 +4908,15 @@ mod tests
             PresentedRule::new([c(1), c(2), v(0)].into(), [v(0)].into()),
             PresentedRule::new([c(1), c(2), v(0)].into(), [c(0)].into()),
         ]));
-        assert_eq!(forked.validate(&table), Ok(()));
+        assert_eq!(
+            forked.validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::Diverges {
+                    with: RuleIndex::from(1_usize),
+                },
+            })
+        );
         assert_eq!(
             forked.converges(&arities, &mut fuel),
             Ok(Convergence::Diverges {
@@ -4799,7 +4932,15 @@ mod tests
             "`loop(loop(loop(x)))` reaches `loop(x)` either way"
         );
         let turning = one(&[c(1), c(1), v(0)], &[c(2), v(0)]);
-        assert_eq!(turning.validate(&table), Ok(()));
+        assert_eq!(
+            turning.validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::Diverges {
+                    with: RuleIndex::from(0_usize),
+                },
+            })
+        );
         assert_eq!(
             turning.converges(&arities, &mut fuel),
             Ok(Convergence::Diverges {
@@ -5102,7 +5243,16 @@ mod tests
             Ok(Convergence::Converges)
         );
         let torn = Presentation::new([first_of(), symmetry()].into_iter().collect());
-        assert_eq!(torn.validate(&table), Ok(()));
+        assert_eq!(
+            torn.validate(&table),
+            Err(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::Diverges {
+                    with: RuleIndex::from(0_usize),
+                },
+            }),
+            "admission refuses a rule that tears under the symmetry"
+        );
         assert_eq!(
             torn.converges(&arities, &mut fuel),
             Ok(Convergence::Diverges {
@@ -5225,28 +5375,29 @@ mod tests
             ),
             "a table with no symmetry matches the written order alone"
         );
-        // `bor(band(one, x), y) ==> y`, with a symmetry of `band` and of `bor`.
+        // `bor(band(one, x), zero) ==> x`, with a symmetry of `band` and of
+        // `bor`.
         let nested = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
-            PresentedRule::new([c(3), c(2), c(1), v(0), v(1)].into(), [v(1)].into()),
+            PresentedRule::new([c(3), c(2), c(1), v(0), c(0)].into(), [v(0)].into()),
             symmetry(2),
             symmetry(3),
         ]));
         assert_eq!(nested.validate(&table), Ok(()));
         for (term, order) in [
             (
-                [node(3, 2), node(2, 2), node(1, 0), leaf(8), leaf(7)],
+                [node(3, 2), node(2, 2), node(1, 0), leaf(8), node(0, 0)],
                 "the written order",
             ),
             (
-                [node(3, 2), node(2, 2), leaf(8), node(1, 0), leaf(7)],
+                [node(3, 2), node(2, 2), leaf(8), node(1, 0), node(0, 0)],
                 "the inner arguments in the other order",
             ),
             (
-                [node(3, 2), leaf(7), node(2, 2), node(1, 0), leaf(8)],
+                [node(3, 2), node(0, 0), node(2, 2), node(1, 0), leaf(8)],
                 "the outer arguments in the other order",
             ),
             (
-                [node(3, 2), leaf(7), node(2, 2), leaf(8), node(1, 0)],
+                [node(3, 2), node(0, 0), node(2, 2), leaf(8), node(1, 0)],
                 "the two pairs of arguments in the other order",
             ),
         ] {
@@ -5254,7 +5405,7 @@ mod tests
                 normal(&nested, &term),
                 (
                     Ok(Normalized::Rewritten),
-                    SmallVec::<_, 0, Global>::from_iter([leaf(7)])
+                    SmallVec::<_, 0, Global>::from_iter([leaf(8)])
                 ),
                 "{order}"
             );
