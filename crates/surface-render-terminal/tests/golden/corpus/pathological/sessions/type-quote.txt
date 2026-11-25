@@ -13,12 +13,12 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
-   ╭▸ corpus/pathological/sessions/type-quote.gandr:18:50
+   ╭▸ corpus/pathological/sessions/type-quote.gandr:18:52
    │
-17 │   def open_payload : Path[.A = Type](String >? end, String >? end) = Path.walk (fun (X) {
-   │ ┌────────────────────────────────────────────────────────────────────┘
-18 │ │   type(Path[.A = Type](type(String >? end), type(X >? end)))
-   │ │                                                  ━━━━━━━━ a session payload open over a binder
+17 │   def open_payload : Path[.A = Type] (String >? end) (String >? end) = Path.walk (fun (X) {
+   │ ┌──────────────────────────────────────────────────────────────────────┘
+18 │ │   type(Path[.A = Type] (type(String >? end)) (type(X >? end)))
+   │ │                                                    ━━━━━━━━ a session payload open over a binder
 19 │ │ }) (Path.here String) (Path.here (type(String >? end)));
    │ └───────────────────────────────────────────────────────┘ checked against `Path[.A = Type] (String >? end) (String >? end)`; while forming this type under its binder; binds _ : Type
    │
