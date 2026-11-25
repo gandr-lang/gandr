@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x79c95f4c55bb811b`
+- Grammar fingerprint: `0x58f12ec6eb01537e`
 - Rules: 161 — 160 committed, 1 internal
-- Molds: 3114
+- Molds: 3192
 - Attributes: 24
 
 ## Reading a form
@@ -108,7 +108,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`lambda_expression`](../corpus/ledger/syntax/lambda-expression.gandr) | `fun ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆* ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) BLOCK ‖ { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] BLOCK ⦆` | `expression.atom` | `lambda_expression` | admitted | Keyword, Other, VariableParam, TypeVariable, Type, Operator |
 | [`thunk_expression`](../corpus/ledger/syntax/thunk-expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? BLOCK` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? BLOCK` | `expression.atom` | `thunk_expression` | admitted | Keyword, Other, Number |
 | [`match_expression`](../corpus/ledger/syntax/match-expression.gandr) | `match EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ { \| PATTERN => EXPRESSION ⦅ \| PATTERN => EXPRESSION ⦆* } ⦆` | `expression.atom` | `match_expression` | admitted | Keyword, Operator, Other |
-| [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `handle ‹identifier› : ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Member, Number, VariableParam, Operator, FunctionDef |
+| [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `effect ‹identifier› : ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ handle ⦅ { \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* } ‖ ‹type_identifier› ⦆ ⦆? ‖ handle ‹identifier› : ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Other, Variable, Type, Member, Keyword, VariableDef, Number, VariableParam, Operator, FunctionDef |
 | [`if_expression`](../corpus/ledger/syntax/if-expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ BLOCK ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦆* BLOCK ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, Type, Member |
 | [`for_expression`](../corpus/ledger/syntax/for-expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | admitted | Keyword, VariableDef, Other, Number, Type, Member |
 | [`while_expression`](../corpus/ledger/syntax/while-expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | admitted | Keyword, Other, VariableDef, Number, Type, Member |
@@ -350,7 +350,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `lambda_expression` | expression | 35 | `fun` | — | 20 |
 | `thunk_expression` | expression | 6 | `thunk` | — | 0 |
 | `match_expression` | expression | 11 | `match` | — | 3 |
-| `handle_expression` | expression | 78 | `handle` | — | 0 |
+| `handle_expression` | expression | 156 | `effect` `handle` | — | 0 |
 | `if_expression` | expression | 102 | `if` | — | 0 |
 | `for_expression` | expression | 34 | `for` | — | 0 |
 | `while_expression` | expression | 32 | `while` | — | 0 |
@@ -435,51 +435,51 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 196 labels
+## Menus — 197 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 432 | 59 | 3 |
-| `,` | 281 | 47 | 0 |
-| `:` | 253 | 33 | 0 |
-| `type_identifier` | 221 | 34 | 2 |
-| `=` | 152 | 38 | 0 |
-| `;` | 138 | 25 | 0 |
-| `)` | 131 | 32 | 0 |
-| `(` | 127 | 31 | 5 |
-| `.` | 96 | 44 | 3 |
+| `identifier` | 448 | 59 | 3 |
+| `,` | 285 | 47 | 0 |
+| `:` | 256 | 33 | 0 |
+| `type_identifier` | 227 | 34 | 2 |
+| `=` | 157 | 38 | 0 |
+| `;` | 144 | 25 | 0 |
+| `)` | 135 | 32 | 0 |
+| `(` | 131 | 31 | 5 |
+| `.` | 98 | 44 | 3 |
 | `type_variable` | 92 | 15 | 3 |
-| `}` | 80 | 40 | 0 |
-| `]` | 78 | 40 | 0 |
-| `{` | 61 | 29 | 2 |
-| `[` | 60 | 33 | 4 |
-| `number` | 58 | 33 | 3 |
+| `}` | 82 | 40 | 0 |
+| `]` | 79 | 40 | 0 |
+| `{` | 63 | 29 | 2 |
+| `[` | 61 | 33 | 4 |
+| `number` | 59 | 33 | 3 |
 | `_` | 48 | 7 | 2 |
-| `=>` | 36 | 9 | 0 |
+| `=>` | 40 | 9 | 0 |
 | `-->` | 31 | 5 | 0 |
 | `<=>` | 27 | 5 | 0 |
 | `==>` | 27 | 5 | 0 |
 | `where` | 25 | 12 | 0 |
 | `<->` | 24 | 4 | 0 |
+| `arm_bar` | 23 | 9 | 0 |
 | `shared` | 23 | 8 | 0 |
 | `type` | 23 | 5 | 1 |
 | `consumed` | 22 | 7 | 0 |
-| `arm_bar` | 21 | 9 | 0 |
-| `module` | 18 | 13 | 2 |
+| `module` | 19 | 13 | 2 |
+| `import` | 18 | 12 | 1 |
+| `*=` | 17 | 11 | 0 |
+| `+=` | 17 | 11 | 0 |
+| `-=` | 17 | 11 | 0 |
 | `<` | 17 | 8 | 2 |
-| `import` | 17 | 12 | 1 |
+| `let` | 17 | 11 | 0 |
+| `var` | 17 | 11 | 0 |
 | `ω` | 17 | 5 | 0 |
-| `*=` | 16 | 11 | 0 |
-| `+=` | 16 | 11 | 0 |
-| `-=` | 16 | 11 | 0 |
 | `if` | 16 | 5 | 1 |
-| `let` | 16 | 11 | 0 |
 | `rule` | 16 | 5 | 2 |
-| `var` | 16 | 11 | 0 |
-| `with` | 15 | 8 | 1 |
-| `sort` | 14 | 8 | 1 |
+| `with` | 16 | 8 | 1 |
+| `sort` | 15 | 8 | 1 |
 | `->` | 13 | 8 | 1 |
 | `"` | 12 | 5 | 3 |
 | `data` | 12 | 3 | 1 |
@@ -487,14 +487,15 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `mobile` | 10 | 2 | 0 |
 | `*{` | 9 | 5 | 4 |
 | `bind` | 9 | 3 | 1 |
+| `oper` | 9 | 5 | 1 |
 | `pi+` | 8 | 2 | 0 |
 | `\|` | 8 | 8 | 2 |
-| `oper` | 7 | 5 | 1 |
 | `+` | 6 | 6 | 2 |
 | `-` | 6 | 6 | 2 |
 | `constructor` | 6 | 5 | 2 |
 | `escape_sequence` | 6 | 5 | 0 |
 | `string_fragment` | 6 | 5 | 0 |
+| `pure` | 5 | 2 | 1 |
 | `rec` | 5 | 5 | 2 |
 | `@[` | 4 | 3 | 2 |
 | `Type` | 4 | 4 | 1 |
@@ -513,7 +514,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `feed` | 3 | 2 | 0 |
 | `law` | 3 | 3 | 1 |
 | `node` | 3 | 2 | 0 |
-| `pure` | 3 | 2 | 1 |
 | `renaming` | 3 | 2 | 0 |
 | `true` | 3 | 3 | 3 |
 | `via` | 3 | 2 | 0 |
@@ -526,6 +526,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `:>` | 2 | 2 | 0 |
 | `break` | 2 | 2 | 2 |
 | `from` | 2 | 2 | 0 |
+| `handle` | 2 | 1 | 1 |
 | `hole_name` | 2 | 2 | 0 |
 | `include` | 2 | 2 | 1 |
 | `typed_number` | 2 | 2 | 2 |
@@ -577,6 +578,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `continue` | 1 | 1 | 1 |
 | `drop` | 1 | 1 | 1 |
 | `dup` | 1 | 1 | 1 |
+| `effect` | 1 | 1 | 1 |
 | `end` | 1 | 1 | 1 |
 | `exclusive` | 1 | 1 | 0 |
 | `ext` | 1 | 1 | 0 |
@@ -590,7 +592,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `fork` | 1 | 1 | 1 |
 | `fun` | 1 | 1 | 1 |
 | `glob` | 1 | 1 | 1 |
-| `handle` | 1 | 1 | 1 |
 | `hold` | 1 | 1 | 1 |
 | `i16` | 1 | 1 | 1 |
 | `i32` | 1 | 1 | 1 |
