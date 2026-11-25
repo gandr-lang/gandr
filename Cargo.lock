@@ -1154,7 +1154,6 @@ name = "gandr-boot-io"
 version = "0.0.0"
 dependencies = [
  "gandr-boot-core",
- "nix",
 ]
 
 [[package]]
@@ -1707,8 +1706,6 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-syntax",
  "gandr-theory-cellular-sheaves",
- "gandr-theory-computads",
- "gandr-theory-levitation",
  "gandr-theory-probability",
  "gandr-workflow-debt-ledger",
  "gandr-workflow-sweep",
@@ -1749,8 +1746,6 @@ version = "0.0.0"
 dependencies = [
  "allocation-counter",
  "blake3",
- "gandr-boot-core",
- "gandr-boot-io",
  "gandr-core-checker",
  "gandr-core-content",
  "gandr-core-fork",
@@ -2798,6 +2793,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "quenchant-anodized",
+ "rayon",
  "serde",
  "serde_json",
 ]
