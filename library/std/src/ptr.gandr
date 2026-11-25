@@ -67,6 +67,9 @@ pub data Memory : Type where
 pub data Ended : Type where
   /// The run ends with the memory after it.
   | Kept : (memory : Memory) --> Ended
+  /// The run ends with the word `word`, the answer of the program, and the
+  /// memory after it.
+  | Gave : (word : u64, memory : Memory) --> Ended
   /// The member `member` reaches a byte outside the extent at `address`, so
   /// the run ends there.
   | Outside : (member : String, address : u64) --> Ended
