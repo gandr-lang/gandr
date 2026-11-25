@@ -14,11 +14,11 @@
 //! | `RulesUncompleted`, `RulesDiverge` | the rule between the two normal forms of the pair that parts |
 //! | `RulesNeverComplete` | the derived rule that wraps the derived rule before it |
 //!
-//! A rule has one of three forms ([`Form`]): a permutation of the arguments
-//! of one symbol, a two-way rule that keeps the size and the variables of a
-//! term, or a different form. A permutation and a rule that keeps the size
-//! and the variables have finite classes. So the count of the two forms is
-//! the demand for a reader of a two-way rule.
+//! A rule has one of four forms ([`Form`]): an identity, a permutation of the
+//! arguments of symbols, a two-way rule that keeps the size and the
+//! variables of a term, or a different form. A permutation and a rule that
+//! keeps the size and the variables have finite classes. So the count of the
+//! two forms is the demand for a reader of a two-way rule.
 //!
 //! The sweep knows each refused rule ([`sweeps::CENSUS`]). It fails for each
 //! refused rule that the census does not hold, and for each row of the census
@@ -66,11 +66,13 @@ use quenchant_shape::shape::Maybe;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Form
 {
-    /// `f x₁ … xₙ <=> f x_σ(1) … x_σ(n)`: one symbol over distinct variables
-    /// on each side, in two orders.
+    /// The two sides are one term: `id(a) ==> id(a)`.
+    Identity,
+    /// The two sides are one term up to the order of the arguments of a
+    /// symbol at some nodes: `plus(Zero, n) <=> plus(n, Zero)`.
     Permutation,
     /// Two sides with one count of nodes and one multiset of variables, and
-    /// no permutation: `f (g x) y <=> f (g y) x`.
+    /// no permutation: `f(g(x), y) <=> f(g(y), x)`.
     KeepsSizeAndVariables,
     /// Each other rule.
     Different,
@@ -91,6 +93,7 @@ impl fmt::Display for Form
     ) -> fmt::Result
     {
         f.write_str(match *self {
+            Self::Identity => "Identity",
             Self::Permutation => "Permutation",
             Self::KeepsSizeAndVariables => "KeepsSizeAndVariables",
             Self::Different => "Different",
@@ -121,16 +124,16 @@ struct Refused
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one for each head of `term`: each variable, symbol, atom,
-///   binder and instance.
+/// - ensures: one for each head of `term`: each variable, symbol, atom, binder
+///   and instance.
 /// - panics: none.
 ///
 /// # Cost
 /// - allocation: the walk's stack, growth within the term
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a rule that keeps the size of a term and one that
-///   grows it are in the census apart.
+/// - hypothesis: L3 — a rule that keeps the size of a term and one that grows
+///   it are in the census apart.
 /// - witness: `rule_census::sweeps::each_refused_rule_has_its_row_in_the_census`
 fn size(term: &FreeTerm) -> usize
 {
@@ -151,92 +154,105 @@ fn size(term: &FreeTerm) -> usize
     count
 }
 
-/// The symbol at the root of `term` and the names of its arguments, when
-/// each argument is a variable.
+/// The spelling of `term` with the arguments of each constructor and each
+/// operation in the order of their spellings, from the leaves up: one
+/// spelling for each class of the permutations of arguments.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `Some` exactly when the root is a constructor or an operation
-///   and each argument is a variable: whether it is a constructor, its name,
-///   and the names of the variables in written order.
+/// - ensures: two terms that differ only by the order of the arguments of a
+///   constructor or an operation at some nodes give one spelling, and two that
+///   differ in a different way give two.
 /// - panics: none.
 ///
 /// # Cost
-/// - allocation: the list of names, growth within the arguments
+/// - allocation: the walk's two stacks and one spelling for each node, growth
+///   within the term
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`form`].
 /// - witness: `rule_census::sweeps::each_refused_rule_has_its_row_in_the_census`
-fn over_variables(term: &FreeTerm) -> Option<(bool, &str, Vec<&str>)>
+fn unordered(term: &FreeTerm) -> String
 {
-    let (constructor, name, args) = match term.view() {
-        TermView::Ctor { name, args } => (true, name, args),
-        TermView::Op { name, args } => (false, name, args),
-        TermView::Var(_)
-        | TermView::Results { .. }
-        | TermView::Inst { .. }
-        | TermView::Abs { .. }
-        | TermView::Atom(_)
-        | TermView::Lam { .. }
-        | TermView::Bound(_) => return None,
-    };
-    let variables = args
-        .map(|argument| match argument.view() {
-            TermView::Var(variable) => Some(variable.as_ref()),
-            TermView::Ctor { .. }
-            | TermView::Op { .. }
-            | TermView::Results { .. }
-            | TermView::Inst { .. }
-            | TermView::Abs { .. }
-            | TermView::Atom(_)
-            | TermView::Lam { .. }
-            | TermView::Bound(_) => None,
-        })
-        .collect::<Option<Vec<&str>>>()?;
-    Some((constructor, name.as_ref(), variables))
+    // Each entry is a node and whether its arguments are spelled.
+    let mut pending = Vec::from([(term.to_node(), false)]);
+    let mut built: Vec<String> = Vec::new();
+    while let Some((node, ready)) = pending.pop() {
+        let (head, args, sorted) = match node.view() {
+            TermView::Var(name) => (alloc::format!("?{}", name.as_ref()), None, false),
+            TermView::Atom(name) => (alloc::format!("@{}", name.as_ref()), None, false),
+            TermView::Bound(name) => (alloc::format!("^{}", name.as_ref()), None, false),
+            TermView::Ctor { name, args } => {
+                (alloc::format!("C{}", name.as_ref()), Some(args), true)
+            },
+            TermView::Op { name, args } => (alloc::format!("O{}", name.as_ref()), Some(args), true),
+            TermView::Inst { name, args } => {
+                (alloc::format!("I{}", name.as_ref()), Some(args), false)
+            },
+            TermView::Abs { atom, args } => {
+                (alloc::format!("A{}", atom.as_ref()), Some(args), false)
+            },
+            TermView::Lam { var, args } => (alloc::format!("L{}", var.as_ref()), Some(args), false),
+            TermView::Results { args } => (String::from("R"), Some(args), false),
+        };
+        let Some(args) = args
+        else {
+            built.push(head);
+            continue;
+        };
+        if ready {
+            let start = built.len().saturating_sub(args.len());
+            let mut spelled = built.split_off(start);
+            if sorted {
+                spelled.sort_unstable();
+            }
+            built.push(alloc::format!("{head}({})", spelled.join(",")));
+        }
+        else {
+            pending.push((node, true));
+            let at = pending.len();
+            pending.extend(args.map(|child| (child, false)));
+            if let Some(children) = pending.get_mut(at ..) {
+                children.reverse();
+            }
+        }
+    }
+    built.pop().unwrap_or_default()
 }
 
 /// The form of the rule between `left` and `right`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`Form::Permutation`] when the two sides are one symbol over
-///   distinct variables, the right side's variables a different order of the
-///   left side's; else [`Form::KeepsSizeAndVariables`] when the two sides have
-///   one count of nodes and one multiset of variables; else
-///   [`Form::Different`].
+/// - ensures: [`Form::Identity`] when the two sides are one term; else
+///   [`Form::Permutation`] when they are one term up to the order of the
+///   arguments of symbols ([`unordered`]); else [`Form::KeepsSizeAndVariables`]
+///   when the two sides have one count of nodes and one multiset of variables;
+///   else [`Form::Different`].
 /// - panics: none.
 ///
 /// # Cost
-/// - allocation: the lists of variables of both sides, growth within the
-///   sides
+/// - allocation: the spellings and the lists of variables of both sides, growth
+///   within the sides
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the census holds a permutation, a rule that keeps the
-///   size and the variables, and a rule that grows or drops a variable, each
-///   with its form.
+/// - hypothesis: L3 — the census holds an identity, a permutation at the root
+///   and below it, a rule that keeps the size and the variables, and a rule
+///   that grows or drops a variable, each with its form.
 /// - witness: `rule_census::sweeps::each_refused_rule_has_its_row_in_the_census`
 fn form(
     left: &FreeTerm,
     right: &FreeTerm,
 ) -> Form
 {
-    if let (Some((left_kind, left_name, left_variables)), Some((right_kind, right_name, right_variables))) =
-        (over_variables(left), over_variables(right))
-    {
-        let mut distinct = left_variables.clone();
-        distinct.sort_unstable();
-        distinct.dedup();
-        let mut reordered = right_variables.clone();
-        reordered.sort_unstable();
-        if left_kind == right_kind
-            && left_name == right_name
-            && distinct.len() == left_variables.len()
-            && distinct == reordered
-            && left_variables != right_variables
-        {
-            return Form::Permutation;
+    let (left_unordered, right_unordered) = (unordered(left), unordered(right));
+    if left_unordered == right_unordered {
+        return if left.to_string() == right.to_string() {
+            Form::Identity
         }
+        else {
+            Form::Permutation
+        };
     }
     let variables = |term: &FreeTerm| {
         let mut names: Vec<String> = term
@@ -259,8 +275,8 @@ fn form(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the reading of a command or of a term of the presented
-///   reading; none for a terminal or split results.
+/// - ensures: the reading of a command or of a term of the presented reading;
+///   none for a terminal or split results.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -308,9 +324,9 @@ fn between(
 ///
 /// # Specification
 /// - requires: `span` is the span of a coherence fault of `described`.
-/// - ensures: the rule whose written sides lie in `span`, its arrow as
-///   written, and its [`form`]; `…` and [`Form::Unread`] when no written rule
-///   lies there.
+/// - ensures: the rule whose written sides lie in `span`, its arrow as written,
+///   and its [`form`]; `…` and [`Form::Unread`] when no written rule lies
+///   there.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -325,8 +341,17 @@ fn written_at(
     described
         .rules()
         .find(|rule| {
-            rule.written.left.nodes.first().is_some_and(|node| inside(node.span))
-                && rule.written.right.nodes.last().is_some_and(|node| inside(node.span))
+            rule.written
+                .left
+                .nodes
+                .first()
+                .is_some_and(|node| inside(node.span))
+                && rule
+                    .written
+                    .right
+                    .nodes
+                    .last()
+                    .is_some_and(|node| inside(node.span))
         })
         .map_or_else(
             || (String::from("…"), Form::Unread),
@@ -348,8 +373,8 @@ fn written_at(
 /// # Specification
 /// - requires: the directory remains readable during the sweep.
 /// - ensures: one entry for each `.gandr` file under `directory`, reached
-///   without a symbolic link or a `target` directory, whose text holds `==>`
-///   or `<=>`.
+///   without a symbolic link or a `target` directory, whose text holds `==>` or
+///   `<=>`.
 /// - panics: when a directory, an entry or a source cannot be read.
 ///
 /// # Cost
@@ -378,8 +403,9 @@ fn sources(directory: &Path) -> Vec<(PathBuf, String)>
                     .extension()
                     .is_some_and(|extension| extension == "gandr")
             {
-                let text = fs::read_to_string(&path)
-                    .unwrap_or_else(|error| panic!("{}: the source reads: {error}", path.display()));
+                let text = fs::read_to_string(&path).unwrap_or_else(|error| {
+                    panic!("{}: the source reads: {error}", path.display())
+                });
                 if text.contains("==>") || text.contains("<=>") {
                     found.push((path, text));
                 }
@@ -394,9 +420,9 @@ fn sources(directory: &Path) -> Vec<(PathBuf, String)>
 ///
 /// # Specification
 /// - requires: `text` is the source at `path`.
-/// - ensures: one entry for each cell diagnostic whose fault is
-///   `Unoriented`, `Uncompleted`, `NeverCompletes` or `Diverges`, named by the
-///   declaration whose description holds its span.
+/// - ensures: one entry for each cell diagnostic whose fault is `Unoriented`,
+///   `Uncompleted`, `NeverCompletes` or `Diverges`, named by the declaration
+///   whose description holds its span.
 /// - panics: when no description of the module holds the span of such a
 ///   diagnostic.
 ///
@@ -444,10 +470,14 @@ fn refused(
             module
                 .described()
                 .find(|described| {
-                    described.at.span.start() <= span.start() && span.end() <= described.at.span.end()
+                    described.at.span.start() <= span.start()
+                        && span.end() <= described.at.span.end()
                 })
                 .unwrap_or_else(|| {
-                    panic!("{}: a description holds the fault at {span}", path.display())
+                    panic!(
+                        "{}: a description holds the fault at {span}",
+                        path.display()
+                    )
                 })
         };
         let (refusal, (rule, form)) = match *fault {
@@ -508,7 +538,351 @@ mod sweeps
     /// Each rule that the check refuses in a source of `corpus/` or of the
     /// crates: the source, the declaration, the refusal, the rule in the
     /// inspection notation, and its form.
-    pub(super) const CENSUS: [(&str, &str, &str, &str, Form); 0] = [];
+    pub(super) const CENSUS: [(&str, &str, &str, &str, Form); 49] = [
+        (
+            "corpus/ledger/diagnostics/RulesDiverge.gandr",
+            "Circle",
+            "RulesDiverge",
+            "Loop(x') <=> Unloop(x')",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "corpus/ledger/diagnostics/RulesNeverComplete.gandr",
+            "Extrusion",
+            "RulesNeverComplete",
+            "nu(par(par(nil, q'), q)) ==> par(par(nil, q'), q)",
+            Form::Different,
+        ),
+        (
+            "corpus/ledger/diagnostics/RulesUncompleted.gandr",
+            "Leaked",
+            "RulesUncompleted",
+            "yq <=> zero",
+            Form::Different,
+        ),
+        (
+            "corpus/ledger/diagnostics/RulesUnoriented.gandr",
+            "Marks",
+            "RulesUnoriented",
+            "Aye <=> Nay",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "corpus/model/desc/lc/syntax.gandr",
+            "LC",
+            "RulesUnoriented",
+            "subTm(subTm(b, pTm), liftTm(s)) <=> subTm(subTm(b, s), pTm)",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/data/rule-equation-unoriented.gandr",
+            "Marks",
+            "RulesUnoriented",
+            "Aye <=> Nay",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "corpus/pathological/desc/rule-keeps-count.gandr",
+            "Flicker",
+            "RulesUnoriented",
+            "dim ==> lit",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "corpus/pathological/desc/rule-symmetry-apart.gandr",
+            "Torn",
+            "RulesUncompleted",
+            "x <=> x'",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/desc/rules-diverge-below-the-root.gandr",
+            "Circle",
+            "RulesDiverge",
+            "Loop(x') <=> Unloop(x')",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "corpus/pathological/desc/rules-diverge.gandr",
+            "NatApart",
+            "RulesDiverge",
+            "Zero <=> Succ(Zero)",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/desc/rules-never-complete.gandr",
+            "Extrusion",
+            "RulesNeverComplete",
+            "nu(par(par(nil, q'), q)) ==> par(par(nil, q'), q)",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/desc/rules-never-complete.gandr",
+            "Restriction",
+            "RulesNeverComplete",
+            "nu(bind a0 . par(par(nil, q'), q)) ==> par(par(nil, q'), q)",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/desc/rules-uncompleted.gandr",
+            "NatSwapped",
+            "RulesUncompleted",
+            "plus(Zero, n') <=> plus(n', Zero)",
+            Form::Permutation,
+        ),
+        (
+            "corpus/pathological/desc/rules-unoriented.gandr",
+            "NatGrow",
+            "RulesUnoriented",
+            "grow(n) ==> Succ(grow(n))",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/desc/second-order-rules.gandr",
+            "Beta",
+            "RulesUnoriented",
+            "app(lam(t), u) <=> t(u)",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/effects/state.gandr",
+            "StateObserved",
+            "RulesUnoriented",
+            "put(s, get(bind t . k(t))) <=> put(s, k(s))",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/extension/generated.gandr",
+            "Leaked",
+            "RulesUncompleted",
+            "yq <=> zero",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/extension/zero-fiber.gandr",
+            "FreeFiber",
+            "RulesUncompleted",
+            "zero <=> x",
+            Form::Different,
+        ),
+        (
+            "corpus/pathological/include/imported-rules.gandr",
+            "Swapping",
+            "RulesUncompleted",
+            "mul(pair(x', y'), z) <=> mul(pair(y', x'), z)",
+            Form::Permutation,
+        ),
+        (
+            "corpus/pathological/include/rules-join.gandr",
+            "Swapped",
+            "RulesUncompleted",
+            "plus(one, y') <=> plus(y', one)",
+            Form::Permutation,
+        ),
+        (
+            "crates/surface-diagnostics/tests/diagnostics/unformatted/a-definition-over-a-refused-indexed-family-is-refused-by-name-8345.gandr",
+            "T",
+            "RulesUnoriented",
+            "Not(High) <=> Low",
+            Form::Different,
+        ),
+        (
+            "crates/surface-dispatcher/src/typed/fixtures/a-theory-member-answers-under-the-sorts-before-it.gandr",
+            "Cat",
+            "RulesUnoriented",
+            "id(a) ==> id(a)",
+            Form::Identity,
+        ),
+        (
+            "crates/surface-dispatcher/tests/entry/fixtures/a-declaration-over-a-refused-datatype-is-a-note-8342.gandr",
+            "Bit",
+            "RulesUnoriented",
+            "Not(High) <=> Low",
+            Form::Different,
+        ),
+        (
+            "crates/surface-dispatcher/tests/entry/fixtures/a-rules-refusal-reads-its-parting-pair-and-no-other-refusal-does.gandr",
+            "NatApart",
+            "RulesDiverge",
+            "Zero <=> Succ(Zero)",
+            Form::Different,
+        ),
+        (
+            "crates/surface-format/tests/unformatted/members.gandr",
+            "Nat",
+            "RulesUnoriented",
+            "Succ(Zero) <=> Succ(Zero)",
+            Form::Identity,
+        ),
+        (
+            "crates/surface-lowering-base/src/coincide/kept/tests/unformatted/apart.gandr",
+            "NatApart",
+            "RulesDiverge",
+            "Zero <=> Succ(Zero)",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/src/model/tests/fixtures/a-result-sort-indexed-by-an-operation-instantiates-at-each-use-model.gandr",
+            "Stepped",
+            "RulesUnoriented",
+            "step(a) ==> step(a)",
+            Form::Identity,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-data-blocks-derived-rule-is-a-pattern-rule-repeated.gandr",
+            "NatTwice",
+            "RulesUncompleted",
+            "n' <=> add(n', n')",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-data-first.gandr",
+            "Nest",
+            "RulesUncompleted",
+            "y <=> Two(Z, y)",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-data-last.gandr",
+            "Nest",
+            "RulesUncompleted",
+            "y <=> Two(Z, y)",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-theory-first.gandr",
+            "Nest",
+            "RulesUncompleted",
+            "x' <=> x",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-above-a-redex-of-a-symmetry-is-decided-theory-last.gandr",
+            "Nest",
+            "RulesUncompleted",
+            "x' <=> x",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-first.gandr",
+            "Flat",
+            "RulesUncompleted",
+            "pair(y, x) <=> pair(x, y)",
+            Form::Permutation,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-last.gandr",
+            "Flat",
+            "RulesUncompleted",
+            "pair(y, x) <=> pair(x, y)",
+            Form::Permutation,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-permuted-call-no-order-orients-is-uncompleted.gandr",
+            "Nat",
+            "RulesUncompleted",
+            "plus(Zero, n') <=> plus(n', Zero)",
+            Form::Permutation,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-pinned-rule-orients-only-the-way-it-is-pinned-commuting.gandr",
+            "Pair",
+            "RulesUnoriented",
+            "turn(a, b, c) <=> turn(b, c, a)",
+            Form::Permutation,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-rule-that-rebuilds-its-own-call-refuses-the-block.gandr",
+            "NatGrow",
+            "RulesUnoriented",
+            "grow(n) ==> Succ(grow(n))",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-rule-that-tears-under-the-symmetry-of-a-constructor-is-uncompleted-written-first.gandr",
+            "Flat",
+            "RulesUncompleted",
+            "y' <=> x'",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/a-rule-that-tears-under-the-symmetry-of-a-constructor-is-uncompleted-written-last.gandr",
+            "Flat",
+            "RulesUncompleted",
+            "x' <=> y'",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/scope-extrusion.gandr",
+            "S",
+            "RulesNeverComplete",
+            "nu(par(par(nil, q'), q)) ==> par(par(nil, q'), q)",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/two-rules-written-the-other-way-round-are-refused-at-the-later-one-all-the-same.gandr",
+            "NatApart",
+            "RulesDiverge",
+            "Succ(Zero) <=> Zero",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-data-between.gandr",
+            "Flat",
+            "RulesDiverge",
+            "Low <=> Mid",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-data-first.gandr",
+            "Flat",
+            "RulesDiverge",
+            "Mid <=> Low",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-data-last.gandr",
+            "Flat",
+            "RulesDiverge",
+            "Low <=> Mid",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/unformatted/a-third-cancellation-parts-the-circles-readings.gandr",
+            "Circle",
+            "RulesDiverge",
+            "Loop(x') <=> Unloop(x')",
+            Form::KeepsSizeAndVariables,
+        ),
+        (
+            "crates/surface-lowering/tests/coincide/unformatted/a-definition-over-a-refused-indexed-family-is-refused-by-name-8345.gandr",
+            "T",
+            "RulesUnoriented",
+            "Not(High) <=> Low",
+            Form::Different,
+        ),
+        (
+            "crates/surface-lowering/tests/coincide/unformatted/two-rules-rewriting-one-term-apart-refuse-the-block.gandr",
+            "NatApart",
+            "RulesDiverge",
+            "Zero <=> Succ(Zero)",
+            Form::Different,
+        ),
+        (
+            "crates/surface-parser/tests/acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-rule.gandr",
+            "T",
+            "RulesUnoriented",
+            "nil <=> nil",
+            Form::Identity,
+        ),
+        (
+            "crates/surface-render-terminal/tests/render/fixtures/refused-datatype-8342.gandr",
+            "Bit",
+            "RulesUnoriented",
+            "Not(High) <=> Low",
+            Form::Different,
+        ),
+    ];
 
     #[test]
     fn each_refused_rule_has_its_row_in_the_census()
@@ -533,15 +907,12 @@ mod sweeps
         let known: BTreeSet<(String, Refused)> = CENSUS
             .iter()
             .map(|&(source, declaration, refusal, rule, form)| {
-                (
-                    String::from(source),
-                    Refused {
-                        declaration: String::from(declaration),
-                        refusal,
-                        rule: String::from(rule),
-                        form,
-                    },
-                )
+                (String::from(source), Refused {
+                    declaration: String::from(declaration),
+                    refusal,
+                    rule: String::from(rule),
+                    form,
+                })
             })
             .collect();
         let row = |&(ref source, ref refused): &(String, Refused)| {
