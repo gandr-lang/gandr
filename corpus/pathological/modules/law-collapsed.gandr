@@ -9,8 +9,9 @@
 // variable is refused `UndescribedMember.LhsNotOperation`. So no rule
 // matches a path by its mere existence. The law form carries a path at a sort
 // or a host type, not a path of paths. So a law about the native identity is
-// refused `MalformedForm`. When the form grows, the first wall still holds:
-// each model proves the law, and no host admits it.
+// refused `UnstatedComponent.UnknownHead`: the carrier of its path names no
+// sort of the theory. When the form grows, the first wall still holds: each
+// model proves the law, and no host admits it.
 //
 // `CollapsedInteger` admits the law at `Integer`. `RuledK` writes the rule
 // from a variable. `WithK` states K for the native identity as a law.
@@ -42,12 +43,11 @@ theory RuledK where
   rule k : p ==> loop p;
 
 /// K for the native identity at the carrier, as a law.
-@[refuses("MalformedForm")]
+@[refuses("UnstatedComponent.UnknownHead")]
 theory WithK where
   /// The carrier.
   sort Carrier : Type;
   /// Every loop at a point is reflexivity: a path between paths.
-  law k : (a : Carrier, p : Path[.A = Carrier](a, a)) -> Path[.A = Path[.A = Carrier](a, a)](
-    p,
-    Path.here a
-  );
+  law k : (a : Carrier, p : Path[.A = Carrier] a a) -> Path[.A = Path[.A = Carrier] a a]
+    p
+    (Path.here a);
