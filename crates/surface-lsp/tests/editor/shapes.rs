@@ -403,9 +403,9 @@ pub(super) fn judged(
 /// - ensures: comments and layout are left out; each maximal run of the other
 ///   positions sharing one answer is a line: its first and last positions,
 ///   one-based `line:column`, the text from the first to the last, at most 24
-///   characters, newlines as `⏎`, then `⇒` and the answer — its text with its
-///   fences dropped, its newlines as `⏎` and the corpus directory's path as
-///   `<corpus>`, then `@` and its range — or `∅` when nothing answers.
+///   characters, newlines as `⏎`, then `⇒` and the answer — its text as
+///   [`shown_value`] writes it — then `@` and its range — or `∅` when nothing
+///   answers.
 /// - panics: when the corpus directory beside this crate does not resolve.
 ///
 /// # Adequacy
@@ -441,11 +441,7 @@ fn golden(
                 let end = spot(&shown["range"]["end"]);
                 format!(
                     "{} @{}:{}-{}:{}",
-                    value
-                        .replace("```gandr\n", "")
-                        .replace("\n```", "")
-                        .replace('\n', "⏎")
-                        .replace(corpus.as_str(), "<corpus>"),
+                    shown_value(value, &corpus),
                     start.line.saturating_add(1),
                     start.character.saturating_add(1),
                     end.line.saturating_add(1),
@@ -490,6 +486,79 @@ fn golden(
     out
 }
 
+/// The hover text `value` as a golden writes it: its fences dropped, its
+/// newlines as `⏎`, each absolute path between backticks made canonical, and
+/// the path of the repository root `root` as `<corpus>`.
+///
+/// # Specification
+/// - requires: `root` is the canonical path of the repository root.
+/// - ensures: the result holds no `root`; a path that names a file through a
+///   link or a `..` segment is written as its canonical path, so it is under
+///   `<corpus>` when its file is in the repository.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a checkout whose path is not canonical writes the golden
+///   that a canonical checkout writes.
+/// - witness: `tests::editor::shapes::a_golden_names_each_path_under_the_root_alone`
+#[spec(ensures: |ret| !ret.contains(root))]
+fn shown_value(
+    value: &str,
+    root: &str,
+) -> String
+{
+    let unfenced = value
+        .replace("```gandr\n", "")
+        .replace("\n```", "")
+        .replace('\n', "⏎");
+    let mut canonical = String::with_capacity(unfenced.len());
+    let mut rest = unfenced.as_str();
+    while let Some((before, opened)) = rest.split_once('`') {
+        canonical.push_str(before);
+        canonical.push('`');
+        let Some((span, after)) = opened.split_once('`')
+        else {
+            rest = opened;
+            break;
+        };
+        let path = Path::new(span);
+        match path.is_absolute().then(|| path.canonicalize()) {
+            Some(Ok(resolved)) => {
+                let _written = write!(canonical, "{}", resolved.display());
+            },
+            Some(Err(_)) | None => canonical.push_str(span),
+        }
+        canonical.push('`');
+        rest = after;
+    }
+    canonical.push_str(rest);
+    canonical.replace(root, "<corpus>")
+}
+
+/// The first absolute path that the golden `text` holds: a word that starts
+/// with `/` and a name, and holds a second `/`. A word ends at a space, a
+/// newline, `⏎`, a backtick, a quote or a parenthesis.
+///
+/// # Specification
+/// - ensures: a found path starts with `/` and is a word of `text`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a golden written from a checkout outside the repository
+///   root's canonical path names that path, and this finds it.
+/// - witness: `tests::editor::shapes::a_golden_names_each_path_under_the_root_alone`
+#[spec(ensures: |ret| ret.is_none_or(|held| held.starts_with('/') && text.contains(held)))]
+fn host_path(text: &str) -> Option<&str>
+{
+    text.split(|glyph: char| {
+        glyph.is_whitespace() || matches!(glyph, '⏎' | '`' | '"' | '\'' | '(' | ')')
+    })
+    .find(|word| {
+        word.strip_prefix('/').is_some_and(|tail| {
+            tail.starts_with(|glyph: char| glyph.is_alphanumeric() || matches!(glyph, '_' | '.'))
+                && tail.contains('/')
+        })
+    })
+}
+
 /// Each headline source's hovers, against the golden beside its role golden
 /// under `gandr-surface-grammar`'s `tests/highlight/`. `UPDATE_EXPECT=1`
 /// rewrites them.
@@ -512,7 +581,38 @@ fn the_headline_sources_hover_as_their_goldens()
             .find(|source| source.uri.ends_with(suffix.as_str()))
             .unwrap_or_else(|| panic!("`{path}` is a corpus source"));
         let hovers = hovered(&grammar, source, Every(1));
-        expect_file![goldens.join(path).with_extension("hover")]
-            .assert_eq(&golden(source, &hovers));
+        let text = golden(source, &hovers);
+        if let Some(held) = host_path(&text) {
+            panic!(
+                "the hover golden of `{path}` holds the absolute path `{held}`; a golden names a path under `<corpus>` alone"
+            );
+        }
+        expect_file![goldens.join(path).with_extension("hover")].assert_eq(&text);
     }
+}
+
+/// A hover path through a `..` segment is written under `<corpus>`, and a
+/// golden that names a path outside the repository root is found.
+#[test]
+fn a_golden_names_each_path_under_the_root_alone()
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("the repository root resolves");
+    let root = root.display().to_string();
+    let value = format!(
+        "```gandr\nimport \"./circle-base.gandr\";\n```\n\nReads `{root}/crates/../corpus/model/identity/circle-base.gandr`."
+    );
+    let shown = shown_value(&value, &root);
+    assert_eq!(
+        shown,
+        "import \"./circle-base.gandr\";⏎⏎Reads `<corpus>/corpus/model/identity/circle-base.gandr`."
+    );
+    assert_eq!(host_path(&shown), None);
+    assert_eq!(
+        host_path("1:1-1:9 import ⇒ Reads `/srv/checkout/corpus/model/a.gandr`. @1:1-1:9"),
+        Some("/srv/checkout/corpus/model/a.gandr")
+    );
+    assert_eq!(host_path("1:3-1:3 / ⇒ a / b @1:1-1:5"), None);
 }
