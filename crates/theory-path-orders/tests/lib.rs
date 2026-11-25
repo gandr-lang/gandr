@@ -4,4 +4,7 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod decreasing;
+
+#[cfg(test)]
 mod lpo;
