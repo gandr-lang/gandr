@@ -1870,7 +1870,7 @@ fn a_pack_of_a_sealed_sort_is_refused()
     );
     let found = rows(&lower(source.as_str()));
     let refused = Amounts::Refused(LoweringRefusal::OutOfFragment {
-        span: span_of(source.as_str(), "pack Open at Model(Counter)", 0_usize),
+        span: span_of(source.as_str(), "pack Open at Model Counter", 0_usize),
         form: FormName::from(NamedKind("pack_model_expression")),
         sort: FragmentSort::Value,
         boundary: FragmentBoundary::Unadmitted(gandr_surface_lowering::Unbuilt::PackModel),

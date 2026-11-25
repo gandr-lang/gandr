@@ -841,8 +841,8 @@ fn a_suspended_function_cong_lifts_answers_at_its_own_bytes_3787()
         let start = source.find(text).expect("the source writes the text");
         (start, start.saturating_add(text.len()))
     };
-    let thunk = spanned("thunk { fun (q : Path[.A = A](x, y)) { Path.step q g } }");
-    let function = spanned("fun (q : Path[.A = A](x, y)) { Path.step q g }");
+    let thunk = spanned("thunk { fun (q : Path[.A = A] x y) { Path.step q g } }");
+    let function = spanned("fun (q : Path[.A = A] x y) { Path.step q g }");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let at =
@@ -2250,8 +2250,8 @@ fn a_dependent_transport_lowers_to_its_telescope()
          under"
     );
     let written = source
-        .find("Path[.A = Integer](n, n)")
-        .map(|at| at.saturating_add("Path[.A = Integer](".len()));
+        .find("Path[.A = Integer] n n")
+        .map(|at| at.saturating_add("Path[.A = Integer] ".len()));
     assert_eq!(
         match module.origins().value(left) {
             Maybe::Present(origin) =>

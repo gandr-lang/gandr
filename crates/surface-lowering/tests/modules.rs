@@ -4568,7 +4568,7 @@ fn a_type_member_reads_types_and_never_values()
         include_str!("modules/unformatted/a-type-member-reads-types-and-never-values-3.gandr"),
         "P",
         "z",
-        ("z", 1_usize),
+        ("z", 2_usize),
     );
     let static_only = include_str!(
         "modules/unformatted/a-type-member-reads-types-and-never-values-static-only.gandr"

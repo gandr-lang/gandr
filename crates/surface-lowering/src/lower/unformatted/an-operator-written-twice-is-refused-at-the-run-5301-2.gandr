@@ -2,4 +2,4 @@ data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
 def ∷∷ : Integer = 1 ;
-def flipped : Path(Base, Base) = back loop ∷∷ Path.here Base ;
+def flipped : Path Base Base = back loop ∷∷ Path.here Base ;
