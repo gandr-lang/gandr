@@ -34,27 +34,30 @@
 //! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
 //! | `=` ending the line of a `let`, a `var` or an assignment in a statement block | a statement block after the `=` | `;` |
 //! | `=>` ending the line of an item that a line-leading `\|` begins: an arm, a clause | a statement block after the `=>` | `;` |
-//! | `where` ending a `match` head | an arm list | none: a line-leading `\|` separates arms |
+//! | `where` ending a `match` head or an `offer` head | an arm list | none: a line-leading `\|` separates arms |
 //! | `do` ending a line | a statement block | `;` |
+//! | `where` ending the line of `rec` | its declarations, as the source's | `;` after a declaration that a keyword begins, and one before the block's close |
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
 //! | an explicit `{` after a declaration's `where` | a declaration body | `;`, and one before the `}` |
-//! | an explicit `{` after `rec` | its declarations, as the source's | `;` after a declaration that a keyword begins, and one before the `}` |
+//! | an explicit `{` after `rec`, or after the `where` of `rec` | its declarations, as the source's | `;` after a declaration that a keyword begins, and one before the `}` |
 //! | the source | its declarations | `;` after a declaration that a keyword begins, none at the end |
 //!
-//! A `match` head that ends its line with no `where` and no `{` opens its arm
-//! list too, with an open of no width, so the parse stays whole: the lowering
-//! refuses that head by name, as a match in layout form with no `where`
-//! (`OutOfFragment.BareArms`).
+//! A `match` or `offer` head that ends its line with no `where` and no `{`
+//! opens its arm list too, with an open of no width, so the parse stays
+//! whole: the lowering refuses that head by name, as a head in layout form
+//! with no `where` (`OutOfFragment.BareArms`).
 //!
 //! The pass writes zero-width tokens the molder reads as `{`, `;` and `}`, so
 //! the grammar takes them as the braces it already knows. A body's `=` is
-//! relabeled as the block's `{`, and the body is then the braced body. A
-//! `match` head's line-final `where` is relabeled as the arms' `{` in the same
-//! way, so the grammar's `match` rule has no `where` of its own, and a `where`
-//! that does not end the head's line is no part of the match. A line-final
-//! `do` is relabeled as the `{` of a statement block in the same way, after
-//! the head of a loop, a thunk, a lambda, a fork or a migration. The grammar
+//! relabeled as the block's `{`, and the body is then the braced body. The
+//! line-final `where` of a `match` head or of an `offer` head is relabeled as
+//! the arms' `{` in the same way, so neither rule has a `where` of its own,
+//! and a `where` that does not end the head's line is no part of the form.
+//! The `where` of `rec` keeps its tile, as the `where` of a declaration does,
+//! and its block opens after it. A line-final `do` is relabeled as the `{`
+//! of a statement block, as the `where` of a `match` head is, after the head
+//! of a loop, a thunk, a lambda, a fork or a migration. The grammar
 //! has no tile for `do`, so a `do` that does not end its line, or that stands
 //! inside a bracket, is a word that no form reads.
 //!
@@ -338,11 +341,14 @@ enum Pending
         /// The indentation of the opener's line.
         indent: u32,
     },
-    /// A `where` that opens a declaration body.
+    /// A `where` that opens a declaration body, or the declarations of a
+    /// `rec` block.
     Members
     {
         /// The indentation of the opener's line.
         indent: u32,
+        /// What ends the items of the block it opens.
+        sep: Sep,
     },
     /// A `match` whose arms may open at the next line at its depth. A
     /// `where` at its depth makes it [`Pending::ArmsWhere`].
@@ -503,8 +509,8 @@ impl Plan<'_>
         Unended(wanted && item.lead != Lead::Bar && !ended)
     }
 
-    /// Close the layout block `frame` is: a declaration body's last item
-    /// takes its `;` first.
+    /// Close the layout block `frame` is: the last item of a block of
+    /// declarations takes its `;` first.
     ///
     /// # Specification
     /// trivial.
@@ -513,7 +519,7 @@ impl Plan<'_>
         frame: &Frame,
     )
     {
-        if frame.sep == Sep::Decl && bool::from(self.unended(frame)) {
+        if matches!(frame.sep, Sep::Decl | Sep::Top) && bool::from(self.unended(frame)) {
             self.place(Lexeme::LayoutSemi);
         }
         self.shut(frame.sep, frame.ending);
@@ -579,6 +585,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::a_statement_s_line_final_equals_opens_a_block_after_it`
 /// - witness: `label::layout::tests::an_arm_s_line_final_arrow_opens_a_block_after_it`
 /// - witness: `label::layout::tests::a_line_final_do_opens_a_statement_block`
+/// - witness: `label::layout::tests::a_where_opens_the_arms_of_an_offer_and_the_declarations_of_a_rec`
 /// - witness: `label::layout::tests::a_word_at_column_zero_ends_the_declaration_before_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
 #[expect(clippy::too_many_lines, reason = "one column-stack state machine")]
@@ -669,7 +676,12 @@ pub(super) fn lay_out(
         let nesting = bracket(token, bytes);
         let closer = nesting == Bracket::Close;
         let brace = token.lexeme == Lexeme::Punct && spelled == b"{";
-        let members = matches!(pending, Pending::Members { .. });
+        let members = if let Pending::Members { sep, .. } = pending {
+            Some(sep)
+        }
+        else {
+            None
+        };
         let mut opened = false;
         // The move the melder's dry run asks for at this line, and the column
         // a moved first line opens its opener's block at.
@@ -681,7 +693,7 @@ pub(super) fn lay_out(
         };
         let waiting = match pending {
             Pending::Body { indent, .. }
-            | Pending::Members { indent }
+            | Pending::Members { indent, .. }
             | Pending::Arms { indent, .. }
             | Pending::ArmsWhere { indent, .. }
             | Pending::Do { indent, .. } => Some(Column(indent)),
@@ -757,11 +769,11 @@ pub(super) fn lay_out(
                     open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
                 }
             },
-            Pending::Members { indent } => {
+            Pending::Members { indent, sep } => {
                 pending = Pending::None;
                 if line_start && !brace {
                     plan.place(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Decl, Ending::Ends);
+                    open(&mut frames, &mut plan, indent, sep, Ending::Ends);
                 }
             },
             Pending::Arms { depth, indent } => {
@@ -939,19 +951,17 @@ pub(super) fn lay_out(
                         Holds::Statements
                     },
                     // A `{` after a declaration's `where` opens a declaration
-                    // body. A `{` after `rec` holds declarations as the
-                    // source does, so a `def` in it takes its `;`.
+                    // body. A `{` after `rec`, or after the `where` of `rec`,
+                    // holds declarations as the source does, so a `def` in it
+                    // takes its `;`.
                     ..Frame::new(
                         Kind::Brace { column: None },
-                        if members {
-                            Sep::Decl
-                        }
-                        else if before_arrow == b"rec" {
+                        members.unwrap_or(if before_arrow == b"rec" {
                             Sep::Top
                         }
                         else {
                             Sep::Semi
-                        },
+                        }),
                     )
                 }
             }
@@ -973,14 +983,16 @@ pub(super) fn lay_out(
                         frame.head.defined = true;
                     }
                 },
-                b"match" => {
+                // An `offer` opens its arms as a `match` does.
+                b"match" | b"offer" => {
                     pending = Pending::Arms {
                         depth: frames.len(),
                         indent: line_indent,
                     };
                 },
                 // The `where` of a match head opens its arms, not a
-                // declaration body.
+                // declaration body. The `where` of `rec` opens declarations
+                // that end as the source's do.
                 b"where" => {
                     pending = match pending {
                         Pending::Arms { depth, indent } if depth == frames.len() => {
@@ -995,6 +1007,12 @@ pub(super) fn lay_out(
                         | Pending::ArmsWhere { .. }
                         | Pending::Do { .. } => Pending::Members {
                             indent: line_indent,
+                            sep: if before_arrow == b"rec" {
+                                Sep::Top
+                            }
+                            else {
+                                Sep::Decl
+                            },
                         },
                     };
                 },
@@ -1121,9 +1139,9 @@ pub(super) fn lay_out(
                 plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
                 plan.shut(Sep::Arms, Ending::Ends);
             },
-            Pending::Members { .. } => {
+            Pending::Members { sep, .. } => {
                 plan.place(Lexeme::LayoutOpen);
-                plan.shut(Sep::Decl, Ending::Ends);
+                plan.shut(sep, Ending::Ends);
             },
             Pending::Arms { depth, .. } if frames.len() == depth => {
                 plan.place(Lexeme::LayoutOpen);
@@ -1840,6 +1858,35 @@ mod tests
         assert_eq!(
             marked("def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"),
             "def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_where_opens_the_arms_of_an_offer_and_the_declarations_of_a_rec()
+    {
+        // The `where` ending an `offer` head is the arms' brace, as after a
+        // `match` head, and a bare `offer` head opens its arms with an open
+        // of no width, which the lowering refuses.
+        assert_eq!(
+            marked("def f() -> A {\n  offer c where\n    | l => x\n    | r => y\n}\n"),
+            "def f() -> A {\n  offer c ⟪where→{⟫\n    | l => x\n    | r => y⟪}⟫\n}\n"
+        );
+        assert_eq!(
+            marked("def f() -> A {\n  offer c\n    | l => x\n}\n"),
+            "def f() -> A {\n  offer c⟪{⟫\n    | l => x⟪}⟫\n}\n"
+        );
+        // The `where` of `rec` keeps its tile, and its block holds
+        // declarations that end as the source's do, the last one before the
+        // block's close.
+        assert_eq!(
+            marked(
+                "rec where\n  def f(x : A) -> A = g x\n  def g(x : A) -> A = f x\ndef h : A = x;\n"
+            ),
+            "rec where⟪{⟫\n  def f(x : A) -> A = g x⟪;⟫\n  def g(x : A) -> A = f x⟪;⟫⟪}⟫\ndef h : A = x;\n"
+        );
+        assert_eq!(
+            marked("rec where {\n  def f(x : A) -> A = g x\n  def g(x : A) -> A = f x\n}\n"),
+            "rec where {\n  def f(x : A) -> A = g x⟪;⟫\n  def g(x : A) -> A = f x⟪;⟫\n}\n"
         );
     }
 
