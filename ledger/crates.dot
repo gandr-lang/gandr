@@ -10,6 +10,7 @@ digraph crates {
     label = "boot";
     "boot-alloc";
     "boot-core";
+    "boot-data";
     "boot-io";
   }
   subgraph "cluster_theory" {
@@ -135,6 +136,8 @@ digraph crates {
     "workflow-sweep";
     "workflow-test-timing";
   }
+  "boot-data" -> "boot-alloc";
+  "boot-data" -> "boot-core";
   "boot-io" -> "boot-core";
   "core-checker" -> "core-checker-base";
   "core-checker" -> "core-checker-bridge";

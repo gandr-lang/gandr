@@ -798,6 +798,7 @@ INSERT INTO reference VALUES('vault:01a1ead7-6581-7f22-9479-5b0b363e80d3','core-
 INSERT INTO reference VALUES('vault:01a1ead7-6581-7f22-9479-5b0b363e80d3','runtime-emitter','widths','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-alloc','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-core','','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-data','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-io','','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','surface-lowering-expression','lower::row','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf','core-term','builtin','anchor',NULL,NULL,NULL);

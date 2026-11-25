@@ -10,7 +10,7 @@ Categories are a layering order: a crate depends only on crates of its own categ
 
 ```text
 # Categories in dependency order: each depends only on its own and those above it.
-boot      Rust with no std that the bootstrap stands on until a twin in gandr replaces it: memory from the kernel with no libc, the operations on bytes that allocate nothing, and the read of a file with no libc
+boot      Rust with no std that the bootstrap stands on until a twin in gandr replaces it: memory from the kernel with no libc, the operations on bytes that allocate nothing, a vector of bytes over the heap, and the read of a file with no libc
 theory    reusable metatheory machinery
 kernel    the certified trusted base and its substrate: levels, the term arena and sharing format, the checking machine
 core      the core language: call-by-push-value syntax, the unified context, normalization by evaluation
@@ -66,6 +66,7 @@ One row per directory: the directory and what it is.
 crates/
 ├── boot-alloc/                    whole pages from the kernel's mapping calls with no libc, and a heap in size classes over them
 ├── boot-core/                     the operations on a range of bytes that allocate nothing: copy, move, fill, compare, search, and the checks of UTF-8 and of a zero byte
+├── boot-data/                     the data of the bootstrap that allocates: a vector of bytes over the heap of boot-alloc
 ├── boot-io/                       the IO core with no libc: open a file, read it, write to a descriptor and close it, each by the crate's own system call
 ├── core-checker-base/             the faces, module run and refusals
 ├── core-checker-bridge/           kernel readmission, staging families
