@@ -204,7 +204,6 @@ use gandr_theory_cell_complexes::SequentAlphabet;
 use gandr_theory_coherent_resolutions::CellApp;
 use gandr_theory_coherent_resolutions::CompositePair;
 use gandr_theory_coherent_resolutions::Joinability;
-use gandr_theory_coherent_resolutions::NoScheme;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
 use gandr_theory_coherent_resolutions::Overlap;
 use gandr_theory_coherent_resolutions::PairJoining;
@@ -260,6 +259,7 @@ use crate::description::written::RuleOrientation;
 use crate::error::LoweringRefusal;
 
 mod kept;
+mod turned;
 
 pub(crate) use kept::Block;
 pub use kept::Decisions;
@@ -854,7 +854,11 @@ impl fmt::Display for PairTerm
 ///   not skipped as a composite pair. A pair joins also where steps of the
 ///   symmetry take one of its normal forms to the other, and its certificate
 ///   holds those steps: a pair of a rule and a symmetry, and a pair of two
-///   rules.
+///   rules. The store of the commands has no cell for the symmetry of a
+///   constructor. There, a pair of two rules of an operation whose two normal
+///   forms differ by the order of the two arguments of such a constructor is
+///   passed ([`turned::TurnedConstructors`]), and the reading over terms keeps
+///   its certificate.
 /// - panics: none.
 ///
 /// # Errors
@@ -885,16 +889,17 @@ impl fmt::Display for PairTerm
 ///   seam is uncompleted, in a `data` block and in a `theory` block; a rule
 ///   whose two orders give the two orders of one term joins the symmetry by a
 ///   step of it, in a `data` block and in a `theory` block, and two rules that
-///   give the two orders of one term join by a step of it; a rule that turned
-///   beside a symmetry joins it, two turned rules that give two constructors
-///   under the symmetry of a constructor diverge, and under the symmetry of an
-///   operation they complete to one normal form; reporting the earlier rule's
-///   span, deciding joinability first, reading the circle in the sequent store
-///   alone, normalizing by the symmetry, deciding a pair of two rules before
-///   the pairs of the symmetry, skipping a pair as composite by a redex of a
-///   symmetry, comparing the two normal forms of a pair as written beside a
-///   symmetry, or deriving a rule between two constructor terms that are not
-///   the two orders of one rule changes one of them.
+///   give the two orders of one term join by a step of it, as two rules of an
+///   operation of a `data` block and as two rules of a `theory` block; a rule
+///   that turned beside a symmetry joins it, two turned rules that give two
+///   constructors under the symmetry of a constructor diverge, and under the
+///   symmetry of an operation they complete to one normal form; reporting the
+///   earlier rule's span, deciding joinability first, reading the circle in the
+///   sequent store alone, normalizing by the symmetry, deciding a pair of two
+///   rules before the pairs of the symmetry, skipping a pair as composite by a
+///   redex of a symmetry, comparing the two normal forms of a pair as written
+///   beside a symmetry, or deriving a rule between two constructor terms that
+///   are not the two orders of one rule changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -955,8 +960,9 @@ pub(crate) fn decide<G>(
     // composite criterion's argument does not hold there, and its pairs take
     // no class.
     let idle = symmetric_cells(description, faces);
+    let mut turned = turned::TurnedConstructors::of(description);
     let mut joining = PairJoining::past(idle.clone());
-    let (commands, derived_commands) = match joining.resume(&rewriting, budget) {
+    let (commands, derived_commands) = match joining.resume_with(&rewriting, budget, &mut turned) {
         Joinability::Joined(certificates) => (certificates, Vec::new()),
         first @ (Joinability::Diverges { .. } | Joinability::Undecided(_)) => {
             let mut completing = rewriting.into_owned();
@@ -969,7 +975,7 @@ pub(crate) fn decide<G>(
             };
             let completed = reading.complete(
                 &mut completing,
-                (&mut joining, &mut NoScheme),
+                (&mut joining, &mut turned),
                 first,
                 PairTerm::Command,
                 |command| match read_command(command) {

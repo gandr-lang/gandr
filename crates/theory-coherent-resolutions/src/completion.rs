@@ -1018,6 +1018,17 @@ pub enum PairClass<A: CellAlphabet = SequentAlphabet>
     Unclassed,
 }
 
+/// What a scheme says of the two normal forms of a pair that differ.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Beside
+{
+    /// The two are one term by a relation that the store holds no cell of. The
+    /// joining passes the pair, and the pair has no certificate.
+    One,
+    /// The scheme holds no such relation, so the pair parts.
+    Apart,
+}
+
 /// Why the witness of a composite pair does not replay.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompositeRefusal
@@ -1182,6 +1193,40 @@ pub trait PairScheme<A: CellAlphabet>
         store: &CellStore<A>,
         overlap: &Overlap<A>,
     ) -> PairClass<A>;
+
+    /// What the scheme says of `left` and `right`, the two normal forms of a
+    /// critical pair of `store` that differ and that no steps of the idle
+    /// cells join.
+    ///
+    /// A reading of a block can hold a relation that its store has no cell of:
+    /// the symmetry of a constructor is a cell of the reading over terms and
+    /// of no other reading.
+    ///
+    /// # Specification
+    /// - ensures: [`Beside::One`] only where the two terms are one term by a
+    ///   relation that a different reading of the same rules decides, so that
+    ///   the pair needs no certificate over `store`; [`Beside::Apart`] where
+    ///   the scheme holds no such relation, which is the answer of a scheme
+    ///   that does not state this method.
+    /// - panics: none.
+    /// - executable: none — the answer of the provided body is a constant, and
+    ///   each implementation states its own checks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the toy alphabet, a scheme that holds the two
+    ///   orders of one sum as one term passes the pair of two rules that give
+    ///   them, with no certificate, and [`NoScheme`] parts that pair.
+    /// - witness: `completion::tests::a_scheme_joins_two_normal_forms_beside_the_store`
+    #[inline]
+    fn beside(
+        &mut self,
+        _store: &CellStore<A>,
+        _left: &A::Cmd,
+        _right: &A::Cmd,
+    ) -> Beside
+    {
+        Beside::Apart
+    }
 }
 
 /// The scheme that classes no pair, so a joining joins each pair.
@@ -1425,7 +1470,10 @@ where
     ///   [`Joinability::Undecided`] when that search spends `budget`. So two
     ///   rules whose normal forms are one term in two orders of the arguments
     ///   of a symmetry join, as a rule and the symmetry do. With no idle cell a
-    ///   pair joins where its two normal forms are one term.
+    ///   pair joins where its two normal forms are one term. A pair whose two
+    ///   normal forms differ, and that no such steps join, is passed with no
+    ///   certificate where `scheme` answers [`Beside::One`] for them
+    ///   ([`PairScheme::beside`]).
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
@@ -1453,7 +1501,9 @@ where
     ///   with no idle cell skips that pair as a composite one. A rule whose
     ///   reduct by an idle symmetry is a redex of the rule again joins the
     ///   symmetry by one step of it, in each place of the symmetry, and two
-    ///   rules that give the two orders of one sum join by one step of it.
+    ///   rules that give the two orders of one sum join by one step of it. With
+    ///   no symmetry in the store, a scheme that holds the two orders as one
+    ///   term passes that pair.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
@@ -1461,6 +1511,7 @@ where
     /// - witness: `completion::tests::a_pair_with_an_idle_cell_is_decided_before_each_other_pair`
     /// - witness: `completion::tests::a_step_of_an_idle_cell_is_no_witness_of_a_composite_pair`
     /// - witness: `completion::tests::a_pair_with_an_idle_cell_joins_by_steps_of_the_idle_cell`
+    /// - witness: `completion::tests::a_scheme_joins_two_normal_forms_beside_the_store`
     #[spec(
         captures: before = (self.decided, self.composites.len()),
         ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1 && match output {
@@ -1616,6 +1667,13 @@ where
                                 return Some(Joinability::Undecided(overlap));
                             },
                             Maybe::Absent(idle_path::Absent::Apart) => {
+                                // A relation that the store has no cell of
+                                // can hold the two as one term.
+                                if scheme.beside(store, &left.normal, &right.normal) == Beside::One
+                                {
+                                    place.within = place.within.saturating_add(1);
+                                    continue;
+                                }
                                 return Some(Joinability::Diverges {
                                     overlap,
                                     left: left.normal,
@@ -2222,6 +2280,87 @@ mod tests
                 .count(),
             1,
             "one step of the symmetry joins the two normal forms"
+        );
+    }
+
+    /// The scheme that holds the two orders of the sum of `x` and `y` as one
+    /// term.
+    struct Turns;
+
+    impl PairScheme<ToyAlphabet> for Turns
+    {
+        /// No class for each pair.
+        ///
+        /// # Specification
+        /// trivial.
+        fn class(
+            &mut self,
+            _store: &CellStore<ToyAlphabet>,
+            _overlap: &Overlap<ToyAlphabet>,
+        ) -> PairClass<ToyAlphabet>
+        {
+            PairClass::Unclassed
+        }
+
+        /// One term for the two orders of the sum, and apart for each other
+        /// two terms.
+        ///
+        /// # Specification
+        /// trivial.
+        fn beside(
+            &mut self,
+            _store: &CellStore<ToyAlphabet>,
+            left: &Toy,
+            right: &Toy,
+        ) -> Beside
+        {
+            let orders = [
+                Toy::add(Toy::var("x"), Toy::var("y")),
+                Toy::add(Toy::var("y"), Toy::var("x")),
+            ];
+            if orders.contains(left) && orders.contains(right) {
+                Beside::One
+            }
+            else {
+                Beside::Apart
+            }
+        }
+    }
+
+    #[test]
+    fn a_scheme_joins_two_normal_forms_beside_the_store()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let mut store = CellStore::<ToyAlphabet>::new();
+        // Two rules give the two orders of one sum, and the store holds no
+        // symmetry.
+        for (lhs, rhs) in [
+            (
+                Toy::succ(Toy::add(Toy::var("x"), Toy::var("y"))),
+                Toy::add(Toy::var("y"), Toy::var("x")),
+            ),
+            (Toy::succ(Toy::var("z")), Toy::var("z")),
+        ] {
+            let _id = store.insert(toy_cell(lhs, rhs));
+        }
+        let Joinability::Diverges { overlap, .. } = PairJoining::new().resume(&store, budget)
+        else {
+            panic!("with no scheme the two rules part at `succ(add(x, y))`");
+        };
+        assert_eq!(
+            (overlap.left, overlap.right),
+            (CellId::from(0_usize), CellId::from(1_usize))
+        );
+        let mut joining = PairJoining::new();
+        assert_eq!(
+            joining.resume_with(&store, budget, &mut Turns),
+            Joinability::Joined(Vec::new()),
+            "the scheme holds the two normal forms as one term, so the pair has no certificate"
+        );
+        assert_eq!(
+            usize::from(joining.decided()),
+            1,
+            "the joining reaches the pair one time"
         );
     }
 

@@ -189,6 +189,7 @@ pub use crate::boundary::TraceletEquivalence;
 pub use crate::boundary::TraceletReplay;
 pub use crate::boundary::TripleIndex;
 pub use crate::boundary::Variable;
+pub use crate::completion::Beside;
 pub use crate::completion::CompletionBudget;
 pub use crate::completion::CompletionOutcome;
 pub use crate::completion::CompositePair;
