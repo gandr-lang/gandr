@@ -74,7 +74,7 @@ def added() -> Integer =
 /// as one pair of `u32`.
 @[runs("84u32")]
 def mocked() -> u32 =
-  handle b : Boundary { quadrupled 21u32 } with {
+  effect b : Boundary { quadrupled 21u32 } handle {
     | pure(r) => r
     | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
   }

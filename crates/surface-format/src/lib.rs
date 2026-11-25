@@ -138,6 +138,7 @@
 //! | `inserted-forget` | `forget[sort C = A](m) at Model(T)`, beside a checker | `m`, beside a checker |
 //! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> B { c }`, from `def f : () -> B ; def f = thunk { c } ;` |
 //! | `joined-definition` | `def x : T ; def x = e ;`, from `def x : T = e ;` | `def x : T = e ;`, the definition directly after |
+//! | `handler-words`  | `effect c : I { M } handle { … }`, from `handle c : I { M } with { … }` | `effect c : I { M } handle { … }`, from `handle c : I { M } with { … }` |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena

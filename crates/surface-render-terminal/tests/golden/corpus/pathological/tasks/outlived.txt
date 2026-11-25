@@ -2,7 +2,7 @@ error[CapabilityEscaped]: a capability its scope introduced would outlive the sc
    ╭▸ corpus/pathological/tasks/outlived.gandr:14:5
    │
 12 │ ┌  def outlived() -> Unit =
-13 │ │┌   handle c : std.process.Exit.Eff {
+13 │ │┌   effect c : std.process.Exit.Eff {
 14 │ ││     let found = fork (task : Task.Join) {
    │ ││     ━━━ a capability outliving its scope: found `Cap {exit} at c`
 15 │ ││       send task Task.notes

@@ -2,7 +2,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╭▸ corpus/pathological/regions/held-within.gandr:18:68
    │
 15 │ ┌  def keptPastHold() -> Integer =
-16 │ │┌   handle inner : std.process.Exit.Eff {
+16 │ │┌   effect inner : std.process.Exit.Eff {
 17 │ ││     var l = 42
    │ ││     ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
 18 │ ││     let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } }
@@ -28,8 +28,8 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╭▸ corpus/pathological/regions/held-within.gandr:31:70
    │
 27 │ ┌   def keptPastNestedHold() -> Integer =
-28 │ │┌    handle outer : std.process.Exit.Eff {
-29 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
+28 │ │┌    effect outer : std.process.Exit.Eff {
+29 │ ││      let x : Integer = effect inner : std.process.Exit.Eff {
    │ ││┌─────┬─────────────────┘
    │ │││     │
    │ │││     checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while finishing the type of this

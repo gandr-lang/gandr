@@ -11,10 +11,10 @@ import std.process;
 /// `kept` forces a view inside the handler region that holds its value.
 def kept() -> Integer =
   var l = 42
-  handle inner : std.process.Exit.Eff {
+  effect inner : std.process.Exit.Eff {
     let q2 : (() -> Integer) at inner = access shared l as w { pure pure w }
     force q2
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper exit(code, k) => pure 0
   }

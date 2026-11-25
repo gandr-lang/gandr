@@ -1,7 +1,7 @@
 def held : Cap { delete };
 def row(c : Cap { read }) -> -F [Radio] String = c.read "x";
 def sent(c : Cap { read }) -> [std.fs.Eff] String = c.delete "x";
-def scoped() -> Unit = handle c : Radio { pure *{} } with { | pure(x) => pure x };
-def twice() -> Unit = handle c : std.process.Exit.Eff {
+def scoped() -> Unit = effect c : Radio { pure *{} } handle { | pure(x) => pure x };
+def twice() -> Unit = effect c : std.process.Exit.Eff {
   pure *{}
-} with { | pure(x) => pure x | pure(y) => pure y | oper exit(code, k) => k *{} };
+} handle { | pure(x) => pure x | pure(y) => pure y | oper exit(code, k) => k *{} };

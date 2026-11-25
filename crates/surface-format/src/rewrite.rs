@@ -145,6 +145,11 @@ pub enum RewriteName
     /// = c ;`, a body of statements in a block after `=`; both forms move it,
     /// as `=` is the one spelling of a body.
     BodyAfterEquals,
+    /// A capability scope's words: `handle c : I { M } with { … }` and
+    /// `effect c : I { M } handle { … }`, the clauses or the model after
+    /// `handle`; both forms write `effect … handle`, the one spelling of a
+    /// handler.
+    HandlerWords,
 }
 
 impl RewriteName
@@ -169,6 +174,7 @@ impl RewriteName
         Self::JoinedDefinition,
         Self::TypeApplication,
         Self::BodyAfterEquals,
+        Self::HandlerWords,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -198,6 +204,7 @@ impl RewriteName
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
             Self::BodyAfterEquals => "body-after-equals",
+            Self::HandlerWords => "handler-words",
         }
     }
 
@@ -284,7 +291,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 42] = [
+pub const REWRITES: [Rewrite; 44] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -625,6 +632,22 @@ pub const REWRITES: [Rewrite; 42] = [
         to: Spelling("def f() -> B = c ;"),
         enabled: Enabled::On,
     },
+    Rewrite {
+        name: RewriteName::HandlerWords,
+        direction: Direction::Sugar,
+        mold: HANDLER,
+        from: Spelling("handle c : I { M } with { … }"),
+        to: Spelling("effect c : I { M } handle { … }"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::HandlerWords,
+        direction: Direction::Desugar,
+        mold: HANDLER,
+        from: Spelling("handle c : I { M } with { … }"),
+        to: Spelling("effect c : I { M } handle { … }"),
+        enabled: Enabled::On,
+    },
 ];
 
 /// Which rewrites a form runs.
@@ -867,7 +890,9 @@ impl Band
             | "mu_session_type"
             // A lambda binds loose, as the printer binds it, so a parenthesis
             // around one as a first argument leads its juxtaposition (#5750).
-            | "lambda_expression" => Self::Loose,
+            | "lambda_expression"
+            // A handler binds as an expression of a keyword binds.
+            | "handle_expression" => Self::Loose,
             _ => Self::Atom,
         }
     }
@@ -2457,6 +2482,9 @@ impl<'source> Respelling<'_, 'source>
                 let rule = self.rule(at)?;
                 return self.after_equals(rule, parts, extent);
             },
+            (RewriteName::HandlerWords, Direction::Sugar | Direction::Desugar) => {
+                return self.handler_words(parts, extent);
+            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -3255,6 +3283,107 @@ impl<'source> Respelling<'_, 'source>
         })
     }
 
+    /// The capability scope spanning `extent` whose parts are `parts`,
+    /// written `effect … handle`: its lead `handle` written `effect`, and the
+    /// `with` before its clauses or its model written `handle`. Nothing when
+    /// its lead is no `handle`.
+    ///
+    /// # Specification
+    /// - requires: `parts` are the parts of a capability scope, in source
+    ///   order.
+    /// - ensures: `None` unless the first own tile is `handle`; otherwise the
+    ///   form as written, but for that tile written `effect` and the last own
+    ///   `with` that no own `sort` follows written `handle`. Each manifest
+    ///   sort's `with` stays.
+    /// - panics: none.
+    /// - executable: none — the clause names the roles of the form's parts,
+    ///   which no predicate on the arguments and the result states more simply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope with clauses, with a model, with no answer
+    ///   and with a manifest sort is respelled in either form, a comment kept,
+    ///   and a scope written `effect … handle` is kept.
+    /// - witness: `tests::rewrite::a_handler_is_written_effect_then_handle`
+    ///
+    /// # Cost
+    /// - allocation: the written leaves, growth within the form's parts
+    fn handler_words(
+        &mut self,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Spelled<'source>>
+    {
+        let own = |part: &Part<'source>, text: &str| matches!(part.role, Role::Own(tile) if <&str>::from(tile) == text);
+        let lead = parts
+            .iter()
+            .find(|part| matches!(part.role, Role::Own(_)))?;
+        if !own(lead, "handle") {
+            return None;
+        }
+        // The clauses' `with` is the last, and the one no `sort` follows, as
+        // the lowering reads it: each manifest sort's stands before the body.
+        let answer = parts
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|&(at, part)| {
+                own(part, "with")
+                    && !parts
+                        .get(at.saturating_add(1) ..)
+                        .and_then(|after| {
+                            after
+                                .iter()
+                                .find(|next| !matches!(next.role, Role::Comment))
+                        })
+                        .is_some_and(|next| own(next, "sort"))
+            })
+            .map(|(_, part)| part);
+        let tile = |part: &Part<'source>| {
+            part.leaves
+                .iter()
+                .find(|leaf| leaf.material == Material::Token)
+                .map(|leaf| leaf.span)
+        };
+        let lead = tile(lead)?;
+        let answer = match answer {
+            Some(part) => Some(tile(part)?),
+            None => None,
+        };
+        let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            Commented::Yes
+        }
+        else {
+            Commented::No
+        };
+        let kept = self.kept(HANDLER, parts, extent, (commented, Open::Yes));
+        let mut out = Builder {
+            leaves: Vec::with_capacity(kept.leaves.len()),
+            position: ByteSpan::new(extent.start(), extent.start()).unwrap_or(extent),
+            form: extent,
+            owner: Owner::Form(self.form),
+        };
+        for &leaf in &kept.leaves {
+            if leaf.material != Material::Token {
+                out.leaves.push(leaf);
+            }
+            else if leaf.span == lead {
+                out.token(Spelling("effect"));
+            }
+            else if Some(leaf.span) == answer {
+                out.token(Spelling("handle"));
+            }
+            else {
+                out.leaves.push(leaf);
+            }
+        }
+        self.changed = Changed::Yes;
+        Some(Spelled {
+            leaves: out.leaves,
+            rewritten: Changed::Yes,
+            ..kept
+        })
+    }
+
     /// Write the call spanning `extent` whose parts are `parts` as its one
     /// argument, answering the argument's band, when its callee names a
     /// reduct the checker would apply there; nothing when a comment stands
@@ -3975,7 +4104,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 40] = [
+const RULES: [MoldName; 41] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4016,7 +4145,11 @@ const RULES: [MoldName; 40] = [
     MoldName("def_value"),
     MoldName("module_definition_member"),
     MoldName("attributed_module_member"),
+    HANDLER,
 ];
+
+/// A capability scope: `effect c : I { M } handle { … }`.
+const HANDLER: MoldName = MoldName("handle_expression");
 
 /// The block a form reaches through a `Sort::Block` hole, read among its
 /// host's parts.

@@ -46,9 +46,9 @@ pub def eBounds() -> [std.reals.Eff] String =
 /// `std.reals.Eff` that decides each root true.
 @[runs("\"holds holds\"")]
 def eBoundsModelled() -> String =
-  handle r : std.reals.Eff {
+  effect r : std.reals.Eff {
     eBounds
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
     | oper enclose(asked, k) => k "0p0" "1p0"

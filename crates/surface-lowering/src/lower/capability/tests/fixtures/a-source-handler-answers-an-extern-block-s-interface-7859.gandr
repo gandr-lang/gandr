@@ -7,20 +7,20 @@ def quadrupled(x : u32) -> [Boundary] u32 =
   Boundary.add y y
 
 def mocked() -> u32 =
-  handle b : Boundary { quadrupled 21u32 } with {
+  effect b : Boundary { quadrupled 21u32 } handle {
     | pure(r) => r
     | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
   }
 
 def lacked() -> u32 =
-  handle b : Boundary { quadrupled 21u32 } with {
+  effect b : Boundary { quadrupled 21u32 } handle {
     | pure(r) => r
     | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
     | oper sub(p, k) => k p.0
   }
 
 def miscounted() -> u32 =
-  handle b : Boundary { quadrupled 21u32 } with {
+  effect b : Boundary { quadrupled 21u32 } handle {
     | pure(r) => r
     | oper add(k) => k 0u32
   }

@@ -3,7 +3,7 @@ theory Counter.Eff where {
   oper bump : (k : C) --> C;
 }
 def tallied() -> [n : Counter.Eff] Integer = { n.bump; pure 0 };
-def handled() -> Integer = handle c : Counter.Eff {
+def handled() -> Integer = effect c : Counter.Eff {
   tallied
-} with { | pure(x) => pure x | oper bump(k) => pure 7 };
+} handle { | pure(x) => pure x | oper bump(k) => pure 7 };
 def missing() -> -F [n : Counter.Missing] Integer = pure 0;

@@ -4,7 +4,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 15 │ ┌   def dangling() -> Integer =
 16 │ │     var x = 5
    │ │     ─── checked against `-F Integer`; while checking the scope of this hold
-17 │ │     let r : Integer = handle c : std.process.Exit.Eff {
+17 │ │     let r : Integer = effect c : std.process.Exit.Eff {
    │ │┌────┬─────────────────┘
    │ ││    │
    │ ││    checked against `-F Integer`; while finishing the type of this

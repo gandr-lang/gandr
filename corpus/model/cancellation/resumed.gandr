@@ -16,7 +16,7 @@ import std.process;
 /// A scope resumes at its exit while its task's end stays open.
 @[runs("*{}")]
 def resumed() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send task Cancel.notes
       close task
@@ -24,7 +24,7 @@ def resumed() -> Unit =
     c.exit 1
     let text = recv found
     close found
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper exit(code, k) => k *{}
   }

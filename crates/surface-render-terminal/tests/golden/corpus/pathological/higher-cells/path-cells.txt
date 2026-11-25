@@ -16,7 +16,7 @@ error[NoFiller.Omitted]: the module omits this law, and its sides do not convert
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` of the theory it handles
    ╭▸ corpus/pathological/higher-cells/path-cells.gandr:90:3
    │
-90 │ ┏   handle st : Skipping with sort S = Integer {
+90 │ ┏   effect st : Skipping with sort S = Integer {
 91 │ ┃     st.put 1
 92 │ ┃     let a = st.get
 93 │ ┃     pure a

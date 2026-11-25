@@ -44,7 +44,7 @@ def eightfold(x : u32) -> [Boundary] u32 =
 /// Rust caller's host, so the run needs none.
 @[runs("40u32")]
 def mockedEightfold() -> u32 =
-  handle b : Boundary { eightfold 5u32 } with {
+  effect b : Boundary { eightfold 5u32 } handle {
     | pure(r) => r
     | oper add(p, k) => k (u32.wrapping_add p.0 p.1)
   }

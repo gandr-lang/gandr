@@ -12,11 +12,11 @@ import std.process;
 /// `keptAtHold` forces a view before its hold ends.
 @[runs("42")]
 def keptAtHold() -> Integer =
-  handle inner : std.process.Exit.Eff {
+  effect inner : std.process.Exit.Eff {
     var l = 42
     let q : (() -> Integer) at l = access shared l as w { pure pure w }
     force q
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper exit(code, k) => pure 0
   }
@@ -24,17 +24,17 @@ def keptAtHold() -> Integer =
 /// `keptAtNestedHold` does the same with nested handlers.
 @[runs("42")]
 def keptAtNestedHold() -> Integer =
-  handle outer : std.process.Exit.Eff {
-    let x : Integer = handle inner : std.process.Exit.Eff {
+  effect outer : std.process.Exit.Eff {
+    let x : Integer = effect inner : std.process.Exit.Eff {
       var l = 42
       let q : (() -> Integer) at l = access shared l as w { pure pure w }
       force q
-    } with {
+    } handle {
       | pure(y) => pure y
       | oper exit(code, k) => pure 0
     }
     pure x
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper exit(code, k) => pure 0
   }

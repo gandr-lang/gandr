@@ -41,9 +41,9 @@ def spinFirst(x : Bool) -> Bool =
 /// does not include.
 @[refuses("TypeMismatch")]
 def tamed(x : Bool) -> Bool =
-  handle c : Partial {
+  effect c : Partial {
     spin x
-  } with {
+  } handle {
     | pure(v) => pure v
   }
 

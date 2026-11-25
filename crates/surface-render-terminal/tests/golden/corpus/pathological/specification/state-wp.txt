@@ -1,7 +1,7 @@
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
    ╭▸ corpus/pathological/specification/state-wp.gandr:12:3
    │
-12 │ ┏   handle st : StateLaws with sort S = Integer {
+12 │ ┏   effect st : StateLaws with sort S = Integer {
 13 │ ┃     let n = st.get
 14 │ ┃     st.put (n + 1)
 15 │ ┃     pure fun (q) { fun (s) { q *{} s } }

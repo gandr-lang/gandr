@@ -18,15 +18,15 @@ import std.process;
 /// call is refused naming both, never routed to the innermost.
 @[refuses("InstanceAmbiguous")]
 def ambiguous() -> Integer =
-  handle a : std.io.Console.Eff {
-    handle b : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
+    effect b : std.io.Console.Eff {
       say ()
       pure 0
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
     }
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }
@@ -52,10 +52,10 @@ def defaulted() -> [o : std.io.Console.Eff] Unit = std.io.Console.print "default
 /// of `std.io.Console.Eff`'s operations.
 @[refuses("CapabilityAmplified")]
 def misplaced() -> Integer =
-  handle p : std.process.Exit.Eff {
+  effect p : std.process.Exit.Eff {
     say[.out = p] ()
     pure 0
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper exit(code, k) => pure 1
   }

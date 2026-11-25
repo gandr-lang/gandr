@@ -13,7 +13,7 @@ import std.process;
 /// end is open.
 @[refuses("ContinuationCaptured")]
 def leaked() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send task Cancel.notes
       close task
@@ -21,7 +21,7 @@ def leaked() -> Unit =
     c.exit 1
     let text = recv found
     close found
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper exit(code, k) => force thunk { k *{} }
   }

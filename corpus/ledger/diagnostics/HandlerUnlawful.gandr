@@ -10,11 +10,11 @@ theory Stored where
 
 @[refuses("HandlerUnlawful")]
 def forgetful() -> Integer =
-  handle st : Stored with sort S = Integer {
+  effect st : Stored with sort S = Integer {
     st.put 1
     let a = st.get
     pure a
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
     | oper put(s, k) => k *{}

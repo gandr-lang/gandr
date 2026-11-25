@@ -18,9 +18,9 @@ def say(c : Cap { print }) -> [std.io.Console.Eff] Unit =
 /// Handles an exit at once with no import of `std.process`.
 @[refuses("UnresolvedTypeHead")]
 def quit() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     c.exit 1
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper exit(code, k) => pure *{}
   }

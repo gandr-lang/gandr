@@ -2,10 +2,10 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╭▸ corpus/pathological/soundness/rust-164250.gandr:37:71
    │
 32 │ ┌   def bypassed() -> Integer =
-33 │ │┌    handle outer : std.process.Exit.Eff {
+33 │ │┌    effect outer : std.process.Exit.Eff {
 34 │ ││      let q : (() -> Integer) at outer = thunk { pure 0 }
    │ ││      ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds q : (() -> Integer) at outer
-35 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
+35 │ ││      let x : Integer = effect inner : std.process.Exit.Eff {
    │ ││┌─────┬─────────────────┘
    │ │││     │
    │ │││     checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while finishing the type of this

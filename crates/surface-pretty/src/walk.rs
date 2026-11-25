@@ -12504,31 +12504,31 @@ impl Walk<'_, '_>
     ///   operands; `v.l` and `v.i`; `match v { … }` with one arm per branch but
     ///   a pruned one, its pattern `+{.i = a}`, `*{a, b}` or a constructor's
     ///   applied to its field binders, its equations unwritten, `?` for a
-    ///   constructor the source cannot name; `handle { c } with { pure(x) => r,
-    ///   oper op(p, k) => b }`, the scope's head `handle c : I`, over a theory
-    ///   `handle c : T with sort C = A …` with the sorts its manifest fixes, in
-    ///   the order written, its pieces the scope's last, and a scope a model
-    ///   answers `{ c } with N`, or `{ c }` for the one in scope, in place of
-    ///   its clauses; a returner whose row's theory entries fix sorts, `-F [a :
-    ///   T with sort C = A, I | t] B`, each fixed type a piece, then the tail's
-    ///   and the result's; `c.op(v)`; `send e v`, `recv e`, `select e l`,
-    ///   `offer e { l => c }`, `close e` and `let a = fork (a : S) { t } ; u`,
-    ///   each endpoint named by its binder; a resumption of a continuation
-    ///   binder with a returned value as the continuation's call, `k(v)`; a
-    ///   return ascribed its returner as the annotated value `(v : T)`, under a
-    ///   `pure` unless a body ends there, its two pieces the value and the type
-    ///   the visit shaped; a value ascription as `(v : T)`, its two pieces the
-    ///   value and the type, but a binary natural ascribed `Nat` as its
-    ///   numeral, `(5 : Nat)`, its one piece the type; a truth value ascribed
-    ///   `Bool` the visit writes as its word; a homed type former whose source
-    ///   records a name for its head as that name applied to its one piece,
-    ///   `std.list.List(A)`. The forms the grammar does not write — native
-    ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
-    ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
-    ///   …}` and its observation `c.0`, and a positional projection off
-    ///   anything but a name, `(v.1).0` — make the presentation approximate,
-    ///   and so does a nested computation or a returned value, which the visit
-    ///   leaves for its slot to brace.
+    ///   constructor the source cannot name; `effect { c } handle { pure(x) =>
+    ///   r, oper op(p, k) => b }`, the scope's head `effect c : I`, over a
+    ///   theory `effect c : T with sort C = A …` with the sorts its manifest
+    ///   fixes, in the order written, its pieces the scope's last, and a scope
+    ///   a model answers `{ c } handle N`, or `{ c }` for the one in scope, in
+    ///   place of its clauses; a returner whose row's theory entries fix sorts,
+    ///   `-F [a : T with sort C = A, I | t] B`, each fixed type a piece, then
+    ///   the tail's and the result's; `c.op(v)`; `send e v`, `recv e`, `select
+    ///   e l`, `offer e { l => c }`, `close e` and `let a = fork (a : S) { t }
+    ///   ; u`, each endpoint named by its binder; a resumption of a
+    ///   continuation binder with a returned value as the continuation's call,
+    ///   `k(v)`; a return ascribed its returner as the annotated value `(v :
+    ///   T)`, under a `pure` unless a body ends there, its two pieces the value
+    ///   and the type the visit shaped; a value ascription as `(v : T)`, its
+    ///   two pieces the value and the type, but a binary natural ascribed `Nat`
+    ///   as its numeral, `(5 : Nat)`, its one piece the type; a truth value
+    ///   ascribed `Bool` the visit writes as its word; a homed type former
+    ///   whose source records a name for its head as that name applied to its
+    ///   one piece, `std.list.List(A)`. The forms the grammar does not write —
+    ///   native transport, a fixpoint `rec f { c }`, a fold, any other
+    ///   resumption `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy
+    ///   product `&{c, …}` and its observation `c.0`, and a positional
+    ///   projection off anything but a name, `(v.1).0` — make the presentation
+    ///   approximate, and so does a nested computation or a returned value,
+    ///   which the visit leaves for its slot to brace.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -12577,7 +12577,7 @@ impl Walk<'_, '_>
         let mut parts = Parts::default();
         let clauses = |walk: &mut Self, parts: &mut Parts, count: crate::former::Arity| {
             let _ = parts
-                .text(" with {")
+                .text(" handle {")
                 .part(Part::Open)
                 .barred(Component::from(0_usize))
                 .text("pure(")
@@ -13218,7 +13218,7 @@ impl Walk<'_, '_>
                 }
             },
             Former::Handle { clauses: count, .. } => {
-                let _ = parts.text("handle {").body();
+                let _ = parts.text("effect {").body();
                 clauses(self, &mut parts, count);
                 writes(Production("handle_expression"), Binding::Prefix)
             },
@@ -13231,7 +13231,7 @@ impl Walk<'_, '_>
             } => {
                 let interface = self.spelled(Some(interface), Unspelled::Missing);
                 let _ = parts
-                    .text("handle ")
+                    .text("effect ")
                     .part(Part::Binder(0_usize))
                     .text(" : ")
                     .text(interface);
@@ -13248,7 +13248,7 @@ impl Walk<'_, '_>
                 match answered {
                     Some(Answered::Named(model)) => {
                         let model = self.spelled(Some(model), Unspelled::Missing);
-                        let _ = parts.text(" with ").text(model);
+                        let _ = parts.text(" handle ").text(model);
                     },
                     Some(Answered::InScope) => {},
                     None => clauses(self, &mut parts, count),
