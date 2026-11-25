@@ -146,14 +146,24 @@ pub trait Compose
         right: Doc,
     ) -> Result<Doc, PresentationError>;
 
-    /// `doc` on one line where it fits, as laid out otherwise.
+    /// `flat` on one line where it fits, `broken` otherwise: a block's
+    /// statements on one line between braces, or one statement a line.
     ///
     /// # Specification
     /// trivial.
-    fn group(
+    fn broken_or_flat(
         &mut self,
-        doc: Doc,
+        broken: Doc,
+        flat: Doc,
     ) -> Result<Doc, PresentationError>;
+
+    /// Whether the composer can take a broken alternative of
+    /// [`Self::broken_or_flat`]: a composer that writes one line takes the
+    /// flat one always, so the walk builds no broken one for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lays_out(&self) -> bool;
 }
 
 /// The document `doc` numbers among `docs`.
@@ -452,17 +462,30 @@ impl Compose for Paged<'_, '_>
         self.keep(handle)
     }
 
-    /// The builder's group.
+    /// The builder's choice of `broken` and the flattened `flat`, `broken` on
+    /// a tie.
     ///
     /// # Specification
     /// trivial.
-    fn group(
+    fn broken_or_flat(
         &mut self,
-        doc: Doc,
+        broken: Doc,
+        flat: Doc,
     ) -> Result<Doc, PresentationError>
     {
-        let handle = self.builder.group(self.handle(doc)?)?;
+        let broken = self.handle(broken)?;
+        let flattened = self.builder.flatten(self.handle(flat)?)?;
+        let handle = self.builder.choice(broken, flattened)?;
         self.keep(handle)
+    }
+
+    /// Yes: the resolver chooses each break.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lays_out(&self) -> bool
+    {
+        true
     }
 }
 
@@ -756,16 +779,27 @@ impl Compose for OneLine
         Ok(if fewer { right } else { left })
     }
 
-    /// `doc` itself: every soft line already reads flat.
+    /// `flat` itself: every soft line already reads flat, and `flat` holds
+    /// fewer breaks than `broken`.
     ///
     /// # Specification
     /// trivial.
-    fn group(
+    fn broken_or_flat(
         &mut self,
-        doc: Doc,
+        _broken: Doc,
+        flat: Doc,
     ) -> Result<Doc, PresentationError>
     {
-        Ok(doc)
+        Ok(flat)
+    }
+
+    /// No: the text stands on as few lines as it admits.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lays_out(&self) -> bool
+    {
+        false
     }
 }
 

@@ -165,10 +165,12 @@
 //! body ends is written as its value, `n`, never `return n`; any other
 //! computation there bare, `f(n)`, never `become f(n)`; a returner anywhere
 //! else is `pure v`, since a written `return` there would leave the body. A
-//! bind is `let x = c ; rest`, its statements one per line when the body
-//! does not fit; a force is `force v`, and a force at a call's head is the
-//! value it forces, `f(a, b)`, as the surface writes a call; a lambda is
-//! `fun (x) { c }` and, inside a body, a thunk is `thunk { c }`. A value
+//! bind is `let x = c ; rest` on one line, and its statements one a line
+//! with no `;` when the body does not fit; a force is `force v`, and a force
+//! at a call's head is the value it forces, `f(a, b)`, as the surface writes
+//! a call; a lambda is `fun (x) { c }` and, inside a body, a thunk is
+//! `thunk { c }`, each opened by `do` where its block breaks and ends its
+//! line (§ A block in the layout form). A value
 //! presented alone keeps its thunks opaque. Case analyses, splits,
 //! projections, fixpoints, native operations, transports and the effect and
 //! control operators are spelled as the surface writes them. What the core
@@ -187,6 +189,44 @@
 //! - **Reversal.** A ruled change that makes the written keywords canonical, or
 //!   a source that answers constructor, label and operation names, at which
 //!   point the case and projection forms gain their spellings.
+//!
+//! # A block in the layout form
+//!
+//! A block that fits its line stands between braces, its statements apart by
+//! ` ; `: `fun (x) { let y = f x ; g y }`. A block that breaks writes each
+//! statement on a line of its own with no `;`, since the layout pass places
+//! the separator at a line's end. Where the broken block also ends its line,
+//! its head ends in the layout word that opens it and no closer follows: the
+//! next line, to the left of the block, closes it.
+//!
+//! | Block | On one line | Broken, ending its line |
+//! | ----- | ----------- | ----------------------- |
+//! | a lambda, a thunk, a loop, a fork, a migration | `fun (x) { c }` | `fun (x) do` |
+//! | the arms of a `match` or an `offer` | `match e { \| p => c }` | `match e where` |
+//! | the statements of an arm | `\| p => { c }` | `\| p =>` |
+//! | a bound block of statements | `let x = { c }` | `let x =` |
+//! | a function definition's body | `def f(…) -> C = c;` | `def f(…) -> C =` |
+//!
+//! A block that a token follows on its line, an argument in its parentheses
+//! among them, keeps its braces where it breaks, its statements still one a
+//! line, and so does each form the printer writes with no layout word: a
+//! handler, a notation of the printer and an access. Both forms write the
+//! same layout: the explicit form spells each former as the core holds it,
+//! and a block's layout spells no former.
+//!
+//! Each piece the walk finishes carries two documents where they differ: one
+//! that reads as written wherever its binding admits it, and one for the end
+//! of a line. A parent takes the second only where nothing follows the piece
+//! on its line, so a layout word never opens a block that a token after it
+//! would read into.
+//!
+//! - **Alternatives.** Braces in the explicit form and the layout in the
+//!   sugared one, which makes a block's layout a sugar of a former it is not,
+//!   and leaves the formatter's two forms apart on a spelling no rewrite
+//!   between the forms moves; a layout word wherever a block breaks, which
+//!   reads the token after the block into its last statement.
+//! - **Reversal.** A ruled spelling for a block that a token follows on its
+//!   line, at which point that block takes the layout form too.
 //!
 //! # Totality
 //!
@@ -1011,8 +1051,10 @@ where
 ///   inside as [`present_value`] and [`present_type`] write them, but for
 ///   thunks. Every computation without a surface spelling here is `?`,
 ///   approximate. The body's statements break together: on one line when it
-///   fits the page, one per line otherwise, a block's body two columns in.
-///   Output has the same line-ending and width guarantees as [`present_type`].
+///   fits the page, apart by ` ; `, and otherwise one a line with no `;`, a
+///   block's body two columns in, each block that ends its line opened by its
+///   layout word with no closer (§ A block in the layout form). Output has the
+///   same line-ending and width guarantees as [`present_type`].
 /// - provides: the canonical printer of an elaborated body, which the lowering
 ///   reads back to the same term.
 /// - fails: as [`present_type`].
@@ -1141,9 +1183,10 @@ quenchant_shape::reason_enum! {
 ///   the binders of the dependent arrows before it, then `b` as
 ///   [`present_computation`] writes it at a page two columns narrower under the
 ///   context binding `x₁` to `xₙ`: ` = b;` when `b` is one line with no `;`,
-///   otherwise ` = {`, each line of `b` two columns in, then `};`. When `body`
-///   is instead `thunk { fun (x₁) { … fun (xₖ) { rec f { fun (xₖ₊₁) { … fun
-///   (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint and at
+///   otherwise ` =` and each line of `b` two columns in after it, the block the
+///   line-final `=` opens, which the next item at column zero closes. When
+///   `body` is instead `thunk { fun (x₁) { … fun (xₖ) { rec f { fun (xₖ₊₁) { …
+///   fun (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint and at
 ///   least one inside, the header opens `def rec` and `b` stands under the
 ///   context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each occurrence
 ///   of the fixpoint's own binder is written with its claim: `name[<]` where
@@ -1215,7 +1258,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
-        && presentation.as_ref().ends_with(';')
+        && (presentation.as_ref().ends_with(';') || presentation.as_ref().contains('\n'))
         && !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
     Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -1689,10 +1732,11 @@ pub fn present_whole(
         Rowed::No => appended(&mut text, &mut written, &returned),
     }
     // One line with no statement is the body alone after `=`. Any other
-    // body is a block after `=`, written a line at a time, two columns in: a
+    // body is a block that the line-final `=` opens, written a line at a
+    // time, two columns in, and the next item at column zero closes it: a
     // name moves by where its line lands.
     if spelled.as_ref().contains(['\n', ';']) {
-        text.push_str(" = {");
+        text.push_str(" =");
         let mut line_from = 0_u64;
         for line in spelled.as_ref().lines() {
             text.push('\n');
@@ -1713,7 +1757,6 @@ pub fn present_whole(
             text.push_str(line);
             line_from = line_end.saturating_add(1_u64);
         }
-        text.push_str("\n};");
     }
     else {
         text.push_str(" = ");

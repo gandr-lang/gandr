@@ -5719,6 +5719,92 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     }
 }
 
+/// A block that breaks and ends its line opens after its layout word, `do`,
+/// `where`, `=>` or `=`, its statements one a line with no `;` and no
+/// closer; a block that a token follows on its line keeps its braces, its
+/// statements still one a line; a block that fits its line stands between
+/// braces, its statements apart by `;`. Each form writes the same layout.
+#[test]
+fn a_block_that_ends_its_line_breaks_after_its_layout_word()
+{
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let kept = core.value_constant(ConstantIndex::from(0_usize));
+    // `let c = kept b ; kept c c`, each call of the binder nearest: the bound
+    // call is read twice, so no call folds it.
+    let forced = core.computation_force(kept);
+    let call = core.computation_application(forced, bound);
+    let twice = core.computation_application(call, bound);
+    let statements = core.computation_bind(call, twice);
+    // `match a { | Zero => Zero | Succ(b) => { let c = kept b ; kept c c } }`.
+    let nat = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let zero = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let returns_zero = core.computation_return(zero);
+    let field = core.computation_lambda(statements);
+    let data_case = core.computation_data_case(
+        bound,
+        returns_nat,
+        vec![returns_zero, field],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
+    let matched = core.computation_lambda(data_case);
+    // `kept (thunk { let b = kept a ; kept b })`: the thunk an argument.
+    let suspended = core.value_thunk(statements);
+    let passed = core.computation_application(forced, suspended);
+    let passing = core.computation_lambda(passed);
+    let names = [Name::from("kept"), Name::from("Nat")];
+    let mut constructors = Constructors::default();
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Succ"), Arity::from(1_usize)),
+    ]);
+    constructors.case(data_case, FamilyKey::Named(Name::from("Nat")));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    for id in [matched, passing] {
+        agrees(&core, &names, CoreNode::Computation(id));
+    }
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    for form in [Form::Sugared, Form::Explicit] {
+        for (root, page, expected) in [
+            (
+                matched,
+                wide(),
+                "fun (a) { match a { | Zero => Zero | Succ(b) => { let c = kept b ; kept c c } } }",
+            ),
+            (
+                matched,
+                PageWidth::from(24_u32),
+                "fun (a) do\n  match a where\n    | Zero => Zero\n    | Succ(b) =>\n      let c = kept b\n      kept c c",
+            ),
+            (
+                passing,
+                wide(),
+                "fun (a) { kept (thunk { let b = kept a ; kept b b }) }",
+            ),
+            (
+                passing,
+                PageWidth::from(24_u32),
+                "fun (a) do\n  kept (thunk {\n    let b = kept a\n    kept b b\n  })",
+            ),
+        ] {
+            let presented = presented_in(&source, body(root), page, form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{form:?} at {page:?}"
+            );
+        }
+    }
+}
+
 /// A case on an indexed family writes each arm under its fields alone: the
 /// equation each branch binds past them is not written, and a branch that
 /// eliminates its equation by the case of no branches is the arm the source
@@ -6122,7 +6208,7 @@ fn a_recursive_definition_spells_as_written_941()
     assert_eq!(
         declared_whole(&source, (ty, descending), narrow),
         written(
-            "def rec down(a : Nat) -> Nat = {\n  match a {\n    | Zero => a\n    | Succ(b) => down[<] b\n  }\n};"
+            "def rec down(a : Nat) -> Nat =\n  match a where\n    | Zero => a\n    | Succ(b) => down[<] b"
         ),
         "the body breaks at the page two columns in"
     );
@@ -6261,7 +6347,7 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     assert_eq!(
         declared_whole(&source, (ty_two, two), wide),
         written(
-            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat = {\n  match c { | Zero => a | Succ(d) => { let e = down[<] a b d ; b e } }\n};"
+            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat =\n  match c { | Zero => a | Succ(d) => { let e = down[<] a b d ; b e } }"
         ),
         "a call passes both uniform parameters in order, a call of one passes nothing more"
     );
@@ -7118,7 +7204,7 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
     assert!(
-        text.contains("match a {\n    | Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
+        text.contains("match a where\n    | Wide(b, c, ") && text.ends_with(", f1, g1) => g1"),
         "the branch binds its fields under the constructor: {text}"
     );
 }
@@ -8847,7 +8933,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     assert_eq!(
         spelled(&source, body(whiled)),
         faithful(Written(
-            "fun (a) {\n  while force a {\n    let e = force a ;\n    match e { | +{.0 = f} => continue | +{.1 = f} => return *{} }\n  } ;\n  *{}\n}"
+            "fun (a) do\n  while force a { let e = force a ; match e { | +{.0 = f} => continue | +{.1 = f} => return *{} } }\n  *{}"
         )),
         "a while a rest follows writes its exits"
     );
