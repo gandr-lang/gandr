@@ -1,4 +1,4 @@
-// The `gandr` dialect: the transitions of the L machine that the first slice
+// The `gandr` dialect: the transitions of the L machine that the lowering
 // uses, each one an operation. `dialect.cpp` gives each operation its
 // verifier and its one lowering to the `llvm` dialect.
 //
