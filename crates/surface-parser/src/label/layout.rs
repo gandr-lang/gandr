@@ -39,6 +39,7 @@
 //! | `do` ending a line | a statement block | `;` |
 //! | `then` ending the line of an `if` head | the conditional's first block | `;` |
 //! | `else` ending a line | the conditional's last block, after the `else` | `;` |
+//! | `handle` ending a line | a handler's clauses, after the `handle` | none: a line-leading `\|` separates clauses |
 //! | `where` ending the line of `rec` | its declarations, as the source's | `;` after a declaration that a keyword begins, and one before the block's close |
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
@@ -81,6 +82,12 @@
 //! tile, as the `=>` of an arm does. A line that starts with `else` closes the
 //! blocks right of it by the column rule, and it continues the conditional:
 //! the pass writes no separator before it.
+//!
+//! A handler opens its body by the `do` of its `effect` head. Its `handle`
+//! keeps its tile, and when it ends its line, the clauses open after it as
+//! an arm list. A line that starts with the `handle` of an `effect` above it
+//! closes the body by the column rule and continues the handler, as a line
+//! that starts with `else` continues the conditional.
 //!
 //! The `=` of a `def` with no `->` result keeps its tile in the same way, and
 //! the `def` takes its `;` after the block's close. A `;` that ends the last
@@ -202,6 +209,21 @@ enum Lead
     Keyword,
 }
 
+/// The form whose next word the current item waits for.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Awaits
+{
+    /// No form.
+    #[default]
+    Nothing,
+    /// The item has met an `if`, so a `then` that ends its line opens the
+    /// first block of the conditional.
+    Then,
+    /// The item has met an `effect` whose clauses no line has opened yet, so
+    /// a line that starts with `handle` continues it.
+    Handle,
+}
+
 /// What the current item of a block has read.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Head
@@ -214,9 +236,8 @@ struct Head
     lead: Lead,
     /// The item holds a token after its first.
     more: bool,
-    /// The item has met an `if`, so a `then` that ends its line opens the
-    /// first block of the conditional.
-    conditional: bool,
+    /// The form whose next word the item waits for.
+    awaits: Awaits,
 }
 
 impl Head
@@ -370,6 +391,13 @@ enum Pending
     /// The `=>` of an arm or of a clause, or an `else`. It keeps its tile, and
     /// its block opens after it.
     Kept
+    {
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+    /// A `handle` that ends its line, after the body of an `effect`. It keeps
+    /// its tile, and the clauses open after it, with no separator, as arms do.
+    Clauses
     {
         /// The indentation of the opener's line.
         indent: u32,
@@ -620,6 +648,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::a_line_final_do_opens_a_statement_block`
 /// - witness: `label::layout::tests::a_def_s_line_final_equals_opens_a_block_with_or_with_no_arrow`
 /// - witness: `label::layout::tests::a_then_and_an_else_open_the_blocks_of_a_conditional`
+/// - witness: `label::layout::tests::an_effect_s_do_and_a_line_final_handle_open_a_handler`
 /// - witness: `label::layout::tests::a_where_opens_the_arms_of_an_offer_and_the_declarations_of_a_rec`
 /// - witness: `label::layout::tests::a_word_at_column_zero_ends_the_declaration_before_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
@@ -688,11 +717,11 @@ pub(super) fn lay_out(
         let punct = matches!(token.lexeme, Lexeme::Punct);
         // A token inside a line that is no bracket, no punctuation and no
         // opener's keyword, met while no opener waits, only extends the item.
-        // Each such keyword is two, three, four or five bytes long.
+        // Each such keyword is two to six bytes long.
         if !line_start
             && !punct
             && (token.lexeme != Lexeme::LowerWord
-                || !matches!(token.end.saturating_sub(token.start), 2 ..= 5))
+                || !matches!(token.end.saturating_sub(token.start), 2 ..= 6))
             && !restart
             && pending == Pending::None
             && let Some(frame) = frames.last_mut()
@@ -753,6 +782,7 @@ pub(super) fn lay_out(
             Pending::Statement { .. }
             | Pending::Definition { .. }
             | Pending::Kept { .. }
+            | Pending::Clauses { .. }
             | Pending::None => None,
         };
         let below = step
@@ -840,6 +870,13 @@ pub(super) fn lay_out(
                 if line_start && !brace && column > indent {
                     plan.place(Lexeme::LayoutOpen);
                     open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
+                }
+            },
+            Pending::Clauses { indent } => {
+                pending = Pending::None;
+                if line_start && !brace && column > indent {
+                    plan.place(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Arms, Ending::Ends);
                 }
             },
             Pending::Members { indent, sep } => {
@@ -930,8 +967,9 @@ pub(super) fn lay_out(
                 plan.close(&frame);
                 frames.pop();
             }
-            // A line that starts with `else` continues the form above it: it
-            // ends no item and begins none.
+            // A line that starts with `else`, or with the `handle` of an
+            // `effect` above it, continues the form above it: it ends no item
+            // and begins none.
             if let Some(&frame) = frames.last()
                 && match frame.kind {
                     Kind::Layout { column: block } => block == column || stays,
@@ -941,7 +979,9 @@ pub(super) fn lay_out(
                     Kind::Brace { column: None } | Kind::Plain => false,
                 }
                 && !closer
-                && !(token.lexeme == Lexeme::LowerWord && spelled == b"else")
+                && !(token.lexeme == Lexeme::LowerWord
+                    && (spelled == b"else"
+                        || (spelled == b"handle" && frame.head.awaits == Awaits::Handle)))
             {
                 if frame.sep != Sep::Arms
                     && !after_attribute
@@ -1081,6 +1121,7 @@ pub(super) fn lay_out(
                         | Pending::Statement { .. }
                         | Pending::Definition { .. }
                         | Pending::Kept { .. }
+                        | Pending::Clauses { .. }
                         | Pending::ArmsWhere { .. }
                         | Pending::Do { .. } => Pending::Members {
                             indent: line_indent,
@@ -1104,11 +1145,14 @@ pub(super) fn lay_out(
                 },
                 b"if" => {
                     if let Some(frame) = frames.last_mut() {
-                        frame.head.conditional = true;
+                        frame.head.awaits = Awaits::Then;
                     }
                 },
                 b"then" => {
-                    if frames.last().is_some_and(|frame| frame.head.conditional) {
+                    if frames
+                        .last()
+                        .is_some_and(|frame| frame.head.awaits == Awaits::Then)
+                    {
                         pending = Pending::Do {
                             at: index,
                             indent: line_indent,
@@ -1121,6 +1165,23 @@ pub(super) fn lay_out(
                     pending = Pending::Kept {
                         indent: line_indent,
                     };
+                },
+                b"effect" => {
+                    if let Some(frame) = frames.last_mut() {
+                        frame.head.awaits = Awaits::Handle;
+                    }
+                },
+                // A `handle` keeps its tile. The clauses open after it, when
+                // the `handle` ends its line.
+                b"handle" => {
+                    if let Some(frame) = frames.last_mut() {
+                        frame.head.awaits = Awaits::Nothing;
+                    }
+                    if pending == Pending::None {
+                        pending = Pending::Clauses {
+                            indent: line_indent,
+                        };
+                    }
                 },
                 _ => {},
             }
@@ -1272,6 +1333,7 @@ pub(super) fn lay_out(
             | Pending::Statement { .. }
             | Pending::Definition { .. }
             | Pending::Kept { .. }
+            | Pending::Clauses { .. }
             | Pending::None => {},
         }
     }
@@ -1643,7 +1705,7 @@ fn next_line(
             (token.lexeme, spelled(token)),
             (
                 Lexeme::LowerWord,
-                b"where" | b"match" | b"do" | b"then" | b"else"
+                b"where" | b"match" | b"do" | b"then" | b"else" | b"handle"
             ) | (Lexeme::Punct, b"=" | b"," | b"->" | b"=>" | b":")
         )
     };
@@ -2146,6 +2208,40 @@ mod tests
         assert_eq!(
             marked("def three : Integer = g\n  3;\n"),
             "def three : Integer = g\n  3;\n"
+        );
+    }
+
+    #[test]
+    fn an_effect_s_do_and_a_line_final_handle_open_a_handler()
+    {
+        // The `do` of an `effect` head opens the body. A line that starts
+        // with `handle` closes the body and continues the handler, and a
+        // `handle` that ends its line opens the clauses, which take no
+        // separator, as arms do.
+        assert_eq!(
+            marked(
+                "def f() -> Unit =\n  effect r : T do\n    let b = r.alloc 4\n    r.free b\n  handle\n    | pure(x) => pure x\n    | oper free(b, k) => k *{}\n"
+            ),
+            "def f() -> Unit ⟪=→{⟫\n  effect r : T ⟪do→{⟫\n    let b = r.alloc 4⟪;⟫\n    r.free b⟪}⟫\n  handle⟪{⟫\n    | pure(x) => pure x\n    | oper free(b, k) => k *{}⟪}⟫⟪}⟫\n"
+        );
+        // A handler by name needs no block, and the close of the clauses
+        // ends no statement.
+        assert_eq!(
+            marked("def f() -> Integer =\n  effect st : S.Eff do\n    st.get\n  handle Counting\n"),
+            "def f() -> Integer ⟪=→{⟫\n  effect st : S.Eff ⟪do→{⟫\n    st.get⟪}⟫\n  handle Counting⟪}⟫\n"
+        );
+        assert_eq!(
+            marked(
+                "def f() -> Unit =\n  effect r : T do\n    r.free b\n  handle\n    | pure(x) => pure x\n  g\n"
+            ),
+            "def f() -> Unit ⟪=→{⟫\n  effect r : T ⟪do→{⟫\n    r.free b⟪}⟫\n  handle⟪{⟫\n    | pure(x) => pure x⟪}⟫⟪;⟫\n  g⟪}⟫\n"
+        );
+        // A `handle` at the column of the body is a statement of the body.
+        assert_eq!(
+            marked(
+                "def f() -> Unit =\n  effect r : T do\n    r.free b\n    handle\n      | pure(x) => pure x\n"
+            ),
+            "def f() -> Unit ⟪=→{⟫\n  effect r : T ⟪do→{⟫\n    r.free b⟪;⟫\n    handle⟪{⟫\n      | pure(x) => pure x⟪}⟫⟪}⟫⟪}⟫\n"
         );
     }
 
