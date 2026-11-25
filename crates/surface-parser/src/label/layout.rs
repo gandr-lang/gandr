@@ -35,6 +35,7 @@
 //! | `=` ending the line of a `let`, a `var` or an assignment in a statement block | a statement block after the `=` | `;` |
 //! | `=>` ending the line of an item that a line-leading `\|` begins: an arm, a clause | a statement block after the `=>` | `;` |
 //! | `where` ending a `match` head | an arm list | none: a line-leading `\|` separates arms |
+//! | `do` ending a line | a statement block | `;` |
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
 //! | an explicit `{` after a declaration's `where` | a declaration body | `;`, and one before the `}` |
@@ -51,7 +52,11 @@
 //! relabeled as the block's `{`, and the body is then the braced body. A
 //! `match` head's line-final `where` is relabeled as the arms' `{` in the same
 //! way, so the grammar's `match` rule has no `where` of its own, and a `where`
-//! that does not end the head's line is no part of the match.
+//! that does not end the head's line is no part of the match. A line-final
+//! `do` is relabeled as the `{` of a statement block in the same way, after
+//! the head of a loop, a thunk, a lambda, a fork or a migration. The grammar
+//! has no tile for `do`, so a `do` that does not end its line, or that stands
+//! inside a bracket, is a word that no form reads.
 //!
 //! A statement's `=` keeps its tile, because the grammar reads the block as
 //! the expression after it. The pass writes an open of no width after the `=`
@@ -226,7 +231,8 @@ impl Head
     }
 }
 
-/// Whether an explicit `}` ends the item that it stands in.
+/// Whether the close of a block, an explicit `}` or a virtual one, ends the
+/// item that the block stands in.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum Ending
 {
@@ -234,7 +240,7 @@ enum Ending
     #[default]
     Ends,
     /// It continues the item, as the `}` of a block expression after `=`
-    /// does.
+    /// does, and the close of a block after a `do`.
     Continues,
 }
 
@@ -262,7 +268,7 @@ struct Frame
     head: Head,
     /// How many items it has begun.
     items: u32,
-    /// Whether its `}` ends the item that the brace stands in.
+    /// Whether its close ends the item that the block stands in.
     ending: Ending,
     /// What its items are, when it is an explicit `{`.
     holds: Holds,
@@ -352,6 +358,16 @@ enum Pending
     ArmsWhere
     {
         /// The `where`'s index.
+        at: usize,
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+    /// A `do`, at its index in the stream: when it ends its line, it becomes
+    /// the open of a statement block, as a `match` head's `where` becomes the
+    /// arms' open.
+    Do
+    {
+        /// The `do`'s index.
         at: usize,
         /// The indentation of the opener's line.
         indent: u32,
@@ -460,9 +476,9 @@ impl Plan<'_>
         let ended = match self.prev {
             Prev::Start => true,
             Prev::Virtual(lexeme) => matches!(lexeme, Lexeme::LayoutOpen | Lexeme::LayoutSemi),
-            // An arm list closes inside an expression, so its close ends no
-            // declaration.
-            Prev::Closed(sep) => declaration && sep != Sep::Arms,
+            // An arm list closes inside an expression, and so does a block
+            // that an expression opens, so neither close ends a declaration.
+            Prev::Closed(sep) => declaration && sep != Sep::Arms && self.ending == Ending::Ends,
             // A `}` ends a declaration, as a brace body after its head does.
             // It ends no statement: the statement ends at its line end, as
             // after any other token (#8326).
@@ -500,20 +516,23 @@ impl Plan<'_>
         if frame.sep == Sep::Decl && bool::from(self.unended(frame)) {
             self.place(Lexeme::LayoutSemi);
         }
-        self.shut(frame.sep);
+        self.shut(frame.sep, frame.ending);
     }
 
-    /// Write the virtual close of a layout block whose items `sep` ends.
+    /// Write the virtual close of a layout block whose items `sep` ends, and
+    /// whose close `ending` reads as a `}` of a brace does.
     ///
     /// # Specification
     /// trivial.
     fn shut(
         &mut self,
         sep: Sep,
+        ending: Ending,
     )
     {
         self.place(Lexeme::LayoutClose);
         self.prev = Prev::Closed(sep);
+        self.ending = ending;
     }
 }
 
@@ -525,8 +544,9 @@ impl Plan<'_>
 /// - requires: `tokens` are [`super::label`]'s tokens of `bytes` before layout,
 ///   arm bars marked, and `moves` ascend by line.
 /// - ensures: every token of `tokens` stays, in order, with its span; a `=`
-///   that opens a body is relabeled [`Lexeme::LayoutOpen`]; every other added
-///   token is a zero-width [`Lexeme::LayoutOpen`], [`Lexeme::LayoutSemi`] or
+///   that opens a body, a `where` that opens arms and a `do` that opens a block
+///   are relabeled [`Lexeme::LayoutOpen`]; every other added token is a
+///   zero-width [`Lexeme::LayoutOpen`], [`Lexeme::LayoutSemi`] or
 ///   [`Lexeme::LayoutClose`] at the end of the significant token before it, so
 ///   the spans still tile the source. A line whose first token starts at a
 ///   move's line, and which neither resets nor closes a bracket, closes only
@@ -558,6 +578,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
 /// - witness: `label::layout::tests::a_statement_s_line_final_equals_opens_a_block_after_it`
 /// - witness: `label::layout::tests::an_arm_s_line_final_arrow_opens_a_block_after_it`
+/// - witness: `label::layout::tests::a_line_final_do_opens_a_statement_block`
 /// - witness: `label::layout::tests::a_word_at_column_zero_ends_the_declaration_before_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
 #[expect(clippy::too_many_lines, reason = "one column-stack state machine")]
@@ -625,10 +646,11 @@ pub(super) fn lay_out(
         let punct = matches!(token.lexeme, Lexeme::Punct);
         // A token inside a line that is no bracket, no punctuation and no
         // opener's keyword, met while no opener waits, only extends the item.
+        // Each such keyword is two, three or five bytes long.
         if !line_start
             && !punct
             && (token.lexeme != Lexeme::LowerWord
-                || !matches!(token.end.saturating_sub(token.start), 3 | 5))
+                || !matches!(token.end.saturating_sub(token.start), 2 | 3 | 5))
             && !restart
             && pending == Pending::None
             && let Some(frame) = frames.last_mut()
@@ -661,7 +683,8 @@ pub(super) fn lay_out(
             Pending::Body { indent, .. }
             | Pending::Members { indent }
             | Pending::Arms { indent, .. }
-            | Pending::ArmsWhere { indent, .. } => Some(Column(indent)),
+            | Pending::ArmsWhere { indent, .. }
+            | Pending::Do { indent, .. } => Some(Column(indent)),
             Pending::Statement { .. } | Pending::Arm { .. } | Pending::None => None,
         };
         let below = step
@@ -670,9 +693,19 @@ pub(super) fn lay_out(
                 block_column(bytes, tokens.get(index ..).unwrap_or_default(), indent)
             })
             .map(u32::from);
-        let mut open = |frames: &mut Vec<Frame>, plan: &mut Plan<'_>, indent: u32, sep: Sep| {
+        // A block that an expression opens, after a statement's `=`, an arm's
+        // `=>` or a `do`, continues the item its close stands in, as a `{`
+        // right after `=` does.
+        let mut open = |frames: &mut Vec<Frame>,
+                        plan: &mut Plan<'_>,
+                        indent: u32,
+                        sep: Sep,
+                        ending: Ending| {
             if column > indent {
-                frames.push(Frame::new(Kind::Layout { column }, sep));
+                frames.push(Frame {
+                    ending,
+                    ..Frame::new(Kind::Layout { column }, sep)
+                });
                 opened = true;
             }
             // A moved line at or left of its opener's line, whose move closes
@@ -681,11 +714,14 @@ pub(super) fn lay_out(
             else if let Some(Move { closes: 0, .. }) = step
                 && let Some(below) = below
             {
-                frames.push(Frame::new(Kind::Layout { column: below }, sep));
+                frames.push(Frame {
+                    ending,
+                    ..Frame::new(Kind::Layout { column: below }, sep)
+                });
                 opened = true;
             }
             else {
-                plan.shut(sep);
+                plan.shut(sep, ending);
                 // The block's close is the first close the move counts.
                 if let Some(Move { ref mut closes, .. }) = step {
                     *closes = closes.saturating_sub(1);
@@ -700,7 +736,7 @@ pub(super) fn lay_out(
                         equals.lexeme = Lexeme::LayoutOpen;
                     }
                     plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Semi);
+                    open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Ends);
                 }
             },
             Pending::Statement { at, indent } => {
@@ -711,28 +747,28 @@ pub(super) fn lay_out(
                     && !bool::from(names_no_expression(bytes, tokens, at))
                 {
                     plan.place(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Semi);
+                    open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
                 }
             },
             Pending::Arm { indent } => {
                 pending = Pending::None;
                 if line_start && !brace && column > indent {
                     plan.place(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Semi);
+                    open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
                 }
             },
             Pending::Members { indent } => {
                 pending = Pending::None;
                 if line_start && !brace {
                     plan.place(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Decl);
+                    open(&mut frames, &mut plan, indent, Sep::Decl, Ending::Ends);
                 }
             },
             Pending::Arms { depth, indent } => {
                 if line_start && frames.len() == depth && !brace {
                     pending = Pending::None;
                     plan.place(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Arms);
+                    open(&mut frames, &mut plan, indent, Sep::Arms, Ending::Ends);
                 }
             },
             Pending::ArmsWhere { at, indent } => {
@@ -742,7 +778,17 @@ pub(super) fn lay_out(
                         word.lexeme = Lexeme::LayoutOpen;
                     }
                     plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Arms);
+                    open(&mut frames, &mut plan, indent, Sep::Arms, Ending::Ends);
+                }
+            },
+            Pending::Do { at, indent } => {
+                pending = Pending::None;
+                if line_start {
+                    if let Some(word) = tokens.get_mut(at) {
+                        word.lexeme = Lexeme::LayoutOpen;
+                    }
+                    plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
                 }
             },
             Pending::None => {},
@@ -946,9 +992,18 @@ pub(super) fn lay_out(
                         | Pending::Arms { .. }
                         | Pending::Statement { .. }
                         | Pending::Arm { .. }
-                        | Pending::ArmsWhere { .. } => Pending::Members {
+                        | Pending::ArmsWhere { .. }
+                        | Pending::Do { .. } => Pending::Members {
                             indent: line_indent,
                         },
+                    };
+                },
+                // A `do` that ends its line opens a statement block. A `do`
+                // inside a line stays a word, which no form reads.
+                b"do" => {
+                    pending = Pending::Do {
+                        at: index,
+                        indent: line_indent,
                     };
                 },
                 _ => {},
@@ -1050,22 +1105,29 @@ pub(super) fn lay_out(
                     opener.lexeme = Lexeme::LayoutOpen;
                 }
                 plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
-                plan.shut(Sep::Semi);
+                plan.shut(Sep::Semi, Ending::Ends);
+            },
+            Pending::Do { at, .. } => {
+                if let Some(opener) = tokens.get_mut(at) {
+                    opener.lexeme = Lexeme::LayoutOpen;
+                }
+                plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
+                plan.shut(Sep::Semi, Ending::Continues);
             },
             Pending::ArmsWhere { at, .. } => {
                 if let Some(opener) = tokens.get_mut(at) {
                     opener.lexeme = Lexeme::LayoutOpen;
                 }
                 plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
-                plan.shut(Sep::Arms);
+                plan.shut(Sep::Arms, Ending::Ends);
             },
             Pending::Members { .. } => {
                 plan.place(Lexeme::LayoutOpen);
-                plan.shut(Sep::Decl);
+                plan.shut(Sep::Decl, Ending::Ends);
             },
             Pending::Arms { depth, .. } if frames.len() == depth => {
                 plan.place(Lexeme::LayoutOpen);
-                plan.shut(Sep::Arms);
+                plan.shut(Sep::Arms, Ending::Ends);
             },
             Pending::Arms { .. }
             | Pending::Statement { .. }
@@ -1391,7 +1453,7 @@ fn next_line(
     let continues = |token: &Token| {
         matches!(
             (token.lexeme, spelled(token)),
-            (Lexeme::LowerWord, b"where" | b"match")
+            (Lexeme::LowerWord, b"where" | b"match" | b"do")
                 | (Lexeme::Punct, b"=" | b"," | b"->" | b"=>" | b":")
         )
     };
@@ -1778,6 +1840,54 @@ mod tests
         assert_eq!(
             marked("def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"),
             "def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_line_final_do_opens_a_statement_block()
+    {
+        // A line-final `do` is the block's brace, after each head that ends
+        // in an expression or in a group. The block's close ends no
+        // statement, so the line end writes the separator of the statement
+        // that holds it.
+        assert_eq!(
+            marked(
+                "def f(n : Integer) -> Integer {\n  while n > 0 do\n    let m = n\n    g m\n  n\n}\n"
+            ),
+            "def f(n : Integer) -> Integer {\n  while n > 0 ⟪do→{⟫\n    let m = n⟪;⟫\n    g m⟪}⟫⟪;⟫\n  n\n}\n"
+        );
+        assert_eq!(
+            marked(
+                "def f() -> A =\n  let desk = fork (seat : S) do\n    send seat x\n    close seat\n  recv desk\n"
+            ),
+            "def f() -> A ⟪=→{⟫\n  let desk = fork (seat : S) ⟪do→{⟫\n    send seat x⟪;⟫\n    close seat⟪}⟫⟪;⟫\n  recv desk⟪}⟫\n"
+        );
+        assert_eq!(
+            marked(
+                "def f() -> A =\n  let g = fun (x : A) do\n    x\n  let t = thunk do\n    g y\n  force t\n"
+            ),
+            "def f() -> A ⟪=→{⟫\n  let g = fun (x : A) ⟪do→{⟫\n    x⟪}⟫⟪;⟫\n  let t = thunk ⟪do→{⟫\n    g y⟪}⟫⟪;⟫\n  force t⟪}⟫\n"
+        );
+        // The close of the block ends no declaration, so a definition whose
+        // value the block ends takes its `;` before the next word at column
+        // zero.
+        assert_eq!(
+            marked("def a = thunk do\n  let m = x\n  return m\n\ndef b = 1;\n"),
+            "def a = thunk ⟪do→{⟫\n  let m = x⟪;⟫\n  return m⟪}⟫⟪;⟫\n\ndef b = 1;\n"
+        );
+        // A line no further right than the head's closes the block at once.
+        assert_eq!(
+            marked("def f() -> A {\n  loop do\n  x\n}\n"),
+            "def f() -> A {\n  loop ⟪do→{⟫⟪}⟫⟪;⟫\n  x\n}\n"
+        );
+        // A `do` inside a line, or inside a bracket, stays a word.
+        assert_eq!(
+            marked("def f(n : Integer) -> Integer {\n  while n > 0 do g n\n  n\n}\n"),
+            "def f(n : Integer) -> Integer {\n  while n > 0 do g n⟪;⟫\n  n\n}\n"
+        );
+        assert_eq!(
+            marked("def f() -> A {\n  g (thunk do\n    x)\n  y\n}\n"),
+            "def f() -> A {\n  g (thunk do\n    x)⟪;⟫\n  y\n}\n"
         );
     }
 
