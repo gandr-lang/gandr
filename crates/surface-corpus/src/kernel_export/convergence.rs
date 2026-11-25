@@ -1083,6 +1083,9 @@ where
     (system, fault)
 }
 
+/// The probe of the mixed pairs of an operation and its presented type.
+mod mixed;
+
 /// The sweep and its witness.
 mod sweeps
 {
