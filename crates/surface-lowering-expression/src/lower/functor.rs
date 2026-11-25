@@ -57,8 +57,8 @@ use crate::slot::Role;
 
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
 {
-    /// Refuse a path read off the application `target`, `F(X).x` or
-    /// `F(X).T`, when its head names a functor.
+    /// Refuse a path read off the application `target`, `(F X).x` or
+    /// `(F X).T`, when its head names a functor.
     ///
     /// # Specification
     /// - requires: `target` is a call or a type application a path selects
