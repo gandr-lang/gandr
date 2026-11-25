@@ -7,7 +7,7 @@ def counted_at(s : Theory) -> Type =
     | Monoid => return Integer
     | Group => return String
   }
-def bad(p : *{s : Theory, n : counted_at(s)}, other : Theory) -> counted_at(other) =
+def bad(p : *{s : Theory, n : counted_at s}, other : Theory) -> counted_at other =
   match p {
     | *{s, n} => n
   }
