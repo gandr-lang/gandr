@@ -103,6 +103,7 @@ members = [
   "crates/workflow-lane-budget",
   "crates/workflow-ledger-split",
   "crates/workflow-ledger-tasks",
+  "crates/workflow-outputs",
   "crates/workflow-parser-report",
   "crates/workflow-prose",
   "crates/workflow-spec-cost",
@@ -251,6 +252,7 @@ default-features = false
 # - workflow-lane-budget
 # - workflow-ledger-split
 # - workflow-ledger-tasks
+# - workflow-outputs
 # - workflow-spec-cost
 # - workflow-sweep
 # - workflow-test-timing
@@ -296,9 +298,9 @@ default-features = false
 # - surface-corpus (dev)
 # - surface-lsp
 # - surface-lsp-base
-# - surface-parser (dev)
 # - surface-syntax
 # - theory-exact-reals
+# - workflow-outputs
 # - workflow-prose
 # - workflow-sweep
 [workspace.dependencies.blake3]
@@ -934,6 +936,7 @@ path = "crates/surface-format"
 # - surface-session
 # - surface-tui
 # - workflow-ledger-tasks
+# - workflow-outputs
 # - workflow-parser-report
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
@@ -1088,6 +1091,7 @@ path = "crates/surface-lsp-navigation"
 # - surface-repl
 # - surface-session
 # - workflow-ledger-tasks
+# - workflow-outputs
 # - workflow-parser-report
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
@@ -1171,6 +1175,7 @@ path = "crates/surface-session"
 # - surface-session
 # - surface-tui
 # - workflow-ledger-tasks
+# - workflow-outputs
 # - workflow-parser-report
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
@@ -1529,6 +1534,13 @@ path = "crates/workflow-github"
 # - workflow-parser-report
 [workspace.dependencies.gandr-workflow-ledger-tasks]
 path = "crates/workflow-ledger-tasks"
+
+# The writer of each kind of output: a value that a program computes from
+# the tree and that the tree does not hold.
+# consumers:
+# - surface-parser (dev)
+[workspace.dependencies.gandr-workflow-outputs]
+path = "crates/workflow-outputs"
 
 # The corpus sources a sweep test visits: the stated sample under every
 # pull-request profile, the whole corpus under `sweeps`.

@@ -1,0 +1,25 @@
+[package]
+name = "gandr-workflow-outputs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The values that a program computes from the tree and that the tree does not hold: the writer of each kind of output"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "corpus", "gandr", "outputs"]
+categories = ["development-tools::testing"]
+publish.workspace = true
+
+# The pinned anodized facade supplies the specification attribute, and BLAKE3
+# the fingerprint of a tree. The built-in grammar and the parser give the tree
+# of a source.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-syntax.workspace = true
+
+[lints]
+workspace = true

@@ -29,13 +29,10 @@ use gandr_surface_parser::MoldVerdicts;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
-use gandr_surface_syntax::CloseReach;
-use gandr_surface_syntax::MoldId;
-use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
-use gandr_surface_syntax::SyntaxTree;
+use gandr_workflow_outputs::Recorder;
 use gandr_workflow_sweep::Changed;
 use gandr_workflow_sweep::Coverage;
 use gandr_workflow_sweep::Held;
@@ -51,7 +48,6 @@ use gandr_workflow_sweep::corpus;
 
 use crate::common::built;
 use crate::common::label_of;
-use crate::common::text;
 use crate::failure::Failure;
 
 /// The recovery sweep's sample: forty-eight sources, and the rows of every
@@ -145,12 +141,10 @@ struct TokenCount(usize);
 /// of obligations refuses nothing: `ledger:recovery` reports its classes as a
 /// number of each pull request.
 ///
-/// The fingerprint hashes the tree's significant nodes in preorder, as the
-/// tree's own digest does, but names each mold by its rule, its label and its
-/// rank among that rule's molds of the label rather than by its [`MoldId`].
-/// The tree digest moves under any grammar change that renumbers molds; the
-/// fingerprint moves only where a tree does, so a grammar change re-records
-/// exactly the sources whose parses it changes.
+/// The record of a source is what [`Recorder::record`] writes: its count of
+/// obligations, its count of positions and the fingerprint of its tree. The
+/// fingerprint names each mold by its rule, its label and its rank, so a
+/// grammar change re-records exactly the sources whose parses it changes.
 ///
 /// A corpus change re-records the sources it touches:
 /// `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<source> mise run ci:recovery`
@@ -199,86 +193,11 @@ fn each_variant_parses_marks_and_keeps_the_clean_tree_changed() -> Result<(), Fa
 /// no tree.
 fn recovers(portion: Portion) -> Result<(), Failure>
 {
-    use core::fmt::Write as _;
-
     /// How many moved rows or broken facts a failure lists.
     const LISTED: usize = 16;
 
     let pbg = built();
-    let mut spellings: Vec<String> = Vec::new();
-    let mut ranks: Vec<(&str, &str, usize)> = Vec::new();
-    for (id, def) in pbg.iter_molds() {
-        let rule = pbg.rule_of(id)?.name;
-        let rank = if let Some(entry) = ranks
-            .iter_mut()
-            .find(|&&mut (name, label, _)| name == rule && label == def.label)
-        {
-            entry.2 = entry.2.saturating_add(1);
-            entry.2
-        }
-        else {
-            ranks.push((rule, def.label, 0));
-            0
-        };
-        let index = usize::try_from(u32::from(id))?;
-        if spellings.len() <= index {
-            spellings.resize(index.saturating_add(1), String::new());
-        }
-        if let Some(slot) = spellings.get_mut(index) {
-            *slot = format!("{rule} {} {rank}", def.label);
-        }
-    }
-    let fingerprint = |tree: &SyntaxTree<'_>| {
-        let spelled = |mold: MoldId| {
-            usize::try_from(u32::from(mold))
-                .ok()
-                .and_then(|index| spellings.get(index))
-                .map_or("", String::as_str)
-        };
-        let mut preimage: Vec<u8> = Vec::new();
-        let mut pending = vec![tree.root()];
-        while let Some(at) = pending.pop() {
-            let Some(node) = label_of(tree, at)
-            else {
-                continue;
-            };
-            let below: Vec<NodeIndex> = tree
-                .children(at)
-                .filter(|&child| {
-                    label_of(tree, child).is_some_and(|child| bool::from(child.significance()))
-                })
-                .collect();
-            let name = match node {
-                NodeLabel::Tile(mold) => format!("tile {}", spelled(mold)),
-                NodeLabel::Meld(mold) => format!("meld {}", spelled(mold)),
-                // A close minted at its one place is spelled as before closes
-                // reached back, so its tree's fingerprint stays where it was.
-                NodeLabel::GhostClose { sort, class, reach } if reach == CloseReach::NONE => {
-                    format!("GhostClose {{ sort: {sort:?}, class: {class:?} }}")
-                },
-                other @ (NodeLabel::Wald
-                | NodeLabel::Grout { .. }
-                | NodeLabel::GhostClose { .. }
-                | NodeLabel::Space
-                | NodeLabel::Doc) => format!("{other:?}"),
-            };
-            preimage.extend_from_slice(name.as_bytes());
-            preimage.push(0);
-            preimage
-                .extend_from_slice(&u64::try_from(below.len()).unwrap_or(u64::MAX).to_le_bytes());
-            if bool::from(node.carries_text()) {
-                let written = text(tree, at);
-                preimage.extend_from_slice(
-                    &u64::try_from(written.len())
-                        .unwrap_or(u64::MAX)
-                        .to_le_bytes(),
-                );
-                preimage.extend_from_slice(written.as_bytes());
-            }
-            pending.extend(below.into_iter().rev());
-        }
-        blake3::hash(&preimage).to_hex().to_string()
-    };
+    let recorder = Recorder::new(pbg).map_err(|error| error.to_string())?;
     let records = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recovery");
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let only: Option<HashSet<String>> = std::env::var("GANDR_RECOVERY_SOURCE").ok().map(|names| {
@@ -350,19 +269,9 @@ fn recovers(portion: Portion) -> Result<(), Failure>
         |&(rel, _, path)| {
             let src = std::fs::read_to_string(path)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-            let mut whole_row = String::new();
             let mut faults: Vec<String> = Vec::new();
             let mut dropped = String::new();
-            let whole =
-                parse(pbg, SourceText::from(src.as_str())).map_err(|error| error.to_string())?;
-            writeln!(
-                whole_row,
-                "W\t{}\t{}\t{}",
-                whole.obligations().len(),
-                whole.tree().positions().count(),
-                fingerprint(whole.tree())
-            )
-            .map_err(|error| error.to_string())?;
+            let whole_row = recorder.record(&src).map_err(|error| error.to_string())?;
             if update {
                 return Ok((whole_row, faults));
             }

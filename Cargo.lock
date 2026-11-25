@@ -2220,12 +2220,12 @@ dependencies = [
 name = "gandr-surface-parser"
 version = "0.0.0"
 dependencies = [
- "blake3",
  "gandr-surface-grammar",
  "gandr-surface-parser",
  "gandr-surface-syntax",
  "gandr-theory-graphs",
  "gandr-theory-spec-combinators",
+ "gandr-workflow-outputs",
  "gandr-workflow-sweep",
  "proptest",
  "quenchant-anodized",
@@ -2751,6 +2751,17 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "serde_json",
+]
+
+[[package]]
+name = "gandr-workflow-outputs"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "gandr-surface-grammar",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "quenchant-anodized",
 ]
 
 [[package]]
