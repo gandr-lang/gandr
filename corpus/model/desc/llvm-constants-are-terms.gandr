@@ -1,0 +1,33 @@
+// The constants of the block `Llvm` of `std.llvm` are closed terms of their
+// sorts.
+//
+// `Terms Llvm Ty` is the type of the closed terms of the sort `Ty`, so the
+// constant `int8` is a value of it. A function reads such a term by a `match`
+// on the constants of its sort.
+//
+// Limits: a term of the sort `Body` or of the sort `Val` is not a value of a
+// type of the tree. Each operation of a body binds the rest of the body at a
+// port of `Val`, and the type of such terms is refused (#4150).
+//
+// - see: `../../../library/std/src/llvm.gandr` — the block
+import std.llvm (Llvm);
+
+/// The type of a byte.
+def byte : Terms Llvm Ty = Llvm.int8;
+
+/// The ordering of an atomic load that acquires.
+def acquiring : Terms Llvm Ordering = Llvm.order_acquire;
+
+/// The width in bits of a type of an integer, and 0 for the pointer.
+def width(t : Terms Llvm Ty) -> Integer =
+  match t where
+    | Llvm.int1 => 1
+    | Llvm.int8 => 8
+    | Llvm.int16 => 16
+    | Llvm.int32 => 32
+    | Llvm.int64 => 64
+    | Llvm.ptr => 0
+
+/// A byte has eight bits.
+@[runs("8")]
+def byteWidth() -> Integer = width byte;
