@@ -12,7 +12,6 @@ use std::io::BufRead as _;
 use std::io::BufReader;
 use std::net::UdpSocket;
 use std::path::Path;
-use std::process::Command;
 use std::process::Stdio;
 
 use gandr_runtime_net::Peer;
@@ -41,7 +40,7 @@ fn two_processes_exchange_a_ping_3186()
         .node_id();
     let peer = Peer::new(key).at(socket);
     let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
-    let mut serving = Command::new(env!("CARGO_BIN_EXE_gandr"));
+    let mut serving = crate::unbound(env!("CARGO_BIN_EXE_gandr"));
     serving
         .arg("run")
         .arg("--net-bind")
@@ -52,7 +51,7 @@ fn two_processes_exchange_a_ping_3186()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut server = serving.spawn().expect("the server starts");
-    let pinged = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let pinged = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg("--net-bind")
         .arg(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)).to_string())
@@ -128,7 +127,7 @@ fn two_processes_run_the_far_world_s_migrations_there()
         .node_id();
     let far = format!("far={}", Peer::new(key).at(socket));
     let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
-    let alone = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let alone = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg(&model)
         .env("XDG_CONFIG_HOME", &unconfigured)
@@ -140,7 +139,7 @@ fn two_processes_run_the_far_world_s_migrations_there()
         "in one process the model answers 42: {}",
         String::from_utf8_lossy(&alone.stderr)
     );
-    let mut hosting = Command::new(env!("CARGO_BIN_EXE_gandr"));
+    let mut hosting = crate::unbound(env!("CARGO_BIN_EXE_gandr"));
     hosting
         .arg("host")
         .arg("--net-bind")
@@ -155,7 +154,7 @@ fn two_processes_run_the_far_world_s_migrations_there()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut host = hosting.spawn().expect("the host starts");
-    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let ran = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg("--net-bind")
         .arg(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)).to_string())
@@ -189,7 +188,7 @@ fn two_processes_run_the_far_world_s_migrations_there()
         "the host ran both migrations: {}",
         String::from_utf8_lossy(&hosted.stderr)
     );
-    let unbound = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let unbound = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg("--world")
         .arg(format!("near={}", Peer::new(key).at(socket)))
@@ -252,7 +251,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         .expect("the secret is hex")
         .node_id();
     let profile = profiled(&scratch);
-    let mut hosting = Command::new(env!("CARGO_BIN_EXE_gandr"));
+    let mut hosting = crate::unbound(env!("CARGO_BIN_EXE_gandr"));
     hosting
         .arg("host")
         .arg("--site")
@@ -268,7 +267,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut host = hosting.spawn().expect("the host starts");
-    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let ran = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg("--manifold")
         .arg(&manifold)
@@ -310,7 +309,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         "the host ran both migrations: {named}"
     );
     let refused = |arguments: &[&OsStr]| {
-        let output = Command::new(env!("CARGO_BIN_EXE_gandr"))
+        let output = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
             .args(arguments)
             .env_remove("GANDR_NET_SECRET")
             .env("XDG_CONFIG_HOME", &profile)
@@ -383,7 +382,7 @@ fn two_processes_print_at_the_far_site_of_offers_3546()
         &read("corpus/model/deployments/offers.manifold.gandr"),
     );
     let profile = profiled(&scratch);
-    let mut hosting = Command::new(env!("CARGO_BIN_EXE_gandr"));
+    let mut hosting = crate::unbound(env!("CARGO_BIN_EXE_gandr"));
     hosting
         .arg("host")
         .arg("--site")
@@ -399,7 +398,7 @@ fn two_processes_print_at_the_far_site_of_offers_3546()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut host = hosting.spawn().expect("the host starts");
-    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let ran = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg("--manifold")
         .arg(&manifold)
@@ -472,7 +471,7 @@ fn a_host_reads_its_site_s_secret_by_name_3375()
         .node_id();
     let profile = profiled(&scratch);
     let hosting = |variables: &[(&str, &str)]| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_gandr"));
+        let mut command = crate::unbound(env!("CARGO_BIN_EXE_gandr"));
         command
             .arg("host")
             .arg("--site")

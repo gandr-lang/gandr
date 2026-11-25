@@ -3,7 +3,6 @@
 //! draws of two bits.
 
 use std::path::Path;
-use std::process::Command;
 
 /// #5707: `gandr run` of the draws exemplar exits with the sum of two draws
 /// of two bits, from 0 to 6. It prints nothing, and it writes nothing on
@@ -13,7 +12,7 @@ fn gandr_run_sums_two_draws_of_two_bits_5707()
 {
     let exemplar =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/probability/draws.gandr");
-    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let ran = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg(&exemplar)
         .env(
