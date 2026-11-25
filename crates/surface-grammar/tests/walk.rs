@@ -93,7 +93,7 @@ use crate::failure::Failure;
 /// ends at a bare value name, `M.f` (#8307), then by a `where` before the
 /// block of `rec`, then by the handler's words `effect … handle`, then by the
 /// pipeline field `e |>.m a`, then by the descent `[<]` as an operand of its
-/// own, `el [<] a`.
+/// own, `el [<] a`, then by the wildcard as a type atom, `Path[.A = A] a _`.
 const BUILT_IN_FINGERPRINT: u64 = 0x8fbf_5b8f_a4f3_d530;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
@@ -177,7 +177,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Void", 1),
     ("[", 62),
     ("]", 80),
-    ("_", 48),
+    ("_", 49),
     ("abort", 1),
     ("access", 1),
     ("acquire", 1),
