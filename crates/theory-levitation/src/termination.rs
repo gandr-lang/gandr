@@ -17,8 +17,11 @@
 //! directly or through others, and an operation the description does not
 //! declare above no operation it declares. Arguments of one symbol compare
 //! left to right. An application that carries implicit indices before its
-//! written arguments compares the written ones first, then the indices. The
-//! order is a simplification order, so a face it orients
+//! written arguments compares the written ones first, then the indices. A
+//! symbol that a symmetry of the description names compares its arguments as
+//! multisets, so a term and the term with its arguments swapped have one place
+//! in the order, and a rule that the order orients is oriented in each order of
+//! those arguments. The order is a simplification order, so a face it orients
 //! decreases every term the face rewrites, in any context, and a description
 //! all of whose faces it orients terminates. [`path_greater`] is the order on
 //! two terms, and [`embeds`] the homeomorphic embedding every simplification
@@ -49,9 +52,10 @@
 //! declines to compile.
 //! **Reversal.** A rule a terminating program writes that this order cannot
 //! orient — mutual recursion, which needs two operations of one rank, or an
-//! argument that descends in a later position while an earlier one grows —
-//! wants a quasi-precedence with multiset or permuted status per operation,
-//! added beside the call graph rather than instead of it.
+//! argument that descends in a later position while an earlier one grows, at
+//! an operation that no symmetry names — wants a quasi-precedence with
+//! multiset or permuted status per operation, added beside the call graph
+//! rather than instead of it.
 //!
 //! # Second-order rules
 //!
@@ -295,6 +299,9 @@ pub struct Precedence<'desc>
     /// The sorts some declared operation returns; a port of any other sort
     /// takes a value, which only constructors and variables build.
     returned: BTreeSet<&'desc Name>,
+    /// The operations and the constructors that a symmetry of the description
+    /// names: each compares its arguments as multisets.
+    symmetric: Vec<Symbol<'desc>>,
 }
 
 impl<'desc> Precedence<'desc>
@@ -328,7 +335,8 @@ impl<'desc> Precedence<'desc>
     ///   face's own anywhere in its right-hand side; a face defining an
     ///   undeclared operation induces nothing; a rewrite of `ranking` calls as
     ///   a written face does. The returned sorts are the sorts every declared
-    ///   operation's outputs name.
+    ///   operation's outputs name. The symmetric symbols are the head of the
+    ///   left side of each face that is a symmetry ([`RuleReading::Symmetry`]).
     /// - panics: none.
     /// - intension: callees counted per operation, then ranked leaves first, an
     ///   operation ranked once its last callee is.
@@ -341,6 +349,7 @@ impl<'desc> Precedence<'desc>
     ///   [`orient_rules_with`]: a ranking call raises its caller.
     /// - witness: `termination::tests::a_call_ranks_its_caller_above_its_callee_in_either_declaration_order`
     /// - witness: `termination::tests::a_derived_rule_raises_its_head_above_what_it_calls`
+    /// - witness: `termination::tests::a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset`
     #[spec(ensures: |ret| ret.ranks.len() == desc.opers.len())]
     #[inline]
     #[must_use]
@@ -414,10 +423,31 @@ impl<'desc> Precedence<'desc>
             .iter()
             .flat_map(|operation| operation.arity.outputs.iter().map(|output| &output.sort))
             .collect();
+        let mut symmetric = Vec::new();
+        for face in &desc.rules {
+            if face.reading() != RuleReading::Symmetry {
+                continue;
+            }
+            let symbol = match face.lhs.view() {
+                TermView::Op { name, .. } => Symbol::Op(name),
+                TermView::Ctor { name, .. } => Symbol::Ctor(name),
+                TermView::Var(_)
+                | TermView::Atom(_)
+                | TermView::Bound(_)
+                | TermView::Results { .. }
+                | TermView::Inst { .. }
+                | TermView::Abs { .. }
+                | TermView::Lam { .. } => continue,
+            };
+            if !symmetric.contains(&symbol) {
+                symmetric.push(symbol);
+            }
+        }
         Self {
             opers: &desc.opers,
             ranks,
             returned,
+            symmetric,
         }
     }
 
@@ -507,7 +537,8 @@ impl From<Rank> for usize
 ///
 /// The order is the lexicographic path order of
 /// [`gandr_theory_path_orders::lpo`], with the variables `right` instantiates
-/// read as metavariables.
+/// read as metavariables, and with the multiset status at a symbol that a
+/// symmetry names.
 ///
 /// # Specification
 /// - ensures: negative when `right` is a metavariable. Otherwise positive
@@ -515,16 +546,19 @@ impl From<Rank> for usize
 ///   or above `right`; or `right` is an application every argument of which
 ///   `left` covers, and either `left`'s symbol precedes `right`'s or the two
 ///   share a symbol and the first argument pair that differs, left to right, is
-///   in the order; or `right` instantiates a metavariable an argument of `left`
-///   holds, and `left` covers every argument of the instantiation but those
-///   that are values. An argument holds a metavariable it is, or one it applies
-///   under abstractions of the names it is applied to last, as `bind t . k(s,
-///   t)` is `k(s)` read up to η. `left` covers a term it is above, or one of
-///   its own arguments is equal to or above. A value is a variable every
-///   occurrence of which on `left` is an argument of a declared operation at an
-///   input port of a sort no declared operation returns, so only constructors
-///   and variables build what it stands for: instantiating at it selects a
-///   branch of the abstraction `left` holds and calls no operation.
+///   in the order, or, at a symbol of a symmetry, each argument of `right` that
+///   `left` does not share is below one argument of `left` that `right` does
+///   not share, and `left` has one; or `right` instantiates a metavariable an
+///   argument of `left` holds, and `left` covers every argument of the
+///   instantiation but those that are values. An argument holds a metavariable
+///   it is, or one it applies under abstractions of the names it is applied to
+///   last, as `bind t . k(s, t)` is `k(s)` read up to η. `left` covers a term
+///   it is above, or one of its own arguments is equal to or above. A value is
+///   a variable every occurrence of which on `left` is an argument of a
+///   declared operation at an input port of a sort no declared operation
+///   returns, so only constructors and variables build what it stands for:
+///   instantiating at it selects a branch of the abstraction `left` holds and
+///   calls no operation.
 /// - ensures: a variable and an instantiation are above nothing, and no term is
 ///   above itself.
 /// - panics: none.
@@ -908,7 +942,8 @@ impl Valued for Side<'_, '_>
 }
 
 /// A [`Precedence`] as the path order reads it: an operation at its rank,
-/// every other symbol ground. A declared operation's arguments compare at
+/// every other symbol ground. A symbol that a symmetry names compares its
+/// arguments as multisets. A declared operation's arguments compare at
 /// explicit status over its input ports. An application that carries its
 /// implicit indices first, as the indexed reading of a law writes it, so
 /// compares the arguments it is written with before them. Every other status
@@ -954,8 +989,8 @@ impl<'term> gandr_theory_path_orders::Precedence for Ranks<'_, '_, 'term>
         }
     }
 
-    /// Explicit over a declared operation's input ports; lexicographic for
-    /// every other symbol.
+    /// Multiset for a symbol that a symmetry names; explicit over a declared
+    /// operation's input ports; lexicographic for every other symbol.
     ///
     /// # Specification
     /// trivial.
@@ -964,6 +999,9 @@ impl<'term> gandr_theory_path_orders::Precedence for Ranks<'_, '_, 'term>
         symbol: Symbol<'term>,
     ) -> Status
     {
+        if self.precedence.symmetric.contains(&symbol) {
+            return Status::Multiset;
+        }
         let Symbol::Op(name) = symbol
         else {
             return Status::Lexicographic;
@@ -1339,6 +1377,55 @@ mod tests
             Termination::Oriented,
             "and the order orients it, because `band` calls `bor`"
         );
+    }
+
+    /// - see: #4
+    #[test]
+    fn a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset()
+    {
+        let two: fn(FreeTerm, FreeTerm) -> FreeTerm = |x, y| FreeTerm::op("two", [x, y]);
+        let pair: fn(FreeTerm, FreeTerm) -> FreeTerm = |x, y| FreeTerm::ctor("Two", [x, y]);
+        for (head, why) in [(two, "an operation"), (pair, "a constructor")] {
+            let with = |rule: (FreeTerm, FreeTerm)| {
+                nat([binary("two")], vec![
+                    (head(var("x"), var("y")), head(var("y"), var("x"))),
+                    rule,
+                ])
+            };
+            let moving = with((
+                head(succ(var("x")), var("y")),
+                head(var("x"), succ(var("y"))),
+            ));
+            assert_eq!(
+                orient_rules(&moving),
+                Termination::Unoriented(RuleIndex::from(1_usize)),
+                "{why}: a rule that moves a `Succ` to the other argument loops under the symmetry"
+            );
+            let shrinking = with((head(succ(var("x")), var("y")), head(var("x"), var("y"))));
+            assert_eq!(
+                orient_rules(&shrinking),
+                Termination::Oriented,
+                "{why}: a rule that takes a `Succ` away is oriented"
+            );
+            let symmetric = Precedence::of(&shrinking);
+            let turned = (head(var("y"), succ(var("x"))), head(var("x"), var("y")));
+            assert!(
+                bool::from(path_greater(&symmetric, &turned.0, &turned.1)),
+                "{why}: and so is the same rule with its left arguments in the other order"
+            );
+            let written = nat([binary("two")], vec![(
+                head(succ(var("x")), var("y")),
+                head(var("x"), var("y")),
+            )]);
+            assert!(
+                !bool::from(path_greater(
+                    &Precedence::of(&written),
+                    &turned.0,
+                    &turned.1
+                )),
+                "{why}: with no symmetry, the arguments compare left to right"
+            );
+        }
     }
 
     #[test]

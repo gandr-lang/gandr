@@ -745,8 +745,8 @@ const TWINS: &[Twin] = &[
         permutation: "rule twoComm : two x y <=> two y x;",
         rules: &["rule move : two (s x) y ==> two x (s y);"],
         verdicts: &[
-            (Place::First, "refused: RulesUncompleted"),
-            (Place::Last, "refused: RulesUncompleted"),
+            (Place::First, "refused: RulesUnoriented"),
+            (Place::Last, "refused: RulesUnoriented"),
         ],
     },
     Twin {
@@ -761,7 +761,7 @@ const TWINS: &[Twin] = &[
         ],
     },
     Twin {
-        name: "a-rule-whose-other-order-the-order-does-not-orient-theory",
+        name: "a-rule-that-takes-a-successor-away-beside-the-symmetry-theory",
         base: COUNTS_THEORY,
         members: &[],
         permutation: "rule twoComm : two x y <=> two y x;",
@@ -772,14 +772,14 @@ const TWINS: &[Twin] = &[
         ],
     },
     Twin {
-        name: "a-rule-whose-other-order-the-order-does-not-orient-data",
+        name: "a-rule-that-takes-a-successor-away-beside-the-symmetry-data",
         base: COUNTS_DATA,
         members: &[],
         permutation: "rule : Two x y <=> Two y x;",
         rules: &["rule : Two (S x) y ==> Two x y;"],
         verdicts: &[
-            (Place::First, "refused: RulesUncompleted"),
-            (Place::Last, "refused: RulesUncompleted"),
+            (Place::First, "refused: RulesDiverge"),
+            (Place::Last, "refused: RulesDiverge"),
         ],
     },
     Twin {
