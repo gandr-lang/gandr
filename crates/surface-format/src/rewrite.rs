@@ -138,8 +138,9 @@ pub enum RewriteName
     /// the explicit form writes them apart.
     JoinedDefinition,
     /// A type application: `F(a, b)` and `F a b`, as a type reads a
-    /// juxtaposition (#5326); both forms write the juxtaposition, an argument
-    /// that is no atom in its parentheses.
+    /// juxtaposition (#5326), with a lowercase, qualified or staged head too:
+    /// `f a b`, `el [<] a`, `M.F a` and `View[m] a`; both forms write the
+    /// juxtaposition, an argument that is no atom in its parentheses.
     TypeApplication,
     /// A definition's body after `=`: `def f() -> B { c }` and `def f() -> B
     /// = c ;`, a body of statements in a block after `=`; both forms move it,
@@ -291,7 +292,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 44] = [
+pub const REWRITES: [Rewrite; 48] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -585,6 +586,38 @@ pub const REWRITES: [Rewrite; 44] = [
         enabled: Enabled::On,
     },
     Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("type_path"),
+        from: Spelling("M.F(a, b)"),
+        to: Spelling("M.F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("type_path"),
+        from: Spelling("M.F(a, b)"),
+        to: Spelling("M.F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("staged_type"),
+        from: Spelling("View[m](a)"),
+        to: Spelling("View[m] a"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("staged_type"),
+        from: Spelling("View[m](a)"),
+        to: Spelling("View[m] a"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
         name: RewriteName::BodyAfterEquals,
         direction: Direction::Sugar,
         mold: MoldName("def_value"),
@@ -846,9 +879,10 @@ impl Band
                 Self::Application
             },
             ("u_type" | "at_type", _)
-            | ("application_expression" | "type_application.juxtaposed", Position::Later) => {
-                Self::Atom
-            },
+            | ("application_expression" | "type_application.juxtaposed", Position::Later)
+            // A postfix `.`, `[` or `.#{` reads the atom before it, so `f(x).l`
+            // juxtaposed is `(f x).l`.
+            | ("type_path" | "staged_type" | "extension_type", Position::First) => Self::Atom,
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
             // A protocol step's payload stands left of `>!` or `>?` as an
@@ -892,7 +926,10 @@ impl Band
             // around one as a first argument leads its juxtaposition (#5750).
             | "lambda_expression"
             // A handler binds as an expression of a keyword binds.
-            | "handle_expression" => Self::Loose,
+            | "handle_expression"
+            // A word before a type is a moded type, whose type runs to the
+            // arrow's band: `f a` applies `f` by juxtaposition.
+            | "moded_type" => Self::Loose,
             _ => Self::Atom,
         }
     }
@@ -1124,6 +1161,64 @@ fn juxtaposition(
     }
     else {
         Band::Application
+    }
+}
+
+/// The head of a glued type application, as the juxtaposition writes it.
+#[derive(Clone, Copy, Debug)]
+enum Head<'source>
+{
+    /// A type name, `F` in `F(a)`.
+    Capital(SourceFragment<'source>),
+    /// A lowercase name, `f` in `f(a)`, with the descent `[<]` or without it.
+    Word(SourceFragment<'source>, Descent),
+    /// A qualified name or a staged type, `M.F` in `M.F(a)` and `View[m]` in
+    /// `View[m](a)`, written as the source wrote it.
+    Written,
+}
+
+/// Whether a lowercase head carries the descent `[<]`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Descent
+{
+    /// It carries none.
+    No,
+    /// It carries it.
+    Yes,
+}
+
+/// Before which arguments of a juxtaposition the empty tile of a type's
+/// juxtaposition stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Glued
+{
+    /// Before each: the head is a type name, a qualified name, a staged type
+    /// or the descent.
+    Always,
+    /// Before each argument after the first that is no word: the head is a
+    /// word, which the grammar reads as a moded type over the rest.
+    AfterForm,
+}
+
+/// The lowercase builtin type names: tiles of their own, never a word a
+/// moded type leads with.
+const BUILTIN_WORDS: [&str; 12] = [
+    "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "usize", "isize", "f32", "f64",
+];
+
+/// Whether the operand `child` is one word the type grammar reads as a type
+/// variable, so that a word before it leads a moded type over it.
+///
+/// # Specification
+/// trivial.
+fn word(child: Child<'_>) -> bool
+{
+    match child {
+        Child::Leaf(leaf) => {
+            let text = <&str>::from(leaf.text);
+            text.starts_with(|first: char| first.is_ascii_lowercase()) && !BUILTIN_WORDS.contains(&text)
+        },
+        Child::Node(_) => false,
     }
 }
 
@@ -3862,16 +3957,19 @@ impl<'source> Respelling<'_, 'source>
         (!opened && !carrier).then_some(juxtaposition(Band::Atom, led))
     }
 
-    /// Write the type application whose parts are `parts` as juxtaposition.
-    /// Parenthesize each argument that is no atom.
-    /// Do not write a type variable head.
+    /// Write the type application whose parts are `parts` as juxtaposition:
+    /// `F(a, b)` as `F a b`, `f(a, b)` as `f a b`, `el[<](a)` as `el [<] a`,
+    /// `M.F(a)` as `M.F a` and `View[m](a)` as `View[m] a`. A second list,
+    /// `f(a)(b)`, applies the first call, which is written in parentheses,
+    /// `(f a) b`. Parenthesize each argument that is no atom.
     /// Do not write a list with no argument.
-    /// Do not write a second list.
     /// Do not write a list that holds a comment.
-    /// A returner encloses a juxtaposition whose first argument takes
-    /// parentheses.
-    /// The type grammar reads `-F Var (Extend a b) c` as the call
-    /// `Var(Extend a b)` applied to `c`.
+    /// A capitalised, qualified or staged head binds as [`juxtaposition`]
+    /// states: a returner encloses a juxtaposition whose first argument takes
+    /// parentheses, because the type grammar reads `-F Var (Extend a b) c` as
+    /// the call `Var(Extend a b)` applied to `c`. A lowercase head binds
+    /// loose, because the type grammar reads a word before a type as a moded
+    /// type, whose type runs to the arrow's band.
     ///
     /// # Specification
     /// trivial.
@@ -3887,7 +3985,7 @@ impl<'source> Respelling<'_, 'source>
         if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
             return None;
         }
-        let (owns, operands) = split(parts);
+        let (owns, _) = split(parts);
         let (&head, rest) = owns.split_first()?;
         let head_text = <&str>::from(head);
         // The carrier between `=` and `]` is an operand, or a keyword the
@@ -3918,31 +4016,147 @@ impl<'source> Respelling<'_, 'source>
                             .iter()
                             .all(|&own| !matches!(<&str>::from(own), "[" | "]" | "(" | ")" | ","))
                 }));
-        let opens = rest
-            .iter()
-            .filter(|&&own| <&str>::from(own) == OPEN_PAREN.0)
-            .count();
-        if (rest.first().map(|&own| <&str>::from(own)) != Some(OPEN_PAREN.0) && !supplied)
-            || opens != 1
-            || operands.is_empty()
-            || !head_text.starts_with(char::is_uppercase)
-        {
-            return None;
-        }
         if supplied {
             return self.supplied_path_type(out, parts);
         }
-        let operands: Vec<Operand<'source>> = operands
-            .into_iter()
-            .map(|operand| self.operand(operand))
-            .collect();
-        let led = operands.first().map_or(Enclosed::No, Operand::enclosed);
-        out.fragment(head);
-        for operand in &operands {
-            out.glue();
-            out.place(operand, Band::Atom);
+        let open = parts.iter().position(
+            |part| matches!(part.role, Role::Own(text) if <&str>::from(text) == OPEN_PAREN.0),
+        )?;
+        let (prefix, listed) = parts.split_at(open);
+        let mut lists: Vec<Vec<Child<'source>>> = Vec::new();
+        let mut list: Option<Vec<Child<'source>>> = None;
+        for part in listed {
+            match (part.role, list.as_mut()) {
+                (Role::Own(text), None) if <&str>::from(text) == OPEN_PAREN.0 => {
+                    list = Some(Vec::new());
+                },
+                (Role::Own(text), Some(_)) if <&str>::from(text) == "," => {},
+                (Role::Own(text), Some(_)) if <&str>::from(text) == CLOSE_PAREN.0 => {
+                    lists.push(list.take()?);
+                },
+                (Role::Operand(child), Some(arguments)) => arguments.push(child),
+                (Role::Own(_) | Role::Operand(_) | Role::Comment, _) => return None,
+            }
         }
-        Some(juxtaposition(Band::Atom, led))
+        if list.is_some() || lists.is_empty() || lists.iter().any(Vec::is_empty) {
+            return None;
+        }
+        let own = |part: &Part<'source>, spelled: &str| matches!(part.role, Role::Own(text) if <&str>::from(text) == spelled);
+        let head = match prefix {
+            [Part { role: Role::Own(name), .. }] if <&str>::from(*name).starts_with(char::is_uppercase) => Head::Capital(*name),
+            [Part { role: Role::Own(name), .. }] => Head::Word(*name, Descent::No),
+            [Part { role: Role::Own(name), .. }, open, less, close]
+                if own(open, "[") && own(less, "<") && own(close, "]") =>
+            {
+                Head::Word(*name, Descent::Yes)
+            },
+            [Part { role: Role::Operand(_), .. }, dot, link @ ..]
+                if own(dot, ".")
+                    && link.len() % 2 == 1
+                    && link.iter().enumerate().all(|(index, part)| {
+                        if index % 2 == 1 {
+                            own(part, ".")
+                        }
+                        else {
+                            matches!(part.role, Role::Own(text) if <&str>::from(text) != ".")
+                        }
+                    }) =>
+            {
+                Head::Written
+            },
+            [Part { role: Role::Operand(_), .. }, open, rest @ ..]
+                if own(open, "[")
+                    && matches!(
+                        rest,
+                        [Part { role: Role::Own(_), .. }, close] | [_, Part { role: Role::Own(_), .. }, close]
+                            if own(close, "]")
+                    ) =>
+            {
+                Head::Written
+            },
+            _ => return None,
+        };
+        let mut lists = lists.into_iter();
+        let first = lists.next()?;
+        let mut band = match head {
+            Head::Capital(name) => {
+                out.fragment(name);
+                self.arguments(out, &first, Glued::Always)
+            },
+            Head::Word(name, descent) => {
+                out.fragment(name);
+                out.gap(Spelling(" "));
+                let glued = if descent == Descent::Yes {
+                    out.token(Spelling("["));
+                    out.token(Spelling("<"));
+                    out.token(Spelling("]"));
+                    Glued::Always
+                }
+                else {
+                    Glued::AfterForm
+                };
+                let _led = self.arguments(out, &first, glued);
+                Band::Loose
+            },
+            Head::Written => {
+                for (index, part) in prefix.iter().enumerate() {
+                    if index > 0 {
+                        out.leaves.extend(part.before.iter().copied());
+                    }
+                    out.leaves.extend(part.leaves.iter().copied());
+                }
+                self.arguments(out, &first, Glued::Always)
+            },
+        };
+        for again in lists {
+            let called = Operand {
+                leaves: core::mem::take(&mut out.leaves),
+                band,
+                inner: None,
+            };
+            out.place(&called, Band::Atom);
+            band = self.arguments(out, &again, Glued::Always);
+        }
+        Some(band)
+    }
+
+    /// Write `arguments` after a head into `out`, each an atom or in its
+    /// parentheses, and answer the band of the juxtaposition they make as
+    /// [`juxtaposition`] reads an atom head. `glued` says before which
+    /// argument the empty tile of a type's juxtaposition stands, as the
+    /// parser reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operands, growth within the application's arguments
+    fn arguments(
+        &self,
+        out: &mut Builder<'source>,
+        arguments: &[Child<'source>],
+        glued: Glued,
+    ) -> Band
+    {
+        let mut led = None;
+        let mut joined = glued == Glued::Always;
+        for (index, &child) in arguments.iter().enumerate() {
+            let operand = self.operand(child);
+            if led.is_none() {
+                led = Some(operand.enclosed());
+            }
+            if joined {
+                out.glue();
+            }
+            else if index > 0 {
+                out.gap(Spelling(" "));
+            }
+            out.place(&operand, Band::Atom);
+            // Past a moded type's words, the rest of its type is a type's
+            // juxtaposition: `f a B c` is `f` over `a` over `B c`.
+            joined = joined || !word(child);
+        }
+        juxtaposition(Band::Atom, led.unwrap_or(Enclosed::No))
     }
 
     /// The band a form of the rule `rule` over `parts` binds at: the rule's
@@ -4104,7 +4318,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 41] = [
+const RULES: [MoldName; 45] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4135,6 +4349,10 @@ const RULES: [MoldName; 41] = [
     MoldName("forget_model_expression"),
     MoldName("path_type"),
     MoldName("bridge_type"),
+    MoldName("type_path"),
+    MoldName("staged_type"),
+    MoldName("extension_type"),
+    MoldName("moded_type"),
     MoldName("type_quote_expression"),
     MoldName("send_session_type"),
     MoldName("receive_session_type"),
