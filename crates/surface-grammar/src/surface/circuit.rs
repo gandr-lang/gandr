@@ -606,14 +606,18 @@ fn data_spelled_oper_tail() -> Regex
 /// every `def` / `module` / `import` / `data` tail ends in `;`, `}`, or `)`.
 ///
 /// Requiring parentheses restores that discipline: every branch here ends in
-/// `)` or `}`. Inside a `theory` block the bare-sort spellings stay available,
-/// because there the member's sort hole is form-**interior** — the block's own
-/// members and its closing brace follow it.
+/// `)`, `}` or `;`. Inside a `theory` block the bare-sort spellings stay
+/// available, because there the member's sort hole is form-**interior** — the
+/// block's own members and its closing brace follow it.
+///
+/// A judgment with no body takes an optional `;`. The layout pass writes that
+/// separator before the next declaration at column zero, as it does after
+/// each declaration that a reserved word begins.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a shared keyword lead, identifier and colon with a parenthesized
-///   signature and optional body.
+///   signature and an optional tail: a body or a `;`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -633,7 +637,7 @@ fn top_level_judgment() -> Regex
         t(TileLabel("identifier")),
         t(TileLabel(":")),
         seq([parameter_group(), opt(seq([arrow_grid(), result_group()]))]),
-        opt(body()),
+        opt(alt([body(), t(TileLabel(";"))])),
     ])
 }
 

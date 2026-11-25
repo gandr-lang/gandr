@@ -1217,6 +1217,13 @@ pub fn elaborate_roots<'source>(
                 .map(|declaration| Read::Described(alloc::boxed::Box::new(declaration)))
         }
         else if run.eat(Spelling("oper")).0 {
+            // The `;` that ends an operation with no filler is no part of its
+            // judgment.
+            let judgment = match run.remaining().split_last() {
+                Some((&Piece::Tile { label, .. }, judgment)) if label.as_ref() == ";" => judgment,
+                Some(_) | None => run.remaining(),
+            };
+            let mut run = Run::new(judgment, at.span);
             reader
                 .circuit_declaration(at, &mut run, serial, &mut report.diagnostics)
                 .map(|declaration| Read::Described(alloc::boxed::Box::new(declaration)))
