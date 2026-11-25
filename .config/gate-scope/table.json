@@ -29,7 +29,7 @@
       "check:syntax-exemplars"
     ],
     "corpus-tests": ["check:tests-enforcing"],
-    "extension": ["check:extension", "check:input-table", "check:vscode-smoke"],
+    "extension": ["check:extension", "check:vscode-smoke"],
     "prose": ["check:prose"],
     "riscv64": ["check:riscv64-ring"]
   },

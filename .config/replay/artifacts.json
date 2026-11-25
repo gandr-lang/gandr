@@ -43,13 +43,6 @@
     "record": "CORPUS_COMMENTS_WRITE_LEDGER=1 mise run check:corpus-comments"
   },
   {
-    "name": "the input table",
-    "paths": ["contrib/gandr-vscode/src/input/table.json"],
-    "inputs": ["contrib/gandr-vscode/scripts/"],
-    "check": "mise run check:input-table",
-    "record": "node scripts/input-table.mts src/input/table.json, in contrib/gandr-vscode"
-  },
-  {
     "each": "crate",
     "name": "the debug traces and goldens of {crate}",
     "paths": ["crates/{crate}/tests/debug-traces/", "crates/{crate}/tests/golden/"],
