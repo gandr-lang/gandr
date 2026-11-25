@@ -278,13 +278,13 @@ fn an_application_is_bound_before_anything_projects_from_it()
     ]
     .concat();
     let found = rows(&lower(projected.as_str()));
-    for (path, needle) in [("direct", "MkCounter Seed"), ("typed", "MkCounter(Seed)")] {
+    for (path, occurrence) in [("direct", 0_usize), ("typed", 1)] {
         assert!(
             found.contains(&row(
                 path,
                 Role::Declared,
                 Amounts::Refused(LoweringRefusal::ProjectionFromApplication {
-                    span: span_of(projected.as_str(), needle, 0_usize),
+                    span: span_of(projected.as_str(), "MkCounter Seed", occurrence),
                     functor: name("MkCounter"),
                 })
             )),

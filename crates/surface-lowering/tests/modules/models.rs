@@ -2502,12 +2502,12 @@ fn a_theory_s_terms_are_its_operations_over_its_rules_4143()
         .collect();
     assert_eq!(
         termed,
-        [row("Terms(Mag)", Role::Terms, Amounts::Data)],
+        [row("Terms Mag", Role::Terms, Amounts::Data)],
         "the three askers share one declaration of the terms: {found:?}"
     );
     let at = |path: &str| found.iter().position(|&(ref written, ..)| written == path);
     assert!(
-        at("Terms(Mag)") < at("neutral"),
+        at("Terms Mag") < at("neutral"),
         "the terms are minted before their first asker: {found:?}"
     );
     let signature = |role: Role| {
@@ -2602,7 +2602,7 @@ fn the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143()
                 "models/fixtures/the-terms-of-a-theory-outside-one-plain-sort-are-refused-4143-rows-of.gandr"
             ),
             "paired",
-            "Terms(Pair)",
+            "Terms Pair",
             gandr_surface_lowering::Unbuilt::TermsType,
         ),
         (
@@ -2610,7 +2610,7 @@ fn the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143()
                 "models/fixtures/the-terms-of-a-theory-outside-one-plain-sort-are-refused-4143.gandr"
             ),
             "doubled",
-            "Terms(Idem)",
+            "Terms Idem",
             gandr_surface_lowering::Unbuilt::LawTerms,
         ),
     ];

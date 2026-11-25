@@ -2127,14 +2127,14 @@ fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
                 name: Name::from("refl"),
                 fault: crate::model::ModelFault::Unbound,
             },
-            "law refl : (a : C) -> Path[.A = Bool](eq a a, yes)"
+            "law refl : (a : C) -> Path[.A = Bool] (eq a a) yes"
         ),
         (
             DescriptionFault::Unstated {
                 name: Name::from("odd"),
                 fault: crate::model::ModelFault::UnknownHead,
             },
-            "law odd : (a : C) -> Path[.A = Bool](qe a a, true)"
+            "law odd : (a : C) -> Path[.A = Bool] (qe a a) true"
         ),
     ]);
 }
