@@ -1,16 +1,23 @@
 //! **Twin census**: for each crate of the workspace, whether the emitter
-//! depends on it, read from `cargo metadata`.
+//! depends on it, read from `cargo metadata`, and the count of its generic
+//! public items, read from the JSON of rustdoc.
 //!
 //! A twin is a function of a crate that gandr source states. Two carriers run
 //! it: an object that a build links, and a record that the runtime loads
 //! through the emitter. A crate that `gandr-runtime-emitter` depends on cannot
 //! take the record, because the emitter runs before the record loads. So the
-//! census marks each crate that the emitter reaches.
+//! census marks each crate that the emitter reaches. An entry under the C
+//! convention carries no type parameter and no trait bound, so the census
+//! counts the public items that have one.
 //!
 //! - [`Workspace::read`] reads the JSON of `cargo metadata` with its resolved
-//!   graph: each crate of the workspace with its directory, and each crate that
-//!   the emitter reaches by a normal or a build dependency, directly or through
-//!   other crates. A dev dependency is no part of the emitter.
+//!   graph: each crate of the workspace with its directory and its library, and
+//!   each crate that the emitter reaches by a normal or a build dependency,
+//!   directly or through other crates. A dev dependency is no part of the
+//!   emitter.
+//! - [`rustdoc::generic_items`] counts the generic public items in the JSON
+//!   that rustdoc writes for one library, and [`Workspace::set_generic_items`]
+//!   puts the count in the row of its crate.
 //! - [`Workspace::render`] writes the text of `ledger/twin-census.md`.
 //! - [`stale`] compares a committed text with the rendered one and names each
 //!   crate whose row differs.
@@ -19,6 +26,8 @@
 //! features of each member unified. So an optional dependency that a different
 //! member turns on counts as a dependency of the emitter, as it does in a build
 //! of the workspace.
+
+pub mod rustdoc;
 
 extern crate alloc;
 
@@ -60,6 +69,18 @@ pub enum CensusError
         /// Each crate whose row differs, is absent, or has no crate.
         rows: Vec<String>,
     },
+    /// The text is not the JSON that rustdoc writes for a library.
+    Rustdoc
+    {
+        /// The reason of the JSON reader.
+        reason: String,
+    },
+    /// The JSON of rustdoc has a format that the census does not read.
+    RustdocFormat
+    {
+        /// The format of the file.
+        found: u32,
+    },
 }
 
 impl fmt::Display for CensusError
@@ -91,6 +112,14 @@ impl fmt::Display for CensusError
                  `twin-census --write`. The rows that differ: {}",
                 rows.join(", ")
             ),
+            Self::Rustdoc { ref reason } => {
+                write!(f, "the text is not the JSON of rustdoc: {reason}")
+            },
+            Self::RustdocFormat { found } => write!(
+                f,
+                "the JSON of rustdoc has the format {found}; the census reads the format {}",
+                rustdoc::FORMAT
+            ),
         }
     }
 }
@@ -109,6 +138,35 @@ struct Package
     name: String,
     /// The absolute path of the package's manifest.
     manifest_path: String,
+    /// The targets of the package.
+    targets: Vec<Target>,
+}
+
+/// One target of a package.
+#[derive(Debug, serde::Deserialize)]
+struct Target
+{
+    /// The kinds of the target: `lib`, `bin`, `proc-macro` and others.
+    kind: Vec<String>,
+    /// The name of the target.
+    name: String,
+}
+
+impl Target
+{
+    /// Whether the target is a library that rustdoc documents.
+    ///
+    /// # Specification
+    /// trivial.
+    fn library(&self) -> bool
+    {
+        self.kind.iter().any(|kind| {
+            matches!(
+                kind.as_str(),
+                "lib" | "rlib" | "dylib" | "cdylib" | "staticlib" | "proc-macro"
+            )
+        })
+    }
 }
 
 /// The kind of one edge of the resolved graph: `null` for a normal
@@ -160,6 +218,8 @@ struct Metadata
     workspace_members: Vec<String>,
     /// The resolved graph.
     resolve: Resolve,
+    /// The target directory of the workspace.
+    target_directory: String,
 }
 
 /// Where a crate stands with respect to the emitter.
@@ -177,14 +237,35 @@ pub enum Standing
     Apart,
 }
 
-/// Each crate of the workspace, by its directory below `crates/`, with its
-/// standing.
+/// One crate of the census.
 ///
 /// # Specification
 /// trivial.
-#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Row
+{
+    /// Where the crate stands with respect to the emitter.
+    standing: Standing,
+    /// The name of the crate's library, with `_` for each `-`, if it has one.
+    library: Option<String>,
+    /// The count of generic public items of the library, once it is read.
+    generic_items: Option<usize>,
+}
+
+/// Each crate of the workspace, by its directory below `crates/`, with its
+/// standing and its count of generic public items; and the target directory
+/// of the workspace.
+///
+/// # Specification
+/// trivial.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Workspace(BTreeMap<String, Standing>);
+pub struct Workspace
+{
+    /// Each crate.
+    crates: BTreeMap<String, Row>,
+    /// The target directory of the workspace.
+    target_directory: String,
+}
 
 impl Workspace
 {
@@ -218,7 +299,7 @@ impl Workspace
     /// - witness: `tests::census::a_crate_under_the_emitter_is_marked_and_a_dev_edge_is_not`
     /// - witness: `tests::census::metadata_with_no_emitter_or_no_json_is_refused_by_name`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |workspace| {
-        workspace.0.values().filter(|&&standing| standing == Standing::Emitter).count() == 1
+        workspace.crates.values().filter(|row| row.standing == Standing::Emitter).count() == 1
     }))]
     #[inline]
     pub fn read(metadata: &[u8]) -> Result<Self, CensusError>
@@ -278,10 +359,65 @@ impl Workspace
                 else {
                     Standing::Apart
                 };
-                (directory(&package.manifest_path), standing)
+                let library = package
+                    .targets
+                    .iter()
+                    .find(|target| target.library())
+                    .map(|target| target.name.replace('-', "_"));
+                (directory(&package.manifest_path), Row {
+                    standing,
+                    library,
+                    generic_items: None,
+                })
             })
             .collect();
-        Ok(Self(crates))
+        Ok(Self {
+            crates,
+            target_directory: parsed.target_directory,
+        })
+    }
+
+    /// The target directory of the workspace, as Cargo's metadata gives it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn target_directory(&self) -> &str
+    {
+        &self.target_directory
+    }
+
+    /// Each crate with a library: the directory of the crate, and the name of
+    /// its library with `_` for each `-`, the stem of the file that rustdoc
+    /// writes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn libraries(&self) -> impl Iterator<Item = (&str, &str)>
+    {
+        self.crates
+            .iter()
+            .filter_map(|(name, row)| Some((name.as_str(), row.library.as_deref()?)))
+    }
+
+    /// Puts `count`, the count of generic public items of the library of the
+    /// crate in the directory `crate_directory`, in the row of that crate. A
+    /// directory that is no crate of the workspace changes nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn set_generic_items(
+        &mut self,
+        crate_directory: &str,
+        count: usize,
+    )
+    {
+        if let Some(row) = self.crates.get_mut(crate_directory) {
+            row.generic_items = Some(count);
+        }
     }
 
     /// The count of crates under the emitter, and the count of crates.
@@ -298,17 +434,17 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::read`].
     /// - witness: `tests::census::a_crate_under_the_emitter_is_marked_and_a_dev_edge_is_not`
-    #[spec(ensures: |ret| ret.0 <= ret.1 && ret.1 == self.0.len())]
+    #[spec(ensures: |ret| ret.0 <= ret.1 && ret.1 == self.crates.len())]
     #[must_use]
     #[inline]
     pub fn counts(&self) -> (usize, usize)
     {
         let under = self
-            .0
+            .crates
             .values()
-            .filter(|&&standing| standing == Standing::Under)
+            .filter(|row| row.standing == Standing::Under)
             .count();
-        (under, self.0.len())
+        (under, self.crates.len())
     }
 
     /// The text of `ledger/twin-census.md`.
@@ -316,8 +452,10 @@ impl Workspace
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one row for each crate, in the order of its directory, with
-    ///   `yes`, `no` or `the emitter`, and one line with the counts of
-    ///   [`Self::counts`].
+    ///   `yes`, `no` or `the emitter`, and with the count of generic public
+    ///   items, `no library` or `not read`; one line with the counts of
+    ///   [`Self::counts`], and one line with the sum of the generic public
+    ///   items.
     /// - panics: none.
     /// - executable: none — the text is its golden's to show.
     ///
@@ -325,7 +463,8 @@ impl Workspace
     /// - allocation: the text, growth within the crates
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the golden of a graph of five crates.
+    /// - hypothesis: L3 — the golden of a graph of five crates, one of them
+    ///   with no library.
     /// - witness: `tests::census::a_crate_under_the_emitter_is_marked_and_a_dev_edge_is_not`
     #[must_use]
     #[inline]
@@ -335,21 +474,36 @@ impl Workspace
             "# Twin census\n\nA twin is a function of a crate that gandr source states. A crate is \
              under the emitter when `gandr-runtime-emitter` depends on it by a normal or a build \
              dependency, directly or through other crates. A twin of such a crate runs as an \
-             object, and not as a record that the runtime loads.\n\n`twin-census --write` writes \
-             this file from `cargo metadata`. `twin-census --check` refuses it when it is not \
-             the census of the workspace.\n\n| Crate | Under the emitter |\n| ----- | \
-             ----------------- |\n",
+             object, and not as a record that the runtime loads.\n\nAn item is generic when it \
+             has a type parameter or a trait bound. An entry under the C convention carries \
+             neither, so a generic item has no twin without a wrapper. The column counts the \
+             public functions, methods, types, traits and type aliases of the crate's library \
+             that are generic.\n\n`twin-census --write` writes this file from `cargo metadata` \
+             and from the JSON that rustdoc writes for each library. `twin-census --check` \
+             refuses it when it is not the census of the workspace.\n\n| Crate | Under the \
+             emitter | Generic items |\n| ----- | ----------------- | ------------- |\n",
         );
-        for (name, standing) in &self.0 {
-            let cell = match *standing {
+        let mut generic = 0_usize;
+        for (name, row) in &self.crates {
+            let standing = match row.standing {
                 Standing::Emitter => "the emitter",
                 Standing::Under => "yes",
                 Standing::Apart => "no",
             };
-            let _infallible = writeln!(text, "| `{name}` | {cell} |");
+            let _infallible = match (row.library.as_ref(), row.generic_items) {
+                (_, Some(count)) => {
+                    generic = generic.saturating_add(count);
+                    writeln!(text, "| `{name}` | {standing} | {count} |")
+                },
+                (None, None) => writeln!(text, "| `{name}` | {standing} | no library |"),
+                (Some(_), None) => writeln!(text, "| `{name}` | {standing} | not read |"),
+            };
         }
         let (under, all) = self.counts();
-        let _infallible = writeln!(text, "\nCrates under the emitter: {under} of {all}.");
+        let _infallible = writeln!(
+            text,
+            "\nCrates under the emitter: {under} of {all}.\n\nGeneric public items: {generic}."
+        );
         text
     }
 }

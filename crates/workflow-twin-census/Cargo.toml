@@ -3,7 +3,7 @@ name = "gandr-workflow-twin-census"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The census of the crates that the emitter depends on, read from `cargo metadata` and written to `ledger/twin-census.md` by the `twin-census` binary"
+description = "The census of the crates that the emitter depends on and of their generic public items, read from `cargo metadata` and rustdoc's JSON and written to `ledger/twin-census.md` by the `twin-census` binary"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -22,12 +22,14 @@ path = "src/main.rs"
 name = "tests"
 path = "tests/lib.rs"
 
-# serde and serde_json read the metadata of Cargo. The binary reads its flags
-# through clap. The pinned anodized facade supplies the executable
+# serde and serde_json read the metadata of Cargo and the JSON of rustdoc.
+# rayon reads the files of rustdoc at the same time. The binary reads its
+# flags through clap. The pinned anodized facade supplies the executable
 # specifications.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
