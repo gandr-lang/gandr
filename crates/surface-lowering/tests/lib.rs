@@ -29,3 +29,5 @@ mod squier;
 mod static_operators;
 #[cfg(test)]
 mod theory;
+#[cfg(test)]
+mod triples;
