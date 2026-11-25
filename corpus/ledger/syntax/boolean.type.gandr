@@ -4,4 +4,4 @@
 def holds(p : Integer * Bool) -> Type = return Integer;
 
 /// A value at the type that `holds` gives for the pair `*{3, true}`.
-def held(x : holds(*{3, true})) -> -F holds(*{3, true}) = return x;
+def held(x : holds *{3, true}) -> -F (holds *{3, true}) = return x;

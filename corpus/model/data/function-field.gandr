@@ -26,7 +26,7 @@ data Holder(a : Type) : Type where
 /// A value of the first type with a value of the type it picks.
 data Pair(a : Type, b : a -> Type) : Type where
   /// The two values.
-  | MkPair : (x : a, y : b(x)) --> Pair a b
+  | MkPair : (x : a, y : b x) --> Pair a b
 
 /// A family over the functions from the unit, constantly the unit.
 def unitOver(f : Unit -> Unary) -> Type = return Unit

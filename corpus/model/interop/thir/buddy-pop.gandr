@@ -230,7 +230,7 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
             | true => return type(*{
               w : Val,
               holds : Path[.A = Maybe Val] (Some w : Maybe Val) (below path v),
-              post : k(Ends w (Own m q v))
+              post : k (Ends w (Own m q v))
             })
             | false => return Void
     | NoneE => k (Ends NoneV s)
@@ -247,7 +247,7 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
                 | true => return type(*{
                   v1 : Val,
                   made : Path[.A = Maybe Val] (Some v1 : Maybe Val) (setAt path v w),
-                  post : k(Ends UnitV (Own m Whole v1))
+                  post : k (Ends UnitV (Own m Whole v1))
                 })
                 | false => return Void
               | Part => return Void
@@ -318,7 +318,7 @@ pub def linked(b : Nat, rest : Ixs, blocks : Vals, tail : Type) -> Type =
     held : Path[.A = Maybe Val] (Some (headOf
       rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
     link : tail,
-    apart : notIn(rest, b)
+    apart : notIn rest b
   })
 
 /// Each listed block links to the next through the blocks, and
@@ -333,7 +333,7 @@ pub def rec chain(ixs : Ixs, blocks : Vals) -> Type =
 pub def freeAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Type =
   return type(*{
     head : Path[.A = Maybe Val] (Some (headOf ixs) : Maybe Val) (nth heads order),
-    wf : chain(ixs, blocks)
+    wf : chain ixs blocks
   })
 
 /// `pop`'s postcondition at the free list `ixs`: empty answers `None` and
@@ -349,8 +349,8 @@ pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> T
         some : Path[.A = Val] res (SomeV (IntV b)),
         hs : Vals,
         now : Path[.A = State] s (Own Zero Whole (buddy blocks hs)),
-        rep : freeAt(blocks, hs, order, rest),
-        out : notIn(rest, b)
+        rep : freeAt blocks hs order rest,
+        out : notIn rest b
       })
 
 /// `pop`'s postcondition as a predicate on where it ends.
@@ -376,7 +376,7 @@ pub def isSome(m : Maybe Val) -> Type =
 /// No path joins `Some(y)` to `None`, since `isSome` holds at one end only.
 pub def noneHeld(y : Val, h : Path (Some y : Maybe Val) (None : Maybe Val)) -> Void =
   Path.walk
-    ((m : Maybe Val, Path[.A = Maybe Val] (Some y : Maybe Val) m) -> isSome(m))
+    ((m : Maybe Val, Path[.A = Maybe Val] (Some y : Maybe Val) m) -> isSome m)
     h
     (Path.here (Some y : Maybe Val))
     (Path.here h)
@@ -449,11 +449,11 @@ pub def restFree(
   rest : Ixs,
   y : Val,
   h : Path[.A = Maybe Val] (Some y : Maybe Val) (nth heads order),
-  link : chain(rest, blocks)
+  link : chain rest blocks
 ) -> *{
   head : Path[.A = Maybe Val] (Some (headOf
     rest) : Maybe Val) (nth (setN heads order (headOf rest)) order),
-  wf : chain(rest, blocks)
+  wf : chain rest blocks
 } =
   let set = nthSet heads order (headOf rest) y
   let p = set h
@@ -465,11 +465,8 @@ pub def popNone(
   heads : Vals,
   order : Nat,
   h : Path[.A = Maybe Val] (Some NoneV : Maybe Val) (nth heads order)
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, INil),
-  Own Zero Whole buddy(blocks, heads)
+) -> wpMemFn popBody (popEnv order) (popPost blocks heads order INil) (
+  Own Zero Whole (buddy blocks heads)
 ) =
   *{NoneV, *{Path.ap keepSome h, emptyEnds blocks heads}}
 
@@ -481,14 +478,12 @@ pub def afterWrite(
   b : Nat,
   rest : Ixs,
   h : Path[.A = Maybe Val] (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
-  link : chain(rest, blocks),
-  apart : notIn(rest, b)
-) -> wpMem(
-  SomeE (Var Zero),
-  VCons (IntV b) popEnv(order),
-  popPost(blocks, heads, order, ICons b rest),
-  popPost(blocks, heads, order, ICons b rest),
-  Own Zero Whole buddy(blocks, setN(heads, order, headOf(rest)))
+  link : chain rest blocks,
+  apart : notIn rest b
+) -> wpMem (SomeE (Var Zero)) (VCons (IntV b) (popEnv order)) (popPost blocks heads order (
+  ICons b rest
+)) (popPost blocks heads order (ICons b rest)) (
+  Own Zero Whole (buddy blocks (setN heads order (headOf rest)))
 ) =
   *{Path.here (SomeV (IntV b)), *{setN heads order (headOf rest), *{
     Path.here (Own Zero Whole (buddy blocks (setN heads order (headOf rest)))),
@@ -505,15 +500,11 @@ pub def afterRead(
   h : Path[.A = Maybe Val] (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
   held : Path[.A = Maybe Val] (Some (headOf
     rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
-  link : chain(rest, blocks),
-  apart : notIn(rest, b)
-) -> wpMem(
-  someArm,
-  VCons (IntV b) popEnv(order),
-  popPost(blocks, heads, order, ICons b rest),
-  popPost(blocks, heads, order, ICons b rest),
-  Own Zero Whole buddy(blocks, heads)
-) =
+  link : chain rest blocks,
+  apart : notIn rest b
+) -> wpMem someArm (VCons (IntV b) (popEnv order)) (popPost blocks heads order (
+  ICons b rest
+)) (popPost blocks heads order (ICons b rest)) (Own Zero Whole (buddy blocks heads)) =
   *{headOf rest, *{held, *{
     buddy blocks (setN heads order (headOf rest)),
     *{
@@ -534,14 +525,11 @@ pub def popSome(
   wf : *{
     held : Path[.A = Maybe Val] (Some (headOf
       rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
-    link : chain(rest, blocks),
-    apart : notIn(rest, b)
+    link : chain rest blocks,
+    apart : notIn rest b
   }
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, ICons b rest),
-  Own Zero Whole buddy(blocks, heads)
+) -> wpMemFn popBody (popEnv order) (popPost blocks heads order (ICons b rest)) (
+  Own Zero Whole (buddy blocks heads)
 ) =
   match wf where
     | *{held, link, apart} => *{
@@ -561,15 +549,12 @@ pub def popFrom(
     wf : *{
       held : Path[.A = Maybe Val] (Some (headOf
         rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
-      link : chain(rest, blocks),
-      apart : notIn(rest, b)
+      link : chain rest blocks,
+      apart : notIn rest b
     }
   }
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, ICons b rest),
-  Own Zero Whole buddy(blocks, heads)
+) -> wpMemFn popBody (popEnv order) (popPost blocks heads order (ICons b rest)) (
+  Own Zero Whole (buddy blocks heads)
 ) =
   match fl where
     | *{head, wf} => popSome blocks heads order b rest head wf
@@ -580,11 +565,8 @@ pub def popFromEmpty(
   heads : Vals,
   order : Nat,
   fl : *{head : Path[.A = Maybe Val] (Some NoneV : Maybe Val) (nth heads order), wf : Unit}
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, INil),
-  Own Zero Whole buddy(blocks, heads)
+) -> wpMemFn popBody (popEnv order) (popPost blocks heads order INil) (
+  Own Zero Whole (buddy blocks heads)
 ) =
   match fl where
     | *{head, wf} => popNone blocks heads order head
@@ -593,16 +575,13 @@ pub def popFromEmpty(
 /// list's head and leaves the rest free.
 /// Its predicate and specification take 61 lines and its proof 204, against
 /// about 2800 lines of Rocq for Corten's whole allocator.
-pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> freeAt(
-  blocks,
-  heads,
-  order,
-  ixs
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, ixs),
-  Own Zero Whole buddy(blocks, heads)
+pub def popMeets(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  ixs : Ixs
+) -> (freeAt blocks heads order ixs) -> wpMemFn popBody (popEnv order) (popPost blocks heads order ixs) (
+  Own Zero Whole (buddy blocks heads)
 ) =
   match ixs where
     | INil => fun (fl) { popFromEmpty blocks heads order fl }

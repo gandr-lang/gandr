@@ -29,7 +29,7 @@ pub def natOr(n : Nat) -> Type =
     | Succ(_m) => return Unit
 
 /// The predecessor under the arm `Zero`, where the binder is a natural.
-pub def refinedPred(n : Nat) -> natOr(n) -> Nat =
+pub def refinedPred(n : Nat) -> (natOr n) -> Nat =
   match n where
     | Zero => fun (v) { match v -> -F Nat { | Zero => Zero | Succ(m) => m } }
     | Succ(_m) => fun (_u) { Zero }
@@ -43,7 +43,7 @@ def predTwo() -> Nat =
 /// One for a decoded list with an entry, zero for an empty list, a natural
 /// itself, and zero for a function.
 /// Under the arm `ListL(a)`, the binder is a list of the decodes of `a`.
-pub def occupied(c : UL) -> elL(c) -> Nat =
+pub def occupied(c : UL) -> (elL c) -> Nat =
   match c where
     | NatL => fun (v) { v }
     | ListL(_a) => fun (v) {

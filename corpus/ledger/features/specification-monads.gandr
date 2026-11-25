@@ -78,7 +78,7 @@ def isOne(_x : Unit, s : Integer) -> Type = return Path s 1;
 /// specification at `isOne`.
 def incrSpecified : *{
   m : Prog (Either StateOp Void) Unit,
-  meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
+  meets : (s : Integer, incrSpec isOne s) -> wp m isOne s
 } = *{incrTree, fun (s) { fun (h) { h } }};
 
 /// The increment paired with evidence at every postcondition: the
@@ -86,7 +86,7 @@ def incrSpecified : *{
 /// over the successor held read as one call.
 def incrSpecifiedEverywhere : *{
   m : Prog (Either StateOp Void) Unit,
-  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
+  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec post s) -> wp m post s
 } = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }};
 
 /// The return specification: the postcondition at the unit and the initial
@@ -97,5 +97,5 @@ def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) s;
 /// at every postcondition.
 def doneSpecified : *{
   m : Prog (Either StateOp Void) Unit,
-  meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
+  meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec post s) -> wp m post s
 } = *{(Done (*{}) : Prog (Either StateOp Void) Unit), fun (post) { fun (s) { fun (h) { h } } }};

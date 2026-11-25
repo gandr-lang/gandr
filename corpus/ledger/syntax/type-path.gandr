@@ -17,4 +17,4 @@ data Fragment : Terms Two -> Type where {
 module Counter where
   type Pair(a : Type) = a * a;
   def same(a : Type) -> Type = a;
-def twin(p : Fragment Two.word) -> Counter.same(Counter.Pair(Integer)) = *{1, 2};
+def twin(p : Fragment Two.word) -> Counter.same (Counter.Pair Integer) = *{1, 2};

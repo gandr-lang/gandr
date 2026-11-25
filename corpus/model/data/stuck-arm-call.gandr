@@ -40,13 +40,13 @@ pub def viaZeroAgain(w : Nat, h : Heap) -> Type =
     | Succ(_n) => return Void
 
 /// `atZero` returns `emp(h)` from `viaZero(Zero, h)`.
-def atZero(h : Heap) -> viaZero(Zero, h) -> emp(h) =
+def atZero(h : Heap) -> (viaZero Zero h) -> emp h =
   fun (e) { e }
 
 /// `twiceAtZero` returns `emp(h)` after two selected arms.
-def twiceAtZero(h : Heap) -> viaZeroAgain(Zero, h) -> emp(h) =
+def twiceAtZero(h : Heap) -> (viaZeroAgain Zero h) -> emp h =
   fun (e) { e }
 
 /// One arm down, the call that arm reached, itself an arm away from `emp(h)`.
-def onceAtZero(h : Heap) -> viaZeroAgain(Zero, h) -> viaZero(Zero, h) =
+def onceAtZero(h : Heap) -> (viaZeroAgain Zero h) -> viaZero Zero h =
   fun (e) { e }

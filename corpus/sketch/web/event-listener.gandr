@@ -26,7 +26,7 @@ module Dom
 module Console
 
 /// The message a click writes to the host's console.
-def clicked (event : Dom.Event) -> [Console] () =
+def clicked(event : Dom.Event) -> [Console] () =
   Console.log "the button is clicked"
 
 /// A listener on `button` while `wait` runs, removed after it. The checker

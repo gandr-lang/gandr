@@ -47,10 +47,10 @@ def integers_same : Path[.A = Bool] (7 == 7) true = Path.here true;
 def integers_different : Path[.A = Bool] (7 != 8) true = Path.here true;
 
 /// The code of a text comparison decodes in a type.
-def decoded_flag : decoded(ofFlag("a" == "a")) = "x";
+def decoded_flag : decoded (ofFlag ("a" == "a")) = "x";
 
 /// The code of an integer inequality decodes in a type.
-def decoded_unequal : decoded(ofFlag(7 != 8)) = "x";
+def decoded_unequal : decoded (ofFlag (7 != 8)) = "x";
 
 /// The wrong answer is refused.
 @[refuses("EndpointMismatch")]

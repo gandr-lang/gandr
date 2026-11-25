@@ -49,13 +49,13 @@ pub theory CwF where
   /// Substitution in a type: it moves the type along `s`.
   oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
   /// Substitution in a term: it moves the term along `s`, to its moved type.
-  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d subTy(a, s);
+  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d (subTy a s);
   /// The projection that forgets the newest type.
-  oper p : (a : Ty g) --> Sub ext(g, a) g;
+  oper p : (a : Ty g) --> Sub (ext g a) g;
   /// The newest variable.
-  oper q : (a : Ty g) --> Tm ext(g, a) subTy(a, p(a));
+  oper q : (a : Ty g) --> Tm (ext g a) (subTy a (p a));
   /// A substitution extended by a term.
-  oper pair : (s : Sub d g, t : Tm d subTy(a, s)) --> Sub d ext(g, a);
+  oper pair : (s : Sub d g, t : Tm d (subTy a s)) --> Sub d (ext g a);
 
   /// The identity on the left.
   rule idl : comp (id g) s ==> s;
@@ -78,13 +78,13 @@ pub module Standard : Model(CwF) where
   /// A type in a context is a family over it.
   type Ty(g : Con) = g -> Type;
   /// A term is a section: at each point, a value of the family there.
-  type Tm(g : Con, a : Ty g) = (x : g) -> a(x);
+  type Tm(g : Con, a : Ty g) = (x : g) -> a x;
 
   /// The empty context has one point.
   def empty : Type = Unit;
 
   /// Comprehension pairs a point with a point of its type.
-  def ext(g : Type, a : g -> Type) -> Type = return type(*{x : g, y : a(x)});
+  def ext(g : Type, a : g -> Type) -> Type = return type(*{x : g, y : a x});
 
   /// The identity function.
   def id(g : Type) -> g -> g = fun (x) { x };
@@ -101,19 +101,19 @@ pub module Standard : Model(CwF) where
     fun (x) { a (s x) }
 
   /// A section read after a function.
-  def subTm(g : Type, a : g -> Type, d : Type, t : (x : g) -> a(x), s : d -> g) -> (
+  def subTm(g : Type, a : g -> Type, d : Type, t : (x : g) -> a x, s : d -> g) -> (
     x : d
-  ) -> a(s(x)) =
+  ) -> a (s x) =
     fun (x) { t (s x) }
 
   /// The first projection.
-  def p(g : Type, a : g -> Type) -> *{x : g, y : a(x)} -> g = fun (z) { z.0 };
+  def p(g : Type, a : g -> Type) -> *{x : g, y : a x} -> g = fun (z) { z.0 };
 
   /// The point a pair holds first.
-  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g = z.0;
+  def first(g : Type, a : g -> Type, z : *{x : g, y : a x}) -> g = z.0;
 
   /// The second projection, at the family read at the first.
-  def q(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =
+  def q(g : Type, a : g -> Type) -> (z : *{x : g, y : a x}) -> a (first g a z) =
     fun (z) { z.1 }
 
   /// The pair of a function and a section: each point goes to its image and
@@ -123,8 +123,8 @@ pub module Standard : Model(CwF) where
     g : Type,
     a : g -> Type,
     s : d -> g,
-    t : (x : d) -> a(s(x))
-  ) -> d -> *{x : g, y : a(x)} =
+    t : (x : d) -> a (s x)
+  ) -> d -> *{x : g, y : a x} =
     fun (z) { *{s z, t z} }
 
 /// A family over the integers that is `Bool` at every point.

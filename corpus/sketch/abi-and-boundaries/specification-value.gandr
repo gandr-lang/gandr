@@ -62,5 +62,5 @@ extern Rust from "crate:demo" {
 }
 
 /// The same clamp written in gandr, with no foreign body left to trust.
-pub def clampLocal(x : i32, lo : i32, hi : i32) -> clamped(x, lo, hi) =
+pub def clampLocal(x : i32, lo : i32, hi : i32) -> clamped x lo hi =
   max lo (min x hi)

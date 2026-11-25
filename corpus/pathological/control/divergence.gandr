@@ -55,8 +55,7 @@ def unreadDiv(
   b : Type,
   f : a -> b,
   g : +U (a -> -F [Partial] b)
-) -> Path[.A = +U (a -> -F [Partial] b)](
-  thunk { fun (x) { let _ = g x; f x } },
-  thunk { fun (x) { f x } }
-) =
+) -> Path[.A = +U (a -> -F [Partial] b)] (thunk { fun (x) { let _ = g x; f x } }) (thunk {
+  fun (x) { f x }
+}) =
   Path.here (thunk { fun (x) { f x } })

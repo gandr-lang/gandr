@@ -136,14 +136,13 @@ def carryInjective(
     m
 
 /// Back transport maps both path-space endpoints to the identity function.
-def endsAgree(b : Type) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> b](
-  thunk { fun (w) { source b w } },
-  thunk { fun (w) { target b w } }
-) =
+def endsAgree(b : Type) -> Path[.A = *{x : b, y : b, p : Path[.A = b] x y} -> b] (thunk {
+  fun (w) { source b w }
+}) (thunk { fun (w) { target b w } }) =
   carryInjective
     b
     b
-    (type(*{x : b, y : b, p : Path[.A = b](x, y)}))
+    (type(*{x : b, y : b, p : Path[.A = b] x y}))
     (ua (*{
       thunk { fun (v) { diag b v } },
       *{

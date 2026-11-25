@@ -53,7 +53,7 @@ pub def isOne(_x : Unit, s : Integer) -> Type = return Path s 1;
 /// Both sides unfold to `Path[.A = Integer](s + 1, 1)`.
 def incrSpecified : *{
   m : Prog (Either StateOp Void) Unit,
-  meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
+  meets : (s : Integer, incrSpec isOne s) -> wp m isOne s
 } = *{incrTree, fun (s) { fun (h) { h } }};
 
 /// `incrSpecifiedEverywhere` pairs the increment with evidence
@@ -61,7 +61,7 @@ def incrSpecified : *{
 /// The fold and specification pass the successor to `post`.
 def incrSpecifiedEverywhere : *{
   m : Prog (Either StateOp Void) Unit,
-  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
+  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec post s) -> wp m post s
 } = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }};
 
 /// `incrSpecBare` gives the unpaired increment evidence.
@@ -69,8 +69,8 @@ def incrSpecifiedEverywhere : *{
 def incrSpecBare(
   post : (Unit, Integer) -> Type,
   s : Integer,
-  h : incrSpec(post, s)
-) -> wp(incrTree, post, s) = h;
+  h : incrSpec post s
+) -> wp incrTree post s = h;
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.
@@ -82,5 +82,5 @@ def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) s;
 /// variable's call converts with that call.
 def doneSpecified : *{
   m : Prog (Either StateOp Void) Unit,
-  meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
+  meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec post s) -> wp m post s
 } = *{(Done (*{}) : Prog (Either StateOp Void) Unit), fun (post) { fun (s) { fun (h) { h } } }};

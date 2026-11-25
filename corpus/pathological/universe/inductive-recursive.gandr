@@ -47,7 +47,7 @@ rec {
   @[refuses("StageNotBelow")]
   data Odd : Type where {
     | TwoC : Odd
-    | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
+    | Over : (a : Odd, b : +U ((decode base) -> -F Odd)) --> Odd
   }
 
   /// The decoder, recursing on the code below: the field's decode does not
@@ -71,7 +71,7 @@ rec {
   @[refuses("StageNotBelow")]
   data Loop : Type where {
     | Base : Loop
-    | PiL : (a : Loop, b : +U (unloop(a) -> -F Loop)) --> Loop
+    | PiL : (a : Loop, b : +U ((unloop a) -> -F Loop)) --> Loop
   }
 
   /// The decoder decoding a function code again where its domain is wanted.
@@ -79,14 +79,14 @@ rec {
   def rec unloop(u : Loop) -> -F Type =
     match u where
       | Base => return Two
-      | PiL(a, b) => return (+U ((x : unloop[<](PiL a b)) -> -F Two))
+      | PiL(a, b) => return (+U ((x : unloop [<] (PiL a b)) -> -F Two))
 }
 
 /// A type read off a call that returns no code: `g(L)` is a function still
 /// waiting for its second argument, and only a pure returner's call stands
 /// where a type is read.
 @[refuses("CompoundEndpoint")]
-def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two =
+def curried(g : +U (Two -> Two -> -F Type), v : g L) -> -F Two =
   return L
 
 /// A hierarchy of universes by level, and its decoder, in one block.
@@ -99,7 +99,7 @@ rec {
     /// The universe a level down, a code one level up.
     | TypeV : (n : Nat) --> ULevel (Succ n)
     /// The dependent functions from a coded domain at a level.
-    | PiV : (n : Nat, a : ULevel n, b : +U (elLevel(n, a) -> -F ULevel n)) --> ULevel n
+    | PiV : (n : Nat, a : ULevel n, b : +U ((elLevel n a) -> -F ULevel n)) --> ULevel n
   }
 
   /// The decoder at each level. Its arm for `TypeV` returns the family
@@ -109,5 +109,5 @@ rec {
     match u where
       | NatV(m) => return Nat
       | TypeV(m) => return (ULevel m)
-      | PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F elLevel[<](m, b(x))))
+      | PiV(m, a, b) => return (+U ((x : elLevel [<] m a) -> -F (elLevel [<] m (b x))))
 }
