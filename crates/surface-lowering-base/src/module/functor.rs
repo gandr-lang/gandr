@@ -1,6 +1,6 @@
 //! Generative functors, as the collection pass reads them: the declaration
 //! `module MkSet(Elt : *{ … }) :> *{ … } where { … }`, collected once as a
-//! template, and each application `module IntSet = MkSet(IntOrd) ;`, collected
+//! template, and each application `module IntSet = MkSet IntOrd ;`, collected
 //! as an instance of it. The minting half lives with the lowering
 //! (`crate::lower::functor`).
 //!
@@ -37,8 +37,8 @@
 //! checks, so an instance's types name what a source can, each of the body's
 //! atoms to the image's. The image of an abstract slot is sealed at the
 //! instance's own module, so its sealing site is the application's and every
-//! application mints its own atoms: `module A = MkCounter(Seed) ;` and `module
-//! B = MkCounter(Seed) ;` export two distinct types.
+//! application mints its own atoms: `module A = MkCounter Seed ;` and `module
+//! B = MkCounter Seed ;` export two distinct types.
 //!
 //! - Choice: the parameter is strengthened at each application (Leroy's
 //!   manifest types, the ML reading): an argument whose type is visible lends
@@ -69,7 +69,7 @@
 //! The grammar writes an application only as a module binding, so
 //! `MkCounter(Seed).T` names no instance: an application projected from is
 //! refused by name, `ProjectionFromApplication`, and the instance it would
-//! name is bound first, `module A = MkCounter(Seed) ;`, then read as `A.T`.
+//! name is bound first, `module A = MkCounter Seed ;`, then read as `A.T`.
 //!
 //! # A flow is a functor between two theories
 //!
@@ -81,7 +81,7 @@
 //! applies it to the imported source: each component is the source's `pub`
 //! declaration of its name, the instance enters no module path, and its
 //! witnesses are named at the import's `via`. A module binding applies it to
-//! a module as it applies a functor, `module Older = downgrade(Echo) ;`: each
+//! a module as it applies a functor, `module Older = downgrade Echo ;`: each
 //! component is the module's member of its name, and the instance is the
 //! binding's module. In both, a body member whose definition is a domain
 //! member's name alone is a renaming: its image is the argument's member, and
@@ -472,7 +472,7 @@ pub enum Matched<'source>
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Argument
 {
-    /// A module, `module A = F(X) ;`: its exports are the components.
+    /// A module, `module A = F X ;`: its exports are the components.
     Module(StructureIndex),
     /// A source an import reads through a flow: its `pub` top-level
     /// declarations and type members are the components.
@@ -577,7 +577,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// An application as its header writes it: `module A = F(P) ;`.
+/// An application as its header writes it: `module A = F P ;`.
 ///
 /// # Specification
 /// trivial.
@@ -1839,7 +1839,7 @@ struct Binding<'source>
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Entered
 {
-    /// A module binding's, `module A = F(X) ;`: among its container's
+    /// A module binding's, `module A = F X ;`: among its container's
     /// modules, so a path reads it.
     Module,
     /// An import's translation's: nowhere, so only the import reads it.

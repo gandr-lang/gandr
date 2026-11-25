@@ -676,7 +676,7 @@ fn lowered(
         LoweringRefusal::ProjectionFromApplication { functor, .. } => write!(
             f,
             "an application of `{functor}` is read before it is bound; bind it with `module A = \
-             {functor}(…) ;` and read `A`"
+             {functor} … ;` and read `A`"
         ),
         LoweringRefusal::UnreadAscription { name, form, .. } => {
             write!(f, "`{name}` {form}, which is not supported yet")

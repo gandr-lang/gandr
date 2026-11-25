@@ -142,6 +142,9 @@ pub enum RewriteName
     /// `f a b`, `el [<] a`, `M.F a` and `View[m] a`; both forms write the
     /// juxtaposition, an argument that is no atom in its parentheses.
     TypeApplication,
+    /// A functor application: `module A = F(B) ;` and `module A = F B ;`;
+    /// both forms write the juxtaposition.
+    FunctorApplication,
     /// A definition's body after `=`: `def f() -> B { c }` and `def f() -> B
     /// = c ;`, a body of statements in a block after `=`; both forms move it,
     /// as `=` is the one spelling of a body.
@@ -174,6 +177,7 @@ impl RewriteName
         Self::FunctionForm,
         Self::JoinedDefinition,
         Self::TypeApplication,
+        Self::FunctorApplication,
         Self::BodyAfterEquals,
         Self::HandlerWords,
     ];
@@ -204,6 +208,7 @@ impl RewriteName
             Self::FunctionForm => "function-form",
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
+            Self::FunctorApplication => "functor-application",
             Self::BodyAfterEquals => "body-after-equals",
             Self::HandlerWords => "handler-words",
         }
@@ -292,7 +297,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 48] = [
+pub const REWRITES: [Rewrite; 50] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -615,6 +620,22 @@ pub const REWRITES: [Rewrite; 48] = [
         mold: MoldName("staged_type"),
         from: Spelling("View[m](a)"),
         to: Spelling("View[m] a"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::FunctorApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("module_declaration"),
+        from: Spelling("module A = F(B) ;"),
+        to: Spelling("module A = F B ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::FunctorApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("module_declaration"),
+        from: Spelling("module A = F(B) ;"),
+        to: Spelling("module A = F B ;"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -2603,6 +2624,10 @@ impl<'source> Respelling<'_, 'source>
                 }
                 self.juxtaposed_type(&mut out, parts)?
             },
+            (RewriteName::FunctorApplication, Direction::Sugar | Direction::Desugar) => {
+                juxtaposed_functor(&mut out, parts)?;
+                Band::Loose
+            },
             (RewriteName::BodyAfterEquals, Direction::Sugar | Direction::Desugar) => {
                 let rule = self.rule(at)?;
                 return self.after_equals(rule, parts, extent);
@@ -4301,6 +4326,66 @@ fn head_and_argument<'source>(parts: &[Part<'source>]) -> Option<(Child<'source>
     Some((head, argument))
 }
 
+/// Write a functor application's binding with its argument juxtaposed,
+/// `module A = F B ;` for `module A = F(B) ;`: each part as written, but
+/// a space for the `(` after the functor's name and nothing for the `)`
+/// before the `;`.
+///
+/// # Specification
+/// - requires: `parts` are the parts of a `module_declaration`, in source
+///   order.
+/// - ensures: `None` unless every part after the leading comments is an own
+///   tile, the second tile after the `=` is a `(` and the tiles end with `)`
+///   and `;`; otherwise the parts as written, but a space for that `(` and
+///   nothing for that `)`.
+/// - panics: none.
+/// - executable: none — the clause names the roles of the form's parts,
+///   which no predicate on the arguments and the result states more simply.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a glued one-segment and a dotted argument are written
+///   juxtaposed, under a documentation comment too, and a juxtaposed one and
+///   a module body keep their spelling.
+/// - witness: `tests::rewrite::a_functor_application_is_written_juxtaposed`
+///
+/// # Cost
+/// - allocation: the written leaves, growth within the form's parts
+fn juxtaposed_functor<'source>(
+    out: &mut Builder<'source>,
+    parts: &[Part<'source>],
+) -> Option<()>
+{
+    let lead = parts
+        .iter()
+        .position(|part| !matches!(part.role, Role::Comment))?;
+    let tiles = parts
+        .get(lead ..)?
+        .iter()
+        .map(|part| match part.role {
+            Role::Own(tile) => Some(<&str>::from(tile)),
+            Role::Operand(_) | Role::Comment => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let opened = tiles.iter().position(|&tile| tile == "=")?.checked_add(2)?;
+    let closed = tiles.len().checked_sub(2)?;
+    if tiles.get(opened) != Some(&OPEN_PAREN.0)
+        || tiles.get(closed ..) != Some(&[CLOSE_PAREN.0, ";"][..])
+    {
+        return None;
+    }
+    let (opened_at, closed_at) = (lead.checked_add(opened)?, lead.checked_add(closed)?);
+    for (at, part) in parts.iter().enumerate() {
+        if at == opened_at {
+            out.gap(Spelling(" "));
+        }
+        else if at != closed_at {
+            out.leaves.extend(part.before.iter().copied());
+            out.leaves.extend(part.leaves.iter().copied());
+        }
+    }
+    Some(())
+}
+
 /// Write `tokens` into `out`, as the printer spaced them, except that a `,`
 /// or `;` touches the token before it, as the layout's `join` places one:
 /// the printer writes a bind's ` ;`, and a second pass would take its space.
@@ -4384,7 +4469,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 45] = [
+const RULES: [MoldName; 46] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4430,6 +4515,7 @@ const RULES: [MoldName; 45] = [
     MoldName("module_definition_member"),
     MoldName("attributed_module_member"),
     HANDLER,
+    MoldName("module_declaration"),
 ];
 
 /// A capability scope: `effect c : I { M } handle { … }`.

@@ -2707,3 +2707,60 @@ fn a_handler_is_written_effect_then_handle()
         );
     }
 }
+
+/// A functor application's argument is written juxtaposed, in either form and
+/// alone in a selection: a one-segment and a dotted argument move, and a
+/// juxtaposed one stays. A second pass changes nothing.
+#[test]
+fn a_functor_application_is_written_juxtaposed()
+{
+    let grammar = grammar();
+    let source =
+        include_str!("rewrite/unformatted/a-functor-application-is-written-juxtaposed.gandr");
+    let moved = spelled(
+        &grammar,
+        source,
+        Form::Sugared,
+        Selection::Only(&[RewriteName::FunctorApplication]),
+    );
+    expect![[r#"
+        module MkCounter(S : *{type T, zero : T}) :> *{type T, seed : T} where {
+          type T = S.T;
+          def seed = S.zero;
+        }
+
+        module Seed where {
+          type T = Integer;
+          def zero = 0;
+        }
+
+        module Outer where {
+          module Inner where {
+            type T = Integer;
+            def zero = 1;
+          }
+        }
+
+        module A = MkCounter Seed;
+
+        /// `B` is the second application.
+        module B = MkCounter Seed;
+
+        /// `D` is documented.
+        module D = MkCounter Seed;
+
+        module C = MkCounter Outer.Inner;
+    "#]].assert_eq(&moved);
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, Selection::Every),
+            moved,
+            "{form}: the argument moves alike"
+        );
+        assert_eq!(
+            spelled(&grammar, moved.as_str(), form, Selection::Every),
+            moved,
+            "{form}: a second pass changes nothing"
+        );
+    }
+}

@@ -1370,7 +1370,7 @@ pub enum LoweringRefusal<'source>
         constructor: SurfaceName<'source>,
     },
 
-    /// A module binding `module A = F(X) ;` whose `F` names no functor
+    /// A module binding `module A = F X ;` whose `F` names no functor
     /// declared before it.
     NotAFunctor
     {
@@ -1405,7 +1405,7 @@ pub enum LoweringRefusal<'source>
 
     /// A path projected from a functor application, `F(X).T` or `F(X).x`: an
     /// application names its instance only once a module binding binds it,
-    /// `module A = F(X) ;`, so `A.T` is the spelling.
+    /// `module A = F X ;`, so `A.T` is the spelling.
     ProjectionFromApplication
     {
         /// The bytes of the application projected from.
@@ -2403,7 +2403,7 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::ProjectionFromApplication { functor, .. } => write!(
                 f,
                 "a path is read off an application of `{functor}`; bind the application first, \
-                 `module A = {functor}(…) ;`, and read the path off `A`"
+                 `module A = {functor} … ;`, and read the path off `A`"
             ),
             Self::UnreadAscription { name, form, .. } => {
                 write!(f, "`{name}` {form}; the fragment does not read it yet")

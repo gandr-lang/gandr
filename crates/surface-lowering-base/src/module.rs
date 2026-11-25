@@ -543,7 +543,7 @@ quenchant_shape::reason_enum! {
         /// The tail is out of shape.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// A tile of `F(P(.p)*) ;` is missing or out of place.
+            /// A tile of `F P(.p)* ;` is missing or out of place.
             Misplaced,
         }
     }
@@ -8480,15 +8480,15 @@ impl<'source> Collector<'_, 'source>
         }))
     }
 
-    /// Read a functor application's tail past its `=`: `F(P(.p)*) ;`, or a
-    /// flow's, `f(P(.p)*) ;`.
+    /// Read a functor application's tail past its `=`: `F P(.p)* ;`, or a
+    /// flow's, `f P(.p)* ;`, the argument bare or in parentheses.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the binding's `=`.
     /// - ensures: the functor's or the flow's name tile and the argument path's
-    ///   segment tiles, at least one, when the tail reads `F(P(.p)*) ;` and
-    ///   nothing follows it; absent, the cursor at the first tile out of place,
-    ///   otherwise.
+    ///   segment tiles, at least one, when the tail reads `F P(.p)* ;` or `F(P(.p)*)
+    ///   ;` and nothing follows it; absent, the cursor at the first tile out of
+    ///   place, otherwise.
     /// - provides: the application half of [`Self::header`].
     /// - fails: never.
     /// - panics: none.
@@ -8514,9 +8514,7 @@ impl<'source> Collector<'_, 'source>
                 Maybe::Absent(_) => return misplaced,
             },
         };
-        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
-            return misplaced;
-        }
+        let enclosed = matches!(cursor.tile(TileName::PAREN_OPEN), Maybe::Present(_));
         let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             return misplaced;
@@ -8532,11 +8530,12 @@ impl<'source> Collector<'_, 'source>
             };
             argument.push(segment);
         }
-        if let (Maybe::Present(_), Maybe::Present(_), Maybe::Absent(_)) = (
-            cursor.tile(TileName::PAREN_CLOSE),
-            cursor.tile(TileName::SEMICOLON),
-            cursor.peek(),
-        ) {
+        if enclosed && let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+            return misplaced;
+        }
+        if let (Maybe::Present(_), Maybe::Absent(_)) =
+            (cursor.tile(TileName::SEMICOLON), cursor.peek())
+        {
             return Maybe::Present((functor, argument));
         }
 
