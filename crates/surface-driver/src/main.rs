@@ -45,6 +45,7 @@
 //! | `gandr fmt --check <paths>` | ``<path>:<line>: `<name>` `` for each source out of layout: the first line that the layout changes and the declaration that holds or follows it; nothing is written | as `fmt`, and any source out of layout |
 //! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
 //! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
+//! | `gandr fmt --form <explicit\|sugared> --rewrite <name> <paths>` | as `fmt --form`, running only the form's rewrite of that name in the formatter's table, `type-application`, and keeping each other rewrite's spelling | as `fmt`, and a name no rewrite has is a malformed invocation |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
 //! | `gandr cells <paths>` | one line per rewriting cell of each declaration a source writes, `<path>:<line>:<column>: cell <n> <provenance>, <growth>: <hole> <count>, …`, each hole with how many times the cell's right-hand side writes it (`gandr-surface-dispatcher`'s `cells` module); nothing is checked | a path that cannot be read or names no source, or a source that does not parse or lower, or that the lowering refuses whole |
 //! | `gandr doc <path> --out <directory>` | the path of each page written, one per source under the path, then the index's (`gandr-surface-lsp`'s `doc` module): each page the source's own documentation, then each public declaration's hover block under a heading naming it | a path that names no source, or a source that cannot be read or judged, or a page that cannot be written |
@@ -444,6 +445,8 @@ use gandr_surface_features::FeatureLedger;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
+use gandr_surface_format::RewriteName;
+use gandr_surface_format::Selection;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::Capabilities;
@@ -958,6 +961,11 @@ enum Command
         /// spelling, every token kept.
         #[arg(long, value_enum)]
         form: Option<FormName>,
+        /// The one rewrite of the form that runs, by its name in the
+        /// formatter's table, `type-application`; each other rewrite's
+        /// spelling is kept. Defaults to every rewrite the form enables.
+        #[arg(long, value_name = "NAME", requires = "form", value_parser = rewrite_named)]
+        rewrite: Option<&'static [RewriteName]>,
         /// The threads the sources are laid out on.
         #[command(flatten)]
         jobs: Jobs,
@@ -1371,6 +1379,25 @@ enum FormName
     Explicit,
     /// The surface's sugared spelling.
     Sugared,
+}
+
+/// The rewrite `fmt --rewrite` names, as a selection of one.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// - the names of the table's rewrites, when `text` names none.
+fn rewrite_named(text: &str) -> Result<&'static [RewriteName], String>
+{
+    RewriteName::named(text).ok_or_else(|| {
+        let names = RewriteName::EVERY
+            .iter()
+            .map(|name| name.label())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("no rewrite is named `{text}`; the rewrites are {names}")
+    })
 }
 
 /// A spelling `--spelling` names.
@@ -2218,6 +2245,7 @@ fn main() -> ExitCode
             check,
             width,
             form,
+            rewrite: chosen,
             jobs,
             paths,
         }) => (
@@ -2233,6 +2261,7 @@ fn main() -> ExitCode
                         Some(FormName::Explicit) => Form::Explicit,
                         Some(FormName::Sugared) => Form::Sugared,
                     },
+                    rewrites: chosen.map_or(Selection::Every, Selection::Only),
                     ..FormatOptions::default()
                 },
                 rewrite: if check {

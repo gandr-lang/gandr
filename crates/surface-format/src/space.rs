@@ -15,14 +15,16 @@ use gandr_surface_grammar::StepSym;
 use gandr_surface_syntax::SourceFragment;
 
 /// The rules a `(` or `[` opens an operand of its own in: a parenthesised
-/// term or type, a tuple pattern, a list, an import's list of names.
-const OPERANDS: [&str; 6] = [
+/// term or type, a tuple pattern, a list, an import's list of names, the
+/// descent `[<]` after the name it applies, `el [<] a`.
+const OPERANDS: [&str; 7] = [
     "parenthesized_expression",
     "parenthesized_type",
     "tuple_pattern",
     "list_expression",
     "list_pattern",
     "import_declaration",
+    "descent_type",
 ];
 
 /// The rules a `[` stands apart from the word before it in, as an operand's

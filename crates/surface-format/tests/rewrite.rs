@@ -2280,8 +2280,8 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 /// The explicit form writes its stars.
 /// A variable can precede a parenthesized argument.
 /// `Pair(a, Parcel(Integer))` writes `Pair a (Parcel Integer)`.
-/// A variable can precede a call.
-/// `Pair(a, plus(Integer))` writes `Pair a plus(Integer)`.
+/// A lowercase head is juxtaposed too, in its parentheses as an argument.
+/// `Pair(a, plus(Integer))` writes `Pair a (plus Integer)`.
 /// A carrier the grammar spells as a keyword tile is a carrier too.
 /// `Path[.A = Type](a, a)` writes `Path[.A = Type] a a`.
 /// A returner encloses a juxtaposition whose first argument takes parentheses.
@@ -2327,8 +2327,10 @@ fn a_type_application_is_written_juxtaposed_5708()
         (
             "Pair(a, plus(Integer))",
             Form::Sugared,
-            "Pair a plus(Integer)",
+            "Pair a (plus Integer)",
         ),
+        ("plus(Integer)", Form::Sugared, "plus Integer"),
+        ("plus(Integer)", Form::Explicit, "plus Integer"),
         ("Path(a, a)", Form::Sugared, "Path a a"),
         ("Path(a, a)", Form::Explicit, "Path a a"),
         ("Bridge(a, a)", Form::Sugared, "Bridge a a"),
