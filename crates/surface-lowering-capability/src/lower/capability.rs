@@ -1938,11 +1938,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     }
 
     /// Classify a capability scope,
-    /// `handle c : I { M } with { | pure(x) => N | oper op(p, k) => N_op | …
+    /// `effect c : I { M } handle { | pure(x) => N | oper op(p, k) => N_op | …
     /// }`, its interface a host's or a theory's with its value sorts,
-    /// `handle c : T with sort S = A { M } with { … }`, the clauses of a
-    /// theory's scope given by a model of it the scope names, `with N`, or
-    /// by the one model in scope, for a scope writing no `with`.
+    /// `effect c : T with sort S = A { M } handle { … }`, the clauses of a
+    /// theory's scope given by a model of it the scope names, `handle N`, or
+    /// by the one model in scope, for a scope writing no `handle`. The other
+    /// spelling, `handle c : I { M } with { … }`, reads the same, its clauses
+    /// after `with`.
     ///
     /// # Specification
     /// - requires: `site` is a capability scope in term position.
@@ -2005,16 +2007,28 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.host().require(site, Produced::Computation)?;
-        // The clauses' `with` is the last, and the one no `sort` follows: every
-        // manifest sort's stands before the subject. A scope writing none
-        // leaves its model to the models in scope.
+        // The scope leads with `effect`, and its clauses follow `handle`; or
+        // it leads with `handle`, and its clauses follow the last `with`, the
+        // one no `sort` follows: every manifest sort's stands before the
+        // subject. A scope writing no clauses leaves its model to the models
+        // in scope.
+        let effect = matches!(
+            pieces.pieces.first(),
+            Some(&Piece::Tile { label, .. }) if label == TileName::EFFECT
+        );
+        let (lead, answer) = if effect {
+            (TileName::EFFECT, TileName::HANDLE)
+        }
+        else {
+            (TileName::HANDLE, TileName::WITH)
+        };
         let split = pieces
             .pieces
             .iter()
             .enumerate()
             .rev()
             .find(|&(at, piece)| {
-                matches!(*piece, Piece::Tile { label, .. } if label == TileName::WITH)
+                matches!(*piece, Piece::Tile { label, .. } if label == answer)
                     && !matches!(
                         pieces.pieces.get(at.saturating_add(1)),
                         Some(&Piece::Tile { label, .. }) if label == TileName::SORT
@@ -2027,7 +2041,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         };
 
         let mut cursor = Cursor::new(head, site.at.span);
-        closed(site, &mut cursor, TileName::HANDLE)?;
+        closed(site, &mut cursor, lead)?;
         let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -2128,7 +2142,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             return Ok(());
         }
         let mut cursor = Cursor::new(handlers, site.at.span);
-        closed(site, &mut cursor, TileName::WITH)?;
+        closed(site, &mut cursor, answer)?;
         if let Maybe::Present(module) = cursor.tile(TileName::TYPE_IDENTIFIER) {
             exhausted(site, &cursor)?;
             if !matches!(interface, Interface::Theory(_)) {

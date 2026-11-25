@@ -678,7 +678,10 @@ impl TileName
     pub const CAP: Self = Self("Cap");
     /// The keyword `at` placing a capability type in a scope's region.
     pub const AT: Self = Self("at");
-    /// The capability scope's lead `handle`.
+    /// The capability scope's lead `effect`.
+    pub const EFFECT: Self = Self("effect");
+    /// The word `handle` before a capability scope's clauses, or the lead of
+    /// its other spelling.
     pub const HANDLE: Self = Self("handle");
     /// The keyword `hold`: the located hold `hold v` that returns `v` held at
     /// the current world.
