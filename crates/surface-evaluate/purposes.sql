@@ -1,0 +1,6 @@
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Engine','enum','The engine a run takes.',NULL,'collides','sound','The name also names the crossing of the dispatcher, `gandr_surface_dispatcher::Engine`, which `Evaluator` implements.');
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Evaluator','struct','The run stage, as the composition, the walk, the type table and the run verb of the dispatcher take it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Machine','struct','A run of a program: the parts of it that a run reads, borrowed from it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::Runs','trait','The runs of a program, as a caller above the dispatcher calls them, each the run of a machine over the program.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::ScheduledRuns','struct','A program whose runs take the concurrent schedule on a pool: what settles a composition scheduled concurrently.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-evaluate','evaluate::reals::RealsAdapter','struct','The host of `std.reals.Eff` with one plan admitted, which a measurement of the adapter calls: `admit`, `enclose` and `decide` with each reply spelled.',NULL,'fits','sound',NULL);

@@ -1,0 +1,5 @@
+INSERT INTO purpose VALUES('theory-spec-combinators','holds::Holds','struct','Names whether a combinator''s claim holds of the state it was handed, so the answer''s verdict is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-spec-combinators','sequence::Mark','struct','Names a position in a sequence, so the mark''s position is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-spec-combinators','sequence::appended','function','Returns the elements of a sequence at or after a mark, so the sequence''s gain since the mark is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-spec-combinators','sequence::pushed','function','Checks whether a sequence grew by exactly one element since a mark and it is a given one, so the growth''s verdict is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-spec-combinators','sequence::sorted_around','function','Checks whether a strictly increasing sequence stays so around an insertion point, so the ordering''s verdict is read.',NULL,'fits','sound',NULL);

@@ -264,6 +264,7 @@
       "check:purposes": [
         ".cargo/",
         ".config/cases/",
+        ".config/gate-scope/tool.bash",
         ".config/mise/scope",
         ".config/mise/tasks/mise-tasks-ledger.toml",
         ".config/purposes/",

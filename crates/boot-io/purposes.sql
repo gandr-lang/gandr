@@ -1,0 +1,12 @@
+INSERT INTO purpose VALUES('boot-io','','crate','Gives the bootstrap the read of a file and the write to a descriptor with no libc: the `boot` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','Descriptor','struct','The number that the kernel gives for an open file.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','ErrorNumber','struct','An error number of the host, which a refusal carries.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','Io','struct','The handle of the IO core, which each operation takes from its start to its stop.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','Operation','enum','The operation that a refusal names.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','Refused','struct','An operation that the kernel refuses, with its name and an error number.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','close','function','Ends a descriptor, so that the kernel can give its number again.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','open','function','Opens the file at a path to read it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','read','function','Writes the next bytes of an open file into the start of a place.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','start','function','Gives the handle that each other operation takes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','stop','function','Ends the handle of the IO core.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','write','function','Gives the first bytes of a range to a descriptor, and the count that the kernel took.',NULL,'fits','sound',NULL);

@@ -64,19 +64,29 @@ sqlite3 -bail "$fresh/concerns.db" < ledger/concerns.sql
 sqlite3 "$fresh/concerns.db" .dump > ledger/concerns.sql
 '''
 
-# The purposes ledger, `ledger/purposes.sql`, is edited by hand: an `INSERT`
-# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
-# key order, refusing a row that breaks a constraint and leaving the file as
-# it was. `check:purposes` holds the round trip.
+# The purposes ledger is edited by hand: an `INSERT` added or changed in
+# `crates/<crate>/purposes.sql`, the rows of one crate, or a column of
+# `.config/purposes/schema.sql`. This task loads the schema and each file of
+# rows, and writes each file again as its part of `sqlite3`'s own dump, rows
+# in key order (`ledger-split` of `gandr-workflow-ledger-split`). A row that
+# breaks a constraint is refused, and the files stay as they were. A row
+# moves to the file of its crate. `check:purposes` holds the round trip.
 ["ledger:purposes"]
-description = "Normalize ledger/purposes.sql as its own sqlite3 dump"
+description = "Normalize the purposes ledger: the schema and the rows of each crate, as their parts of its sqlite3 dump"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
-sqlite3 -bail "$fresh/purposes.db" < ledger/purposes.sql
-sqlite3 "$fresh/purposes.db" .dump > ledger/purposes.sql
+{ cat .config/purposes/schema.sql; echo 'BEGIN;'; cat crates/*/purposes.sql; echo 'COMMIT;'; } | sqlite3 -bail "$fresh/purposes.db"
+mkdir -p "$fresh/split/.config/purposes"
+for crate in crates/*/; do mkdir -p "$fresh/split/$crate"; done
+sqlite3 "$fresh/purposes.db" .dump > "$fresh/dump.sql"
+.config/gate-scope/tool.bash gandr-workflow-ledger-split ledger-split \
+  --schema "$fresh/split/.config/purposes/schema.sql" --rows "$fresh/split/crates/{}/purposes.sql" "$fresh/dump.sql" > /dev/null
+rm -f crates/*/purposes.sql
+cp "$fresh/split/.config/purposes/schema.sql" .config/purposes/schema.sql
+for file in "$fresh"/split/crates/*/purposes.sql; do cp "$file" "crates/${file#"$fresh"/split/crates/}"; done
 '''
 
 # The positions ledger, `ledger/positions.sql`, is edited by hand: an `INSERT`
@@ -178,8 +188,8 @@ done
 {% endraw %}'''
 
 # Each entry of the named crate, or of every crate with a library, beside its
-# row of `ledger/purposes.sql`: one tab-separated line per entry under a
-# header, `no row` in the purpose column of an entry the ledger lacks.
+# row of `crates/<crate>/purposes.sql`: one tab-separated line per entry under
+# a header, `no row` in the purpose column of an entry the ledger lacks.
 ["purposes:list"]
 description = "List a crate's public items, modules and root beside their purposes"
 usage = '''
@@ -196,7 +206,7 @@ if [[ ! -s $fresh/entries.tsv ]]; then
   exit 1
 fi
 db="$fresh/purposes.db"
-sqlite3 -bail "$db" < ledger/purposes.sql
+{ cat .config/purposes/schema.sql; echo 'BEGIN;'; cat crates/*/purposes.sql; echo 'COMMIT;'; } | sqlite3 -bail "$db"
 sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT, stands TEXT);' ".import $fresh/entries.tsv entry"
 sqlite3 -bail -header -separator $'\t' "$db" "
   SELECT e.crate, e.path, e.kind, e.location,

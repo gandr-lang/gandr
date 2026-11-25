@@ -1,0 +1,10 @@
+INSERT INTO purpose VALUES('core-checker','elaborating::ResumeError','enum','An invalid request to fill or resume a module declaration.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','elaborating::Session','struct','A module elaboration, admitting only checked hole fillings as mutations.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::Allowance','struct','The work each job of a check may spend, granted afresh to every job so no job''s allowance depends on how the jobs were scheduled.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::Checked','struct','A staged program, checked: its arena, its certificates, readmissions, harvested families and admissions, and the time each stage took.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::Program','struct','A staged meta-program, ready to check.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::ProgramError','enum','Why a staged program could not be checked: the first failure in source order, with the stage and source it belongs to.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::Readmission','enum','The kernel''s verdict on one certificate.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::SourceIndex','struct','A source''s position in its program.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::Stages','struct','Time spent at each stage of a check, read from the caller''s clock.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::check','function','Checks a staged program: normalizes every source, merges the syntax, harvests the families, then readmits every certificate beside admitting every family through the memo.','sharing','fits','sound',NULL);

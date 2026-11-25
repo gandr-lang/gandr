@@ -1,0 +1,10 @@
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::LedgerFault','enum','Why a ledger could not be generated or written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::LedgerRun','enum','What a ledger task did.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::LedgerTask','enum','Which ledger a `ledger` invocation writes, verifies or reads, and where.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::SyntaxLedger','struct','The syntax ledger: every rule of the built-in grammar and every attribute of the lowering''s registry, under the grammar''s fingerprint.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFault','enum','Why one exemplar does not show what its name says.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFinding','struct','One exemplar that does not hold, by its path.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarReport','struct','What a verification of the exemplar directory found.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryTally','struct','What became of a sweep''s mutants, each counted once.',NULL,'fits','sound',NULL);
