@@ -63,7 +63,9 @@
 //! written rules of a presented type, and it reads each left side in each
 //! order of the two fields by its own decision. So the derived rule of a
 //! constructor is a cell of this check. A redex of a symmetry below the seam
-//! of a pair does not make the pair composite: the check joins that pair.
+//! of a pair does not make the pair composite: the check joins that pair. The
+//! orientation of a block passes a symmetry in its written order
+//! ([`orient_block`]), so a rule beside a symmetry turns as it turns alone.
 //!
 //! The two normal forms of a pair of a rule and a symmetry join also where
 //! steps of the symmetry take one to the other: they are one term in two
@@ -294,8 +296,10 @@ pub struct OrientedBlock<G>
 /// - ensures: [`Ok`] when every rule orients: an unpinned rule left to right
 ///   when the order admits that, otherwise right to left, and a pinned rule
 ///   only in its pinned direction. The returned description's corresponding
-///   rule has its left side above its right. [`Err`] names the first rule, in
-///   rule order, that does not orient.
+///   rule has its left side above its right. A symmetry
+///   ([`RuleReading::Symmetry`]) has no direction: it orients in its written
+///   order with each pin, and the returned description holds it as written.
+///   [`Err`] names the first rule, in rule order, that does not orient.
 /// - panics: none.
 ///
 /// # Errors
@@ -305,10 +309,13 @@ pub struct OrientedBlock<G>
 /// - hypothesis: L3 — a cancellation written right to left flips, the same
 ///   cancellation pinned left to right is refused, a growing pinned rule is
 ///   refused at itself, each rule pinned the way the order runs it orients and
-///   pinned against it is refused, and a commuting rule orients neither way.
+///   pinned against it is refused, and a rule that turns three arguments
+///   orients neither way; a symmetry passes with each pin, and the rule beside
+///   it turns or is refused as it is alone.
 /// - witness: `tests::coincide::an_equation_written_backwards_orients_forwards`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::a_pinned_rule_orients_only_the_way_it_is_pinned`
+/// - witness: `tests::coincide::a_symmetry_passes_the_orientation_of_a_block`
 #[spec(ensures: |ret| match ret.as_ref() {
     Ok(oriented) => oriented.directions.len() == description.rules.len()
         && oriented.description.rules.len() == description.rules.len()
@@ -327,6 +334,12 @@ where
     let mut rules = Vec::with_capacity(description.rules.len());
     let mut directions = Vec::with_capacity(description.rules.len());
     for (index, face) in description.rules.iter().enumerate() {
+        // A symmetry has no direction, and no reader rewrites by it.
+        if face.reading() == RuleReading::Symmetry {
+            rules.push(face.clone());
+            directions.push(RuleDirection::LeftToRight);
+            continue;
+        }
         let orientation = orientations
             .get(index)
             .copied()
@@ -872,13 +885,16 @@ impl fmt::Display for PairTerm
 ///   seam is uncompleted, in a `data` block and in a `theory` block; a rule
 ///   whose two orders give the two orders of one term joins the symmetry by a
 ///   step of it, in a `data` block and in a `theory` block, and two rules that
-///   give the two orders of one term are uncompleted; reporting the earlier
-///   rule's span, deciding joinability first, reading the circle in the sequent
-///   store alone, normalizing by the symmetry, deciding a pair of two rules
-///   before the pairs of the symmetry, skipping a pair as composite by a redex
-///   of a symmetry, comparing the two normal forms of a pair with the symmetry
-///   as written, or deriving a rule between two constructor terms that are not
-///   the two orders of one rule changes one of them.
+///   give the two orders of one term are uncompleted; a rule that turned beside
+///   a symmetry joins it, two turned rules that give two constructors under the
+///   symmetry of a constructor diverge, and under the symmetry of an operation
+///   they complete to one normal form; reporting the earlier rule's span,
+///   deciding joinability first, reading the circle in the sequent store alone,
+///   normalizing by the symmetry, deciding a pair of two rules before the pairs
+///   of the symmetry, skipping a pair as composite by a redex of a symmetry,
+///   comparing the two normal forms of a pair with the symmetry as written, or
+///   deriving a rule between two constructor terms that are not the two orders
+///   of one rule changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -896,6 +912,9 @@ impl fmt::Display for PairTerm
 /// - witness: `tests::coincide::a_pair_above_a_redex_of_a_symmetry_is_decided`
 /// - witness: `tests::coincide::a_pair_with_a_symmetry_joins_under_the_symmetry`
 /// - witness: `tests::coincide::a_pair_of_two_rules_is_compared_as_written_beside_a_symmetry`
+/// - witness: `tests::coincide::a_rule_written_backwards_turns_beside_a_symmetry`
+/// - witness: `tests::coincide::two_turned_rules_that_tear_under_the_symmetry_of_a_constructor_diverge`
+/// - witness: `tests::coincide::two_turned_rules_that_tear_under_the_symmetry_of_an_operation_complete`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),

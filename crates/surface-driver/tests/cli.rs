@@ -3714,6 +3714,104 @@ fn a_rule_whose_two_orders_give_two_orders_of_one_term_settles_beside_a_symmetry
     }
 }
 
+/// A rule written with its larger side on the right turns beside a symmetry,
+/// and the kernel decides the block again. Each source settles under
+/// `--recheck`: a block that the checker admits and the kernel refuses faults
+/// the run. The path of the `data` block needs the turned rule in its other
+/// order. Two turned rules that tear under the symmetry of an operation
+/// complete. A `theory` block with a symmetry carries the rule that its two
+/// rules derive, so the kernel derives that rule again.
+#[test]
+fn a_rule_that_turns_beside_a_symmetry_settles_under_the_kernel()
+{
+    const DATA: &str = "data Flat : Type where\n  | Low : Flat\n  | Mid : Flat\n  | High : \
+                        Flat\n  | Pair : (x : Flat, y : Flat) --> Flat\n";
+    const THEORY: &str = "theory Flat where\n  sort F : Type;\n  oper low : F;\n  oper mid : \
+                          F;\n  oper high : F;\n  oper pair : (x : F, y : F) --> F;\n  oper wrap \
+                          : (x : F) --> F;\n";
+    const PATH: &str = "\ndef folded(x : Flat) -> Path (Pair (Pair Mid Low) x) (Pair x Low) =\n  \
+                        Path.here (Pair x Low)\n";
+    const SYMMETRY: &str = "  rule pairComm : pair x y <=> pair y x;\n";
+    const FOLD: &str = "  rule fold : low <=> pair low mid;\n";
+    const TEAR: &str = "  rule tear : mid <=> pair mid low;\n";
+    const SINK: &str = "  rule sink : wrap (pair x y) ==> low;\n";
+    const UNWRAP: &str = "  rule unwrap : wrap z ==> z;\n";
+    let scratch = Scratch::new(Path::new("turn-beside-a-symmetry"));
+    let data = "declarations: 2 settled, 0 unsettled";
+    let theory = "declarations: 1 settled, 0 unsettled";
+    for (name, parts, declarations) in [
+        (
+            "data-first.gandr",
+            Vec::from([
+                DATA,
+                "  rule : Pair x y <=> Pair y x;\n",
+                "  rule : Low <=> Pair Low Mid;\n",
+                PATH,
+            ]),
+            data,
+        ),
+        (
+            "data-last.gandr",
+            Vec::from([
+                DATA,
+                "  rule : Low <=> Pair Low Mid;\n",
+                "  rule : Pair x y <=> Pair y x;\n",
+                PATH,
+            ]),
+            data,
+        ),
+        (
+            "theory-first.gandr",
+            Vec::from([THEORY, SYMMETRY, FOLD]),
+            theory,
+        ),
+        (
+            "theory-last.gandr",
+            Vec::from([THEORY, FOLD, SYMMETRY]),
+            theory,
+        ),
+        (
+            "tear-first.gandr",
+            Vec::from([THEORY, SYMMETRY, FOLD, TEAR]),
+            theory,
+        ),
+        (
+            "tear-between.gandr",
+            Vec::from([THEORY, FOLD, SYMMETRY, TEAR]),
+            theory,
+        ),
+        (
+            "tear-last.gandr",
+            Vec::from([THEORY, FOLD, TEAR, SYMMETRY]),
+            theory,
+        ),
+        (
+            "derived-first.gandr",
+            Vec::from([THEORY, SYMMETRY, SINK, UNWRAP]),
+            theory,
+        ),
+        (
+            "derived-last.gandr",
+            Vec::from([THEORY, SINK, UNWRAP, SYMMETRY]),
+            theory,
+        ),
+    ] {
+        let text = parts.concat();
+        let source = scratch.file(Path::new(name), Text::from(text.as_str()));
+        let mut command = gandr(&["check", "--recheck"]);
+        command.arg(&source);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{name}: {}", stderr(&output));
+        let report = stdout(&output);
+        for line in [declarations, "verdict: settled"] {
+            assert!(
+                report.lines().any(|found| found == line),
+                "{name}: {report}"
+            );
+        }
+    }
+}
+
 /// The kernel decides a path between two orders of two fields again where a
 /// side is a call. The checker names the crossed pairing at the value that the
 /// call returns, and the kernel replays it at that value. The source settles

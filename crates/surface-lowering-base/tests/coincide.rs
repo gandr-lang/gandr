@@ -703,6 +703,229 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
     });
 }
 
+/// A symmetry passes the orientation of a block. It has no direction: the
+/// order does not orient it, and a pin on it changes nothing. The rule beside
+/// it turns as it turns alone, and a pin against its order refuses it.
+#[test]
+fn a_symmetry_passes_the_orientation_of_a_block()
+{
+    use RuleDirection::LeftToRight;
+    use RuleDirection::RightToLeft;
+    use RuleOrientation::Pinned;
+    use RuleOrientation::Unpinned;
+
+    let source = SourceText::from(include_str!(
+        "coincide/fixtures/a-rule-written-backwards-turns-beside-a-symmetry-data-first.gandr"
+    ));
+    lowered(source, |module| {
+        let description = &module
+            .described()
+            .next()
+            .expect("one described block")
+            .description;
+        for symmetry in [Unpinned, Pinned(LeftToRight), Pinned(RightToLeft)] {
+            let Ok(block) = orient_block(description, &[symmetry, Unpinned])
+            else {
+                panic!("the block orients with its symmetry {symmetry:?}")
+            };
+            assert_eq!(
+                block.directions,
+                [LeftToRight, RightToLeft],
+                "the symmetry {symmetry:?} keeps its written order, and the rule turns"
+            );
+            assert_eq!(
+                block.description.rules.first(),
+                description.rules.first(),
+                "the symmetry {symmetry:?} is the face that the block wrote"
+            );
+        }
+        assert_eq!(
+            orient_block(description, &[Unpinned, Pinned(LeftToRight)])
+                .map(|block| block.directions),
+            Err(RuleIndex::from(1_usize)),
+            "the rule pinned against its order is refused beside the symmetry"
+        );
+    });
+}
+
+/// A rule written with its larger side on the right turns beside a symmetry,
+/// and the block converges. The rule takes `Pair Low Mid` to `Low` after it
+/// turns. The two orders of its left side have one normal form, in each place
+/// of the symmetry, in a `data` block and in a `theory` block.
+#[test]
+fn a_rule_written_backwards_turns_beside_a_symmetry()
+{
+    for (source, block, rule, calls, normal) in [
+        (
+            include_str!(
+                "coincide/fixtures/a-rule-written-backwards-turns-beside-a-symmetry-data-first.gandr"
+            ),
+            "a `data` block with the symmetry first",
+            1_usize,
+            ["Pair(Low, Mid)", "Pair(Mid, Low)"],
+            "Low",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-rule-written-backwards-turns-beside-a-symmetry-data-last.gandr"
+            ),
+            "a `data` block with the symmetry last",
+            0,
+            ["Pair(Low, Mid)", "Pair(Mid, Low)"],
+            "Low",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-rule-written-backwards-turns-beside-a-symmetry-theory-first.gandr"
+            ),
+            "a `theory` block with the symmetry first",
+            1,
+            ["pair(low, mid)", "pair(mid, low)"],
+            "low",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-rule-written-backwards-turns-beside-a-symmetry-theory-last.gandr"
+            ),
+            "a `theory` block with the symmetry last",
+            0,
+            ["pair(low, mid)", "pair(mid, low)"],
+            "low",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            assert!(
+                module.cells().diagnostics.is_empty(),
+                "{block}: {:?}",
+                module.cells().diagnostics
+            );
+            let [ref cells] = *module.cells().declarations.as_slice()
+            else {
+                panic!("one block")
+            };
+            assert_eq!(
+                cells.directions.get(rule),
+                Some(&RuleDirection::RightToLeft),
+                "{block}: the rule turns"
+            );
+            assert!(
+                matches!(cells.coincidence, Coincidence::Joined(_)),
+                "{block}: the rule joins the symmetry: {:?}",
+                cells.coincidence
+            );
+            let family = module.declarations().iter().next().unwrap();
+            for call in calls {
+                assert_eq!(
+                    module
+                        .normal_form(family, CallText::from(call))
+                        .map(|form| form.normal.to_string()),
+                    Ok(String::from(normal)),
+                    "{block}: {call}"
+                );
+            }
+        });
+    }
+}
+
+/// Two rules that turn and tear under the symmetry of a constructor are
+/// refused in each place of the symmetry. One rule takes `Pair Low Mid` to
+/// `Low`, and one rule takes `Pair Mid Low` to `Mid`. Under the symmetry the
+/// two left sides are one term in two orders, and `Low` and `Mid` are two
+/// constructors.
+#[test]
+fn two_turned_rules_that_tear_under_the_symmetry_of_a_constructor_diverge()
+{
+    for (source, place) in [
+        (
+            include_str!(
+                "coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-data-first.gandr"
+            ),
+            "first",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-data-between.gandr"
+            ),
+            "between",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-data-last.gandr"
+            ),
+            "last",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+            else {
+                panic!(
+                    "one cell diagnostic with the symmetry written {place}: {:?}",
+                    module.cells().diagnostics
+                )
+            };
+            assert!(
+                matches!(
+                    diagnostic.fault,
+                    CellFault::Coherence(CoherenceFault::Diverges { .. })
+                ),
+                "the symmetry written {place}: the two rules give two constructors: {:?}",
+                diagnostic.fault
+            );
+        });
+    }
+}
+
+/// Two rules that turn and tear under the symmetry of an operation complete
+/// in each place of the symmetry. One rule takes `pair low mid` to `low`, and
+/// one rule takes `pair mid low` to `mid`. The block derives a rule that joins
+/// `low` and `mid`, and each term that the rules join has one normal form.
+#[test]
+fn two_turned_rules_that_tear_under_the_symmetry_of_an_operation_complete()
+{
+    for (source, place) in [
+        (
+            include_str!(
+                "coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-first.gandr"
+            ),
+            "first",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-between.gandr"
+            ),
+            "between",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-last.gandr"
+            ),
+            "last",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            assert!(
+                module.cells().diagnostics.is_empty(),
+                "the symmetry written {place}: {:?}",
+                module.cells().diagnostics
+            );
+            let family = module.declarations().iter().next().unwrap();
+            let normal = |call: &str| {
+                module
+                    .normal_form(family, CallText::from(call))
+                    .map(|form| form.normal.to_string())
+            };
+            let joined = normal("pair(low, mid)");
+            assert!(
+                joined == Ok(String::from("low")) || joined == Ok(String::from("mid")),
+                "the symmetry written {place}: {joined:?}"
+            );
+            for call in ["pair(mid, low)", "low", "mid", "pair(pair(mid, low), mid)"] {
+                assert_eq!(normal(call), joined, "the symmetry written {place}: {call}");
+            }
+        });
+    }
+}
+
 #[test]
 fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
 {
