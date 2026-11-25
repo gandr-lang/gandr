@@ -620,7 +620,8 @@ fn declarations(
     // is a `≐`-successor of `def`), so the two `rec` uses never tie at a fresh
     // item slot. Each member is an item hole: a data declaration, a
     // definition or an attribute block, read by the module as it reads one at
-    // the root.
+    // the root. A `where` before the block is its layout form, `rec where`:
+    // the layout pass keeps the tile and writes the block's open after it.
     let mut rec_block = r(
         RuleName("rec_block"),
         Provenance("rec_block"),
@@ -628,6 +629,7 @@ fn declarations(
         p,
         seq([
             t(TileLabel("rec")),
+            opt(t(TileLabel("where"))),
             t(TileLabel("{")),
             repeat(h(Sort::Item)),
             t(TileLabel("}")),
