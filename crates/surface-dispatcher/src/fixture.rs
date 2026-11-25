@@ -49,6 +49,8 @@ pub use crate::compose::readmitted;
 pub use crate::compose::unstatable;
 pub use crate::compose::unused_binders;
 use crate::engine::Engine;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub use crate::entry::console::line_to;
 use crate::entry::exercised::Exercised;
 pub use crate::entry::obstruction;
 use crate::entry::report::RunReport;

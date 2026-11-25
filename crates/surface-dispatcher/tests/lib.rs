@@ -14,6 +14,8 @@ mod coincide;
 #[cfg(test)]
 mod compose;
 #[cfg(test)]
+mod console;
+#[cfg(test)]
 mod corpus;
 #[cfg(test)]
 mod differential;

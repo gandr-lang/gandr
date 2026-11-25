@@ -29,8 +29,8 @@ The IO core of the bootstrap, with no libc: open a file, read it, write to a des
 
 - `start` and `stop`: the handle of the IO core.
 - `open`: a file to read, from a path relative to the working directory or from the root. The kernel closes the descriptor when the process runs another program.
-- `read`: the next bytes of a file into the start of a place, at most its length. The count 0 for a place that is not empty is the end of the file.
-- `write`: the first bytes of a range to a descriptor, at most its length. A count below the length is a short write, and the caller gives the rest.
+- `read`: the next bytes of a file into the start of a place, at most its length. The count 0 for a place that is not empty is the end of the file. An empty place gives the count 0 and takes no byte.
+- `write`: the first bytes of a range to a descriptor, at most its length. A count below the length is a short write, and the caller gives the rest. An empty range gives the count 0 and gives no byte.
 - `close`: the end of a descriptor.
 - `Refused`, `Operation` and `ErrorNumber`: the refusal of the kernel, with the name of the operation.
 
@@ -43,7 +43,7 @@ The IO core of the bootstrap, with no libc: open a file, read it, write to a des
 
 ## Examples
 
-The witnesses run each function against one table of subjects, so a twin in gandr runs against the same cases. A witness reads a file of the tree whole in steps of one page, and compares the bytes with the bytes that `std` reads. Another witness reads each source of the corpus. The witnesses of the write give bytes to a socket of `std`, and one makes a short write to a socket that does not wait. One witness closes the standard input, so it runs in a target of its own.
+The witnesses run each function against one table of subjects, so a twin in gandr runs against the same cases. A witness reads a file of the tree whole in steps of one page, and compares the bytes with the bytes that `std` reads. Another witness reads each source of the corpus. One witness reads into an empty place, and one writes an empty range. The witnesses of the write give bytes to a socket of `std`, and one makes a short write to a socket that does not wait. Two witnesses interrupt a call that waits by a signal: a read of a socket with no bytes, and a write to a full socket. Each one then makes the call again. One witness closes the standard input, so it runs in a target of its own.
 
 ```sh
 cargo test -p gandr-boot-io

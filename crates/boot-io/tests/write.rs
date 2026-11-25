@@ -1,7 +1,7 @@
 //! The write against each subject: the bytes of a write at the other end of a
-//! socket, a short write to a socket that cannot take each byte at once, and a
-//! closed descriptor. A socket of the host's `std` is the other end, and the
-//! oracle of the bytes.
+//! socket, a short write to a socket that cannot take each byte at once, an
+//! empty range, and a closed descriptor. A socket of the host's `std` is the
+//! other end, and the oracle of the bytes.
 
 use core::num::NonZeroU16;
 use std::io::ErrorKind;
@@ -113,6 +113,43 @@ fn a_full_socket_takes_a_short_write_of_the_first_bytes()
             Err(ErrorKind::WouldBlock),
             after,
             "{name}: no byte after the count"
+        );
+        assert_eq!(Ok(()), (subject.stop)(io), "{name}: stop");
+    }
+}
+
+/// A write of an empty range gives the count 0, and the other end reads no
+/// byte. After the close, a write of an empty range is refused under the name
+/// `write` with `EBADF`, so the call reaches the kernel also for an empty
+/// range.
+#[test]
+fn a_write_of_an_empty_range_gives_zero_and_gives_no_byte()
+{
+    for subject in &SUBJECTS {
+        let name = subject.name;
+        let (writer, mut reader) = UnixStream::pair().expect("the host makes a socket pair");
+        let io = started(subject);
+        let descriptor = Descriptor(writer.into_raw_fd());
+        let empty: [u8; 0] = [];
+        // SAFETY: the range is empty, so the kernel reads no byte of it.
+        let count = unsafe { (subject.write)(&io, descriptor, Range::from(empty.as_slice())) };
+        assert_eq!(Ok(Length(0)), count, "{name}: the write of an empty range");
+        reader
+            .set_nonblocking(true)
+            .expect("the host makes the other end not wait");
+        let after = reader.read(&mut [0_u8; 1]).map_err(|error| error.kind());
+        assert_eq!(
+            Err(ErrorKind::WouldBlock),
+            after,
+            "{name}: no byte at the other end"
+        );
+        assert_eq!(Ok(()), (subject.close)(&io, descriptor), "{name}: close");
+        // SAFETY: the range is empty, so the kernel reads no byte of it.
+        let closed = unsafe { (subject.write)(&io, descriptor, Range::from(empty.as_slice())) };
+        assert_eq!(
+            Err((Operation::Write, EBADF)),
+            closed.map_err(|refused| (refused.operation(), refused.number())),
+            "{name}: the write of an empty range to a closed descriptor"
         );
         assert_eq!(Ok(()), (subject.stop)(io), "{name}: stop");
     }

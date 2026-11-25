@@ -300,6 +300,8 @@ digraph crates {
   "surface-diagnostics" -> "surface-syntax";
   "surface-diagnostics" -> "theory-levitation";
   "surface-diagnostics" -> "theory-sites";
+  "surface-dispatcher" -> "boot-core";
+  "surface-dispatcher" -> "boot-io";
   "surface-dispatcher" -> "core-checker";
   "surface-dispatcher" -> "core-content";
   "surface-dispatcher" -> "core-fork";

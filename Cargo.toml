@@ -431,8 +431,16 @@ path = "crates/boot-alloc"
 # that a function of the layer `boot` reads and the place that it writes.
 # consumers:
 # - boot-io
+# - surface-dispatcher (Linux x86-64)
 [workspace.dependencies.gandr-boot-core]
 path = "crates/boot-core"
+
+# The IO core of the bootstrap with no C library: the read of a file and the
+# write to a descriptor, each by the crate's own system call on Linux x86-64.
+# consumers:
+# - surface-dispatcher (Linux x86-64)
+[workspace.dependencies.gandr-boot-io]
+path = "crates/boot-io"
 
 # The checking judgement: the name-free declaration input, the verdicts, the
 # obligation ledger and the refusal vocabulary.
@@ -1703,22 +1711,30 @@ default-features = false
 #
 # The store's crash test makes its child not dumpable before the child
 # aborts.
+#
+# The IO core's witnesses of an interrupted call set a handler of `SIGUSR1`
+# with no restart, and send the signal to the thread of a read or of a write
+# that waits.
 # features:
 # - term: `pty::openpty`
 # - fs: `sys::statfs::statfs`, the type name of a filesystem on macOS, and
 #   `unistd::mkfifo`, the FIFO of the pool's grant test
 # - process: `sys::prctl::set_dumpable`, on Linux, the child of the store's
 #   crash test
+# - pthread: `sys::pthread::pthread_self` and `sys::pthread::pthread_kill`,
+#   the thread of the call in the IO core's witnesses
 # - resource: `sys::resource::getrusage`, the CPU and the voluntary switches
 #   of each row of the store's load
+# - signal: `sys::signal::sigaction`, the handler of the IO core's witnesses
 # consumers:
+# - boot-io (dev, Linux x86-64)
 # - storage-store (dev)
 # - surface-dispatcher (dev)
 # - surface-driver (dev)
 [workspace.dependencies.nix]
 version = "0.31.3"
 default-features = false
-features = ["fs", "process", "resource", "term"]
+features = ["fs", "process", "pthread", "resource", "signal", "term"]
 
 # The operating system's file events: the hub's watch over the files open
 # documents import, for connections whose client watches none, and the

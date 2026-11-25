@@ -277,19 +277,27 @@ pub unsafe fn open(
 /// # Specification
 /// - ensures: the count of the bytes that the kernel wrote into the start of
 ///   `place`, at most its length. The count 0 for a place that is not empty is
-///   the end of the file. Or the kernel's error number under the name `read`,
-///   with no byte of `place` promised.
+///   the end of the file. An empty place gives the count 0 and takes no byte of
+///   the file, and the kernel still checks the descriptor. Or the kernel's
+///   error number under the name `read`, with no byte of `place` promised. A
+///   signal that the process handles while the read waits refuses the read with
+///   `EINTR`. The crate does not repeat the call, and the next read of the
+///   descriptor takes the bytes that the kernel holds.
 /// - panics: none.
 /// - executable: none — the kernel writes the bytes.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a file of the tree reads whole in steps of one page and
 ///   equals the bytes that `std` reads; a file of 0 bytes gives 0 at the first
-///   read; a closed descriptor is refused with `EBADF`; a file with the
-///   descriptor 0 reads whole.
+///   read; an empty place gives 0 and the next reads give the whole file; a
+///   closed descriptor is refused with `EBADF`, also for an empty place; a
+///   signal during a read that waits gives `EINTR`, and the next read gives the
+///   bytes; a file with the descriptor 0 reads whole.
 /// - witness: `tests::file::a_file_of_the_tree_reads_whole_in_steps_of_one_page`
 /// - witness: `tests::file::a_file_of_no_bytes_gives_the_count_zero_at_the_first_read`
+/// - witness: `tests::file::a_read_into_an_empty_place_gives_zero_and_takes_no_byte`
 /// - witness: `tests::file::a_closed_descriptor_is_refused_with_ebadf`
+/// - witness: `tests::interrupt::a_signal_refuses_a_read_that_waits_with_eintr`
 /// - witness: `descriptor::zero::with_descriptor_zero_closed_a_file_takes_it_and_reads_whole_and_a_socket_takes_a_write`
 ///
 /// # Errors
@@ -318,19 +326,28 @@ pub unsafe fn read(
 /// # Specification
 /// - ensures: the count of the first bytes of `bytes` that the kernel took, at
 ///   most its length. A count below the length is a short write: the kernel
-///   took those bytes alone, and the caller gives the rest in a next call. Or
-///   the kernel's error number under the name `write`, with no byte promised.
+///   took those bytes alone, and the caller gives the rest in a next call. An
+///   empty range gives the count 0 and gives no byte, and the kernel still
+///   checks the descriptor. Or the kernel's error number under the name
+///   `write`, with no byte promised. A signal that the process handles while
+///   the write waits, before the kernel takes a byte, refuses the write with
+///   `EINTR`. The crate does not repeat the call.
 /// - panics: none.
 /// - executable: none — the kernel takes the bytes.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the bytes of a write equal the bytes that `std` reads at
 ///   the other end of a socket; a socket that cannot take each byte at once
-///   takes the first bytes and gives their count; a closed descriptor is
-///   refused with `EBADF`; a socket with the descriptor 0 takes a write.
+///   takes the first bytes and gives their count; an empty range gives 0 and no
+///   byte; a closed descriptor is refused with `EBADF`, also for an empty
+///   range; a signal during a write that waits on a full socket gives `EINTR`,
+///   and the next write takes the range; a socket with the descriptor 0 takes a
+///   write.
 /// - witness: `tests::write::a_write_gives_each_byte_to_the_other_end`
 /// - witness: `tests::write::a_full_socket_takes_a_short_write_of_the_first_bytes`
+/// - witness: `tests::write::a_write_of_an_empty_range_gives_zero_and_gives_no_byte`
 /// - witness: `tests::write::a_write_to_a_closed_descriptor_is_refused_with_ebadf`
+/// - witness: `tests::interrupt::a_signal_refuses_a_write_that_waits_with_eintr`
 /// - witness: `descriptor::zero::with_descriptor_zero_closed_a_file_takes_it_and_reads_whole_and_a_socket_takes_a_write`
 ///
 /// # Errors
