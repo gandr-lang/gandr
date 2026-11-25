@@ -32,6 +32,7 @@
 //! | opener | block | separator |
 //! | --- | --- | --- |
 //! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
+//! | `=` ending the line of a `let`, a `var` or an assignment in a statement block | a statement block after the `=` | `;` |
 //! | `where` ending a `match` head | an arm list | none: a line-leading `\|` separates arms |
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
@@ -50,6 +51,15 @@
 //! `match` head's line-final `where` is relabeled as the arms' `{` in the same
 //! way, so the grammar's `match` rule has no `where` of its own, and a `where`
 //! that does not end the head's line is no part of the match.
+//!
+//! A statement's `=` keeps its tile, because the grammar reads the block as
+//! the expression after it. The pass writes an open of no width after the `=`
+//! when the next line stands right of the statement's line. A line that stands
+//! at the statement's column or left of it opens nothing. The `=` after the
+//! name of a `type`, a `sort`, a `module` or a `face` opens nothing, because
+//! its right side is no expression. A `{` after `glob` or `Cap` holds fields,
+//! so no `=` in it opens. A line that starts with an explicit `{` opens
+//! nothing, because a source in braces keeps its reading.
 //!
 //! An item ends with a separator only when it needs one. An item a
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
@@ -205,6 +215,18 @@ enum Ending
     Continues,
 }
 
+/// What the items of an explicit `{` are.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Holds
+{
+    /// Statements, or the items that the frame's separator names.
+    #[default]
+    Statements,
+    /// The fields of a `glob` block or of a `Cap` block. No statement's `=`
+    /// opens a block in it.
+    Fields,
+}
+
 /// One open bracket or layout block, and its current item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Frame
@@ -219,6 +241,8 @@ struct Frame
     items: u32,
     /// Whether its `}` ends the item that the brace stands in.
     ending: Ending,
+    /// What its items are, when it is an explicit `{`.
+    holds: Holds,
 }
 
 impl Frame
@@ -238,6 +262,7 @@ impl Frame
             head: Head::default(),
             items: 0,
             ending: Ending::Ends,
+            holds: Holds::Statements,
         }
     }
 }
@@ -261,6 +286,16 @@ enum Pending
     None,
     /// A `def` body's `=`, at its index in the stream.
     Body
+    {
+        /// The `=`'s index.
+        at: usize,
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+    /// The `=` of a `let`, a `var` or an assignment in a statement block, at
+    /// its index in the stream. It keeps its tile, and its block opens after
+    /// it.
+    Statement
     {
         /// The `=`'s index.
         at: usize,
@@ -491,6 +526,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::a_declaration_ends_where_its_form_needs_its_semicolon`
 /// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
 /// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
+/// - witness: `label::layout::tests::a_statement_s_line_final_equals_opens_a_block_after_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
 #[expect(clippy::too_many_lines, reason = "one column-stack state machine")]
 pub(super) fn lay_out(
@@ -594,7 +630,7 @@ pub(super) fn lay_out(
             | Pending::Members { indent }
             | Pending::Arms { indent, .. }
             | Pending::ArmsWhere { indent, .. } => Some(Column(indent)),
-            Pending::None => None,
+            Pending::Statement { .. } | Pending::None => None,
         };
         let below = step
             .and(waiting)
@@ -632,6 +668,17 @@ pub(super) fn lay_out(
                         equals.lexeme = Lexeme::LayoutOpen;
                     }
                     plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Semi);
+                }
+            },
+            Pending::Statement { at, indent } => {
+                pending = Pending::None;
+                if line_start
+                    && !brace
+                    && column > indent
+                    && !bool::from(names_no_expression(bytes, tokens, at))
+                {
+                    plan.place(Lexeme::LayoutOpen);
                     open(&mut frames, &mut plan, indent, Sep::Semi);
                 }
             },
@@ -783,6 +830,13 @@ pub(super) fn lay_out(
             if attribute.is_none() && matches!(spelled, b"@[" | b"@![") {
                 attribute = Some(frames.len());
             }
+            // A `{` after `glob` or `Cap` holds fields, as a bracket does.
+            let fields = brace
+                && plan
+                    .after
+                    .checked_sub(1)
+                    .and_then(|last| tokens.get(last))
+                    .is_some_and(|last| matches!(text(last), b"glob" | b"Cap"));
             frames.push(if brace {
                 Frame {
                     // A `{` right after `=` opens a block expression, and
@@ -792,6 +846,12 @@ pub(super) fn lay_out(
                     }
                     else {
                         Ending::Ends
+                    },
+                    holds: if fields {
+                        Holds::Fields
+                    }
+                    else {
+                        Holds::Statements
                     },
                     // A `{` after a declaration's `where` opens a declaration
                     // body. A `{` after `rec` holds declarations as the
@@ -845,6 +905,7 @@ pub(super) fn lay_out(
                         | Pending::Body { .. }
                         | Pending::Members { .. }
                         | Pending::Arms { .. }
+                        | Pending::Statement { .. }
                         | Pending::ArmsWhere { .. } => Pending::Members {
                             indent: line_indent,
                         },
@@ -869,6 +930,19 @@ pub(super) fn lay_out(
                     if let Some(frame) = frames.last_mut() {
                         if frame.head.opener == Opener::Arrow && opener_allowed {
                             pending = Pending::Body {
+                                at: index,
+                                indent: line_indent,
+                            };
+                        }
+                        // A statement's `=` keeps its tile. Its block opens
+                        // after it, when the `=` ends its line.
+                        else if frame.sep == Sep::Semi
+                            && frame.holds == Holds::Statements
+                            && !frame.head.defined
+                            && opener_allowed
+                            && pending == Pending::None
+                        {
+                            pending = Pending::Statement {
                                 at: index,
                                 indent: line_indent,
                             };
@@ -939,7 +1013,7 @@ pub(super) fn lay_out(
                 plan.place(Lexeme::LayoutOpen);
                 plan.shut(Sep::Arms);
             },
-            Pending::Arms { .. } | Pending::None => {},
+            Pending::Arms { .. } | Pending::Statement { .. } | Pending::None => {},
         }
     }
     // What follows closes every block. The end of the source ends no
@@ -961,6 +1035,42 @@ pub(super) fn lay_out(
         plan.place(Lexeme::LayoutSemi);
     }
     insert(tokens, &plan.planned);
+}
+
+primitive_copy_wrapper!(
+    /// Whether the right side of a `=` is no expression.
+    struct Unopened(bool);
+);
+
+/// Whether the `=` at `at` stands after the name of a `type`, a `sort`, a
+/// `module` or a `face`. Its right side is no expression, so no block opens
+/// after it, and the line to its right continues it.
+///
+/// # Specification
+/// trivial.
+fn names_no_expression(
+    bytes: SourceBytes<'_>,
+    tokens: &[Token],
+    at: usize,
+) -> Unopened
+{
+    let mut before = tokens
+        .get(.. at)
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .filter(|token| token.lexeme != Lexeme::Space);
+    let _name = before.next();
+    Unopened(before.next().is_some_and(|word| {
+        word.lexeme == Lexeme::LowerWord
+            && matches!(
+                bytes.0.get(
+                    usize::try_from(word.start).unwrap_or(usize::MAX)
+                        .. usize::try_from(word.end).unwrap_or(usize::MAX),
+                ),
+                Some(b"type" | b"sort" | b"module" | b"face")
+            )
+    }))
 }
 
 primitive_copy_wrapper!(
@@ -1510,6 +1620,57 @@ mod tests
         assert_eq!(
             marked("def f() -> A {\n  loop { break }\n  return 1\n}\n"),
             "def f() -> A {\n  loop { break }⟪;⟫\n  return 1\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_statement_s_line_final_equals_opens_a_block_after_it()
+    {
+        // The `=` of a `let` keeps its tile, and the block opens after it. The
+        // block's close ends no statement, so the line end writes the `let`'s
+        // separator.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  let a =\n    let b = x\n    b\n  a\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  let a =⟪{⟫\n    let b = x⟪;⟫\n    b⟪}⟫⟪;⟫\n  a⟪}⟫\n"
+        );
+        // A `var` and an assignment open in the same way, in braces too.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  var n : A =\n    g x\n  n =\n    h n\n  n\n}\n"),
+            "def f(x : A) -> A {\n  var n : A =⟪{⟫\n    g x⟪}⟫⟪;⟫\n  n =⟪{⟫\n    h n⟪}⟫⟪;⟫\n  n\n}\n"
+        );
+        // A line at the statement's column or left of it opens nothing.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  let a =\n  x\n}\n"),
+            "def f(x : A) -> A {\n  let a =⟪;⟫\n  x\n}\n"
+        );
+        // A `=` that does not end its line opens nothing, and the line to its
+        // right continues the statement.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  let a = g\n    x\n  a\n}\n"),
+            "def f(x : A) -> A {\n  let a = g\n    x⟪;⟫\n  a\n}\n"
+        );
+        // The `=` after the name of a `module` or of a `sort` opens nothing.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  module m =\n    M\n  x\n}\n"),
+            "def f(x : A) -> A {\n  module m =\n    M⟪;⟫\n  x\n}\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  handle c : S.Eff with sort T =\n    A { x }\n}\n"),
+            "def f(x : A) -> A {\n  handle c : S.Eff with sort T =\n    A { x }\n}\n"
+        );
+        // No `=` opens inside a bracket, in a `glob` block or before a line
+        // that starts with an explicit `{`.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  let a = *{ b =\n    x }\n  a\n}\n"),
+            "def f(x : A) -> A {\n  let a = *{ b =\n    x }⟪;⟫\n  a\n}\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  glob {\n    cells =\n      A\n  }\n}\n"),
+            "def f(x : A) -> A {\n  glob {\n    cells =\n      A\n  }\n}\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  let a =\n    { x }\n  a\n}\n"),
+            "def f(x : A) -> A {\n  let a =\n    { x }⟪;⟫\n  a\n}\n"
         );
     }
 
