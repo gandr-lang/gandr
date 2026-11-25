@@ -15,8 +15,8 @@ module MkCounter(S : *{type T, zero : T, next : T -> T}) :> *{
   def seed = S.zero;
   def step = S.next;
 
-module A = MkCounter(Seed);
-module B = MkCounter(Seed);
+module A = MkCounter Seed;
+module B = MkCounter Seed;
 
 @[refuses("TypeMismatch")]
 def mixed : A.T = B.seed;

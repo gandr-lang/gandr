@@ -20,4 +20,4 @@ module Unread :> *{type T, zero : T, next : T -> T} where
 /// The functor applied to the counter with no reader, refused at its
 /// binding: `Unread` exports no `read`.
 @[refuses("UnknownMember")]
-module Unreadable = MkCounter(Unread);
+module Unreadable = MkCounter Unread;

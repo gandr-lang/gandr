@@ -19,4 +19,4 @@ module Integral :> *{type T, zero : Integer, next : T -> T, read : T -> Integer}
 /// The functor applied to that counter, refused at the witness for `zero`:
 /// the parameter states a `T`, and `Integral` seals its zero at `Integer`.
 @[refuses("TypeMismatch")]
-module Mistyped = MkCounter(Integral);
+module Mistyped = MkCounter Integral;
