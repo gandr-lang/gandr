@@ -16,16 +16,19 @@
 //!    instantiates a variable only at distinct bound occurrences — a pattern
 //!    (Miller) — its variables numbered by first occurrence, and every right
 //!    side names and instantiates only variables its left side binds;
-//! 2. the lexicographic path order of [`gandr_theory_path_orders::lpo`] over
-//!    the stated ranks puts every left side above its right, its derivation
-//!    replayed: an operation stands above every operation of a lower rank and
-//!    above every constructor and results tuple, and the order is a
-//!    simplification order whatever the ranks, so the rules terminate. A
-//!    variable a right side instantiates is read at a function type, the order
-//!    then the higher-order recursive path order: a left side is above an
-//!    instantiation when one of its arguments holds the variable, bare or as a
-//!    pattern under the abstractions of the names it is applied to last (read
-//!    up to η), and it covers every argument of the instantiation;
+//! 2. the path order of [`gandr_theory_path_orders::lpo`] over the stated ranks
+//!    puts every left side above its right, its derivation replayed: an
+//!    operation stands above every operation of a lower rank and above every
+//!    constructor and results tuple. Two applications of one symbol compare
+//!    their arguments left to right, and as multisets where a symmetry of the
+//!    rules swaps that symbol's two arguments, so a left side stays above its
+//!    right in each order of them. The order is a simplification order whatever
+//!    the ranks, so the rules terminate. A variable a right side instantiates
+//!    is read at a function type, the order then the higher-order recursive
+//!    path order: a left side is above an instantiation when one of its
+//!    arguments holds the variable, bare or as a pattern under the abstractions
+//!    of the names it is applied to last (read up to η), and it covers every
+//!    argument of the instantiation;
 //! 3. each derived rule is, up to its variables' names, the two normal forms
 //!    under the rules before it of the critical pair it names, so it is an
 //!    equation the rules before it prove;
@@ -865,6 +868,47 @@ impl TheoryRule
         self.holes.at(at)
     }
 
+    /// The symbol whose two arguments the rule swaps, `f x y` to `f y x`; none
+    /// for every other rule.
+    ///
+    /// # Specification
+    /// - ensures: the symbol exactly when the rule instantiates no variable, is
+    ///   not conditioned and states no row, its left side is that symbol over
+    ///   the variables `0` and `1`, and its right side is that symbol over `1`
+    ///   and `0`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rule that swaps the two arguments of one operation
+    ///   is a symmetry of that operation; the same rule over two symbols, or
+    ///   one that keeps the order, is none.
+    /// - witness: `theory_rules::tests::a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291`
+    /// - witness: `theory_rules::tests::a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset`
+    fn symmetry(&self) -> Option<TheorySymbol>
+    {
+        if self.instantiates || self.conditioned || self.row != RuleRow::default() {
+            return None;
+        }
+        let (first, second) = (
+            TheoryNode::Variable(RuleVariable::from(0_u32)),
+            TheoryNode::Variable(RuleVariable::from(1_u32)),
+        );
+        match (&*self.left, &*self.right) {
+            (
+                &[TheoryNode::Symbol(symbol), left_first, left_second],
+                &[head, right_first, right_second],
+            ) if head == TheoryNode::Symbol(symbol)
+                && left_first == first
+                && left_second == second
+                && right_first == second
+                && right_second == first =>
+            {
+                Some(symbol)
+            },
+            _ => None,
+        }
+    }
+
     /// How the rule's critical pairs are decided: second-order when it
     /// instantiates a variable, is conditioned or fires under a row, and not
     /// at all when it is a symmetry of one symbol.
@@ -891,25 +935,13 @@ impl TheoryRule
     pub fn reading(&self) -> TheoryRuleReading
     {
         if self.instantiates || self.conditioned || self.row != RuleRow::default() {
-            return TheoryRuleReading::SecondOrder;
+            TheoryRuleReading::SecondOrder
         }
-        let (first, second) = (
-            TheoryNode::Variable(RuleVariable::from(0_u32)),
-            TheoryNode::Variable(RuleVariable::from(1_u32)),
-        );
-        match (&*self.left, &*self.right) {
-            (
-                &[TheoryNode::Symbol(symbol), left_first, left_second],
-                &[head, right_first, right_second],
-            ) if head == TheoryNode::Symbol(symbol)
-                && left_first == first
-                && left_second == second
-                && right_first == second
-                && right_second == first =>
-            {
-                TheoryRuleReading::Symmetry
-            },
-            _ => TheoryRuleReading::FirstOrder,
+        else if self.symmetry().is_some() {
+            TheoryRuleReading::Symmetry
+        }
+        else {
+            TheoryRuleReading::FirstOrder
         }
     }
 
@@ -1399,7 +1431,7 @@ impl TheoryRules
             self.well_formed(rule)
                 .map_err(|fault| refuse(index, fault))?;
         }
-        let mut order = OrderBuffers::default();
+        let mut order = self.order_buffers();
         for (index, rule) in self.rules.iter().enumerate() {
             if rule.reading() != TheoryRuleReading::Symmetry
                 && self.path_greater(rule, &mut order) == Verdict::Fails
@@ -1791,13 +1823,38 @@ impl TheoryRules
         Some(Position(at))
     }
 
-    /// Whether the path order of [`gandr_theory_path_orders::lpo`] over the
-    /// stated ranks puts `rule`'s left side above its right, its derivation
-    /// replayed: the lexicographic path order, with every variable the right
-    /// side instantiates read at a function type.
+    /// The buffers of the path order over these rules, holding each symbol
+    /// whose two arguments a symmetry of the rules swaps.
     ///
     /// # Specification
-    /// - requires: both sides are well formed.
+    /// - ensures: empty buffers but for the symbol of each rule of
+    ///   [`Self::rules`] that [`TheoryRule::symmetry`] names, in rule order.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: one symbol for each symmetry, growth within the rules
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::path_greater`]: a symbol with a symmetry
+    ///   compares as a multiset and the same symbol with none left to right.
+    /// - witness: `theory_rules::tests::a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset`
+    fn order_buffers(&self) -> OrderBuffers
+    {
+        let mut buffers = OrderBuffers::default();
+        buffers
+            .symmetric
+            .extend(self.rules.iter().filter_map(TheoryRule::symmetry));
+        buffers
+    }
+
+    /// Whether the path order of [`gandr_theory_path_orders::lpo`] over the
+    /// stated ranks puts `rule`'s left side above its right, its derivation
+    /// replayed: the path order with a status for each symbol, with every
+    /// variable the right side instantiates read at a function type.
+    ///
+    /// # Specification
+    /// - requires: both sides are well formed; `buffers` are
+    ///   [`Self::order_buffers`] of these rules.
     /// - ensures: for `left` and `right` the rule's sides, negative when
     ///   `right` is a variable `right` instantiates somewhere. Otherwise
     ///   positive exactly when `left` applies a symbol some argument of which
@@ -1805,10 +1862,12 @@ impl TheoryRules
     ///   argument of which `left` covers, and either `left`'s symbol precedes
     ///   `right`'s — an operation above an operation of a lower rank, and above
     ///   every constructor, results tuple, abstraction and occurrence — or the
-    ///   two are one symbol and the first argument pair that differs, left to
-    ///   right, is in the order; or `right` instantiates a variable an argument
-    ///   of `left` holds, and `left` covers every argument of the instantiation
-    ///   but the rule's values. An argument holds a variable it is, or one it
+    ///   two are one symbol and its arguments are in the order: the first
+    ///   argument pair that differs, left to right, or the two argument lists
+    ///   as multisets where a symmetry of the rules swaps that symbol's two
+    ///   arguments; or `right` instantiates a variable an argument of `left`
+    ///   holds, and `left` covers every argument of the instantiation but the
+    ///   rule's values. An argument holds a variable it is, or one it
     ///   instantiates under abstractions, as `bind t . k(s, t)` holds `k` read
     ///   up to η. `left` covers a term it is above, or one of its own arguments
     ///   is equal to or above. A variable and an instantiation are above
@@ -1853,7 +1912,10 @@ impl TheoryRules
             ends: &buffers.right_ends,
             values: &[],
         };
-        let ranks = StatedRanks(self);
+        let ranks = StatedRanks {
+            rules: self,
+            symmetric: &buffers.symmetric,
+        };
         match lpo::orient(&left, &right, &ranks, &mut buffers.order) {
             Orientation::Oriented(Evidence::Path(derivation)) => Verdict::from(
                 lpo::check(&left, &right, &ranks, &derivation, &mut buffers.order) == Replay::Holds,
@@ -2634,6 +2696,8 @@ struct OrderBuffers
     left_ends: SmallVec<Position, 0, Global>,
     /// Each right position's subterm end.
     right_ends: SmallVec<Position, 0, Global>,
+    /// Each symbol whose two arguments a symmetry of the rules swaps.
+    symmetric: SmallVec<TheorySymbol, 0, Global>,
     /// The order's tables.
     order: Buffers,
 }
@@ -2737,13 +2801,19 @@ impl Valued for RuleSide<'_>
 }
 
 /// The stated ranks as the path order's precedence: an operation at its rank,
-/// every other symbol ground, every status lexicographic.
+/// every other symbol ground, a symbol of a symmetry at the multiset status
+/// and every other status left to right.
 ///
 /// # Specification
 /// trivial.
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct StatedRanks<'rules>(&'rules TheoryRules);
+struct StatedRanks<'rules>
+{
+    /// The rules whose symbol table states the ranks.
+    rules: &'rules TheoryRules,
+    /// Each symbol whose two arguments a symmetry of the rules swaps.
+    symmetric: &'rules [TheorySymbol],
+}
 
 impl Precedence for StatedRanks<'_>
 {
@@ -2758,7 +2828,7 @@ impl Precedence for StatedRanks<'_>
         symbol: TheorySymbol,
     ) -> Place
     {
-        match self.0.symbols.get(symbol.0) {
+        match self.rules.symbols.get(symbol.0) {
             Some(&(SymbolKind::Operation(rank), _)) => {
                 Place::Ranked(Rank::from(u64::from(u32::from(rank))))
             },
@@ -2774,8 +2844,10 @@ impl Precedence for StatedRanks<'_>
         }
     }
 
-    /// Explicit over the arguments an operation is written with; lexicographic
-    /// for every other symbol.
+    /// Multiset for a symbol whose two arguments a symmetry of the rules
+    /// swaps: the order then holds under each order of them. Otherwise
+    /// explicit over the arguments an operation is written with, and
+    /// lexicographic for every other symbol.
     ///
     /// # Specification
     /// trivial.
@@ -2784,9 +2856,12 @@ impl Precedence for StatedRanks<'_>
         symbol: TheorySymbol,
     ) -> Status
     {
-        match self.0.symbols.get(symbol.0) {
+        if self.symmetric.contains(&symbol) {
+            return Status::Multiset;
+        }
+        match self.rules.symbols.get(symbol.0) {
             Some(&(SymbolKind::Operation(_), arity)) => Status::Explicit(Explicit::from(
-                usize::from(self.0.explicit.get(symbol.0).copied().unwrap_or(arity)),
+                usize::from(self.rules.explicit.get(symbol.0).copied().unwrap_or(arity)),
             )),
             Some(_) | None => Status::Lexicographic,
         }
@@ -3666,7 +3741,7 @@ impl<'arena> Reader<'arena>
                     _ => arity,
                 })
                 .collect();
-            let mut buffers = OrderBuffers::default();
+            let mut buffers = rules.order_buffers();
             if carried
                 .iter()
                 .all(|rule| rules.path_greater(rule, &mut buffers) == Verdict::Holds)

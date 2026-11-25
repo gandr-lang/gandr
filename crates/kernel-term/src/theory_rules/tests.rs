@@ -323,6 +323,46 @@ fn a_rule_reads_second_order_when_it_instantiates_is_conditioned_or_states_a_row
 }
 
 #[test]
+fn a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset()
+{
+    // two = 0, s = 1.
+    let symbols = SmallVec::<_, 0, Global>::from_iter([operation!(1, 2), operation!(0, 1)]);
+    let symmetry = rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]);
+    // `two(s(x), y) ==> two(x, s(y))`: under the symmetry its right side is
+    // `two(s(y), x)`, an instance of its left side.
+    let moves = rule(&[s!(0), s!(1), v!(0), v!(1)], &[s!(0), v!(0), s!(1), v!(1)]);
+    // `two(s(x), y) ==> two(x, y)`.
+    let drops = rule(&[s!(0), s!(1), v!(0), v!(1)], &[s!(0), v!(0), v!(1)]);
+    let decided = |rules: &[TheoryRule]| {
+        TheoryRules::new(
+            symbols.clone(),
+            SmallVec::<_, 0, Global>::from_iter(rules.iter().cloned()),
+        )
+        .decide(&mut fuel())
+    };
+    assert_eq!(
+        decided(core::slice::from_ref(&moves)),
+        Ok(()),
+        "with no symmetry the first argument decides, and `s(x)` is above `x`"
+    );
+    assert_eq!(
+        decided(&[moves.clone(), symmetry.clone()]),
+        refused!(0, TheoryRuleFault::Unoriented),
+        "beside the symmetry no argument of the left side is above `s(y)`"
+    );
+    assert_eq!(
+        decided(&[symmetry.clone(), moves]),
+        refused!(1, TheoryRuleFault::Unoriented),
+        "the place of the symmetry does not change the status"
+    );
+    assert_eq!(
+        decided(&[drops, symmetry]),
+        Ok(()),
+        "`s(x)` is above `x`, and `y` stands on each side"
+    );
+}
+
+#[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {
     let symbols = SmallVec::<_, 0, Global>::from_iter([
