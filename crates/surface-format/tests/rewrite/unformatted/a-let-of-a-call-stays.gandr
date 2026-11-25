@@ -5,17 +5,17 @@ def lcg(first : Integer, second : Integer, third : Integer) -> Integer = first;
 def log(message : String) -> Integer = 0;
 
 def first() -> Integer = {
-  let seed = draw 8;
+  let seed = draw 8
   lcg 8 seed (draw 2)
 };
 
 def second() -> Integer = {
-  let seed = draw 8;
+  let seed = draw 8
   lcg 8 (draw 2) seed
 };
 
 def after_log() -> Integer = {
-  let seed = draw 8;
-  log "drawn";
+  let seed = draw 8
+  log "drawn"
   lcg 8 seed
 };
