@@ -30,9 +30,9 @@ def tailEmpty(h : Heap) -> Type =
   emp (tailOf h)
 
 /// `nested` reads `viaTail(Zero, h)` as its selected arm calls.
-def nested(h : Heap) -> viaTail(Zero, h) -> emp(tailOf(h)) =
+def nested(h : Heap) -> (viaTail Zero h) -> emp (tailOf h) =
   fun (e) { e }
 
 /// `bodyNested` reads `tailEmpty(h)` as its body calls.
-def bodyNested(h : Heap) -> tailEmpty(h) -> emp(tailOf(h)) =
+def bodyNested(h : Heap) -> (tailEmpty h) -> emp (tailOf h) =
   fun (e) { e }

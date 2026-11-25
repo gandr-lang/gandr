@@ -104,13 +104,7 @@ def uaLiteral(
 pub def loopsAreIntegers : Path[.A = Type] (Path[.A = Circle] Base Base) Int = ua winding;
 
 /// The wildcard end of `ua(winding)` resolves to integers.
-def loopsAreTheirWinding : Path[.A = Type](
-  Path[.A = Circle] Base Base,
-  Int
-) = (ua winding : Path[.A = Type](
-  Path[.A = Circle] Base Base,
-  _
-));
+def loopsAreTheirWinding : Path[.A = Type] (Path[.A = Circle] Base Base) Int = (ua winding : Path[.A = Type] (Path[.A = Circle] Base Base) _);
 
 /// Transport along `ua` applies its record map by conversion.
 def uaBeta(

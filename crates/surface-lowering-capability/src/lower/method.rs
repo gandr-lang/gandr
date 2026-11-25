@@ -140,6 +140,7 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Run;
 use crate::form::TileName;
+use crate::form::own_pieces;
 use crate::form::read_pieces;
 use crate::import::ImportResolution;
 use crate::module::Container;
@@ -343,18 +344,20 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         }
     }
 
-    /// Refuse a mode word or a mode variable written on a parameter of the
-    /// function at `function` that is no receiver.
+    /// Refuse a mode word written on a parameter of the function at
+    /// `function` that is no receiver, and a mode variable on a receiver
+    /// whose method deduces no mode.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the parameter list's `(`;
     ///   `receiver` is the function's receiver mode.
     /// - ensures: `Ok` when every mode word stands on the first parameter of a
-    ///   method, named `self`, and every moded type, `m T`, on that of a method
-    ///   whose mode is deduced.
+    ///   method, named `self`, and every moded type on that parameter, `m T`,
+    ///   on a method whose mode is deduced. A moded type on any other parameter
+    ///   is an application, `f a`, which the type's lowering reads.
     /// - fails: [`LoweringRefusal::StrayReceiverMode`] at the first mode word
-    ///   or mode variable that does not; [`LoweringRefusal::UnknownMold`]
-    ///   reading a parameter's type.
+    ///   or receiver's mode variable that does not;
+    ///   [`LoweringRefusal::UnknownMold`] reading a parameter's type.
     /// - panics: none.
     ///
     /// # Errors
@@ -365,8 +368,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a mode word on a top-level function's parameter and
-    ///   on a method's second parameter, and a mode variable on a top-level
-    ///   function's parameter, each refused at the word.
+    ///   on a method's second parameter, each refused at the word.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_mode_word_off_a_receiver_is_refused`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::UnknownMold { .. })))]
     #[inline]
@@ -400,12 +402,16 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                         receiving && receiver.is_some_and(|mode| mode != ReceiverMode::Deduced);
                     (!receives).then_some(at)
                 },
-                Piece::Operand(declared) if after_colon => match self.moded(declared)? {
-                    Some((written, _)) => {
-                        let receives = receiving && receiver == Some(ReceiverMode::Deduced);
-                        (!receives).then_some(written)
-                    },
-                    None => None,
+                // Off a receiver a moded type is an application, `f a`, which
+                // the type's lowering reads; on a receiver it is a mode only
+                // where the method deduces one.
+                Piece::Operand(declared) if after_colon && receiving => {
+                    match self.moded(declared)? {
+                        Some((written, _)) => {
+                            (receiver != Some(ReceiverMode::Deduced)).then_some(written)
+                        },
+                        None => None,
+                    }
                 },
                 Piece::Tile { label, .. } if label == TileName::COMMA => {
                     position = position.saturating_add(1_usize);
@@ -453,12 +459,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         declared: Placed,
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((_, Former::ModedType)) = self.cx().form_at(declared)?
+        let Some((FormName::MODED_TYPE, _)) = self.cx().form_at(declared)?
         else {
             return Ok(None);
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.cx().pbg, self.cx().tree, declared.node, &mut pieces)?;
+        own_pieces(self.cx().pbg, self.cx().tree, declared.node, &mut pieces)?;
 
         Ok(match *pieces.pieces.as_slice() {
             [
@@ -1216,14 +1222,15 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         let refused = LoweringRefusal::ViewNotPlace { span: result.span };
         let mut pieces = Pieces::new();
         let view = match self.cx().form_at(result)? {
-            Some((_, Former::StagedType)) => result,
+            Some((_, Former::StagedType | Former::TypeApplication)) => result,
             Some((_, Former::ReturnerType)) => {
                 read_pieces(self.cx().pbg, self.cx().tree, result.node, &mut pieces)?;
                 let &[Piece::Tile { .. }, Piece::Operand(view)] = pieces.pieces.as_slice()
                 else {
                     return Err(refused);
                 };
-                let Some((_, Former::StagedType)) = self.cx().form_at(view)?
+                let Some((_, Former::StagedType | Former::TypeApplication)) =
+                    self.cx().form_at(view)?
                 else {
                     return Err(refused);
                 };
@@ -1232,6 +1239,34 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             Some(_) | None => return Err(refused),
         };
         read_pieces(self.cx().pbg, self.cx().tree, view.node, &mut pieces)?;
+        // The juxtaposed view `View[m] a` applies the staged head `View[m]` to
+        // its element; the glued view `View[m](a)` writes both in one form.
+        let element = match *pieces.pieces.as_slice() {
+            [
+                Piece::Operand(staged),
+                Piece::Tile {
+                    label: TileName::PAREN_OPEN,
+                    ..
+                },
+                Piece::Operand(element),
+                Piece::Tile {
+                    label: TileName::PAREN_CLOSE,
+                    ..
+                },
+            ] if matches!(self.cx().form_at(staged)?, Some((_, Former::StagedType))) => {
+                read_pieces(self.cx().pbg, self.cx().tree, staged.node, &mut pieces)?;
+                element
+            },
+            [
+                ..,
+                Piece::Operand(element),
+                Piece::Tile {
+                    label: TileName::PAREN_CLOSE,
+                    ..
+                },
+            ] => element,
+            _ => return Err(refused),
+        };
         let &[
             Piece::Operand(head),
             Piece::Tile {
@@ -1246,19 +1281,28 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 label: TileName::BRACKET_CLOSE,
                 ..
             },
-            Piece::Tile {
-                label: TileName::PAREN_OPEN,
-                ..
-            },
-            Piece::Operand(element),
-            Piece::Tile {
-                label: TileName::PAREN_CLOSE,
-                ..
-            },
+            ref rest @ ..,
         ] = pieces.pieces.as_slice()
         else {
             return Err(refused);
         };
+        let listed = matches!(
+            *rest,
+            [
+                Piece::Tile {
+                    label: TileName::PAREN_OPEN,
+                    ..
+                },
+                Piece::Operand(listed),
+                Piece::Tile {
+                    label: TileName::PAREN_CLOSE,
+                    ..
+                },
+            ] if listed == element
+        );
+        if !(listed || rest.is_empty()) {
+            return Err(refused);
+        }
         let viewed = matches!(self.cx().form_at(head)?, Some((_, Former::TypeHead)))
             && self.cx().name_at(head).as_ref() == "View";
         if !viewed {

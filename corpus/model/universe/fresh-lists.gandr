@@ -42,7 +42,7 @@ rec {
     /// The empty list.
     | FNil : Fresh
     /// A head, a tail, and the head's freshness for the tail.
-    | FCons : (x : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh
+    | FCons : (x : Nat, xs : Fresh, p : fresh x xs) --> Fresh
   }
 
   /// The freshness of a natural for a fresh list. It pairs the natural's

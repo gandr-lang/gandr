@@ -896,11 +896,11 @@ mod tests
                 None
             ),
             head("List", "List(a : Type) : Type", &["a : Type"], None),
-            head("Nil", "Nil : List(a)", &[], None),
+            head("Nil", "Nil : List a", &[], None),
             head(
                 "Cons",
-                "Cons : (head : a, tail : List(a)) --> List(a)",
-                &["head : a", "tail : List(a)"],
+                "Cons : (head : a, tail : List a) --> List a",
+                &["head : a", "tail : List a"],
                 None
             ),
             head(
@@ -912,7 +912,7 @@ mod tests
             head("f", "f : +U (Nat -> -F Nat)", &["Nat"], None),
             head(
                 "r",
-                "r : *{ sub : +U (Nat -> Nat -> -F Type), subTm : (g : Nat, t : sub(g, g)) -> Nat }",
+                "r : *{ sub : +U (Nat -> Nat -> -F Type), subTm : (g : Nat, t : sub g g) -> Nat }",
                 &[],
                 None
             ),
@@ -924,8 +924,8 @@ mod tests
             ),
             head(
                 "subTm",
-                "subTm : (g : Nat, t : sub(g, g)) -> Nat",
-                &["g : Nat", "t : sub(g, g)"],
+                "subTm : (g : Nat, t : sub g g) -> Nat",
+                &["g : Nat", "t : sub g g"],
                 None
             ),
         ]);

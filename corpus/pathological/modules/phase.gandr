@@ -33,5 +33,5 @@ module Ascribed : *{three : Integer, type R} where {
 module Pointed(S : *{type T, z : T}) where {
   /// A path at the argument's point.
   @[refuses("PhaseDependence")]
-  type At = Path(S.z, S.z);
+  type At = Path S.z S.z;
 }

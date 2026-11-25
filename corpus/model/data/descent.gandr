@@ -94,5 +94,5 @@ def rec isZero(n : Nat) -> Type =
     | Succ(_m) => return Void
 
 /// `isZero(Zero)` unfolds to `Unit` in the checker and the kernel alike.
-def isZeroAtZero() -> isZero(Zero) -> Unit =
+def isZeroAtZero() -> (isZero Zero) -> Unit =
   fun (e) { e }

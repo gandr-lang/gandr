@@ -3,5 +3,5 @@
 def twice : Type -> Type = fun (Y) { type(Y * Y) };
 
 @[refuses("FamilyArgumentClassifier")]
-def wrong(p : twice(1)) -> Integer =
+def wrong(p : twice 1) -> Integer =
   1

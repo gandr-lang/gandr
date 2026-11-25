@@ -341,7 +341,7 @@ fn a_comparison_in_a_decoded_type_reads_back_6229()
     });
     let compared: Vec<(&str, &RoundTrip)> = reads
         .iter()
-        .filter(|read| read.spelled.contains("decoded(ofFlag("))
+        .filter(|read| read.spelled.contains("decoded (ofFlag ("))
         .map(|read| (read.spelled.as_str(), &read.trip))
         .collect();
     assert!(

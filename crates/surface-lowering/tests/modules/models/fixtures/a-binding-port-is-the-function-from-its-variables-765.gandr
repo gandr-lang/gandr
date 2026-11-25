@@ -19,5 +19,5 @@ def written : *{
   cty : Type,
   vtm : +U (vty -> -F Type),
   ctm : +U (cty -> -F Type),
-  lam : +U ((a : vty) -> (b : cty) -> +U (vtm(a) -> -F ctm(b)) -> -F ctm(b))
+  lam : +U ((a : vty) -> (b : cty) -> +U ((vtm a) -> -F (ctm b)) -> -F (ctm b))
 };

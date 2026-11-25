@@ -200,14 +200,14 @@ pub def modelType(presented : Theory) -> Type =
 /// The line of the constant `name` whose entry is `x`: `name = value` for a
 /// string or a boolean, and no line for an opaque entry. A string is a TOML
 /// basic string, its characters written as they are.
-def line(name : String, s : EntrySort, x : entryType(s)) -> String =
+def line(name : String, s : EntrySort, x : entryType s) -> String =
   match s where
     | Text => string.append (string.append name " = \"") (string.append x "\"\n")
     | Truth => if x { string.append name " = true\n" } else { string.append name " = false\n" }
     | Opaque => ""
 
 /// The lines of a member chain's entries `v`, one for each constant.
-def rec chainLines(chain : Theory, v : chainType(chain)) -> String =
+def rec chainLines(chain : Theory, v : chainType chain) -> String =
   match chain where
     | Theory.Const(name, inputs, outputs, rest) => match v where
       | Entry(x, r) => string.append (line name (portSort outputs) x) (chainLines[<] rest r)
@@ -216,7 +216,7 @@ def rec chainLines(chain : Theory, v : chainType(chain)) -> String =
 
 /// The lines of the entries `v` of a model of `presented`, one for each
 /// constant, in the order of the presentation.
-pub def encode(presented : Theory, v : modelType(presented)) -> String =
+pub def encode(presented : Theory, v : modelType presented) -> String =
   match presented where
     | Theory.Presents(sorts, opers, rules) => chainLines opers v
     | _ => ""
@@ -227,7 +227,7 @@ pub def packagePresentation : Theory = Gandr.Package;
 
 /// The entries of the package model `m`, in the order of the presentation.
 @[inert]
-pub def packageEntries(m : Model Gandr.Package) -> modelType(packagePresentation) =
+pub def packageEntries(m : Model Gandr.Package) -> modelType packagePresentation =
   Entry
     m.version
     (Entry

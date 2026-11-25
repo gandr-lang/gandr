@@ -912,6 +912,17 @@ fn add_type_rules(
         type_atom,
         tile(TileLabel("?")),
     ));
+    // The wildcard `_` where a type is read: an endpoint the elaborator
+    // answers from the comparisons that force it, `Path[.A = Type] A _`, as a
+    // listed endpoint `Path[.A = Type](A, _)` is. Its tile and its node kind
+    // are the expression wildcard's.
+    rules.push(Rule::with_provenance(
+        RuleName("wildcard.type"),
+        Provenance("wildcard"),
+        ty,
+        type_atom,
+        tile(TileLabel("_")),
+    ));
     rules.push(rule(
         RuleName("type_identifier"),
         ty,
@@ -923,6 +934,23 @@ fn add_type_rules(
         ty,
         type_atom,
         tile(TileLabel("type_variable")),
+    ));
+    // The descent `[<]`, an operand of its own after a definition's name: a
+    // decoder's arm writes its own recursion in the type it returns, `el
+    // [<] a`, as its body writes the call it makes. The lowering reads it
+    // only as the first argument of a lowercase head, and refuses it
+    // anywhere else. No other type form opens with `[` and `<`. The
+    // tree-sitter grammar has no descent, so the kind is in
+    // `PBG_ONLY_KINDS`.
+    rules.push(rule(
+        RuleName("descent_type"),
+        ty,
+        type_atom,
+        Regex::seq([
+            tile(TileLabel("[")),
+            tile(TileLabel("<")),
+            tile(TileLabel("]")),
+        ]),
     ));
     // A type at a mode variable, `m List(Integer)`: a method's receiver
     // `self : m T`, its mode the telescope's `[m : Mode]`. The variable is

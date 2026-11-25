@@ -3,12 +3,12 @@ data N : Type where {
   | S : (n : N) --> N
 }
 data Fin : N -> Type where {
-  | FZ : (n : N) --> Fin(S(n))
-  | FS : (n : N, i : Fin n) --> Fin(S(n))
+  | FZ : (n : N) --> Fin (S n)
+  | FS : (n : N, i : Fin n) --> Fin (S n)
 }
 data V(a : Type) : N -> Type where {
   | VN : V a Z
-  | VC : (n : N, x : a, t : V a n) --> V(a, S n)
+  | VC : (n : N, x : a, t : V a n) --> V a (S n)
 }
 data Box(a : Type) : Type where {
   | MkBox : (x : a) --> Box a

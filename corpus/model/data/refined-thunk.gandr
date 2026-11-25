@@ -40,13 +40,13 @@ def holds(c : C) -> Type =
 def idTwo(u : Branch) -> Branch = u;
 
 /// A witness at each choice: a branch at `A`, and the identity at `B`.
-def mk(c : C) -> holds(c) =
+def mk(c : C) -> holds c =
   match c where
     | A => L
     | B => idTwo
 
 /// The witness itself at `A`, and the witness at `B` on the branch `R`.
-def leftOf(c : C, m : holds(c)) -> Branch =
+def leftOf(c : C, m : holds c) -> Branch =
   match c where
     | A => m
     | B => m R

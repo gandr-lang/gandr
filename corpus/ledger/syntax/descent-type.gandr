@@ -1,0 +1,14 @@
+/// `descent_type`: a decoder's own recursion in the type that an arm returns,
+/// at a code below the code that it decodes.
+
+/// The codes: the integers, and the functions between two codes.
+data U : Type where
+  | IntU : U
+  | FunU : (a : U, b : U) --> U
+
+/// The type that each code names. The function code decodes its two codes
+/// below itself.
+def rec el(u : U) -> Type =
+  match u where
+    | IntU => return Integer
+    | FunU(a, b) => return ((el [<] a) -> (el [<] b))

@@ -14,7 +14,7 @@
 @[builtin("irPair")]
 data Pair(a : Type, b : a -> Type) : Type where
   /// A value of the first type with a value of the type it picks.
-  | MkPair : (x : a, y : b(x)) --> Pair a b
+  | MkPair : (x : a, y : b x) --> Pair a b
 
 /// The codes over a type of decodes `d`.
 @[builtin("irSignature")]

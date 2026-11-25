@@ -903,8 +903,9 @@ fn format_once(
     // source text before the formatter reads the tree, so the meaning check
     // compares a block-less input to a block-less output and a formatted
     // sugared corpus never carries one. A block with any other entry is kept,
-    // as is a `checks` the source spells in its explicit form.
-    let stripped = (form == Form::Sugared)
+    // as is a `checks` the source spells in its explicit form. A run that
+    // selects its rewrites applies those rewrites alone and keeps the block.
+    let stripped = (form == Form::Sugared && options.rewrites == Selection::Every)
         .then(|| strip_bare_checks(SourceText::from(<&str>::from(source))))
         .filter(|text| text.as_str() != source.as_ref());
     let stripped_parse = stripped

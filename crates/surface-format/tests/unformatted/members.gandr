@@ -20,7 +20,7 @@ codata Stream(a : Type) : Type[-] where
   /// The head.
   head : a;
           /// The rest.
-  tail : Stream(a);
+  tail : Stream a;
 
 /// A module.
 module M where {

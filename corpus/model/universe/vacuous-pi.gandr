@@ -20,7 +20,7 @@ def always(n : Nat) -> -F Type = return Nat;
 
 /// The `idAlways` function uses the constant family.
 @[checks]
-def idAlways(x : Nat) -> -F always(x) = return x;
+def idAlways(x : Nat) -> -F (always x) = return x;
 
 /// The `viaArrow` declaration uses the converted plain arrow. It checks because
 /// `always(x)` reads to `Nat` at each `x`.
@@ -30,7 +30,7 @@ def viaArrow = idAlways;
 
 /// The `viaFamily` declaration uses the dependent arrow.
 @[checks]
-def viaFamily : +U ((x : Nat) -> -F always(x));
+def viaFamily : +U ((x : Nat) -> -F (always x));
 def viaFamily = viaArrow;
 
 /// The `appliedArrow` function applies the plain arrow.

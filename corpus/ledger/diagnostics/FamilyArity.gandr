@@ -3,5 +3,5 @@
 def twice : Type -> Type = fun (Y) { type(Y * Y) };
 
 @[refuses("FamilyArity")]
-def over(p : twice(Integer, Integer)) -> Integer =
+def over(p : twice Integer Integer) -> Integer =
   1

@@ -21,7 +21,7 @@ type Tel = Unit * (+{Unit} * Bool);
 /// The swap at the binary corolla, as a path of the degree telescopes. The
 /// statement stands inside a function body, so the bridge reads its native
 /// path at the statement's node.
-def opposite() -> Path[.A = Type](Tel, Tel) = ua[
+def opposite() -> Path[.A = Type] Tel Tel = ua[
   1,
   4
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});

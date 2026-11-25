@@ -168,5 +168,5 @@ def kUnrealised() -> Admission =
 /// `f`'s triple, `{V_opt(x)} f(x, n) {V_opt(x)}`, needs the reference's cells
 /// alone, the integer and the result owning nothing. That `f`'s body meets it
 /// is assumed, since nothing here reads its body.
-pub def fMeets(x : Nat, n : Nat, h : Heap) -> vOpt(vInt, x, h) -> derefOrWp(x, n, keptOpt, h) =
+pub def fMeets(x : Nat, n : Nat, h : Heap) -> (vOpt vInt x h) -> derefOrWp x n keptOpt h =
   derefOrMeets x n h

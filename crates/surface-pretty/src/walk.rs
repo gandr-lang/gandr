@@ -1898,9 +1898,9 @@ enum Surface
     Type,
     /// As an expression a type encloses: the head and the arguments of a call
     /// that stands where a type is read. They are read as expressions, so a
-    /// type argument there is quoted (#1102), but the grammar reads them in
-    /// the type's sort, which writes a call glued: there `f x` reads as the
-    /// moded type `m T`.
+    /// type argument there is quoted (#1102), but the grammar reads the call
+    /// in the type's sort: `f a b` is the call `f(a, b)`, and it runs to the
+    /// arrow, as a word before a type does.
     Enclosed,
 }
 
@@ -1930,19 +1930,20 @@ enum Elaboration
 ///   (#1102, #4508) and a call there is juxtaposed (#5211); a type for a type
 ///   slot of a value or a computation that writes itself — an annotation, a
 ///   binder's type, a typed bind's result — where the expression grammar embeds
-///   a type; `surface` itself otherwise. A quote, any other nested or returned
-///   computation and an ascription, elided or written as the match that answers
-///   it, write nothing of their own around a slot, so their slot is read as
-///   they are; the endpoints of a path or a bridge type, `Path[.A = A](x, y)`,
-///   are expressions in either sort unless its carrier is a universe, since the
-///   grammar reads a universe's endpoints, codes, as types and any other
-///   carrier's as expressions; any other type former's value slot is read as
-///   the type is, since every type application reads its arguments in the
-///   type's own sort. A computation's slot that takes a computation — an arm, a
-///   bound computation, the rest of a bind — is an expression, since the
-///   lowering reads a computation that a type decodes as a body, where a call
-///   is juxtaposed (#7564). A call reads its own head and arguments as
-///   expressions, which [`Walk::visit`] schedules itself.
+///   a type; a type for an arrow's domain and codomain, since an arrow is a
+///   type form wherever it stands; `surface` itself otherwise. A quote, any
+///   other nested or returned computation and an ascription, elided or written
+///   as the match that answers it, write nothing of their own around a slot, so
+///   their slot is read as they are; the endpoints of a path or a bridge type,
+///   `Path[.A = A](x, y)`, are expressions in either sort unless its carrier is
+///   a universe, since the grammar reads a universe's endpoints, codes, as
+///   types and any other carrier's as expressions; any other type former's
+///   value slot is read as the type is, since every type application reads its
+///   arguments in the type's own sort. A computation's slot that takes a
+///   computation — an arm, a bound computation, the rest of a bind — is an
+///   expression, since the lowering reads a computation that a type decodes as
+///   a body, where a call is juxtaposed (#7564). A call reads its own head and
+///   arguments as expressions, which [`Walk::visit`] schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
 /// - panics: none.
@@ -1963,10 +1964,11 @@ enum Elaboration
 #[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::Lambda(_) | Former::LinearLambda(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
     || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
     Surface::Expression
-} else if !matches!(*former,
-    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
-    && matches!(kind(former), Kind::Value | Kind::Computation)
-    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
+} else if matches!(*former, Former::Arrow { .. } | Former::Pi { .. } | Former::LinearArrow { .. })
+    || (!matches!(*former,
+        Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
+        && matches!(kind(former), Kind::Value | Kind::Computation)
+        && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
 {
     Surface::Type
 } else if !matches!(*former,
@@ -2002,6 +2004,15 @@ where
     ) || braced(source, former).is_some()
     {
         return Surface::Expression;
+    }
+    // An arrow is a type form wherever it stands, `(x : A) -> C` in a body's
+    // parentheses too, so the grammar reads its domain and its codomain in the
+    // type's sort.
+    if matches!(
+        *former,
+        Former::Arrow { .. } | Former::Pi { .. } | Former::LinearArrow { .. }
+    ) {
+        return Surface::Type;
     }
     // A path type's endpoints are expressions wherever the type stands, but
     // over a universe: the grammar reads `Path[.A = A](x, y)`'s endpoints so,
@@ -7581,11 +7592,12 @@ impl Walk<'_, '_>
     ///   to from the occurrence; past every open binder of the zone, an
     ///   intuitionistic variable reads as the context binder it counts out to,
     ///   innermost last, a recursive definition's own written with its claim,
-    ///   `name[<]` or `name[>]`; `?`, approximate and recorded unbound, for a
-    ///   linear variable past every open binder, one past the context, and a
-    ///   context binder the source cannot name, recorded primed for a context
-    ///   binder whose prime ASCII cannot write, and recorded exhausted when the
-    ///   generated names ran out.
+    ///   `name[<]` or `name[>]`, apart from the name where a type's sort reads
+    ///   it; `?`, approximate and recorded unbound, for a linear variable past
+    ///   every open binder, one past the context, and a context binder the
+    ///   source cannot name, recorded primed for a context binder whose prime
+    ///   ASCII cannot write, and recorded exhausted when the generated names
+    ///   ran out.
     /// - provides: the spelling of a bound variable and of an endpoint.
     /// - fails: the builder's refusal.
     /// - panics: none.
@@ -7638,14 +7650,26 @@ impl Walk<'_, '_>
             match position.and_then(|at| self.context.get(at.0).copied().flatten()) {
                 Some(name) => match (unwritable(name, self.spelling), self.recursive) {
                     // A recursive definition's call of itself writes its
-                    // claim.
+                    // claim: glued in an expression, `f[<]`, and apart where a
+                    // type's sort reads it, `f [<]`, as the descent stands
+                    // there as an operand of its own.
                     (None, Some(recursive))
                         if position == Some(ContextPosition(usize::from(recursive.uniform))) =>
                     {
-                        Ok(format!("{}{}", name.as_ref(), match recursive.claim {
-                            Recursion::Descends => "[<]",
-                            Recursion::Productive => "[>]",
-                        }))
+                        let apart = if self.surface == Surface::Expression {
+                            ""
+                        }
+                        else {
+                            " "
+                        };
+                        Ok(format!(
+                            "{}{apart}{}",
+                            name.as_ref(),
+                            match recursive.claim {
+                                Recursion::Descends => "[<]",
+                                Recursion::Productive => "[>]",
+                            }
+                        ))
                     },
                     (None, _) => Ok(String::from(name.as_ref())),
                     (Some(Unspelled::Primed), _) => Err(Unspelled::Primed),
@@ -8663,12 +8687,16 @@ impl Walk<'_, '_>
     /// [`Walk::alias`] read, as the box `(A1, …, An) -> C`:
     /// the join, an unbind for each dependent arrow, the codomain, then each
     /// domain under the binders before it, so the domains are visited first.
+    /// The domains and the codomain are read in the type's sort, where no
+    /// checker elaborates, since an arrow is a type form wherever it stands;
+    /// `restored` is the surface and the elaboration the join is written in.
     ///
     /// # Specification
     /// trivial.
     fn aliased<N>(
         (links, dependent, codomain, first): AliasChain<N>,
         depth: ValueDepth,
+        restored: (Surface, Elaboration),
         tasks: &mut Vec<Task<N>>,
     )
     {
@@ -8679,6 +8707,8 @@ impl Walk<'_, '_>
                 Join::ValueFunction(Arity(links.len()), dependent, first),
             ),
         )));
+        tasks.push(Task::Elaboration(restored.1));
+        tasks.push(Task::Surface(restored.0));
         for _ in 0_u32 .. dependent.0.count_ones() {
             tasks.push(Task::Unbind);
         }
@@ -8700,6 +8730,8 @@ impl Walk<'_, '_>
                 depth,
             });
         }
+        tasks.push(Task::Surface(Surface::Type));
+        tasks.push(Task::Elaboration(Elaboration::Read));
     }
 
     /// The dependent box, `(a : A, B) -> C`, over its spelled
@@ -10069,7 +10101,7 @@ impl Walk<'_, '_>
                     && let Some(chain) = self.alias(source, node)
                     && !chain.0.is_empty()
                 {
-                    Self::aliased(chain, depth, tasks);
+                    Self::aliased(chain, depth, (self.surface, self.elaboration), tasks);
                     return Ok(());
                 }
                 shaped = Some(Vec::from([Slot::of(node, Admits::CompType, Binds::NONE)]));
@@ -10851,7 +10883,7 @@ impl Walk<'_, '_>
                 if self.form == Form::Sugared
                     && let Some(chain) = self.alias(source, body)
                 {
-                    Self::aliased(chain, depth, tasks);
+                    Self::aliased(chain, depth, (self.surface, self.elaboration), tasks);
                     return Ok(());
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
@@ -11753,20 +11785,21 @@ impl Walk<'_, '_>
     ///   has the walk's surface set to [`Surface::Enclosed`] over its head and
     ///   its arguments and restored past its join, since a call reads them as
     ///   expressions wherever it stands: a type argument there is quoted
-    ///   (#1102), and the join writes the call glued, `f(a, b)`, as the type's
-    ///   sort reads it. Where the head forces a constant whose telescope
-    ///   ([`Source::implicits`]) names an implicit at the place of an argument
-    ///   the call writes, and the spine is read whole, the join is instead the
-    ///   form `f[.x = a, …](b, …)`: the head, then each such argument after its
-    ///   implicit's name in the telescope's order, then the rest in place, each
-    ///   visited in that order. A forced function literal — a thunk, or a
-    ///   computation nested where a value is read, which a force decides as a
-    ///   thunk — of at least as many abstractions as the call has arguments,
-    ///   whose body then returns, is scheduled instead as the value it returns,
-    ///   and one whose body is itself a call of a forced head as that call,
-    ///   under one binder per argument standing for the argument, the first
-    ///   outermost: the type grammar has no call of a literal, and the reading
-    ///   back compares such a call as what it returns (#675).
+    ///   (#1102), and the join writes the call juxtaposed, `f a b`, binding as
+    ///   an arrow, as the type's sort reads it. Where the head forces a
+    ///   constant whose telescope ([`Source::implicits`]) names an implicit at
+    ///   the place of an argument the call writes, and the spine is read whole,
+    ///   the join is instead the form `f[.x = a, …](b, …)`: the head, then each
+    ///   such argument after its implicit's name in the telescope's order, then
+    ///   the rest in place, each visited in that order. A forced function
+    ///   literal — a thunk, or a computation nested where a value is read,
+    ///   which a force decides as a thunk — of at least as many abstractions as
+    ///   the call has arguments, whose body then returns, is scheduled instead
+    ///   as the value it returns, and one whose body is itself a call of a
+    ///   forced head as that call, under one binder per argument standing for
+    ///   the argument, the first outermost: the type grammar has no call of a
+    ///   literal, and the reading back compares such a call as what it returns
+    ///   (#675).
     /// - provides: the one spelling the surface writes a call in.
     /// - fails: never.
     /// - panics: none.
@@ -14276,8 +14309,9 @@ impl Walk<'_, '_>
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Bracket(bracket) => match bracket.opener(self.surface) { Opener::Parenthesized(_) => Binding::Atom, Opener::Juxtaposed(_) => Binding::Application },
                     // The join juxtaposes an application where an expression
-                    // reads it, and glues it, an atom, where a type reads it.
-                    Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
+                    // reads it, and where a type reads it the application runs
+                    // to the arrow.
+                    Join::Apply(_) if self.surface != Surface::Expression => Binding::Arrow,
                     Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
                     Join::Braced { .. } | Join::Update(_) | Join::Patch(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
                     // A family whose first argument takes parentheses binds
@@ -14807,16 +14841,16 @@ impl Walk<'_, '_>
             Join::Apply(Arity(count)) => {
                 let arguments = self.take(Arity(count))?;
                 let operator = self.pop()?;
-                // Where a type's sort reads the application, it is written
-                // glued: there `f x` reads as the moded type `m T`.
+                // Where a type's sort reads the application, `f a b` is the
+                // call `f(a, b)`: its head is an atom, and the application
+                // runs to the arrow, as a word before a type does.
                 if self.surface == Surface::Expression {
                     let operator = self.bare_up_to(operator, Binding::Application)?;
                     (self.juxtaposed(operator, arguments)?, Binding::Application)
                 }
                 else {
                     let operator = self.bare_up_to(operator, Binding::Atom)?;
-                    let listed = self.listed(&arguments)?;
-                    (self.builder.concat(operator, listed)?, Binding::Atom)
+                    (self.juxtaposed(operator, arguments)?, Binding::Arrow)
                 }
             },
             Join::Bracket(bracket) => {

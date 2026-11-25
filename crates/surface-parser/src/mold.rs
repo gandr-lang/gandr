@@ -4365,7 +4365,9 @@ impl<'pbg> Molder<'pbg>
                     let admitted = self
                         .direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source);
                     let admitted = MoldAdmissibility::from(bool::from(admitted));
-                    bool::from(self.type_call_head_admits(mold, admitted, tokens, index, source))
+                    let admitted =
+                        self.type_call_head_admits(mold, admitted, tokens, index, source);
+                    bool::from(self.descent_admits(mold, admitted, tokens, index, source))
                 },
                 None => bool::from(admitted),
             };
@@ -4566,32 +4568,34 @@ impl<'pbg> Molder<'pbg>
     ///
     /// The call form's head reads only before a glued opener: `f(x)` is a
     /// call, and `f (x)` applies `f` to a group. So a head before a spaced
-    /// `(` is refused. In `Vec a plus(m, k)` a name follows `a`, and the `(`
-    /// of `plus` stands in the window of `a`. So `a` is refused too, reads as
-    /// an atom, and the melder pushes the application tile after it. A line
+    /// `(` is refused, and a head before a spaced `[` too: `el [<] a` applies
+    /// `el` to the descent. In `Vec a plus(m, k)` a name follows `a`, and the
+    /// `(` of `plus` stands in the window of `a`. So `a` is refused too, reads
+    /// as an atom, and the melder pushes the application tile after it. A line
     /// break between `a` and the name keeps that reading, since the printer
     /// breaks a long application between its operands. A head before any
-    /// other token keeps its admission: a glued `(` or `[`, a spaced `[`, a
-    /// symbol, or a name with no `(` after it on the name's line in the
-    /// window. There the molder repairs a missing opener, and the repair
-    /// keeps its one obligation at the gap.
+    /// other token keeps its admission: a glued `(` or `[`, a symbol, or a
+    /// name with no `(` after it on the name's line in the window. There the
+    /// molder repairs a missing opener, and the repair keeps its one
+    /// obligation at the gap.
     ///
     /// # Specification
     /// - requires: `tokens` labels `source`, and `index` names the current
     ///   head.
     /// - ensures: refuses an admitted `type_application` head exactly when the
-    ///   next significant token is a spaced `(`, or a name with a `(` among the
-    ///   next [`LOOKAHEAD`] significant tokens before a line break after the
-    ///   name. It keeps every other admission.
+    ///   next significant token is a spaced `(` or `[`, or a name with a `(`
+    ///   among the next [`LOOKAHEAD`] significant tokens before a line break
+    ///   after the name. It keeps every other admission.
     /// - provides: the admission of a type-call head.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a spaced operand, a glued call, a glued descent
-    ///   marker and a dropped opener distinguish a head from an operand and
-    ///   from a repair.
+    ///   marker, a spaced descent and a dropped opener distinguish a head from
+    ///   an operand and from a repair.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    /// - witness: `tests::grammar::a_descent_is_an_operand_of_its_own`
     #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
     fn type_call_head_admits(
         &self,
@@ -4614,7 +4618,7 @@ impl<'pbg> Molder<'pbg>
             return admitted;
         };
         let opener = |token: Token| <&str>::from(token.text(source)) == "(";
-        let refused = if opener(next) {
+        let refused = if opener(next) || <&str>::from(next.text(source)) == "[" {
             spacing(tokens, index) == Spacing::Spaced
         }
         else if matches!(next.lexeme, Lexeme::LowerWord | Lexeme::UpperWord) {
@@ -4643,6 +4647,66 @@ impl<'pbg> Molder<'pbg>
         };
         MoldAdmissibility::from(bool::from(admitted) && !refused)
     }
+
+    /// Return whether a `[` keeps its mold as the descent or as a staged
+    /// type's bracket.
+    ///
+    /// The descent `[<]` is an operand of its own, with a space on each
+    /// side: `el [<] a`. So a descent's `[` glued to the token before it is
+    /// refused, and a staged type's `[` after a space is refused before `<`
+    /// and `]`, where a stage would name its size.
+    ///
+    /// # Specification
+    /// - requires: `tokens` labels `source`, and `index` names the current `[`.
+    /// - ensures: refuses an admitted `descent_type` start exactly when no
+    ///   space stands before the token, and an admitted `staged_type` `[`
+    ///   exactly when a space stands before it and the next two significant
+    ///   tokens are `<` and `]`. It keeps every other admission.
+    /// - provides: the admission of the descent's bracket.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `el [<] a` against `Nat[< i]` and `el[<](a)` tell the
+    ///   operand from the stage and from the glued head.
+    /// - witness: `tests::grammar::a_descent_is_an_operand_of_its_own`
+    #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
+    fn descent_admits(
+        &self,
+        mold: MoldId,
+        admitted: MoldAdmissibility,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &SourceFragment<'_>,
+    ) -> MoldAdmissibility
+    {
+        if !bool::from(admitted) || self.pbg.mold(mold).map_or(true, |def| def.label != "[") {
+            return admitted;
+        }
+        let Ok(rule) = self
+            .pbg
+            .rule_of(mold)
+            .map(gandr_surface_grammar::Rule::name)
+        else {
+            return admitted;
+        };
+        let spaced = bool::from(spaced_before(tokens, index));
+        let refused = if rule == RuleName("descent_type") {
+            !spaced
+        }
+        else if rule == RuleName("staged_type") && spaced {
+            let text = |token: Token| <&str>::from(token.text(source));
+            next_significant(tokens, index).is_some_and(|(at, less)| {
+                text(less) == "<"
+                    && next_significant(tokens, at).is_some_and(|(_, close)| text(close) == "]")
+            })
+        }
+        else {
+            false
+        };
+        MoldAdmissibility::from(!refused)
+    }
+
     /// Choose token `index`'s mold, breaking a shared-prefix tie by lookahead.
     ///
     /// The admissibility-filtered local [`CandidateKey`] settles every

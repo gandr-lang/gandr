@@ -21,7 +21,7 @@ def boolType(b : Bool) -> Type =
     | false => return Unit
 
 /// The `true` arm reads `x` at `String`.
-def showBool(b : Bool, x : boolType(b)) -> String =
+def showBool(b : Bool, x : boolType b) -> String =
   match b where
     | true => x
     | false => ""
@@ -31,13 +31,13 @@ def showBool(b : Bool, x : boolType(b)) -> String =
 def shown() -> String = showBool true "a";
 
 /// Each arm returns a value of the type that its flag selects.
-def boolBack(b : Bool) -> boolType(b) =
+def boolBack(b : Bool) -> boolType b =
   match b where
     | true => "a"
     | false => *{}
 
 /// Each arm returns one of two values of the type that its flag selects.
-def boolBoth(b : Bool, x : boolType(b), y : boolType(b)) -> boolType(b) =
+def boolBoth(b : Bool, x : boolType b, y : boolType b) -> boolType b =
   match b where
     | true => x
     | false => y
@@ -48,7 +48,7 @@ def unitType(u : Unit) -> Type =
     | *{} => return String
 
 /// The split reads `x` at `String`.
-def showUnit(u : Unit, x : unitType(u)) -> String =
+def showUnit(u : Unit, x : unitType u) -> String =
   match u where
     | *{} => x
 

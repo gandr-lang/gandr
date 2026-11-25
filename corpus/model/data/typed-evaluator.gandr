@@ -39,7 +39,7 @@ data Expr : Ty -> Type where
 
 /// The evaluator, each arm's result the meaning of its index. The `Lit` arm
 /// solves its path from `TInt` to `t`, so its integer meets `meaning(TInt)`.
-def rec eval(t : Ty, e : Expr t) -> meaning(t) =
+def rec eval(t : Ty, e : Expr t) -> meaning t =
   match e where
     | Lit(i) => i
     | BoolLit(b) => b

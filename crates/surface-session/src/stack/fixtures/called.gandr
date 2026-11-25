@@ -8,4 +8,4 @@ def rec plus(n : Nat, m : Nat) -> -F Nat =
 def f : +U (-F Nat);
 def f = thunk { plus (Succ Zero) Zero };
 data List(a : Type) : Type where
-  | Nil : List(a)
+  | Nil : List a

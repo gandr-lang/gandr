@@ -27,13 +27,13 @@
 def related(a : Unit, b : Unit) -> Type = return Unit;
 
 /// Every point is related to itself.
-def reflexivity(a : Unit) -> related(a, a) = *{};
+def reflexivity(a : Unit) -> related a a = *{};
 
 /// The transport law: each point `b` that `a` relates to, with its evidence,
 /// is the centre `a` with its reflexivity (Theorem 5.8.2, (iv)).
-def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = *{
+def contraction(a : Unit, b : Unit, r : related a b) -> Path[.A = *{
   y : Unit,
-  s : related(a, y)
+  s : related a y
 }] *{b, r} *{a, reflexivity a} = *{*{}, *{}};
 
 /// The unit type sealed, relating its points by `related`.
@@ -108,13 +108,13 @@ def overAlong : Path[.A = Path[.A = Path[.A = Point.T] Point.origin Point.other]
 def pathRelated(a : Unit, b : Unit) -> Type = return type(Path[.A = Unit] a b);
 
 /// Every point related to itself by its reflexivity.
-def pathReflexivity(a : Unit) -> pathRelated(a, a) = Path.here a;
+def pathReflexivity(a : Unit) -> pathRelated a a = Path.here a;
 
 /// The transport law at the paths of the unit type: an identity of the
 /// unit type, and one over it, is the unit.
-def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path[.A = *{
+def pathContraction(a : Unit, b : Unit, r : pathRelated a b) -> Path[.A = *{
   y : Unit,
-  s : pathRelated(a, y)
+  s : pathRelated a y
 }] *{b, r} *{a, pathReflexivity a} = *{*{}, *{}};
 
 /// The unit type sealed, relating its points by the paths between them.

@@ -1,4 +1,4 @@
-def againAt(b : Type, w : {record}) -> -F Path[.A = {record}](w, w) = match w {{
+def againAt(b : Type, w : {record}) -> -F Path[.A = {record}] w w = match w {{
     | *{{.x = u, .y = v, .p = q}} => Path.here *{{u, *{{v, q}}}}
   }};
 

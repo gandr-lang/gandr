@@ -40,8 +40,8 @@ def exampleSpecified : *{
   meets : (
     b : Value,
     post : Value -> Type,
-    exampleSpec(b, post)
-  ) -> wpFn(Item, identitySpec, m, b, post)
+    exampleSpec b post
+  ) -> wpFn Item identitySpec m b post
 } = *{exampleBody, fun (b) { fun (post) { fun (h) {
   let meets = exampleMeets b post
   meets h
@@ -52,20 +52,17 @@ def exampleSpecified : *{
 def returnsPast(
   spec : (Item, Value, Value -> Type) -> Type,
   post : Value -> Type
-) -> post(Int 0) -> wpFn(Item, spec, exampleBody, False, post) =
+) -> (post (Int 0)) -> wpFn Item spec exampleBody False post =
   exampleReturnsPast spec post
 
 /// From the free list of `order`, `pop` answers its head and leaves
 /// the rest free.
-def popSpecified(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> freeAt(
-  blocks,
-  heads,
-  order,
-  ixs
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, ixs),
-  Own Zero Whole buddy(blocks, heads)
+def popSpecified(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  ixs : Ixs
+) -> (freeAt blocks heads order ixs) -> wpMemFn popBody (popEnv order) (popPost blocks heads order ixs) (
+  Own Zero Whole (buddy blocks heads)
 ) =
   popMeets blocks heads order ixs

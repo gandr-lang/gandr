@@ -1,7 +1,7 @@
 theory Same where {
   sort Carrier : Type;
   oper same : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);
+  law refl : (a : Carrier) -> Path[.A = Bool] (same a a) true;
 }
 data One : Type where {
   | Only : One

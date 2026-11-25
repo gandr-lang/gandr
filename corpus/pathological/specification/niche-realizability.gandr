@@ -19,14 +19,14 @@ def derefWp(w : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
     | Zero => return Void
     | Succ(_n) => return type(*{
       v : Nat,
-      cell : star(pointsToAt(w, v), realisedAt(vInt, v), h),
-      post : q(w, v, h)
+      cell : star (pointsToAt w v) (realisedAt vInt v) h,
+      post : q w v h
     })
 
 /// `Option<&int>` passed to `deref`: at null and the empty heap the niche
 /// holds, and `deref` asks what no heap gives.
 @[refuses("TypeMismatch")]
-def derefMeets(w : Nat, h : Heap) -> vOpt(vInt, w, h) -> derefWp(w, keptOpt, h) =
+def derefMeets(w : Nat, h : Heap) -> (vOpt vInt w h) -> derefWp w keptOpt h =
   match w where
     | Zero => match h where
       | Emp => fun (e) { e }

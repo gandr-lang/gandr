@@ -3,7 +3,7 @@ error[IndexOccurrence]: the datatype occurs inside a term in its field 0 of cons
    │
 39 │ ┏   data Mu(d : Type, c : IR d) : Type where {
 40 │ ┃     /// The arguments, over the family the decoder decodes.
-41 │ ┃     | In : (v : args(d, c, Mu d c, thunk { fun (m) { decodeMu d c m } })) --> Mu d c
+41 │ ┃     | In : (v : args d c (Mu d c) (thunk { fun (m) { decodeMu d c m } })) --> Mu d c
 42 │ ┃   }
    │ ┗━━━┛ the declared type inside an index
    │
@@ -24,7 +24,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │ ││                  ┬────────────────────────┬───────┬─────────┬───────────────┯──────│
    │ └│──────────────────│────────────────────────│───────│─────────│───────────────│──────│
    │  └──────────────────│────────────────────────│───────│─────────│───────────────│──────checked against `(d : Type, c : IR d, Mu d c) -> d`; while checking the body of this function; binds decodeMu : Mu d c -> d
-   │                     │                        │       │         │               │      checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu d c, fun (a) { decodeMu d c a })
+   │                     │                        │       │         │               │      checked against `-F d`; while checking the body of this function; binds v : args d c (Mu d c) (fun (a) { decodeMu d c a })
    │                     │                        │       │         │               not below the stage its recursion wants
    │                     │                        │       │         checked against `-F d`; while checking the argument of this application
    │                     │                        │       checked against `Mu d c -> -F d`; while checking the body of this function; binds _ : Mu d c

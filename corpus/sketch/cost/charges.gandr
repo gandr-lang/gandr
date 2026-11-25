@@ -30,13 +30,13 @@ def lookup(cache : Ref (Map String String), load : String -> String, key : Strin
 ] String =
   match (cache.get ()).#[key] where
     | Some(v) => {
-      charge 1;
+      charge 1
       v
     }
     | None => {
-      charge 10;
-      let v = load key;
-      cache.set (insert (cache.get ()) key v);
+      charge 10
+      let v = load key
+      cache.set (insert (cache.get ()) key v)
       v
     }
 

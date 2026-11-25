@@ -65,28 +65,29 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/control/divergence.gandr:62:3
+   ╭▸ corpus/pathological/control/divergence.gandr:61:3
    │
-53 │ ┌ def unreadDiv(
-54 │ │   a : Type,
-   │ │   ─ checked; while checking the body of this function; binds a : Type
-55 │ │   b : Type,
-   │ │   ─ checked; while checking the body of this function; binds b : Type
-56 │ │   f : a -> b,
-   │ │   ─ checked; while checking the body of this function; binds f : a -> b
-57 │ │   g : +U (a -> -F [Partial] b)
-   │ │   ─ checked; while checking the body of this function; binds g : +U (a -> -F [Partial] b)
-58 │ │ ) -> Path[.A = +U (a -> -F [Partial] b)](
-59 │ │   thunk { fun (x) { let _ = g x; f x } },
-   │ │   ────────────────────────────────────── an endpoint the point does not convert to
-60 │ │   thunk { fun (x) { f x } }
-   │ │   ───────────────────────── an endpoint the point does not convert to
-61 │ │ ) =
-62 │ │   Path.here (thunk { fun (x) { f x } })
-   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
-   │ └───│───────────────────────────────────┤
-   │     │                                   checked; while checking the body of this thunk
-   │     not both endpoints of the path
+53 │ ┌  def unreadDiv(
+54 │ │    a : Type,
+   │ │    ─ checked; while checking the body of this function; binds a : Type
+55 │ │    b : Type,
+   │ │    ─ checked; while checking the body of this function; binds b : Type
+56 │ │    f : a -> b,
+   │ │    ─ checked; while checking the body of this function; binds f : a -> b
+57 │ │    g : +U (a -> -F [Partial] b)
+   │ │    ─ checked; while checking the body of this function; binds g : +U (a -> -F [Partial] b)
+58 │ │  ) -> Path[.A = +U (a -> -F [Partial] b)] (thunk { fun (x) { let _ = g x; f x } }) (thunk {
+   │ │┌───────────────────────────────────────────┬────────────────────────────────────────┘
+   │ ││                                           │
+   │ ││                                           an endpoint the point does not convert to
+59 │ ││   fun (x) { f x }
+60 │ ││ }) =
+   │ │└─┘ an endpoint the point does not convert to
+61 │ │    Path.here (thunk { fun (x) { f x } })
+   │ │    ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └────│───────────────────────────────────┤
+   │      │                                   checked; while checking the body of this thunk
+   │      not both endpoints of the path
    │
    ├ note: `unreadDiv` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

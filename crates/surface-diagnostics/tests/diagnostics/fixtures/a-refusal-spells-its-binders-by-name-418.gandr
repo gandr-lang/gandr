@@ -7,5 +7,5 @@ def counted_at(s : Theory) -> Type =
     | Monoid => return Integer
     | Group => return String
   }
-def moved(presented : Theory, other : Theory, n : counted_at(presented)) -> counted_at(other) =
+def moved(presented : Theory, other : Theory, n : counted_at presented) -> counted_at other =
   n

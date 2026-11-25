@@ -2952,7 +2952,7 @@ fn static_operators_spell_as_the_grammar_writes_them()
         ),
         (
             Root::Type(CoreNode::ValueType(decoded)),
-            "t(fun (a) {type(-F *{a, a})}, Integer, Integer)",
+            "t (fun (a) {type(-F *{a, a})}) Integer Integer",
         ),
     ] {
         assert_eq!(
@@ -3823,9 +3823,9 @@ fn a_family_argument_leaves_its_function_s_thunk_out_5408()
     );
 }
 
-/// A family writes a bound type before a call by juxtaposition.
+/// A family writes a bound type and a call by juxtaposition.
 ///
-/// The reader takes the call as one operand.
+/// The call stands in parentheses as one operand.
 #[test]
 fn a_family_with_a_bound_type_and_a_call_is_juxtaposed_5752()
 {
@@ -3848,7 +3848,7 @@ fn a_family_with_a_bound_type_and_a_call_is_juxtaposed_5752()
     );
     assert_eq!(
         (presented.as_ref(), presented.fidelity()),
-        ("Picked a twice(1)", Fidelity::Faithful),
+        ("Picked a (twice 1)", Fidelity::Faithful),
         "a family writes its bound type and call by juxtaposition"
     );
 }
@@ -3882,7 +3882,7 @@ fn a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211()
     let applied = core.value_type_element(applied, Level::zero());
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
-        (applied, "kept(fun (a) { twice a })"),
+        (applied, "kept (fun (a) { twice a })"),
         (picked, "Picked Unit (fun (a) { twice a })"),
     ] {
         let presented = presented_in(
@@ -6756,12 +6756,12 @@ fn a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933()
     let source = CoreSource::new(&core, &names);
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(over_function))),
-        faithful(Written("kept(fun (a) { a })")),
+        faithful(Written("kept (fun (a) { a })")),
         "an argument's thunk over a function is left out where a type is read"
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(over_call))),
-        faithful(Written("kept(thunk { twice 1 })")),
+        faithful(Written("kept (thunk { twice 1 })")),
         "an argument's thunk over a call is kept where a type is read"
     );
 }
@@ -6805,7 +6805,7 @@ fn no_thunk_is_left_out_below_a_type_3972()
     let source = CoreSource::new(&core, &names);
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(nested))),
-        faithful(Written("kept(pass(thunk { twice 1 }))")),
+        faithful(Written("kept (pass (thunk { twice 1 }))")),
         "a call inside a type's call keeps its argument's thunk"
     );
     assert_eq!(

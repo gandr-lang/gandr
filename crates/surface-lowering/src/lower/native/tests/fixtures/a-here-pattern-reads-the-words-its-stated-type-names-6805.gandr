@@ -28,14 +28,14 @@ pub data Int : Type where {
 }
 
 /// The winding of the first circle's words.
-def rec wind1(p : Path[.A = C1](B1, B1)) -> Int =
+def rec wind1(p : Path[.A = C1] B1 B1) -> Int =
   match p where
     | here => Z
     | l1 ∷ q => S (wind1[<] q)
     | back(l1) ∷ q => P (wind1[<] q)
 
 /// The winding of the second circle's words.
-def rec wind2(p : Path[.A = C2](B2, B2)) -> Int =
+def rec wind2(p : Path[.A = C2] B2 B2) -> Int =
   match p where
     | here => Z
     | l2 ∷ q => S (wind2[<] q)
@@ -43,10 +43,9 @@ def rec wind2(p : Path[.A = C2](B2, B2)) -> Int =
 
 /// The winding of the words at the 3-cell.
 def rec wind3(
-  p : Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](Path.here Base3, Path.here Base3)](
-    Path.here (Path.here Base3),
+  p : Path[.A = Path[.A = Path[.A = S3] Base3 Base3] (Path.here Base3) (Path.here Base3)] (
     Path.here (Path.here Base3)
-  )
+  ) (Path.here (Path.here Base3))
 ) -> Int =
   match p where
     | here => Z

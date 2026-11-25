@@ -187,7 +187,7 @@ fn a_theory_answers_at_every_member()
         Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
         _ => None,
     };
-    let index = entry(&types, span("--> Hom(a, a)", "a"), DescribedRole::Term);
+    let index = entry(&types, span("--> Hom a a", "a"), DescribedRole::Term);
     assert!(
         element(index).is_some(),
         "an index variable at its binder's sort"
@@ -254,7 +254,7 @@ fn a_stated_law_answers_at_its_statement_2356()
         "a law's name at the function into the path it concludes"
     );
     assert_eq!(context(&types, refl), ["C", "eq"]);
-    let statement = "(a : C) -> Path[.A = Bool](eq a a, true)";
+    let statement = "(a : C) -> Path[.A = Bool] (eq a a) true";
     let written = entry(&types, span("law refl", statement), DescribedRole::Type);
     assert!(matches!(ty(written), Some(ValueType::Universe { .. })));
     let binder = entry(&types, span("(a : C) ->", "a"), DescribedRole::Name);
@@ -315,24 +315,24 @@ fn a_binding_port_answers_at_the_function_from_its_variables_765()
         ["VTy", "CTy", "VTm", "CTm", "f", "arrow", "ret", "a", "b"],
         "under the members and the ports before it"
     );
-    let domain = entry(&types, span("(x : VTm", "VTm(a)"), DescribedRole::Type);
+    let domain = entry(&types, span("(x : VTm", "VTm a"), DescribedRole::Type);
     assert!(
         matches!(ty(domain), Some(ValueType::Universe { .. })),
         "the binder's sort at its universe"
     );
-    let index = entry(&types, span("(x : VTm(a)", "a"), DescribedRole::Term);
+    let index = entry(&types, span("(x : VTm a", "a"), DescribedRole::Term);
     assert!(
         matches!(ty(index), Some(ValueType::Element { .. })),
         "the binder's index at its port's sort"
     );
-    let body = entry(&types, span(". CTm(b)", "CTm(b)"), DescribedRole::Type);
+    let body = entry(&types, span(". CTm b", "CTm b"), DescribedRole::Type);
     assert!(
         matches!(ty(body), Some(ValueType::Universe { .. })),
         "the bound port's sort at its universe"
     );
     for applied in [
-        span("--> CTm(f(a))", "f(a)"),
-        span("--> CTm(arrow(a, b))", "arrow(a, b)"),
+        span("--> CTm (f a)", "f a"),
+        span("--> CTm (arrow a b)", "arrow a b"),
     ] {
         assert!(
             matches!(
@@ -394,7 +394,7 @@ fn an_unelaborated_operation_s_ports_answer_as_written_2969()
         "a binder's sort at its universe"
     );
     let binder = entry(&types, span("q : pi+ (x", "x"), DescribedRole::Name);
-    let variable = entry(&types, span("Below(k(x)", "x"), DescribedRole::Term);
+    let variable = entry(&types, span("Below (k x)", "x"), DescribedRole::Term);
     assert!(
         code(variable).is_some(),
         "a variable in the port's sort answers"
@@ -404,19 +404,19 @@ fn an_unelaborated_operation_s_ports_answer_as_written_2969()
         code(binder),
         "a variable in the port's sort at its binder's sort"
     );
-    let index = entry(&types, span("p : Below(m, n)", "m"), DescribedRole::Term);
+    let index = entry(&types, span("p : Below m n", "m"), DescribedRole::Term);
     assert!(
         matches!(ty(index), Some(ValueType::Element { .. })),
         "an index naming a port at the port's sort"
     );
     let called = entry(
         &types,
-        span("Below(k(x), l(x))", "k(x)"),
+        span("Below (k x) (l x)", "k x"),
         DescribedRole::Term,
     );
     let other = entry(
         &types,
-        span("Below(k(x), l(x))", "l(x)"),
+        span("Below (k x) (l x)", "l x"),
         DescribedRole::Term,
     );
     assert!(code(called).is_some(), "a binding port's call answers");
@@ -432,12 +432,12 @@ fn an_unelaborated_operation_s_ports_answer_as_written_2969()
     );
     let result = entry(
         &types,
-        span("--> Below(ext(m, k)", "ext(m, k)"),
+        span("--> Below (ext m k)", "ext m k"),
         DescribedRole::Term,
     );
     let again = entry(
         &types,
-        span("--> Below(ext(m, k)", "ext(n, l)"),
+        span("--> Below (ext m k)", "ext n l"),
         DescribedRole::Term,
     );
     assert!(
@@ -449,7 +449,7 @@ fn an_unelaborated_operation_s_ports_answer_as_written_2969()
         code(again),
         "both results at `ext`'s one sort"
     );
-    let head = entry(&types, span("Below(k(x)", "k"), DescribedRole::Term);
+    let head = entry(&types, span("Below (k x)", "k"), DescribedRole::Term);
     assert!(
         matches!(ty(head), Some(ValueType::Thunk(_))),
         "a binding port's head at the function it binds: {:?}",
@@ -592,15 +592,11 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
         Some((0_usize, Vec::new())),
         "the index the port writes, `Z`"
     );
-    let written = entry(
-        &types,
-        span("skip : (k : Skip(Z)", "Z"),
-        DescribedRole::Term,
-    );
+    let written = entry(&types, span("skip : (k : Skip Z", "Z"), DescribedRole::Term);
     assert_eq!(ty(written), natural, "the index term at its own family");
     let sort = entry(
         &types,
-        span("skip : (k : Skip(Z)", "Skip(Z)"),
+        span("skip : (k : Skip Z", "Skip Z"),
         DescribedRole::Type,
     );
     assert!(
@@ -625,8 +621,8 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
     else {
         panic!("`S` takes one field");
     };
-    assert_eq!(constructor(field), Some((0_usize, Vec::new())), "`S(Z)`");
-    let applied = entry(&types, span("Skip(S(Z))", "S(Z)"), DescribedRole::Term);
+    assert_eq!(constructor(field), Some((0_usize, Vec::new())), "`S Z`");
+    let applied = entry(&types, span("Skip (S Z)", "S Z"), DescribedRole::Term);
     assert_eq!(ty(applied), natural, "a nested index term at its family");
 
     let operation = entry(&types, span("oper skip", "skip"), DescribedRole::Name);
@@ -822,7 +818,7 @@ fn a_parameterised_constructor_answers_under_its_parameters()
     assert!(ty(field).is_some(), "a field at its type");
     let result = entry(
         &types,
-        span(") --> Maybe(a)", "Maybe(a)"),
+        span(") --> Maybe a", "Maybe a"),
         DescribedRole::Type,
     );
     assert!(
@@ -846,7 +842,7 @@ fn a_parameterised_constructor_answers_under_its_parameters()
     assert_eq!(
         ty(argument),
         ty(result),
-        "`a : Type` and `Maybe(a) : Type` share the family's universe"
+        "`a : Type` and `Maybe a : Type` share the family's universe"
     );
 }
 
@@ -910,7 +906,7 @@ fn a_codata_observation_s_type_answers_at_its_universe()
     assert_eq!(context(&types, head), ["a"], "under the parameters");
     let tail = entry(
         &types,
-        span("tail : Stream(a)", "Stream(a)"),
+        span("tail : Stream a", "Stream a"),
         DescribedRole::Type,
     );
     assert!(
@@ -923,7 +919,7 @@ fn a_codata_observation_s_type_answers_at_its_universe()
         ),
         "the family itself at its kind, `Type[-]`"
     );
-    let argument = entry(&types, span("(a);", "a"), DescribedRole::Type);
+    let argument = entry(&types, span("a;\n}", "a"), DescribedRole::Type);
     assert_eq!(
         ty(argument),
         ty(head),

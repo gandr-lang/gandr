@@ -8,5 +8,5 @@ module Square(S : *{type T, z : T}) :> *{type U, w : U} where {
 }
 module Squared = Square(Point);
 module Pointed(R : *{type V, y : V}) where {
-  type At = Path[.A = R.V](R.y, R.y);
+  type At = Path[.A = R.V] R.y R.y;
 }

@@ -1640,7 +1640,7 @@ fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), [Withdrawal {
         declaration: String::from("Expr"),
-        span: ByteSpan::new(ByteOffset::from(28_usize), ByteOffset::from(156_usize))
+        span: ByteSpan::new(ByteOffset::from(28_usize), ByteOffset::from(161_usize))
             .expect("a span"),
         reason: Withdrawn::Obligations,
     }]);
@@ -1665,13 +1665,13 @@ fn an_obligation_withdraws_only_the_form_that_holds_it_8085()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), [Withdrawal {
         declaration: String::from("second"),
-        span: ByteSpan::new(ByteOffset::from(60_usize), ByteOffset::from(141_usize))
+        span: ByteSpan::new(ByteOffset::from(60_usize), ByteOffset::from(125_usize))
             .expect("a span"),
         reason: Withdrawn::Obligations,
     }]);
     assert_eq!(
         formatted.into_text(),
-        "def first(a : Type, x : a, p : Path[.A = a] x x) -> a = x;\n\ndef second(a : Type, x : a, p : Path[.A = Type](Path[.A = a](x, x), _)) -> a = x;\n"
+        "def first(a : Type, x : a, p : Path[.A = a] x x) -> a = x;\n\ndef second(a : Type, x : a, p : Path[.A = a](x, x @ x)) -> a = x;\n"
     );
 }
 
@@ -2306,8 +2306,8 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 /// The explicit form writes its stars.
 /// A variable can precede a parenthesized argument.
 /// `Pair(a, Parcel(Integer))` writes `Pair a (Parcel Integer)`.
-/// A variable can precede a call.
-/// `Pair(a, plus(Integer))` writes `Pair a plus(Integer)`.
+/// A lowercase head is juxtaposed too, in its parentheses as an argument.
+/// `Pair(a, plus(Integer))` writes `Pair a (plus Integer)`.
 /// A carrier the grammar spells as a keyword tile is a carrier too.
 /// `Path[.A = Type](a, a)` writes `Path[.A = Type] a a`.
 /// A returner encloses a juxtaposition whose first argument takes parentheses.
@@ -2353,8 +2353,10 @@ fn a_type_application_is_written_juxtaposed_5708()
         (
             "Pair(a, plus(Integer))",
             Form::Sugared,
-            "Pair a plus(Integer)",
+            "Pair a (plus Integer)",
         ),
+        ("plus(Integer)", Form::Sugared, "plus Integer"),
+        ("plus(Integer)", Form::Explicit, "plus Integer"),
         ("Path(a, a)", Form::Sugared, "Path a a"),
         ("Path(a, a)", Form::Explicit, "Path a a"),
         ("Bridge(a, a)", Form::Sugared, "Bridge a a"),
@@ -2404,6 +2406,34 @@ fn a_type_application_is_written_juxtaposed_5708()
             "{parameter} as {form}"
         );
     }
+}
+
+/// A run that selects one rewrite applies that rewrite alone. A bare
+/// `@[checks]` claim, which the sugared form leaves out, stays.
+#[test]
+fn a_selected_rewrite_keeps_a_bare_claim()
+{
+    let grammar = grammar();
+    let written = |parameter: &str| {
+        format!(
+            include_str!("rewrite/unformatted/a-type-application-is-written-juxtaposed-5708.gandr"),
+            parameter = parameter
+        )
+    };
+    let source = format!("@[checks]\n{}", written("Parcel(Integer)"));
+    assert_eq!(
+        spelled(
+            &grammar,
+            source.as_str(),
+            Form::Sugared,
+            Selection::Only(&[RewriteName::TypeApplication])
+        ),
+        format!("@[checks]\n{}", written("Parcel Integer"))
+    );
+    assert_eq!(
+        spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
+        written("Parcel Integer")
+    );
 }
 
 /// A constructor's result is written juxtaposed in either form, also where

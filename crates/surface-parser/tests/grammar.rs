@@ -314,6 +314,53 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
     Ok(())
 }
 
+/// The descent `[<]` is an operand of its own, with a space on each side:
+/// `el [<] a` reads the descent as the first operand after the head, and a
+/// stage glued to its type keeps its reading, `Nat[< i]`. Each parses clean.
+#[test]
+fn a_descent_is_an_operand_of_its_own() -> Result<(), Failure>
+{
+    let cases = [
+        ("def x : el [<] a;", 1_usize, 0_usize),
+        ("def x : sem [<] (Arr a b) g;", 1, 0),
+        ("def x : (el [<] a) -> B;", 1, 0),
+        ("def x : Nat[< i];", 0, 1),
+        ("def x : Nat[i] -> Nat;", 0, 1),
+    ];
+    let grammar = built();
+    for (source, descents, stages) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let count = |name: &str| {
+            tree.positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| match node.label() {
+                    gandr_surface_syntax::NodeLabel::Meld(mold) => grammar
+                        .rule_of(mold)
+                        .is_ok_and(|rule| rule.name().0 == name),
+                    gandr_surface_syntax::NodeLabel::Wald
+                    | gandr_surface_syntax::NodeLabel::Tile(_)
+                    | gandr_surface_syntax::NodeLabel::Grout { .. }
+                    | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                    | gandr_surface_syntax::NodeLabel::Space
+                    | gandr_surface_syntax::NodeLabel::Doc => false,
+                })
+                .count()
+        };
+        assert_eq!(
+            count("descent_type"),
+            descents,
+            "`{source}`: the descents it reads"
+        );
+        assert_eq!(
+            count("staged_type"),
+            stages,
+            "`{source}`: the stages it reads"
+        );
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
 /// #6121: `Path` reads as `Bridge` reads. Each keeps its own form in each
 /// place where a type stands, and its endpoints are expressions, so
 /// `Path(Path.walk f p v, w)` reads its endpoint as a transport. The

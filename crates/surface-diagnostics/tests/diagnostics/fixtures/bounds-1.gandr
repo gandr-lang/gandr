@@ -3,5 +3,5 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 data Fin : Nat -> Type where {
-  | FZ : (n : Nat) --> Fin(Succ(n))
+  | FZ : (n : Nat) --> Fin (Succ n)
 }

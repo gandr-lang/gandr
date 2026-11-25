@@ -2869,7 +2869,7 @@ fn a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142()
         "modules/fixtures/a-family-s-parameter-under-a-data-type-answers-at-its-kind-3142.gandr"
     );
     let argument = |declared: &str| {
-        let start = source.find(declared).expect("the family is written") + declared.len() - 2;
+        let start = source.find(declared).expect("the family is written") + declared.len() - 1;
         ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start + 1))
             .expect("one byte is a span")
     };
@@ -2896,10 +2896,10 @@ fn a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142()
     assert_eq!(
         kinds,
         [
-            (argument("R(a : Type) = Maybe(a)"), universe.clone()),
-            (argument("Top(a : Type) = Maybe(a)"), universe),
+            (argument("R(a : Type) = Maybe a"), universe.clone()),
+            (argument("Top(a : Type) = Maybe a"), universe),
         ],
-        "each `a` in a family's `Maybe(a)` answers at `Type`, and `g`'s at none"
+        "each `a` in a family's `Maybe a` answers at `Type`, and `g`'s at none"
     );
 }
 
@@ -4568,7 +4568,7 @@ fn a_type_member_reads_types_and_never_values()
         include_str!("modules/unformatted/a-type-member-reads-types-and-never-values-3.gandr"),
         "P",
         "z",
-        ("z", 1_usize),
+        ("z", 2_usize),
     );
     let static_only = include_str!(
         "modules/unformatted/a-type-member-reads-types-and-never-values-static-only.gandr"

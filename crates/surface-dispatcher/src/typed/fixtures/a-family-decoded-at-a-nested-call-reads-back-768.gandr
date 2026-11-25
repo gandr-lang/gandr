@@ -15,6 +15,6 @@ def w : *{
   c : Type,
   tm : c -> Type,
   e : c -> c,
-  a : (g : c, tm(e(g))) -> tm(g),
-  b : (g : c, tm(e(g))) -> tm(g)
+  a : (g : c, tm (e g)) -> tm g,
+  b : (g : c, tm (e g)) -> tm g
 } = *{N, *{fun (g) { return T }, *{ext, *{k, k}}}};

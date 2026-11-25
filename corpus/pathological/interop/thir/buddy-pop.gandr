@@ -31,13 +31,10 @@ def popShared(
   rest : Ixs,
   h : Path (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
   held : Path (Some (headOf rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
-  link : chain(rest, blocks),
-  apart : notIn(rest, b)
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, ICons b rest),
-  Own Zero Part buddy(blocks, heads)
+  link : chain rest blocks,
+  apart : notIn rest b
+) -> wpMemFn popBody (popEnv order) (popPost blocks heads order (ICons b rest)) (
+  Own Zero Part (buddy blocks heads)
 ) =
   *{
     SomeV (IntV b),
@@ -55,13 +52,10 @@ def popListedAsEmpty(
   rest : Ixs,
   h : Path (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
   held : Path (Some (headOf rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
-  link : chain(rest, blocks),
-  apart : notIn(rest, b)
-) -> wpMemFn(
-  popBody,
-  popEnv(order),
-  popPost(blocks, heads, order, INil),
-  Own Zero Whole buddy(blocks, heads)
+  link : chain rest blocks,
+  apart : notIn rest b
+) -> wpMemFn popBody (popEnv order) (popPost blocks heads order INil) (
+  Own Zero Whole (buddy blocks heads)
 ) =
   *{
     SomeV (IntV b),

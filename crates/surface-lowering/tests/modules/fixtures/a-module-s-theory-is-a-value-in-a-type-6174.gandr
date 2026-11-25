@@ -7,8 +7,8 @@ def shapeOf(presented : Theory) -> Type =
     | Theory.Presents(sorts, opers, rules) => return String
     | _ => return Bool
 
-def qualified : shapeOf(M.Shape) = "a";
+def qualified : shapeOf M.Shape = "a";
 
-def mistyped : shapeOf(M.Shape) = true;
+def mistyped : shapeOf M.Shape = true;
 
-def absent : shapeOf(M.Absent) = "a";
+def absent : shapeOf M.Absent = "a";

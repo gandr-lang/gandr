@@ -13,4 +13,4 @@ module Tens : Model(ResetCounter) where {
   def read(c : Integer) -> -F Integer = c;
   def reset(c : Integer) -> -F Integer = 0;
 }
-def stepped[s : Model(Counter)](c : s.C) -> -F Integer = s.read (s.incr c);
+def stepped[s : Model Counter](c : s.C) -> -F Integer = s.read (s.incr c);

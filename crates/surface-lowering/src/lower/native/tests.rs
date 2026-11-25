@@ -2031,10 +2031,10 @@ fn a_non_uniform_generator_is_refused()
     let source = include_str!("tests/fixtures/a-non-uniform-generator-is-refused-module.gandr");
     let module = lowered(SourceText::from(source), &mut arena);
     for (name, result) in [
-        ("Vec", "Vec(0)"),
-        ("Bad", "Bad(Integer)"),
-        ("Two", "Two(b, a)"),
-        ("Ext", "Ext(a, a)"),
+        ("Vec", "Vec 0"),
+        ("Bad", "Bad Integer"),
+        ("Two", "Two b a"),
+        ("Ext", "Ext a a"),
     ] {
         let name = SurfaceName::from(name);
         let LoweringRefusal::NonUniformResult { span } = refusal_of(&module, name)
@@ -2392,8 +2392,8 @@ fn each_data_type_and_stated_index_is_framed_under_its_telescope_931()
             ("Z", Vec::from(["a"])),
             ("Nat", Vec::from(["a"])),
             ("a", Vec::from(["a", "n"])),
-            ("Vec(a, n)", Vec::from(["a", "n", "x"])),
-            ("S(n)", Vec::from(["a", "n", "x", "xs"]))
+            ("Vec a n", Vec::from(["a", "n", "x"])),
+            ("S n", Vec::from(["a", "n", "x", "xs"]))
         ],
         "a parameter's type is read under the parameters before it, an index's \
          under the parameters, a field's under the parameters and the fields \
@@ -6276,8 +6276,8 @@ fn a_higher_cell_s_wrapping_calls_answer_at_their_wrapped_types_6446()
         ("surf3 :", "Path.here Base3", 1),
         ("<->", "Path.here (Path.here Base3)", 2),
         ("<->", "Path.here Base3", 1),
-        (") = Path.here (", "Path.here (Path.here Base3)", 2),
-        (") = Path.here (", "Path.here Base3", 1),
+        ("= Path.here\n  (", "Path.here (Path.here Base3)", 2),
+        ("= Path.here\n  (", "Path.here Base3", 1),
     ] {
         assert_eq!(
             wrapping(text, from),

@@ -16,7 +16,7 @@ def twice : Type -> Type = fun (Y) { type(Y * Y) };
 /// The sum of a pair whose type is an operator applied twice over. Both
 /// binders are used: an unused one has no type entry under a static
 /// application.
-def sum(p : apply(twice, Integer)) -> Integer =
+def sum(p : apply twice Integer) -> Integer =
   match p where
     | *{a, b} => a + b
 
@@ -25,9 +25,9 @@ def sum(p : apply(twice, Integer)) -> Integer =
 def sumRun() -> Integer = sum *{1, 2};
 
 /// A pair returned at an operator's type.
-def doubled(n : Integer) -> twice(Integer) =
+def doubled(n : Integer) -> twice Integer =
   *{n, n}
 
 /// `doubled` runs to the pair the operator's reduct types.
 @[runs("*{4, 4}")]
-def doubledRun() -> twice(Integer) = doubled 4;
+def doubledRun() -> twice Integer = doubled 4;
