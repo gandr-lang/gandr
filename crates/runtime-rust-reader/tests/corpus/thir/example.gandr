@@ -25,12 +25,12 @@ pub def stagedIdentityMeets(
   spec : (Item, Value, Value -> Type) -> Type,
   v : Value,
   k : Value -> Type,
-  h : identitySpec(Identity, v, k)
-) -> wpFn(Item, spec, stagedIdentity, v, k) = identityMeets spec v k h;
+  h : identitySpec Identity v k
+) -> wpFn Item spec stagedIdentity v k = identityMeets spec v k h;
 
 /// The staged `example` meets its specification at every value and
 /// postcondition, by the proof of the body written by hand.
-pub def stagedExampleMeets(b : Value, post : Value -> Type) -> exampleSpec(
-  b,
-  post
-) -> wpFn(Item, identitySpec, stagedExample, b, post) = exampleMeets b post;
+pub def stagedExampleMeets(
+  b : Value,
+  post : Value -> Type
+) -> (exampleSpec b post) -> wpFn Item identitySpec stagedExample b post = exampleMeets b post;
