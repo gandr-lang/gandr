@@ -1393,11 +1393,17 @@ impl Error for SettleFault
                                 !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
                                     && boundary_at(module.attributes(), lowered).is_some()
                             }
-                            Produced::Unlowered(refusal) => {
-                                matches!(
-                                    lowered.outcome(), DeclarationOutcome::Refused(expected) if
-                                    expected == refusal
-                                ) && usize::from(declaration.owed) == 0_usize
+                            Produced::Unlowered(refusal) => match lowered.outcome() {
+                                DeclarationOutcome::Refused(expected) => {
+                                    expected == refusal && usize::from(declaration.owed) == 0_usize
+                                }
+                                DeclarationOutcome::Completed { .. }
+                                | DeclarationOutcome::Uncompleted { .. }
+                                | DeclarationOutcome::Bodied { .. }
+                                | DeclarationOutcome::Data(_)
+                                | DeclarationOutcome::Codata(_)
+                                | DeclarationOutcome::Abstract(_)
+                                | DeclarationOutcome::World => true,
                             }
                             Produced::Judged(_) => {
                                 !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
@@ -1484,6 +1490,11 @@ impl Error for SettleFault
                                 (answer.verdict(), declaration.produced),
                                 (Verdict::Refused(refusal), Produced::Judged(VerdictOf::Refused(cause)))
                                     if cause == caused(module, verdicts, refusal).keyed(keys)
+                            )
+                            || matches!(
+                                (answer.verdict(), declaration.produced),
+                                (Verdict::Refused(refusal), Produced::Unlowered(cause))
+                                    if unlowered_terms(module, refusal) == Maybe::Present(cause)
                             )
                             || matches!(declaration.produced, Produced::Guarded(_)))
                 })
