@@ -49,6 +49,7 @@ use std::path::PathBuf;
 
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_term::CoreArena;
@@ -72,6 +73,7 @@ use gandr_kernel_term::presentation_code;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
@@ -664,14 +666,32 @@ fn sources(directory: &Path) -> Vec<(PathBuf, String)>
     found
 }
 
-/// The declarations that the kernel admits from the source at `path`, read
-/// as `text`, over the arena that holds them; none when the source does not
-/// parse or the lowering refuses it whole.
+/// What crossed from one source: the declarations that the kernel admits,
+/// over the arena that holds them, and the name of each declaration that the
+/// check admits.
+///
+/// # Specification
+/// trivial.
+struct Crossed
+{
+    /// The arena of the decoded export.
+    arena: TermArena,
+    /// The declarations of the decoded export, in order.
+    declarations: Vec<MarkedDeclaration>,
+    /// The name of each declaration that the lowering admits and the checker
+    /// does not refuse, in order.
+    checked: Vec<String>,
+}
+
+/// What crosses from the source at `path`, read as `text`; none when the
+/// source does not parse, the lowering refuses it whole, or its export does
+/// not decode.
 ///
 /// # Specification
 /// - requires: `text` is the source at `path`.
 /// - ensures: the decoded export of what crossed, as a driver runs parse,
-///   lower, check and readmission.
+///   lower, check and readmission, beside the declarations that the check
+///   admits.
 /// - panics: none.
 ///
 /// # Cost
@@ -681,11 +701,12 @@ fn sources(directory: &Path) -> Vec<(PathBuf, String)>
 /// # Adequacy
 /// - hypothesis: L3 — as the sweep.
 /// - witness: `kernel_export::convergence::sweeps::each_admitted_block_with_rules_joins_its_critical_pairs`
+/// - witness: `kernel_export::convergence::sweeps::each_small_block_that_the_check_admits_joins_its_critical_pairs`
 fn admitted(
     pbg: &Pbg,
     path: &Path,
     text: &str,
-) -> Option<(TermArena, Vec<MarkedDeclaration>)>
+) -> Option<Crossed>
 {
     let laid = lay_out(pbg, path, classify(path), SourceText::from(text));
     let tree = parse(pbg, SourceText::from(laid.text.as_str()))
@@ -707,11 +728,27 @@ fn admitted(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
         &adapted,
     );
+    let checked = module
+        .declarations()
+        .iter()
+        .filter(|lowered| {
+            !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                && verdicts.judged().iter().any(|answer| {
+                    answer.constant() == lowered.constant()
+                        && !matches!(answer.verdict(), Verdict::Refused(_))
+                })
+        })
+        .map(|lowered| String::from(lowered.name().as_ref()))
+        .collect();
     let readmission = bridge::readmit(&mut arena, &verdicts);
     let artifact = readmission.export(module.structured_names());
     let keys = readmission.export_names();
     let decoded = gandr_kernel_term::decode_named(artifact.as_image(), &keys).ok()?;
-    Some((decoded.arena().clone(), decoded.declarations().to_vec()))
+    Some(Crossed {
+        arena: decoded.arena().clone(),
+        declarations: decoded.declarations().to_vec(),
+        checked,
+    })
 }
 
 /// The rule systems of the admitted declarations, each named by the
@@ -1052,13 +1089,17 @@ mod sweeps
     use alloc::collections::BTreeSet;
     use alloc::format;
     use alloc::string::String;
+    use alloc::vec;
     use alloc::vec::Vec;
+    use core::fmt::Write as _;
     use std::path::Path;
 
     use gandr_kernel_term::Convergence;
     use gandr_surface_grammar::built_in;
 
+    use super::Term;
     use super::admitted;
+    use super::canonical;
     use super::presented;
     use super::sources;
     use super::systems;
@@ -1105,7 +1146,7 @@ mod sweeps
         let mut parting: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
         let (mut symmetric, mut unread) = (0_usize, 0_usize);
         for &(ref path, ref text) in &texts {
-            let Some((arena, declarations)) = admitted(&pbg, path, text)
+            let Some(crossed) = admitted(&pbg, path, text)
             else {
                 continue;
             };
@@ -1114,7 +1155,7 @@ mod sweeps
                 .unwrap_or(path)
                 .to_string_lossy()
                 .into_owned();
-            for (system, fault) in systems(&arena, &declarations) {
+            for (system, fault) in systems(&crossed.arena, &crossed.declarations) {
                 let key = format!("{} {:?} {:?}", system.name, system.symmetric, system.rules);
                 let parted = verdicts.entry(key).or_insert_with(|| {
                     symmetric = symmetric.saturating_add(usize::from(!system.symmetric.is_empty()));
@@ -1181,12 +1222,12 @@ mod sweeps
         let mut verdicts: BTreeMap<String, String> = BTreeMap::new();
         let mut disagreeing: BTreeSet<String> = BTreeSet::new();
         for &(ref path, ref text) in &texts {
-            let Some((_, declarations)) = admitted(&pbg, path, text)
+            let Some(crossed) = admitted(&pbg, path, text)
             else {
                 continue;
             };
             let shown = path.strip_prefix(&repository).unwrap_or(path).display();
-            for entry in presented(&declarations) {
+            for entry in presented(&crossed.declarations) {
                 let (ref system, ref fault) = entry.system;
                 let key = format!("{} {:?} {:?}", system.name, system.symmetric, system.rules);
                 let verdict = verdicts.entry(key).or_insert_with(|| {
@@ -1215,6 +1256,223 @@ mod sweeps
             "admitted presented types, of {}, that the kernel and the oracle decide apart:\n{}",
             verdicts.len(),
             disagreeing.into_iter().collect::<Vec<_>>().join("\n")
+        );
+    }
+
+    /// The nodes of a left side of a small block, at most.
+    const LEFT_NODES: usize = 5;
+
+    /// The tags of the table of a small block: `Z`, `S` over one field and
+    /// `Two` over two, which the symmetry names.
+    const TAGS: [(&str, usize); 3] = [("Z", 0), ("S", 1), ("Two", 2)];
+
+    /// The names of the variables of a left side, in pre-order.
+    const NAMES: [&str; 5] = ["x", "y", "z", "u", "v"];
+
+    /// Each term of exactly `nodes` nodes over [`TAGS`], each variable
+    /// written as `Variable(0)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shapes(nodes: usize) -> Vec<Term>
+    {
+        let mut found = Vec::new();
+        if nodes == 1 {
+            found.push(Term::Variable(0));
+        }
+        for (tag, &(_, arity)) in TAGS.iter().enumerate() {
+            let rest = nodes.saturating_sub(1);
+            match arity {
+                0 if nodes == 1 => found.push(Term::Apply(tag, Vec::new())),
+                1 if nodes > 1 => {
+                    found.extend(
+                        shapes(rest)
+                            .into_iter()
+                            .map(|field| Term::Apply(tag, vec![field])),
+                    );
+                },
+                2 if nodes > 2 => {
+                    for first in 1 .. rest {
+                        for left in shapes(first) {
+                            for right in shapes(rest.saturating_sub(first)) {
+                                found.push(Term::Apply(tag, vec![left.clone(), right]));
+                            }
+                        }
+                    }
+                },
+                _ => {},
+            }
+        }
+        found
+    }
+
+    /// `shape` with its variables numbered in pre-order from `next`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn numbered(
+        shape: &Term,
+        next: &mut u32,
+    ) -> Term
+    {
+        match *shape {
+            Term::Variable(_) => {
+                let variable = Term::Variable(*next);
+                *next = next.saturating_add(1);
+                variable
+            },
+            Term::Apply(tag, ref fields) => Term::Apply(
+                tag,
+                fields.iter().map(|field| numbered(field, next)).collect(),
+            ),
+        }
+    }
+
+    /// `term` in the surface syntax of a small block.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(term: &Term) -> String
+    {
+        match *term {
+            Term::Variable(variable) => usize::try_from(variable)
+                .ok()
+                .and_then(|at| NAMES.get(at))
+                .map_or_else(|| format!("w{variable}"), |&name| String::from(name)),
+            Term::Apply(tag, ref fields) => {
+                let mut text = String::from(TAGS.get(tag).map_or("Z", |&(name, _)| name));
+                for field in fields {
+                    let inner = written(field);
+                    let wrote = if matches!(*field, Term::Apply(_, ref below) if !below.is_empty())
+                    {
+                        write!(text, " ({inner})")
+                    }
+                    else {
+                        write!(text, " {inner}")
+                    };
+                    wrote.expect("a string takes each write");
+                }
+                text
+            },
+        }
+    }
+
+    /// Each rule of a small block: a left side headed by a constructor, of at
+    /// most [`LEFT_NODES`] nodes, with its variables in pre-order, one left
+    /// side for each class of the symmetry of `Two`; and a right side of one
+    /// node, a variable of the left side or `Z`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn small_rules() -> Vec<(Term, Term)>
+    {
+        let symmetric = BTreeSet::from([2_usize]);
+        let mut seen = BTreeSet::new();
+        let mut rules = Vec::new();
+        for nodes in 2 ..= LEFT_NODES {
+            for shape in shapes(nodes) {
+                if !seen.insert(canonical(&shape, &symmetric)) {
+                    continue;
+                }
+                let mut count = 0_u32;
+                let left = numbered(&shape, &mut count);
+                rules.push((left.clone(), Term::Apply(0, Vec::new())));
+                rules.extend((0 .. count).map(|variable| (left.clone(), Term::Variable(variable))));
+            }
+        }
+        rules
+    }
+
+    /// The source of a small block: the table of [`TAGS`], the symmetry of
+    /// `Two`, then `rules`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn small_block(rules: &[&(Term, Term)]) -> String
+    {
+        let mut text = String::from(
+            "data Nest : Type where {\n  | Z : Nest\n  | S : (n : Nest) --> Nest\n  | Two : (x : Nest, y : Nest) --> Nest\n  rule : Two x y <=> Two y x;\n",
+        );
+        for &&(ref left, ref right) in rules {
+            writeln!(text, "  rule : {} ==> {};", written(left), written(right))
+                .expect("a string takes each write");
+        }
+        text.push_str("}\n");
+        text
+    }
+
+    /// Each block of one rule or two over a table of three constructors with
+    /// one symmetry, each side to a bound, that the check admits, crosses to
+    /// the kernel, and the oracle joins each critical pair of the rules that
+    /// cross. The rule `Two (Two x Z) y ==> y` is in the set, in its other
+    /// order `Two x (Two y Z) ==> x`.
+    #[test]
+    fn each_small_block_that_the_check_admits_joins_its_critical_pairs()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("small-block.gandr");
+        let rules = small_rules();
+        let torn = (
+            Term::Apply(2, vec![
+                Term::Variable(0),
+                Term::Apply(2, vec![Term::Variable(1), Term::Apply(0, Vec::new())]),
+            ]),
+            Term::Variable(0),
+        );
+        assert!(
+            rules.contains(&torn),
+            "the rule of the block that tears is in the set"
+        );
+        let blocks: Vec<Vec<&(Term, Term)>> = rules
+            .iter()
+            .enumerate()
+            .flat_map(|(first, rule)| {
+                core::iter::once(vec![rule]).chain(
+                    rules
+                        .iter()
+                        .skip(first + 1)
+                        .map(move |second| vec![rule, second]),
+                )
+            })
+            .collect();
+        let (mut admitted_count, mut failures) = (0_usize, Vec::new());
+        for block in &blocks {
+            let text = small_block(block);
+            let Some(crossed) = admitted(&pbg, &path, &text)
+            else {
+                failures.push(format!("{text}does not reach the check"));
+                continue;
+            };
+            if !crossed.checked.iter().any(|name| name == "Nest") {
+                continue;
+            }
+            admitted_count += 1;
+            let found: Vec<_> = systems(&crossed.arena, &crossed.declarations)
+                .into_iter()
+                .filter(|&(ref system, _)| system.name == "Nest")
+                .collect();
+            let [(ref system, ref fault)] = *found.as_slice()
+            else {
+                failures.push(format!(
+                    "{text}is admitted by the check and not by the kernel"
+                ));
+                continue;
+            };
+            let parted: Vec<String> = fault.iter().cloned().chain(system.parted()).collect();
+            if !parted.is_empty() {
+                failures.push(format!("{text}is admitted, and its rules part: {parted:?}"));
+            }
+        }
+        assert!(
+            admitted_count > 0,
+            "the check admits a small block: {admitted_count} of {}",
+            blocks.len()
+        );
+        assert!(
+            failures.is_empty(),
+            "small blocks, of {} ({admitted_count} admitted), that the check admits and the oracle does not join:\n{}",
+            blocks.len(),
+            failures.join("\n")
         );
     }
 }
