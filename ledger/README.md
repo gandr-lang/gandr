@@ -6,7 +6,7 @@ The language surface and its features, each checked by the gates. The syntax led
 
 - `syntax.md`: the syntax ledger, for reading. Every rule of the built-in grammar, grouped by sort: its form spelled from its tiles and holes, its precedence group, node kind, admission and highlight roles, each committed rule linking its exemplar; then the internal rules, which no source molds, each with its reason, and every registered attribute with its payload and exemplar. The header names the grammar's fingerprint.
 - `syntax.json`: the same rows, for machines. Each form is a tree whose tiles carry the mold the grammar's build assigned them, their tile kind, their spelling and their role; one rule or attribute per line.
-- `features.sql`: the features ledger, the `sqlite3` dump of one table of what gandr implements, partly implements, plans and declines, each row with its evidence: the schema first, then one `INSERT` per row in `id` order. `features.db` is built from it and never tracked.
+- `features-schema.sql` and `features/<id>.sql`: the features ledger, one table of what gandr implements, partly implements, plans and declines, each row with its evidence. `features-schema.sql` holds the table's `CREATE` statement, and `features/<id>.sql` holds the one `INSERT` statement of the row `<id>`, as `sqlite3` dumps it. `features.db` is built from them and never tracked.
 - `crates.dot`: the per-crate map, one node per crate, clustered by category, each concern drawn as a dashed overlay through its crates; [`crates/README.md` § Map](../crates/README.md#map) draws the category map, in the layering order of `crates/README.md` § Layering. `mise run ledger:crate-map` generates both from `cargo metadata`. `mise run check:crate-map` fails while either is stale, while a crate lies outside the layering's categories, or while an edge points to a category listed after its own. A change that adds a crate or an edge between two crates regenerates the map in the same commit, so its diff shows the new edge.
 - `concerns.sql`: a concern is an interface that cuts across crates. The file records each concern and its sites, each site a crate and module that defines, implements or consumes the concern. For `sharing`, each site also names the descent datum its mechanism glues: positions, cover, compatibility, gluing and the certificate the kernel replays. `mise run check:crate-map` also fails while a concern has no site, while a site names a module its crate lacks, or while a concern's interface trait is implemented outside a test where no site names it. Edit a row by hand, then run `mise run ledger:concerns` to normalize the file.
 - The purposes ledger is not in this directory. `crates/<crate>/purposes.sql` holds the rows of one crate: what each public item, module and root of its library is for, with a naming and a documentation verdict. `.config/purposes/schema.sql` defines each column. `mise run purposes:list <crate>` prints a crate's entries beside their rows; `mise run ledger:purposes` puts each file in the order of the dump and moves a row to the file of its crate; `mise run check:purposes` fails while a file is not its part of the dump, a rowed crate has an item with no row, a row names no item, or an entry carries a concern that no site of it in `concerns.sql` covers. A site covers its module, the modules below it and their items; a site at the empty module covers its whole crate.
@@ -86,11 +86,10 @@ The tables name only crates that this workspace holds, never a planned crate.
 | `corpus` | witnesses: a fixture path under `corpus/`, or a test file from the root, `::item` naming a test in it |
 | `exemplar` | the program showing the row: a `model/` or `strict/` fixture from the root, or `corpus/ledger/features/<id>.gandr`; never `pathological/`. `crate-tests`: a mechanism no program shows, its evidence the tests in `corpus`; refused where `corpus` names a fixture |
 | `issue` | tracker issues, `#n` separated by spaces |
-| `since` | the pull request that landed an implemented or partial row, which `pr:open` writes with `ledger:stamp`, or the commit before pull requests |
 
 A row's status needs its evidence, and the table's constraints refuse one without it: an implemented row a `crate` or a `corpus` witness; a partial row that and an open issue or a `pathological/` witness of what it still refuses; a planned or declined row the issue that records the plan or the decision. An implemented or partial row names an exemplar unless its area's evidence is crate tests: `editor`, `workflow`, `storage`, `tooling`, `incremental`, `algorithms`, `machine`, `staging`, `kernel`, `conversion`, `runtime`, `syntax`, `printing`, `diagnostics`, `rewriting`, `corpus`.
 
-To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise run ledger:dump`, and commit `features.sql`.
+To edit it: change, add or remove a row's file by hand; or `mise run ledger:build`, change `features.db` with `sqlite3`, and `mise run ledger:dump`. Commit the files of `features/` that change.
 
 ## Commands and gates
 
@@ -102,11 +101,10 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 | `mise run check:syntax-ledger` | regenerates both ledger files into a temporary directory through `ledger:syntax` and fails, printing the difference, while either differs from the committed file |
 | `mise run check:syntax-exemplars` | fails while a committed rule, an attribute or a refusal has no exemplar or owed row, a file names none, an exemplar does not show what it names, or a features exemplar states `owes` or `refuses` |
 | `mise run check:exemplars` | fails while an exemplar leaves a declaration unsettled |
-| `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features.sql`, and dump it back |
-| `mise run ledger:stamp <pr> <base>` | writes `#<pr>` into the `since` of each implemented or partial row that the change from `<base>` touches, and commits `features.sql` alone; `pr:open` runs it once the pull request has its number |
-| `mise run check:ledger` | fails while `features.sql` breaks a constraint or is not its own re-dump, a `parent` names no row, a named path does not exist, a features exemplar is named by no row, or a language feature names no exemplar |
+| `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features-schema.sql` and `features/`, and dump it back into one file for each row |
+| `mise run check:ledger` | fails while a row breaks a constraint, the schema and the rows are not their own re-dump, a `parent` names no row, a named path does not exist, a features exemplar is named by no row, or a language feature names no exemplar |
 
-`mise run check` runs every gate and CI runs them on every change. A change to the grammar or to the attribute registry regenerates the ledger and updates the exemplars in the same commit; a change that lands, changes or retires a feature edits its row of `features.sql` in the same commit.
+`mise run check` runs every gate and CI runs them on every change. A change to the grammar or to the attribute registry regenerates the ledger and updates the exemplars in the same commit; a change that lands, changes or retires a feature edits its row's file in `features/` in the same commit.
 
 ## Crate READMEs
 

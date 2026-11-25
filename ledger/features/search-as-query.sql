@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('search-as-query','rewriting','Homomorphism search as a query',NULL,'planned','notable',NULL,'Pattern search over the store answered as conjunctive-query evaluation.',NULL,NULL,NULL,'#314');

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('schema-migration','storage','Schema migration by pullback','acset-store','implemented','uncommon','mainstream languages','A map between schemas pulls a store back along it, keys and counters kept.','storage-schema','crates/storage-schema/tests/migrate.rs',NULL,NULL);

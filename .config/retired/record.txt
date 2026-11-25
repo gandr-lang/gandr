@@ -4,5 +4,5 @@
 crates/surface-grammar/purposes.sql #5330
 crates/surface-grammar/src/model.rs #5330
 crates/workflow-ledger-tasks/src/ledger.rs #5330
-ledger/features.sql #5330
+ledger/features/syntax-ledger.sql #5330
 ledger/syntax.md #5330

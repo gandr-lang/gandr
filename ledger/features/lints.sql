@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lints','diagnostics','Lints with fixes','diagnostics-model','implemented','ordinary',NULL,'A lint finding carries the edit that settles it, as the `explicit-exits` and `explicit-runs` lints do.','surface-diagnostics','crates/surface-diagnostics/src/lint.rs',NULL,NULL);

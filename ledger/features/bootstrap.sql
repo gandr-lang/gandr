@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('bootstrap','runtime','The runtime bootstrapped in gandr',NULL,'planned','notable',NULL,'Each workspace crate rewritten in gandr in the order a census ranks: its twin written to the crate''s specifications, held to the Rust crate as oracle across a stated boundary, and switched in for it once it proves.',NULL,NULL,NULL,'#2895');

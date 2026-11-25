@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('interval','identity','A cubical interval',NULL,'declined','notable',NULL,'Identity lives in the codes as presented words, so no interval enters the shape or the trusted base.',NULL,NULL,NULL,'#1682');

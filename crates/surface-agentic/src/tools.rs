@@ -6,7 +6,7 @@
 //! recheck; the outline, the expected syntax and a declaration's type are the
 //! language server's own answers to the requests an editor sends for them.
 //! `ledger_list` and `ledger_show` answer what `ledger list` and
-//! `ledger show` print, read from `ledger/features.sql` under a root the
+//! `ledger show` print, read from `ledger/features/` under a root the
 //! call names or the server's working directory, and hold no document.
 //!
 //! # Changes ride on every tool result
@@ -172,7 +172,7 @@ fn root_schema() -> Value
 {
     json!({
         "type": "string",
-        "description": "The tree holding `ledger/features.sql`; the server's working directory when not given",
+        "description": "The tree holding `ledger/features/`; the server's working directory when not given",
     })
 }
 

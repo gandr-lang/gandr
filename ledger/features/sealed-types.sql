@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('sealed-types','kernel','Sealed abstract types',NULL,'implemented','notable',NULL,'An abstract type''s representation is visible inside its minting admission and hidden from every later declaration, replay re-deriving both.','kernel-core','corpus/model/modules/sealed-counter.gandr','corpus/model/modules/sealed-counter.gandr',NULL);

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('directed-univalence','directed','Directed univalence',NULL,'planned','unique','dependent provers','A flow in the universe from a directed map of presentations, the directed twin of `ua`.',NULL,NULL,NULL,'#312');

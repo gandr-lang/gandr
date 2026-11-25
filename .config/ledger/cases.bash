@@ -26,15 +26,17 @@ source "$root/.config/cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 repo="$scratch/repo"
-mkdir -p "$repo/ledger" "$repo/crates/x" "$repo/corpus/ledger/features" "$scratch/gh" "$scratch/answers"
+mkdir -p "$repo/ledger/features" "$repo/crates/x" "$repo/corpus/ledger/features" "$scratch/gh" "$scratch/answers"
 git init --quiet "$repo"
 identity "$repo"
 {
-  awk '/^CREATE TABLE feature\(/,/\) WITHOUT ROWID;$/' ledger/features.sql
-  echo "INSERT INTO feature VALUES('gap','workflow','A gap',NULL,'implemented','ordinary',NULL,'A row with no witness.','x',NULL,NULL,'#1',NULL);"
-  echo "INSERT INTO feature VALUES('owing','workflow','An owing row',NULL,'partial','ordinary',NULL,'A partial row.','x',NULL,'corpus/ledger/features/owing.gandr','#2',NULL);"
+  cat ledger/features-schema.sql
+  echo "INSERT INTO feature VALUES('gap','workflow','A gap',NULL,'implemented','ordinary',NULL,'A row with no witness.','x',NULL,NULL,'#1');"
+  echo "INSERT INTO feature VALUES('owing','workflow','An owing row',NULL,'partial','ordinary',NULL,'A partial row.','x',NULL,'corpus/ledger/features/owing.gandr','#2');"
 } | sqlite3 -bail "$scratch/features.db"
-sqlite3 "$scratch/features.db" .dump > "$repo/ledger/features.sql"
+sqlite3 "$scratch/features.db" .dump > "$scratch/dump.sql"
+.config/gate-scope/tool.bash gandr-workflow-ledger-split ledger-split \
+  --schema "$repo/ledger/features-schema.sql" --rows "$repo/ledger/features/{}.sql" "$scratch/dump.sql" > /dev/null
 printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest.' '///' '/// - owes: #2' 'package owing {}' \
   > "$repo/corpus/ledger/features/owing.gandr"
 echo '{"superseded": []}' > "$repo/ledger/syntax.json"

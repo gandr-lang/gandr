@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('terminal-face','tooling','The full-screen terminal face','repl','implemented','ordinary',NULL,'`gandr tui` paints the loop''s transcript, an input pane and a status line full-screen.','surface-tui','crates/surface-tui/tests/launch.rs',NULL,NULL);

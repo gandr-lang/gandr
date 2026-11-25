@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lsp-paste-imports','editor','Paste with imports','language-server','implemented','uncommon','mainstream editors','A copy carries the sources its names are declared in; a paste into another document adds the imports those names need.','surface-lsp','corpus/model/data/following.gandr crates/surface-lsp/src/server.rs',NULL,'#764');

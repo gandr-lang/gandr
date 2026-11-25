@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('postulated-univalence','identity','Univalence as an axiom',NULL,'declined','notable',NULL,'Univalence is computed by certificate replay per stratum, never postulated.',NULL,NULL,NULL,'#1683');

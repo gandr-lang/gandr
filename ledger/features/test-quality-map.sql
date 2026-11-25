@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('test-quality-map','workflow','A test-quality map','mutation-testing','planned','ordinary',NULL,'Coverage per crate beside the mutation survivors, the weakest crates first.',NULL,NULL,NULL,'#239');

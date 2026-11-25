@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('layout-engine','printing','The layout engine',NULL,'implemented','notable',NULL,'Documents are resolved to a page width by Pareto resolution over candidate layouts and rendered by a first-order machine.','surface-layout','crates/surface-layout/tests/algebra.rs',NULL,NULL);

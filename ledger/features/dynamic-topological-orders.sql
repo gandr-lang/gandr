@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('dynamic-topological-orders','algorithms','Dynamic topological orders',NULL,'implemented','ordinary',NULL,'Topological orders and feasible valuations kept under edge insertion.','theory-dynamic-graphs','crates/theory-dynamic-graphs/tests/standing.rs',NULL,NULL);

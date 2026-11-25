@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('certified-artifacts','kernel','Certified artifacts','kernel-readmission','implemented','notable',NULL,'Readmitted declarations export as canonical artifacts under their producer''s names, byte-identical run to run.','core-checker kernel-term','crates/kernel-core/tests/sealed_export.rs',NULL,NULL);

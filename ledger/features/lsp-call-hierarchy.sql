@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lsp-call-hierarchy','editor','Call hierarchy','language-server','implemented','ordinary',NULL,'The incoming and outgoing calls of a declared value, read from the referent index over the document''s closure.','surface-lsp','corpus/model/data/following.gandr crates/surface-lsp/src/server.rs',NULL,'#764');

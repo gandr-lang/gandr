@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('first-class-environments','checking','First-class environments','bicontextual-core','planned','notable',NULL,'Environments as values with dependent merges, which the module layer can merge and seal.',NULL,NULL,NULL,'#340');

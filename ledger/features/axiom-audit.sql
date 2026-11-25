@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('axiom-audit','kernel','Axiom and assumption audit','kernel-admission','implemented','notable',NULL,'Admission reports every declaration resting on an unchecked bypass, an owed hole or a native runtime assumption.','kernel-core core-checker','crates/kernel-core/src/environment.rs',NULL,NULL);

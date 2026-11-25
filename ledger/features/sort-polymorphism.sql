@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('sort-polymorphism','universes','Sort polymorphism with bounds','universe-families','planned','notable',NULL,'Definitions generic over a sort within stated bounds, specialised at use.',NULL,NULL,NULL,'#315');

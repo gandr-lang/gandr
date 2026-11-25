@@ -79,7 +79,7 @@ enum Cli
         /// Only the features at this status.
         #[arg(long, value_enum)]
         status: Option<StatusName>,
-        /// The tree holding `ledger/features.sql`.
+        /// The tree holding `ledger/features/`.
         #[arg(long, value_name = "DIRECTORY", default_value = ".")]
         root: PathBuf,
     },
@@ -90,7 +90,7 @@ enum Cli
     {
         /// The feature's id, as `ledger list` prints it.
         id: String,
-        /// The tree holding `ledger/features.sql` and the paths it names.
+        /// The tree holding `ledger/features/` and the paths it names.
         #[arg(long, value_name = "DIRECTORY", default_value = ".")]
         root: PathBuf,
     },

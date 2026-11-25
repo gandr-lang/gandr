@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('cubical-hits','identity','Cubical higher inductive types',NULL,'declined','notable',NULL,'No path-constructor former exists: a higher type is presented by invertible cells and rules over words instead.',NULL,NULL,NULL,'#1681');

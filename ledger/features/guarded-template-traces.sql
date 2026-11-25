@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('guarded-template-traces','rewriting','Guarded-template conversion traces','derivation-identity','planned','notable',NULL,'Conversion traces folded into guarded templates by anti-unification, checked once and replayed per member.',NULL,NULL,NULL,'#316');

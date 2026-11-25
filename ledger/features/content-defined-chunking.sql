@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('content-defined-chunking','storage','Content-defined chunking','value-plane','implemented','notable',NULL,'Chunk boundaries fall by content under parameters the root commits, so an edit moves only the chunks near it.','storage-chunker storage-values','crates/storage-chunker/tests/commitment.rs',NULL,NULL);

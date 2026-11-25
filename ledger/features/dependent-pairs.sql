@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('dependent-pairs','types','Dependent pairs (Sigma types)',NULL,'implemented','uncommon','mainstream languages','A record whose later entry names an earlier label is a dependent pair, with projections and a dependent split.','core-checker kernel-core','corpus/model/data/sigma-pair.gandr','corpus/model/data/sigma-pair.gandr',NULL);

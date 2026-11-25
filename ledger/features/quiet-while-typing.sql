@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('quiet-while-typing','editor','Diagnostics quiet where the author is typing','language-server','implemented','notable',NULL,'Errors are published where the author is not typing, the cascade of a half-written form cut.','surface-lsp','crates/surface-lsp/src/quiet.rs',NULL,NULL);

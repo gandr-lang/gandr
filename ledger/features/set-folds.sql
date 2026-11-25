@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('set-folds','identity','Folds into the paths of a set','identity-types','implemented','notable',NULL,'A fold into the paths of a cell-free presented type respects its rules however its arms compose those paths.','core-checker kernel-core','corpus/model/identity/set-fold.gandr','corpus/model/identity/set-fold.gandr','#427');

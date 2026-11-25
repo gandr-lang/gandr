@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('hard-examples','corpus','A hard-examples corpus',NULL,'planned','notable',NULL,'Constructions with a settled verdict in the literature, each a corpus source admitted or refused by name.',NULL,NULL,NULL,'#446');

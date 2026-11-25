@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('uniqueness-of-identity-proofs','identity','Uniqueness of identity proofs',NULL,'declined','notable',NULL,'Identity is untruncated by design, so no type is forced to be a set.',NULL,NULL,NULL,'#1686');

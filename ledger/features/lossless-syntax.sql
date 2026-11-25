@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('lossless-syntax','syntax','Lossless syntax with attached comments','total-parsing','implemented','ordinary',NULL,'Every byte survives in the tree, each comment owned by the node it describes and read by no digest.','surface-parser surface-syntax','crates/surface-syntax/src/tree.rs',NULL,NULL);

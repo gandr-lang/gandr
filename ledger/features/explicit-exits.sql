@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('explicit-exits','effects','Explicit exits: return and become',NULL,'implemented','notable',NULL,'A function leaves by `return` or a tail call `become`, a nested exit read as a direct cut to the caller.','core-checker surface-lowering','corpus/fragment/exits.gandr corpus/fragment/missing-exit.gandr','corpus/fragment/exits.gandr','#127');

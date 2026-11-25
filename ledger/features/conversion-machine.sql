@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('conversion-machine','conversion','The lazy concurrent conversion machine','normalization-by-evaluation','implemented','notable',NULL,'Two terms are compared by a machine that interleaves unfolding on both sides and records its winning derivation.','core-nbe','crates/core-nbe/src/machine.rs',NULL,NULL);

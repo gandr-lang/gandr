@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('trailing-delimiters','syntax','Trailing commas and leading arm bars',NULL,'implemented','ordinary',NULL,'A list may end in a comma and a match''s first arm may begin with a bar.','surface-grammar','strict/trailing-delimiters.gandr','crates/surface-corpus/strict/trailing-delimiters.gandr',NULL);

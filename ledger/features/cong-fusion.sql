@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('cong-fusion','conversion','Congruence fusion','normalization-by-evaluation','implemented','notable',NULL,'A chain of congruences whose composite reads as the identity converts to the path beneath it, in the engine and the kernel alike.','core-nbe kernel-core','corpus/model/identity/circle.gandr','corpus/model/identity/circle.gandr','#370');

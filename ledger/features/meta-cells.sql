@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('meta-cells','descriptions','Coherence cells in signatures','signatures-as-values','planned','unique','dependent provers','A declared coherence between two rules discharged by the completion certificate rather than carried.',NULL,NULL,NULL,'#314');
