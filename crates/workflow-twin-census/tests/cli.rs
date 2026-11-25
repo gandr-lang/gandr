@@ -3,69 +3,105 @@ use std::process::Command;
 use std::process::Output;
 
 /// Run the binary with `arguments` at the workspace `root`, with the target
-/// directory `target` when it is given.
+/// directory `target`.
 ///
 /// # Specification
 /// trivial.
 fn run(
     root: &Path,
     arguments: &[&str],
-    target: Option<&Path>,
+    target: &Path,
 ) -> Output
 {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_twin-census"));
-    command.args(arguments).arg("--root").arg(root);
-    if let Some(target) = target {
-        command.env("CARGO_TARGET_DIR", target);
-    }
-    command.output().expect("the binary runs")
+    Command::new(env!("CARGO_BIN_EXE_twin-census"))
+        .args(arguments)
+        .arg("--root")
+        .arg(root)
+        .env("CARGO_TARGET_DIR", target)
+        .output()
+        .expect("the binary runs")
 }
 
-/// The committed census is the census of this workspace, so a change of a
-/// dependency of the emitter or of the crates fails this test until the
-/// census is written again.
-#[test]
-fn the_committed_census_is_the_census_of_the_workspace()
-{
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let output = run(&root, &["--check", "--cost"], None);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "the committed census is the workspace's: {stderr}"
-    );
-    assert!(
-        String::from_utf8_lossy(&output.stdout).starts_with("crates under the emitter: "),
-        "the run prints its counts"
-    );
-    assert!(
-        stderr.contains("twin-census: cargo metadata: 1 call, "),
-        "the cost names each part: {stderr}"
-    );
-    assert!(
-        stderr.contains("twin-census: read rustdoc: ") && stderr.contains(" calls, "),
-        "the cost counts the files of rustdoc: {stderr}"
-    );
-}
+/// The census of the fixture workspace: the emitter depends on `near`; the
+/// emitter has one generic public function and one in the export fragment;
+/// `near` has one function in the fragment and one test, so it is the one
+/// crate that can take a twin.
+const FIXTURE: &str = "# Twin census
 
-/// The census of a fixture workspace has a changed row: the check exits one
-/// and names the crate of that row. The row of the emitter has the count of
-/// its one generic public function, so the census of rustdoc's JSON is equal
-/// there.
+A twin is a function of a crate that gandr source states. A crate is under the emitter when `gandr-runtime-emitter` depends on it by a normal or a build dependency, directly or through other crates. A twin of such a crate runs as an object, and not as a record that the runtime loads.
+
+An item is generic when it has a type parameter or a trait bound. An entry under the C convention carries neither, so a generic item has no twin without a wrapper. The column counts the public functions, methods, types, traits and type aliases of the crate's library that are generic.
+
+An export carries a function that is not generic, whose operands are fixed-width integers or addresses, and whose result is one of the two. A fixed-width integer is `u8` to `u64`, `i8` to `i64`, `usize` or `isize`. An address is a reference or a raw pointer to a sized type. The column gives the count of such public functions and methods, of the count of all, and its share.
+
+`twin-census` prints this text from `cargo metadata` and from the JSON that rustdoc writes for each library.
+
+| Crate | Under the emitter | Generic items | Export fragment |
+| ----- | ----------------- | ------------- | --------------- |
+| `near` | yes | 0 | 1 of 1 (100 %) |
+| `runtime-emitter` | the emitter | 1 | 1 of 2 (50 %) |
+
+Crates under the emitter: 1 of 2.
+
+Generic public items: 1.
+
+Public functions in the export fragment: 2 of 3 (66 %).
+
+## The next twins
+
+A crate can take a twin when it has a test, and each of its public functions is in the export fragment or has a wrapper. A wrapper passes each operand as its words and gives the result as its words. A result of more than one word goes to an address that the caller gives. The census ranks such crates by the fewest generic public items, then by the most functions in the fragment, then by the most tests, and names the first 3.
+
+Crates that can take a twin: 1.
+
+### 1. `near`
+
+The carrier is the object, because the emitter depends on the crate.
+
+| Function | What an export needs |
+| -------- | -------------------- |
+| `twice` | nothing |
+
+Tests: 1. `twice_doubles`.
+";
+
+/// The binary prints the census of the fixture workspace, and `--cost` names
+/// each part of the run on standard error.
 #[test]
-fn a_changed_row_exits_one_and_names_its_crate()
+fn the_census_of_the_fixture_is_its_text()
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/workspace");
     let target = Path::new(env!("CARGO_TARGET_TMPDIR")).join("twin-census-fixture");
-    let output = run(&root, &["--check"], Some(&target));
+    let output = run(&root, &["--cost"], &target);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "the census is printed: {stderr}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        FIXTURE,
+        "the census is the fixture's"
+    );
+    assert!(
+        stderr.contains("twin-census: cargo metadata: 1 call, ")
+            && stderr.contains("twin-census: read rustdoc: 2 calls, "),
+        "the cost names each part: {stderr}"
+    );
+}
+
+/// A root with no workspace exits one, and standard error has the message of
+/// cargo.
+#[test]
+fn a_root_with_no_workspace_exits_one()
+{
+    let target = Path::new(env!("CARGO_TARGET_TMPDIR")).join("twin-census-none");
+    let output = run(Path::new(env!("CARGO_TARGET_TMPDIR")), &[], &target);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(
         output.status.code(),
         Some(1_i32),
-        "a stale census exits one: {stderr}"
+        "a fault exits one: {stderr}"
     );
     assert!(
-        stderr.ends_with("The rows that differ: near\n"),
-        "the refusal names the crate: {stderr}"
+        stderr.starts_with("twin-census: `cargo metadata` failed: "),
+        "the refusal names the command: {stderr}"
     );
+    assert!(output.stdout.is_empty(), "no census is printed");
 }
