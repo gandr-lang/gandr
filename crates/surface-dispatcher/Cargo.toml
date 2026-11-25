@@ -129,7 +129,8 @@ tracing = { workspace = true, optional = true }
 # `fixture` feature. Cargo admits the cycle of a dev-dependency, and the test
 # links one copy of this crate. The schedule bench counts the allocations of
 # one schedule through allocation-counter. The pool's grant test makes its
-# jobserver as a FIFO through nix.
+# jobserver as a FIFO through nix, and the console's test signals the thread
+# of a line through nix.
 [dev-dependencies]
 allocation-counter.workspace = true
 gandr-surface-dispatcher = { workspace = true, features = ["fixture", "instrument"] }
@@ -146,6 +147,13 @@ serde_json.workspace = true
 # The host's counter waits on its word across processes through the futex.
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix.workspace = true
+
+# The console of a run writes standard output and standard error by the
+# system call of the IO core of the bootstrap, which has its calls on Linux
+# x86-64. The range of a line is a range of `boot-core`.
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+gandr-boot-core.workspace = true
+gandr-boot-io.workspace = true
 
 # The default width counts the host's physical performance cores; Linux reads
 # them from sysfs with std alone.

@@ -428,8 +428,16 @@ path = "crates/boot-alloc"
 # that a function of the layer `boot` reads and the place that it writes.
 # consumers:
 # - boot-io
+# - surface-dispatcher (Linux x86-64)
 [workspace.dependencies.gandr-boot-core]
 path = "crates/boot-core"
+
+# The IO core of the bootstrap with no C library: the read of a file and the
+# write to a descriptor, each by the crate's own system call on Linux x86-64.
+# consumers:
+# - surface-dispatcher (Linux x86-64)
+[workspace.dependencies.gandr-boot-io]
+path = "crates/boot-io"
 
 # The checking judgement: the name-free declaration input, the verdicts, the
 # obligation ledger and the refusal vocabulary.

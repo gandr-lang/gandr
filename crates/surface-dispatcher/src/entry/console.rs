@@ -5,12 +5,14 @@
 //! reads. A run takes its console as [`Streams`], the closed set of the known
 //! consoles, so the run stage has one instance and each operation is one match.
 //! [`Streams::Standard`] writes to standard output or standard error and reads
-//! standard input. [`Captured`] keeps the lines and answers from the input that
-//! it gets, so a test or a corpus expectation reads what the program printed.
-//! [`Closed`] fails each operation, as a stream whose reader is gone does. The
-//! run stage serves the three streams on a console (`evaluate::console`). The
-//! script and the session give the console to a run, so these types stay below
-//! the run stage.
+//! standard input. On Linux x86-64 it writes each line by the system call of
+//! the IO core of the bootstrap, `gandr-boot-io`, and reads through `std`.
+//! [`Captured`] keeps the lines and answers from the input that it gets, so a
+//! test or a corpus expectation reads what the program printed. [`Closed`]
+//! fails each operation, as a stream whose reader is gone does. The run stage
+//! serves the three streams on a console (`evaluate::console`). The script
+//! and the session give the console to a run, so these types stay below the
+//! run stage.
 
 use alloc::collections::VecDeque;
 use alloc::string::String;
@@ -334,8 +336,10 @@ impl Console for Closed
 pub enum Streams<'console>
 {
     /// The process's standard output, standard error and standard input. Each
-    /// operation takes its stream's lock, which the thread can hold already,
-    /// so the run's lines join the host's own in order.
+    /// operation takes its stream's lock of `std`, which the thread can hold
+    /// already, so the run's lines join the host's own in order. On Linux
+    /// x86-64 a line goes to its descriptor through `gandr-boot-io`, after
+    /// the buffer of `std`'s standard output is written out.
     Standard,
     /// The lines kept in memory and the input fed ([`Captured`]).
     Captured(&'console mut Captured),
@@ -362,16 +366,213 @@ impl Streams<'_>
     }
 }
 
+/// Standard output, as the IO core of the bootstrap names it.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const STANDARD_OUTPUT: gandr_boot_io::Descriptor = gandr_boot_io::Descriptor(1);
+
+/// Standard error, as the IO core of the bootstrap names it.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const STANDARD_ERROR: gandr_boot_io::Descriptor = gandr_boot_io::Descriptor(2);
+
+/// The error number of a call that a signal interrupts, `EINTR`.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const INTERRUPTED: u16 = 4;
+
+/// The error number of a descriptor that the process does not hold, `EBADF`.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const NOT_HELD: u16 = 9;
+
+/// The bytes of a line and its newline that one system call writes. A pipe
+/// takes a write of at most this count as one piece, so the line of a short
+/// write does not mix with the lines of another process.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const PAGE: usize = 4096;
+
+/// Gives each byte of `bytes` to `descriptor` by the system call of the IO
+/// core of the bootstrap. A short write gives the rest in the next call, and
+/// an interrupted call is made again, as `std`'s `write_all` does.
+///
+/// # Specification
+/// - ensures: [`Printed::Written`] once the kernel took each byte, or when the
+///   process does not hold the descriptor, as `std` takes a write to a closed
+///   standard stream. [`Printed::Failed`] for each other refusal, and for a
+///   call that takes no byte of a range that is not empty.
+/// - panics: none.
+/// - executable: none — the kernel takes the bytes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a line reaches a socket with its newline, a line longer
+///   than a page reaches it whole, a closed descriptor takes the line, a socket
+///   whose reader is gone fails it, and signals while the line waits leave it
+///   whole.
+/// - witness: `tests::console::a_line_reaches_its_descriptor_with_its_newline`
+/// - witness: `tests::console::a_line_longer_than_a_page_reaches_its_descriptor_whole`
+/// - witness: `tests::console::a_line_to_a_closed_descriptor_is_written_as_std_writes_it`
+/// - witness: `tests::console::a_line_whose_reader_is_gone_fails`
+/// - witness: `tests::console::signals_while_a_line_waits_leave_the_line_whole`
+///
+/// # Cost
+/// - allocation: none
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn whole(
+    descriptor: gandr_boot_io::Descriptor,
+    bytes: &[u8],
+) -> Printed
+{
+    let Ok(io) = gandr_boot_io::start()
+    else {
+        return Printed::Failed;
+    };
+    let mut rest = bytes;
+    let printed = loop {
+        if rest.is_empty() {
+            break Printed::Written;
+        }
+        // SAFETY: `rest` is a live slice of the caller, and nothing writes it
+        // during the call.
+        let wrote =
+            unsafe { gandr_boot_io::write(&io, descriptor, gandr_boot_core::Range::from(rest)) };
+        match wrote {
+            Ok(gandr_boot_core::Length(0)) => break Printed::Failed,
+            Ok(gandr_boot_core::Length(count)) => rest = rest.get(count ..).unwrap_or_default(),
+            Err(refused) => match refused.number().0.get() {
+                INTERRUPTED => {},
+                NOT_HELD => break Printed::Written,
+                _ => break Printed::Failed,
+            },
+        }
+    };
+    match gandr_boot_io::stop(io) {
+        Ok(()) => printed,
+        Err(_) => Printed::Failed,
+    }
+}
+
+/// Writes `line` and a newline to `descriptor` by the system call of the IO
+/// core of the bootstrap. A line below one page goes with its newline in one
+/// call; a longer line goes in one call and its newline in a second.
+///
+/// # Specification
+/// - ensures: [`Printed::Written`] once the descriptor took the line and its
+///   newline, or when the process does not hold the descriptor;
+///   [`Printed::Failed`] when the kernel refused a byte of them.
+/// - panics: none.
+/// - executable: none — the kernel takes the bytes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a line reaches a socket with its newline, a line longer
+///   than a page reaches it whole, a closed descriptor takes the line, a socket
+///   whose reader is gone fails it, and signals while the line waits leave it
+///   whole.
+/// - witness: `tests::console::a_line_reaches_its_descriptor_with_its_newline`
+/// - witness: `tests::console::a_line_longer_than_a_page_reaches_its_descriptor_whole`
+/// - witness: `tests::console::a_line_to_a_closed_descriptor_is_written_as_std_writes_it`
+/// - witness: `tests::console::a_line_whose_reader_is_gone_fails`
+/// - witness: `tests::console::signals_while_a_line_waits_leave_the_line_whole`
+///
+/// # Cost
+/// - allocation: none; the line and its newline join in one page on the stack
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[inline]
+#[must_use]
+pub fn line_to(
+    descriptor: gandr_boot_io::Descriptor,
+    line: Line<'_>,
+) -> Printed
+{
+    let text = line.as_ref().as_bytes();
+    let mut page = [0_u8; PAGE];
+    let joined = page.get_mut(..= text.len()).and_then(|piece| {
+        let (body, end) = piece.split_at_mut_checked(text.len())?;
+        body.copy_from_slice(text);
+        end.fill(b'\n');
+        Some(&*piece)
+    });
+    match joined {
+        Some(piece) => whole(descriptor, piece),
+        None => match whole(descriptor, text) {
+            Printed::Written => whole(descriptor, b"\n"),
+            Printed::Failed => Printed::Failed,
+        },
+    }
+}
+
+/// Writes `line` and a newline to standard output by the IO core of the
+/// bootstrap. The thread holds the lock of `std`'s standard output, with its
+/// buffer written out, so the line joins the host's own lines in order.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: none
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn standard_output(line: Line<'_>) -> Printed
+{
+    let mut held = std::io::stdout().lock();
+    let printed = match held.flush() {
+        Ok(()) => line_to(STANDARD_OUTPUT, line),
+        Err(_) => Printed::Failed,
+    };
+    drop(held);
+    printed
+}
+
+/// Writes `line` and a newline to standard error by the IO core of the
+/// bootstrap. The thread holds the lock of `std`'s standard error, so the line
+/// joins the host's own lines in order.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: none
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn standard_error(line: Line<'_>) -> Printed
+{
+    let held = std::io::stderr().lock();
+    let printed = line_to(STANDARD_ERROR, line);
+    drop(held);
+    printed
+}
+
 /// Whether a write of a line to a standard stream came to the whole line.
 ///
 /// # Specification
 /// trivial.
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 const fn written(result: &std::io::Result<()>) -> Printed
 {
     match *result {
         Ok(()) => Printed::Written,
         Err(_) => Printed::Failed,
     }
+}
+
+/// Writes `line` and a newline to standard output through `std`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the I/O error's payload, error path
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+fn standard_output(line: Line<'_>) -> Printed
+{
+    written(&writeln!(std::io::stdout().lock(), "{}", line.as_ref()))
+}
+
+/// Writes `line` and a newline to standard error through `std`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the I/O error's payload, error path
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+fn standard_error(line: Line<'_>) -> Printed
+{
+    written(&writeln!(std::io::stderr().lock(), "{}", line.as_ref()))
 }
 
 impl Console for Streams<'_>
@@ -383,7 +584,8 @@ impl Console for Streams<'_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the I/O error's payload, error path
+    /// - allocation: none on Linux x86-64; elsewhere the I/O error's payload,
+    ///   error path
     #[inline]
     fn print(
         &mut self,
@@ -391,7 +593,7 @@ impl Console for Streams<'_>
     ) -> Printed
     {
         match *self {
-            Self::Standard => written(&writeln!(std::io::stdout().lock(), "{}", line.as_ref())),
+            Self::Standard => standard_output(line),
             Self::Captured(ref mut captured) => captured.print(line),
             Self::Closed(ref mut closed) => closed.print(line),
         }
@@ -404,7 +606,8 @@ impl Console for Streams<'_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the I/O error's payload, error path
+    /// - allocation: none on Linux x86-64; elsewhere the I/O error's payload,
+    ///   error path
     #[inline]
     fn eprint(
         &mut self,
@@ -412,7 +615,7 @@ impl Console for Streams<'_>
     ) -> Printed
     {
         match *self {
-            Self::Standard => written(&writeln!(std::io::stderr().lock(), "{}", line.as_ref())),
+            Self::Standard => standard_error(line),
             Self::Captured(ref mut captured) => captured.eprint(line),
             Self::Closed(ref mut closed) => closed.eprint(line),
         }

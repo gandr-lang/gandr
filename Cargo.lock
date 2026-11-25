@@ -1747,6 +1747,8 @@ version = "0.0.0"
 dependencies = [
  "allocation-counter",
  "blake3",
+ "gandr-boot-core",
+ "gandr-boot-io",
  "gandr-core-checker",
  "gandr-core-content",
  "gandr-core-fork",

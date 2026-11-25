@@ -13,6 +13,8 @@ mod census;
 mod coincide;
 #[cfg(test)]
 mod compose;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod console;
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]
