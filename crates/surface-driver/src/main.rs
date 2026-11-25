@@ -42,7 +42,7 @@
 //! | `gandr stage <programs>` | a line per program — the certificates the kernel readmitted and its families by how they were admitted — then the run's digest and verdict | a certificate the kernel refused, a program that could not be checked, or a family admission that faulted |
 //! | `gandr stage --jobs <threads> <programs>` | as `stage`, each program's stages forked onto that many threads | as `stage` |
 //! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
-//! | `gandr fmt --check <paths>` | `<path>:<line>` for each source out of layout, the line the first that the layout changes; nothing is written | as `fmt`, and any source out of layout |
+//! | `gandr fmt --check <paths>` | ``<path>:<line>: `<name>` `` for each source out of layout: the first line that the layout changes and the declaration that holds or follows it; nothing is written | as `fmt`, and any source out of layout |
 //! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
 //! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
@@ -4303,13 +4303,15 @@ fn render(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each source whose layout changed is one line on standard output,
-///   in walk order: its path, written back under `fmt`; its path and the first
-///   line the layout changes, `<path>:<line>`, untouched under `fmt --check`. A
-///   source already in layout prints nothing. Each path that cannot be read or
-///   written back, names no source, or holds a source the formatter refuses is
-///   `gandr: <path>: <fault>` on standard error, and the formatting continues
-///   past it. Each declaration of a laid-out source that kept its spelling
-///   because a rewrite would have changed what it lowers to is ``gandr:
+///   in walk order: its path, written back under `fmt`; untouched under `fmt
+///   --check`, its path and the first line the layout changes, then the name of
+///   the declaration that holds or follows that line, ``<path>:<line>: `<name>`
+///   ``, or `<path>:<line>` where no declaration does. A source already in
+///   layout prints nothing. Each path that cannot be read or written back,
+///   names no source, or holds a source the formatter refuses is `gandr:
+///   <path>: <fault>` on standard error, and the formatting continues past it.
+///   Each declaration of a laid-out source that kept its spelling because a
+///   rewrite would have changed what it lowers to is ``gandr:
 ///   <path>:<line>:<column>: `<name>` keeps its spelling: <reason>`` on
 ///   standard error, after the source's path if any, and changes no exit. The
 ///   exit is two when any path faulted; otherwise one under `fmt --check` when
@@ -4357,12 +4359,16 @@ fn fmt(
             FormatStep::Changed {
                 path,
                 line,
+                declaration,
                 withdrawn,
             } => {
                 changed = true;
-                let printed = match rewrite {
-                    Rewrite::Check => writeln!(stdout, "{}:{line}", path.display()),
-                    Rewrite::InPlace => writeln!(stdout, "{}", path.display()),
+                let printed = match (rewrite, declaration) {
+                    (Rewrite::Check, Some(name)) => {
+                        writeln!(stdout, "{}:{line}: `{name}`", path.display())
+                    },
+                    (Rewrite::Check, None) => writeln!(stdout, "{}:{line}", path.display()),
+                    (Rewrite::InPlace, _) => writeln!(stdout, "{}", path.display()),
                 };
                 printed.and_then(|()| kept(stderr, path, &withdrawn))
             },

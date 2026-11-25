@@ -73,7 +73,10 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::component;
@@ -156,6 +159,9 @@ pub enum FormatStep<'formatting>
         path: &'formatting Path,
         /// The first line of the source the layout changes, counted from one.
         line: NonZeroUsize,
+        /// The name of the declaration that holds that line, when the line
+        /// stands in one.
+        declaration: Option<String>,
         /// Each declaration that kept the source's spelling, and why.
         withdrawn: Vec<Kept>,
     },
@@ -506,10 +512,11 @@ where
     let fault = match reached {
         Reached::Source => match lay() {
             Ok(Laid::Unchanged(withdrawn)) => return FormatStep::Unchanged { path, withdrawn },
-            Ok(Laid::Changed(withdrawn, line)) => {
+            Ok(Laid::Changed(withdrawn, (line, declaration))) => {
                 return FormatStep::Changed {
                     path,
                     line,
+                    declaration,
                     withdrawn,
                 };
             },
@@ -528,8 +535,9 @@ enum Laid
 {
     /// The formatted text is the source's own.
     Unchanged(Vec<Kept>),
-    /// The formatted text differs from the source's, first at this line.
-    Changed(Vec<Kept>, NonZeroUsize),
+    /// The formatted text differs from the source's, first at this line, in
+    /// the declaration of this name.
+    Changed(Vec<Kept>, (NonZeroUsize, Option<String>)),
 }
 
 /// Read the source at `path` through `reader`, format it under `grammar` at
@@ -594,27 +602,92 @@ fn lay_out<'formatting>(
             .write(path, SourceText::from(laid))
             .map_err(FormatFault::Unwritable)?;
     }
-    Ok(Laid::Changed(withdrawn, first_change(text.as_ref(), laid)))
+    let (line, start) = first_change(text.as_ref(), laid);
+    let declaration = declaration_at(grammar, parsed.tree(), start);
+    Ok(Laid::Changed(withdrawn, (line, declaration)))
 }
 
-/// The first line, counted from one, at which `laid` differs from `source`.
+/// The first line, counted from one, at which `laid` differs from `source`,
+/// and the offset in `source` where that line starts.
 ///
 /// # Specification
 /// trivial.
 fn first_change(
     source: &str,
     laid: &str,
-) -> NonZeroUsize
+) -> (NonZeroUsize, usize)
 {
     let mut theirs = source.split('\n');
     let mut ours = laid.split('\n');
-    let mut line = NonZeroUsize::MIN;
+    let (mut line, mut start) = (NonZeroUsize::MIN, 0_usize);
     loop {
         match (theirs.next(), ours.next()) {
-            (Some(left), Some(right)) if left == right => line = line.saturating_add(1),
-            _ => return line,
+            (Some(left), Some(right)) if left == right => {
+                line = line.saturating_add(1);
+                start = start.saturating_add(left.len()).saturating_add(1);
+            },
+            _ => return (line, start),
         }
     }
+}
+
+/// The name of the declaration of `tree` that holds or follows the offset
+/// `at`: the first name that the top-level forms from there write outside
+/// their attribute blocks and their documentation. An attribute block on a
+/// line of its own is a form of its own, so the walk goes on into the form
+/// after it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the nodes still to visit and the name
+fn declaration_at(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+    at: usize,
+) -> Option<String>
+{
+    let mut pending: Vec<NodeIndex> = tree
+        .children(tree.root())
+        .filter(|&form| {
+            tree.node(form).is_some_and(|node| {
+                bool::from(node.label().significance()) && usize::from(node.span().end()) > at
+            })
+        })
+        .collect();
+    pending.reverse();
+    // How deep the walk stands in attribute blocks' brackets.
+    let mut attributed = 0_usize;
+    while let Some(here) = pending.pop() {
+        let label = tree.node(here)?.label();
+        match label {
+            NodeLabel::Doc | NodeLabel::Space => {},
+            NodeLabel::Tile(mold) => match (grammar.mold(mold).map(|def| def.label), attributed) {
+                (Ok("@[" | "@!["), _) | (Ok("["), 1 ..) => {
+                    attributed = attributed.saturating_add(1);
+                },
+                (Ok("]"), 1 ..) => attributed = attributed.saturating_sub(1),
+                (Ok("identifier" | "type_identifier"), 0) => {
+                    return tree
+                        .fragment(here)
+                        .map(|name| String::from(<&str>::from(name)));
+                },
+                _ => {},
+            },
+            NodeLabel::Wald
+            | NodeLabel::Meld(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. } => {
+                let from = pending.len();
+                pending.extend(tree.children(here));
+                if let Some(pushed) = pending.get_mut(from ..) {
+                    pushed.reverse();
+                }
+            },
+        }
+    }
+    None
 }
 
 #[cfg(test)]

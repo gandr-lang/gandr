@@ -1610,7 +1610,10 @@ fn fmt_rewrites_what_check_reports()
 
     let checked = ran(gandr(&[fmt, check, &loose, &tidy]));
     assert_eq!(code(&checked), Code(1_i32), "{}", stderr(&checked));
-    assert_eq!(stdout(&checked), format!("{}:2\n", loose.display()));
+    assert_eq!(
+        stdout(&checked),
+        format!("{}:2: `answer`\n", loose.display())
+    );
     let serial = ran(gandr(&[fmt, check, Path::new("--jobs=1"), &loose, &tidy]));
     assert_eq!(
         (code(&serial), serial.stdout.as_slice()),
@@ -1679,6 +1682,35 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
         "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer = match t {\n  \
          | +{.1 = x} => x\n  | _ => 0\n};\n",
         "both declarations are sugared"
+    );
+}
+
+/// #7873: the check at the sugared form names each source in the explicit
+/// form and the declaration that the sugared form writes otherwise; a source
+/// that declares `form(explicit)` keeps its own form and passes.
+#[test]
+fn fmt_check_names_a_declaration_out_of_the_sugared_form_7873()
+{
+    let scratch = Scratch::new(Path::new("fmt-sugared-check"));
+    let explicit = scratch.file(
+        Path::new("explicit.gandr"),
+        Text::from("def one = 1;\n\ndef pair : *{Integer, String};\n"),
+    );
+    let declared = scratch.file(
+        Path::new("declared.gandr"),
+        Text::from("@[form(explicit)]\ndef pair : *{Integer, String};\n"),
+    );
+    let (fmt, check, form) = (
+        Path::new("fmt"),
+        Path::new("--check"),
+        Path::new("--form=sugared"),
+    );
+    let checked = ran(gandr(&[fmt, check, form, &explicit, &declared]));
+    assert_eq!(code(&checked), Code(1_i32), "{}", stderr(&checked));
+    assert_eq!(
+        stdout(&checked),
+        format!("{}:3: `pair`\n", explicit.display()),
+        "the first changed line names the declaration that holds it"
     );
 }
 

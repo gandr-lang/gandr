@@ -103,7 +103,7 @@ digest: 64155da969400767
 verdict: readmitted
 $ printf 'def  answer =  42 ;\n' > answer.gandr
 $ gandr fmt --check answer.gandr
-answer.gandr:1
+answer.gandr:1: `answer`
 $ echo $?
 1
 $ gandr fmt answer.gandr
