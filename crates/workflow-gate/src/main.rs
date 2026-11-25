@@ -112,6 +112,9 @@ enum Top
         /// The head of the change; the working tree without it.
         #[arg(long)]
         head: Option<Commit>,
+        /// The touched crates alone, with no dependent.
+        #[arg(long)]
+        touched: bool,
     },
     /// Run a command one time for the scope of a change, with the package
     /// arguments of Cargo after it: `--workspace`, or `-p` and each name.
@@ -123,6 +126,9 @@ enum Top
         /// The head of the change; the working tree without it.
         #[arg(long)]
         head: Option<Commit>,
+        /// The touched crates alone, with no dependent.
+        #[arg(long)]
+        touched: bool,
         /// The command, after `--`.
         #[arg(last = true, required = true)]
         command: Vec<String>,
@@ -498,18 +504,37 @@ fn main() -> ExitCode
             &parts,
         )
         .map(printed),
-        Top::Scope { base, head } => {
-            gandr_workflow_gate::scope(&ScopeRequest { base, head }, &parts).map(|scope| {
-                causes(&scope);
-                (format!("{scope}\n"), End::Held)
-            })
-        },
+        Top::Scope {
+            base,
+            head,
+            touched,
+        } => gandr_workflow_gate::scope(
+            &ScopeRequest {
+                base,
+                head,
+                touched,
+            },
+            &parts,
+        )
+        .map(|scope| {
+            causes(&scope);
+            (format!("{scope}\n"), End::Held)
+        }),
         Top::Scoped {
             base,
             head,
+            touched,
             command,
         } => {
-            let code = scoped(&ScopeRequest { base, head }, &command, &parts);
+            let code = scoped(
+                &ScopeRequest {
+                    base,
+                    head,
+                    touched,
+                },
+                &command,
+                &parts,
+            );
             if cli.times {
                 let _written = writeln!(
                     std::io::stderr().lock(),

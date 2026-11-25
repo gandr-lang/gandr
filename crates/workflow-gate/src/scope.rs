@@ -173,6 +173,8 @@ pub struct ScopeRequest
     /// The head of the change. With none, the head is the working tree, with
     /// each untracked path that git does not ignore.
     pub head: Option<Commit>,
+    /// The touched crates alone, with no dependent.
+    pub touched: bool,
 }
 
 /// The scope of the paths `changed` over the crates `members`, by `table`.
@@ -182,9 +184,10 @@ pub struct ScopeRequest
 /// - ensures: the whole workspace when a path is a workspace input, when no
 ///   crate and no row holds a path, when a reader of the table is no crate, or
 ///   when the set holds each crate. Else no crate when the set is empty. Else
-///   each crate that holds a path, each reader for a path of the corpus, and
-///   each crate that depends on one of them, until the set does not grow. The
-///   deepest crate directory decides a path in nested crates.
+///   each crate that holds a path and each reader for a path of the corpus.
+///   Unless `only_touched` holds, also each crate that depends on one of them,
+///   until the set does not grow. The deepest crate directory decides a path in
+///   nested crates.
 /// - provides: the rule of `gate scope`, apart from the programs.
 /// - fails: never.
 /// - panics: none.
@@ -196,13 +199,16 @@ pub struct ScopeRequest
 /// # Adequacy
 /// - hypothesis: L2 — one case for each rule of the scope on a workspace of
 ///   four crates, and each crate of the trunk as a change; a closure that stops
-///   at the touched crate, or a lost row, changes the asserted scope.
+///   at the touched crate, a closure under `only_touched`, or a lost row,
+///   changes the asserted scope.
 /// - witness: `scope::tests::each_row_of_the_rule_gives_its_scope`
 /// - witness: `scope::tests::each_crate_of_the_trunk_brings_each_crate_that_depends_on_it`
+/// - witness: `scope::tests::the_touched_scope_of_the_kernel_is_the_kernel_alone`
 fn rule(
     changed: &[&str],
     members: &[Member],
     table: &Table,
+    only_touched: bool,
 ) -> Scoped
 {
     let names: BTreeSet<&str> = members.iter().map(Member::name).collect();
@@ -253,21 +259,23 @@ fn rule(
     if touched.is_empty() {
         return Scoped::None;
     }
-    let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for member in members {
-        for dep in member.deps() {
-            dependents
-                .entry(dep.as_str())
-                .or_default()
-                .push(member.name());
+    let mut set = touched;
+    if !only_touched {
+        let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for member in members {
+            for dep in member.deps() {
+                dependents
+                    .entry(dep.as_str())
+                    .or_default()
+                    .push(member.name());
+            }
         }
-    }
-    let mut set = touched.clone();
-    let mut work: Vec<&str> = touched.into_iter().collect();
-    while let Some(name) = work.pop() {
-        for &dependent in dependents.get(name).into_iter().flatten() {
-            if set.insert(dependent) {
-                work.push(dependent);
+        let mut work: Vec<&str> = set.iter().copied().collect();
+        while let Some(name) = work.pop() {
+            for &dependent in dependents.get(name).into_iter().flatten() {
+                if set.insert(dependent) {
+                    work.push(dependent);
+                }
             }
         }
     }
@@ -389,7 +397,7 @@ pub fn scope(
         .chain(untracked.iter().flat_map(|text| text.lines()))
         .filter(|path| !path.is_empty())
         .collect();
-    Ok(rule(&paths, workspace.members(), &table))
+    Ok(rule(&paths, workspace.members(), &table, request.touched))
 }
 
 #[cfg(test)]
@@ -434,7 +442,7 @@ mod tests
     fn each_row_of_the_rule_gives_its_scope()
     {
         let (workspace, table) = four();
-        let scope = |changed: &[&str]| rule(changed, workspace.members(), &table);
+        let scope = |changed: &[&str]| rule(changed, workspace.members(), &table, false);
         assert_eq!(
             scope(&["crates/b/src/lib.rs"]),
             packages(&["b", "c"]),
@@ -494,7 +502,7 @@ mod tests
         let (workspace, mut table) = four();
         table.readers = vec!["gone".to_owned()];
         assert_eq!(
-            rule(&["corpus/a.gandr"], workspace.members(), &table),
+            rule(&["corpus/a.gandr"], workspace.members(), &table, false),
             Scoped::Workspace(vec![
                 "gone: a reader of the corpus that is no package".to_owned()
             ]),
@@ -575,7 +583,7 @@ mod tests
         let (root, workspace) = trunk();
         let table = table().expect("the table of the crate reads");
         let members = workspace.members();
-        let Scoped::Packages(scope) = rule(&["corpus/a.gandr"], members, &table)
+        let Scoped::Packages(scope) = rule(&["corpus/a.gandr"], members, &table, false)
         else {
             panic!("a change of the corpus gives a set of crates");
         };
@@ -596,6 +604,51 @@ mod tests
     }
 
     #[test]
+    fn the_touched_scope_of_the_kernel_is_the_kernel_alone()
+    {
+        let (small, rows) = four();
+        let touched = |changed: &[&str]| rule(changed, small.members(), &rows, true);
+        assert_eq!(touched(&["crates/b/src/lib.rs"]), packages(&["b"]));
+        assert_eq!(touched(&["corpus/model/a.gandr"]), packages(&["a"]));
+        assert_eq!(
+            touched(&["Cargo.lock"]),
+            Scoped::Workspace(vec!["Cargo.lock: a workspace input".to_owned()])
+        );
+        let (_root, workspace) = trunk();
+        let table = table().expect("the table of the crate reads");
+        let members = workspace.members();
+        let kernel = members
+            .iter()
+            .find(|member| member.dir() == "crates/kernel-term")
+            .expect("the trunk has the crate kernel-term");
+        let path = "crates/kernel-term/src/lib.rs";
+        assert_eq!(
+            rule(&[path], members, &table, true),
+            packages(&[kernel.name()]),
+            "the touched scope has no dependent"
+        );
+        let Scoped::Packages(crate_scope) = rule(&[path], members, &table, false)
+        else {
+            panic!("the crate scope of kernel-term is a set of packages");
+        };
+        let dependents: BTreeSet<&str> = members
+            .iter()
+            .filter(|member| member.deps().contains(kernel.name()))
+            .map(Member::name)
+            .collect();
+        assert!(
+            !dependents.is_empty(),
+            "kernel-term has a dependent in the trunk"
+        );
+        for dependent in dependents {
+            assert!(
+                crate_scope.contains(dependent),
+                "the crate scope has the dependent {dependent}, which the touched scope leaves out"
+            );
+        }
+    }
+
+    #[test]
     fn each_crate_of_the_trunk_brings_each_crate_that_depends_on_it()
     {
         let (_root, workspace) = trunk();
@@ -610,7 +663,7 @@ mod tests
         }
         for member in members {
             let path = format!("{}/src/lib.rs", member.dir());
-            let scope = rule(&[path.as_str()], members, &table);
+            let scope = rule(&[path.as_str()], members, &table, false);
             let Scoped::Packages(ref set) = scope
             else {
                 assert!(
