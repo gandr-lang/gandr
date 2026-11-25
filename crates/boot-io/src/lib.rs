@@ -326,19 +326,28 @@ pub unsafe fn read(
 /// # Specification
 /// - ensures: the count of the first bytes of `bytes` that the kernel took, at
 ///   most its length. A count below the length is a short write: the kernel
-///   took those bytes alone, and the caller gives the rest in a next call. Or
-///   the kernel's error number under the name `write`, with no byte promised.
+///   took those bytes alone, and the caller gives the rest in a next call. An
+///   empty range gives the count 0 and gives no byte, and the kernel still
+///   checks the descriptor. Or the kernel's error number under the name
+///   `write`, with no byte promised. A signal that the process handles while
+///   the write waits, before the kernel takes a byte, refuses the write with
+///   `EINTR`. The crate does not repeat the call.
 /// - panics: none.
 /// - executable: none — the kernel takes the bytes.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the bytes of a write equal the bytes that `std` reads at
 ///   the other end of a socket; a socket that cannot take each byte at once
-///   takes the first bytes and gives their count; a closed descriptor is
-///   refused with `EBADF`; a socket with the descriptor 0 takes a write.
+///   takes the first bytes and gives their count; an empty range gives 0 and no
+///   byte; a closed descriptor is refused with `EBADF`, also for an empty
+///   range; a signal during a write that waits on a full socket gives `EINTR`,
+///   and the next write takes the range; a socket with the descriptor 0 takes a
+///   write.
 /// - witness: `tests::write::a_write_gives_each_byte_to_the_other_end`
 /// - witness: `tests::write::a_full_socket_takes_a_short_write_of_the_first_bytes`
+/// - witness: `tests::write::a_write_of_an_empty_range_gives_zero_and_gives_no_byte`
 /// - witness: `tests::write::a_write_to_a_closed_descriptor_is_refused_with_ebadf`
+/// - witness: `tests::interrupt::a_signal_refuses_a_write_that_waits_with_eintr`
 /// - witness: `descriptor::zero::with_descriptor_zero_closed_a_file_takes_it_and_reads_whole_and_a_socket_takes_a_write`
 ///
 /// # Errors
