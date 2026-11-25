@@ -9,6 +9,7 @@ pub mod conditional;
 pub mod description;
 pub mod entry;
 mod exits;
+pub mod export;
 pub mod functor;
 pub mod generic;
 mod identity;
@@ -1117,6 +1118,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         CapabilityRef::new(self.host_ref()).mint_foreign(sink);
         self.mint(sink)?;
         self.mint_natives(sink);
+        self.refuse_exports(sink);
         self.mint_staged(sink);
         Native::new(self.host()).mint_joints(sink);
         self.mint_abstracts(sink);

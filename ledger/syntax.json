@@ -191,7 +191,8 @@
     {"exemplar":"../corpus/ledger/attributes/thir.gandr","name":"thir","payload":{"schema":"texts"},"reads":"a text or a tuple of texts","stands_on":"a declaration"},
     {"exemplar":"../corpus/ledger/attributes/item.gandr","name":"item","payload":{"schema":"text"},"reads":"a text payload","stands_on":"a constructor"},
     {"exemplar":"../corpus/ledger/attributes/inert.gandr","name":"inert","payload":{"schema":"marker"},"reads":"no payload","stands_on":"a declaration or an operation"},
-    {"exemplar":"../corpus/ledger/attributes/frobenius.gandr","name":"frobenius","payload":{"schema":"marker"},"reads":"no payload","stands_on":"a sort"}
+    {"exemplar":"../corpus/ledger/attributes/frobenius.gandr","name":"frobenius","payload":{"schema":"marker"},"reads":"no payload","stands_on":"a sort"},
+    {"exemplar":"../corpus/ledger/attributes/export.gandr","name":"export","payload":{"schema":"marker"},"reads":"no payload","stands_on":"a declaration"}
   ],
   "menus": [
     {"label":"identifier","molds":448,"opening":3,"rules":59},

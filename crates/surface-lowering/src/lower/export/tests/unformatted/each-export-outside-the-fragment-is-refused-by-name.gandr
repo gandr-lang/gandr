@@ -1,0 +1,11 @@
+@[export]
+def whole(a : Integer) -> u8 = 1u8;
+
+@[export]
+def unstated = 1u8;
+
+@[export]
+def partial() -> [Partial] u8 = 1u8;
+
+@[export]
+def open[r : Row](a : u8) -> [r] u8 = a;

@@ -204,6 +204,17 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             format!("use a member that `{module}` declares, or add `{member}` to `{module}`")
         },
         LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Export,
+            ..
+        } => String::from(
+            "state the type of the definition, with fixed-width integers as its parameters and \
+             its result",
+        ),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::ExportRow,
+            ..
+        } => String::from("handle each effect in the body, so the definition states no row"),
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::ForeignClaim,
             ..
         } => String::from("put the descent claim on its recursive function or a mutual member"),

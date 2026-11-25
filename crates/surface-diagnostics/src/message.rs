@@ -476,6 +476,14 @@ fn lowered(
                     "a match in layout form writes `where` after its scrutinee, `match e \
                      where`, and its arms on the lines after it",
                 ),
+                FragmentBoundary::Export => f.write_str(
+                    "an export states its type, and each of its parameters and its result is a \
+                     fixed-width integer, from `u8` to `u64`, from `i8` to `i64`, `usize` or \
+                     `isize`",
+                ),
+                FragmentBoundary::ExportRow => f.write_str(
+                    "an export performs no effect: its row is closed and names no interface",
+                ),
             }
         },
         LoweringRefusal::BareFeedback { .. } => f.write_str(

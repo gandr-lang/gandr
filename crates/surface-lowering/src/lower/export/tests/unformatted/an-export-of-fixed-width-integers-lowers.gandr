@@ -1,0 +1,7 @@
+@[export]
+def add(a : u64, b : u64) -> u64 = u64.wrapping_add a b;
+
+def hidden(a : u8) -> u8 = a;
+
+@[export]
+def answer() -> u8 = 42u8;

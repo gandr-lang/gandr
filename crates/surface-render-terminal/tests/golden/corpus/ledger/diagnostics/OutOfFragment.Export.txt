@@ -1,0 +1,8 @@
+error[OutOfFragment.Export]: an export states its type, and each of its parameters and its result is a fixed-width integer, from `u8` to `u64`, from `i8` to `i64`, `usize` or `isize`
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Export.gandr:4:3
+  │
+4 │ @[export]
+  │   ━━━━━━ an export outside the fragment of an export
+  │
+  ├ note: `whole` is refused with OutOfFragment.Export, as its expectation states
+  ╰ help: state the type of the definition, with fixed-width integers as its parameters and its result

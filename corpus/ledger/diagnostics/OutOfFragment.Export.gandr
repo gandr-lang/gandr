@@ -1,0 +1,5 @@
+/// `OutOfFragment.Export`: a form out of the fragment: the form is an
+/// `export` mark on a definition whose parameter is no fixed-width integer.
+@[refuses("OutOfFragment.Export")]
+@[export]
+def whole(a : Integer) -> u8 = 1u8;

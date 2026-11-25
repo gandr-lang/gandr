@@ -69,8 +69,8 @@
 //!
 //! # Attributes: a closed registry and a side table
 //!
-//! The registry is closed: `checks`, `explicit_exits`, `inert` and
-//! `frobenius` take no payload, `explicit_runs` none or a text naming its one
+//! The registry is closed: `checks`, `explicit_exits`, `inert`, `frobenius`
+//! and `export` take no payload, `explicit_runs` none or a text naming its one
 //! option, `effects`,
 //! `owes` an integer, `refuses`, `runs`, `normalizes` and `doc` a text,
 //! `distributes` a text or a tuple of texts, read in written order, `respects`
@@ -735,6 +735,10 @@ impl RegisteredAttribute
     /// spiders of a special commutative Frobenius algebra, so a circuit rule
     /// merges and splits its wires.
     pub const FROBENIUS: Self = Self("frobenius");
+    /// `export`: the definition it decorates is an export of its program, with
+    /// a key in the program's export table. Each parameter and the result is a
+    /// fixed-width integer, and the row is empty.
+    pub const EXPORT: Self = Self("export");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -1088,7 +1092,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 24_usize] = [
+const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 25_usize] = [
     (
         "checks",
         AttributeSchema::Marker,
@@ -1209,6 +1213,11 @@ const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 24_usize] = [
         RegisteredAttribute::FROBENIUS.0,
         AttributeSchema::Marker,
         AttributePlaces::SORT,
+    ),
+    (
+        RegisteredAttribute::EXPORT.0,
+        AttributeSchema::Marker,
+        AttributePlaces::DECLARATION,
     ),
 ];
 
@@ -2587,6 +2596,7 @@ mod tests
             ("item", AttributeSchema::Text),
             ("inert", AttributeSchema::Marker),
             ("frobenius", AttributeSchema::Marker),
+            ("export", AttributeSchema::Marker),
         ];
 
         for (spelling, schema) in expected {
@@ -2725,6 +2735,7 @@ mod tests
             ("items", "item"),
             ("inrt", "inert"),
             ("frobenus", "frobenius"),
+            ("exprt", "export"),
         ];
 
         for (written, nearest) in expected {
@@ -2745,9 +2756,9 @@ mod tests
     fn a_distant_spelling_suggests_nothing()
     {
         assert_eq!(
-            AttributeRegistry::suggestion(SurfaceName::from("expect")),
+            AttributeRegistry::suggestion(SurfaceName::from("allow")),
             Maybe::Absent(suggestion::Absent::BeyondBound),
-            "three edits from the nearest entry is past the bound"
+            "a spelling past the bound from each entry suggests nothing"
         );
         assert_eq!(
             AttributeRegistry::suggestion(SurfaceName::from("")),

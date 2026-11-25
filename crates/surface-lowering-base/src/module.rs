@@ -12167,6 +12167,53 @@ pub struct KeyedTables<'source>
     models: Arc<BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>>,
 }
 
+/// One export of a program: a definition with the `export` mark whose type is
+/// in the fragment of an export.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `constant` is the admission position of the definition that
+///   `name` declares, and `key` is the position of the export in the export
+///   table.
+/// - panics: none.
+/// - executable: none — a carrier; [`LoweredModule::exports`] states what it
+///   holds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`LoweredModule::exports`].
+/// - witness: `gandr-surface-lowering::lower::export::tests::an_export_of_fixed_width_integers_lowers`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Export<'source>
+{
+    /// The declared name, which a caller reads as the name of the export.
+    pub name: SurfaceName<'source>,
+    /// The key of the export.
+    pub key: ExportKey,
+    /// The admission position of the definition.
+    pub constant: ConstantIndex,
+}
+
+/// The key of an export: its position in the export table of its program.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ExportKey(usize);
+
+impl From<ExportKey> for usize
+{
+    /// The position that `key` names in the export table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(key: ExportKey) -> Self
+    {
+        key.0
+    }
+}
+
 /// One module, lowered: its declarations, its attributes, its origins, its
 /// imports, and the outermost scope its names were declared in.
 ///
@@ -13190,6 +13237,59 @@ impl<'source> LoweredModule<'source>
                 Resolution::Binder(_) | Resolution::Constructor { .. } | Resolution::Builtin => {
                     None
                 },
+            })
+            .collect()
+    }
+
+    /// The export table: each declaration whose outcome is completed and one
+    /// of whose halves carries an `export` entry, in admission order, each
+    /// with its position in the table as its key.
+    ///
+    /// The lowering refuses the mark of each definition outside the fragment
+    /// of an export, so each export takes and gives fixed-width integers and
+    /// performs no effect.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry for each completed declaration with an `export`
+    ///   entry on its signature or its definition, in the order of
+    ///   [`Self::declarations`]; the key of the `n`-th entry is `n`.
+    /// - provides: the table that a caller outside gandr reads a key from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two exports and an unmarked definition between them
+    ///   separate the order, the keys and the filter.
+    /// - witness: `gandr-surface-lowering::lower::export::tests::an_export_of_fixed_width_integers_lowers`
+    ///
+    /// # Cost
+    /// - allocation: the table, setup
+    #[spec(ensures: |ret| ret.len() <= self.declarations().iter().count() && ret.iter().enumerate().all(|(position, export)| usize::from(export.key) == position))]
+    #[must_use]
+    #[inline]
+    pub fn exports(&self) -> Vec<Export<'source>>
+    {
+        self.declarations()
+            .iter()
+            .filter(|declaration| {
+                matches!(declaration.outcome(), DeclarationOutcome::Completed { .. })
+                    && [declaration.signature(), declaration.definition()]
+                        .into_iter()
+                        .any(|half| match half {
+                            Maybe::Present(key) => self
+                                .attributes
+                                .entries(key)
+                                .iter()
+                                .any(|entry| entry.name() == RegisteredAttribute::EXPORT),
+                            Maybe::Absent(_) => false,
+                        })
+            })
+            .enumerate()
+            .map(|(position, declaration)| Export {
+                name: declaration.name(),
+                key: ExportKey(position),
+                constant: declaration.constant(),
             })
             .collect()
     }

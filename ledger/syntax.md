@@ -5,7 +5,7 @@ Generated from the built-in grammar by `mise run ledger:syntax`; never edited by
 - Grammar fingerprint: `0x8fbf5b8fa4f3d530`
 - Rules: 162 — 161 committed, 1 internal
 - Molds: 3193
-- Attributes: 24
+- Attributes: 25
 
 ## Reading a form
 
@@ -237,7 +237,7 @@ An old spelling that the grammar still parses, so that a stale source reaches th
 | ---- | ------------ | ----------- | ------- | --------------------- |
 | `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
 
-## Attributes — 24 attributes
+## Attributes — 25 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes and the places where it stands, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -267,6 +267,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`item`](../corpus/ledger/attributes/item.gandr) | a text payload | a constructor |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload | a declaration or an operation |
 | [`frobenius`](../corpus/ledger/attributes/frobenius.gandr) | no payload | a sort |
+| [`export`](../corpus/ledger/attributes/export.gandr) | no payload | a declaration |
 
 ## Decisions — 110 of 162 rules decided at every token
 

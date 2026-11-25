@@ -226,9 +226,9 @@ impl fmt::Display for FragmentSort
 /// - requires: the producer identifies the boundary crossed by the source form.
 /// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
 ///   unannotated, not-a-function, non-uniform, foreign-claim, not-in-tail,
-///   joins-block, empty-list, endpoint, non-contractive, held, view, chained
-///   and bare-arms reports remain distinct; an arity report carries the number
-///   of operands offered.
+///   joins-block, empty-list, endpoint, non-contractive, held, view, chained,
+///   bare-arms, export and export-row reports remain distinct; an arity report
+///   carries the number of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -337,6 +337,13 @@ pub enum FragmentBoundary
     /// and a layout offer after its endpoint, `offer c where`, so the eye
     /// finds the arms of each form of a nested one.
     BareArms,
+    /// The form is an `export` mark on a definition whose type is outside the
+    /// fragment of an export: a parameter or the result is no fixed-width
+    /// integer, or the definition states no type.
+    Export,
+    /// The form is an `export` mark on a definition whose row is not empty:
+    /// it is open through a tail, or it names an interface.
+    ExportRow,
 }
 
 /// Why a source does not export a declaration an importer names.
@@ -446,6 +453,15 @@ impl fmt::Display for FragmentBoundary
                 "puts its arms after its head with no `where` between them: a layout match is \
                  `match e where`, and a layout offer is `offer c where`, its arms on the lines \
                  after it",
+            ),
+            Self::Export => f.write_str(
+                "marks an export whose type is outside the fragment of an export: the \
+                 definition states its type, and each parameter and the result is a \
+                 fixed-width integer",
+            ),
+            Self::ExportRow => f.write_str(
+                "marks an export whose row is not empty: an export performs no effect, so its \
+                 row is closed and names no interface",
             ),
         }
     }
@@ -3678,6 +3694,8 @@ mod tests
             &FragmentBoundary::Unbound,
             &FragmentBoundary::ChainedArrow,
             &FragmentBoundary::BareArms,
+            &FragmentBoundary::Export,
+            &FragmentBoundary::ExportRow,
         ]));
         let ill_formed = |kind: gandr_theory_levitation::WfKind,
                           second: Maybe<SurfaceName<'static>, _>| {

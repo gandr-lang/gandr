@@ -231,6 +231,8 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FragmentBoundary::Unbound => "an end no `let` binds to a name",
             FragmentBoundary::ChainedArrow => "an arrow whose output is an arrow",
             FragmentBoundary::BareArms => "arms with no `where` before them",
+            FragmentBoundary::Export => "an export outside the fragment of an export",
+            FragmentBoundary::ExportRow => "an export whose row is not empty",
         },
         LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
         LoweringRefusal::IllFormedDescription {
@@ -830,6 +832,8 @@ mod tests
                 FragmentBoundary::Unbound => "an end no `let` binds to a name",
                 FragmentBoundary::ChainedArrow => "an arrow whose output is an arrow",
                 FragmentBoundary::BareArms => "arms with no `where` before them",
+                FragmentBoundary::Export => "an export outside the fragment of an export",
+                FragmentBoundary::ExportRow => "an export whose row is not empty",
             },
             LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
             LoweringRefusal::IllFormedDescription {
