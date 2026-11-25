@@ -281,25 +281,26 @@ struct Group<'source>
 ///   order, whitespace included, and `ending` spells `options`' physical line
 ///   ending.
 /// - ensures: the text spells every token and comment of `leaves` once, in
-///   order. A bracketed group is laid on one line, padded as its bracket
-///   decides, when that fits the page and the source did not break the line
-///   after its opening bracket and no line comment stands directly in it;
-///   otherwise each of its items — the elements up to and including a `,` or
-///   `;`, with a comment on the same line — stands on its own line indented by
-///   two, and a blank line before an item is kept. A layout block, which the
-///   column rule ends, always stands so under the token that opens it, its
-///   empty separators and close writing nothing. A juxtaposed expression spine
-///   that ends its run stands on one line when that fits. Otherwise its head
-///   stands first and each operand on a line of its own, two columns deeper. A
-///   spine the source broke before an operand stays so (#5202). A type's spine
-///   never breaks between its operands (#5326). In a declaration's header, a
-///   bracket that holds a spine and no separator keeps the spine on its line.
-///   It stands on one line, or it breaks as one item when that fits better: its
-///   content on the next line two columns deeper, its closer on a line of its
-///   own (#7923). Two elements on one line are as far apart as [`space::join`]
-///   decides, except inside a string the grammar reads as tiles and beside a
-///   token a rewrite wrote, where the source's spacing stands as one space or
-///   none.
+///   order, but a statement's `;` that ends a line of a broken block. A
+///   bracketed group is laid on one line, padded as its bracket decides, when
+///   that fits the page and the source did not break the line after its opening
+///   bracket and no line comment and no empty separator of the layout pass
+///   stands directly in it; otherwise each of its items — the elements up to
+///   and including a `,` or `;`, with a comment on the same line — stands on
+///   its own line indented by two, and a blank line before an item is kept. A
+///   layout block, which the column rule ends, always stands so under the token
+///   that opens it, its empty separators and close writing nothing. A
+///   juxtaposed expression spine that ends its run stands on one line when that
+///   fits. Otherwise its head stands first and each operand on a line of its
+///   own, two columns deeper. A spine the source broke before an operand stays
+///   so (#5202). A type's spine never breaks between its operands (#5326). In a
+///   declaration's header, a bracket that holds a spine and no separator keeps
+///   the spine on its line. It stands on one line, or it breaks as one item
+///   when that fits better: its content on the next line two columns deeper,
+///   its closer on a line of its own (#7923). Two elements on one line are as
+///   far apart as [`space::join`] decides, except inside a string the grammar
+///   reads as tiles and beside a token a rewrite wrote, where the source's
+///   spacing stands as one space or none.
 /// - provides: the layout of each top-level form [`crate::format`] joins.
 /// - fails: [`FormatError::Unbalanced`] when a bracket or a layout close ends a
 ///   group it does not open or a group is left open; a layout ceiling as
@@ -1010,11 +1011,12 @@ fn group_doc(
             ends,
         });
     };
+    // A separator the layout pass placed writes nothing, so the items it
+    // ends stand one a line, where the column rule reads it again.
     let forced = first.gap.breaks() == Breaks::Yes
-        || group
-            .placed
-            .iter()
-            .any(|placed| placed.element.kind() == Kind::LineComment);
+        || group.placed.iter().any(|placed| {
+            placed.element.kind() == Kind::LineComment || matches!(placed.element, Element::Break)
+        });
     let listed = listed(group);
     let columns = if <&str>::from(open_text) == "{" {
         Columns::Read

@@ -295,6 +295,21 @@ def asked(n : Nat) -> Nat = return n;
     );
 }
 
+/// #7734: a block whose statements end at their line ends, with no `;`,
+/// stays one statement a line when a rewrite moves it after the `=`: laid on
+/// one line, its two statements would run together.
+#[test]
+fn a_respelled_block_keeps_the_line_ends_of_its_statements_7734()
+{
+    let grammar = grammar();
+    let source =
+        "def later : () -> Integer;\ndef later = thunk {\n  let one = 1\n  return one + 1\n};\n";
+    assert_eq!(
+        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        "def later() -> Integer = {\n  let one = 1\n  return one + 1\n};\n"
+    );
+}
+
 /// #2325: a result at a world or a region keeps its returner, `-> -F (A at
 /// r)`, as the printer writes it: the lowering inserts no returner over a
 /// value at a region, so leaving it out would lower to other core and the
