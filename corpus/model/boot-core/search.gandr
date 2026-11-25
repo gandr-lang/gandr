@@ -7,14 +7,13 @@
 //! `load8`, and it reads no byte outside its ranges. An empty range can have
 //! any address, and no search reads it.
 //!
-//! The length of a range counts its bytes one step at a time, so each search
-//! descends on a length. A loop that counts down a word holds its counter
-//! across a load, which a handler may resume other than once.
+//! Each search descends on the length of its range, as `ranges.gandr` states.
 //!
 //! The `runs` items run the cases of `crates/boot-core/tests/search.rs` under
 //! `Extent`. Each range ends at the end of the extent, so a read past it ends
 //! the run with `Outside`, as a read past a page with no access faults.
 //!
+//! - see: `ranges.gandr` — `Range`, `Length` and `Found`
 //! - see: `../../../library/std/src/ptr.gandr` — `Ptr.Eff` and `Extent`
 //! - see: `../../../crates/boot-core/src/search.rs` — the Rust functions
 
@@ -22,25 +21,8 @@
 import std.list (List);
 // The interface of memory, and its model in the source.
 import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent);
-
-/// The length of a range: one step for each byte.
-pub data Length : Type where
-  /// No byte.
-  | Zero : Length
-  /// One byte, then the rest.
-  | Next : (rest : Length) --> Length
-
-/// A range of bytes: the address of its first byte, and its length.
-pub data Range : Type where
-  /// The `length` bytes from `start` on.
-  | Range : (start : u64, length : Length) --> Range
-
-/// The answer of a search, as `Found` of `boot-core`.
-pub data Found : Type where
-  /// The first match is at `position`.
-  | At : (position : u64) --> Found
-  /// No position matches.
-  | Absent : Found
+// The ranges, the answer of a search, and the lists of bytes of a run.
+import "./ranges.gandr";
 
 /// `true` when the byte `left` is the byte `right`.
 def same(left : u8, right : u8) -> Bool = u8.to_integer left == u8.to_integer right;
@@ -136,24 +118,6 @@ data Outcome : Type where
   | Faulted : (member : String, address : u64) --> Outcome
   /// The run gives no word.
   | Silent : Outcome
-
-/// The length of `bytes`.
-def rec counted(bytes : List u8) -> Length =
-  match bytes where
-    | #[] => Zero
-    | #[b, ..rest] => Next (counted[<] rest)
-
-/// The count of the bytes of `bytes`.
-def rec size(bytes : List u8) -> u64 =
-  match bytes where
-    | #[] => 0u64
-    | #[b, ..rest] => u64.wrapping_add (size[<] rest) 1u64
-
-/// The bytes of `front`, then the bytes of `back`.
-def rec joined(back : List u8, front : List u8) -> List u8 =
-  match front where
-    | #[] => back
-    | #[b, ..rest] => cons b (joined[<] back rest)
 
 /// The word that a run gives for `found`: its position, or the word with each
 /// bit set for `Absent`.
