@@ -468,6 +468,10 @@ fn lowered(
                     "arrows do not chain: write `(A, B) -> C` for one function of two inputs, or \
                      `A -> (B -> C)` for a function whose output is a function",
                 ),
+                FragmentBoundary::BareArms if form == FormName::OFFER => f.write_str(
+                    "an offer in layout form writes `where` after its endpoint, `offer c \
+                     where`, and its arms on the lines after it",
+                ),
                 FragmentBoundary::BareArms => f.write_str(
                     "a match in layout form writes `where` after its scrutinee, `match e \
                      where`, and its arms on the lines after it",

@@ -331,10 +331,11 @@ pub enum FragmentBoundary
     /// one box of two inputs, `(A, B) -> C`, or a box whose output is a box,
     /// `A -> (B -> C)`.
     ChainedArrow,
-    /// The form is a match in layout form whose arms follow its scrutinee
-    /// with no `where`: `match e` ends its line and its arms come after. A
-    /// layout match writes `where` after its scrutinee, `match e where`, so
-    /// the eye finds the arms of each match of a nested one.
+    /// The form is a match or an offer in layout form whose arms follow its
+    /// head with no `where`: `match e` ends its line and its arms come after.
+    /// A layout match writes `where` after its scrutinee, `match e where`,
+    /// and a layout offer after its endpoint, `offer c where`, so the eye
+    /// finds the arms of each form of a nested one.
     BareArms,
 }
 
@@ -442,8 +443,9 @@ impl fmt::Display for FragmentBoundary
                  box whose output is a box is `A -> (B -> C)`",
             ),
             Self::BareArms => f.write_str(
-                "puts its arms after its scrutinee with no `where` between them: a layout match \
-                 is `match e where`, its arms on the lines after it",
+                "puts its arms after its head with no `where` between them: a layout match is \
+                 `match e where`, and a layout offer is `offer c where`, its arms on the lines \
+                 after it",
             ),
         }
     }

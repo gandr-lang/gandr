@@ -1317,6 +1317,21 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             })
         }
         else if keyword == TileName::OFFER {
+            // A layout offer writes `where` after its endpoint, and the layout
+            // pass reads that `where` as the arms' `{`. It opens the arms of a
+            // bare head too, with an open of no width, so the parse stays
+            // whole and this reading refuses the bare head by name.
+            if let Maybe::Present(open) = cursor.at(TileName::BRACE_OPEN)
+                && open.span.start() == open.span.end()
+            {
+                return Err(LoweringRefusal::OutOfFragment {
+                    span: ByteSpan::new(operand.span.end(), operand.span.end())
+                        .unwrap_or(operand.span),
+                    form: FormName::OFFER,
+                    sort: site.reading.sort(),
+                    boundary: FragmentBoundary::BareArms,
+                });
+            }
             let subject = self.keyword_one(site, operand)?;
             let endpoint = self.endpoint(frame, subject)?;
             let (offered, labels) = self.offer(site, cursor, frame, endpoint)?;

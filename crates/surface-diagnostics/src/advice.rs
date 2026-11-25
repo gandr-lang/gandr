@@ -577,6 +577,11 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => String::from("remove the match result annotation"),
         LoweringRefusal::OutOfFragment {
+            form,
+            boundary: FragmentBoundary::BareArms,
+            ..
+        } if form == FormName::OFFER => String::from("write `where` after the offer's endpoint"),
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::BareArms,
             ..
         } => String::from("write `where` after the match's scrutinee"),
