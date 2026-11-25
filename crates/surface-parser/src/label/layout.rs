@@ -37,8 +37,8 @@
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
 //! | an explicit `{` after a declaration's `where` | a declaration body | `;`, and one before the `}` |
-//! | an explicit `{` after `rec` | its declarations, as the source's | `;` after a `def` only, and one before the `}` |
-//! | the source | its declarations | `;` after a `def` only, none at the end |
+//! | an explicit `{` after `rec` | its declarations, as the source's | `;` after a declaration that a keyword begins, and one before the `}` |
+//! | the source | its declarations | `;` after a declaration that a keyword begins, none at the end |
 //!
 //! A `match` head that ends its line with no `where` and no `{` opens its arm
 //! list too, with an open of no width, so the parse stays whole: the lowering
@@ -76,10 +76,14 @@
 //! stands right after `=` closes a block expression, and it ends no item, so
 //! `def f() -> T = { … }` takes its `;` as `def f() -> T = e` does. A
 //! declaration body ends only an item a word begins that holds more than that
-//! word, so a stray token stays in its own item. The top level ends only a
-//! `def`, the one top-level form a layout body writes without its `;`, and the
-//! end of the source ends nothing, so a source cut short stays open where it
-//! stops.
+//! word, so a stray token stays in its own item. The top level ends an item
+//! that a reserved word begins and that holds more than that word: a `def`,
+//! an `import`, a `type`. So a word at column zero ends the declaration before
+//! it, and an `import` takes no `;`. A form at the top level that no reserved
+//! word begins is a stray, and the top level ends no stray, so the lowering
+//! refuses the stray alone. A `pub` alone on its line marks the declaration
+//! after it, as an attribute does, and takes no separator. The end of the
+//! source ends nothing, so a source cut short stays open where it stops.
 //! No separator is written before a closer or a line-leading `|`, or after an
 //! attribute.
 //!
@@ -95,6 +99,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_grammar::RESERVED_WORDS;
 
 use super::Bracket;
 use super::Lexeme;
@@ -112,7 +117,7 @@ enum Sep
     /// Declarations in a body: `;` after each, the last one included.
     Decl,
     /// The declarations of the source or of a `rec` block: `;` after a
-    /// `def`.
+    /// declaration that a keyword begins.
     Top,
     /// Arms: nothing, as a line-leading `|` separates arms.
     Arms,
@@ -162,8 +167,10 @@ enum Lead
     Other,
     /// A line-leading `|`: a constructor, a clause or an arm.
     Bar,
-    /// A word, as a declaration's keyword is.
+    /// A word, as a member's keyword is.
     Word,
+    /// A reserved word at the top level, as a declaration's keyword is.
+    Keyword,
 }
 
 /// What the current item of a block has read.
@@ -182,21 +189,31 @@ struct Head
 
 impl Head
 {
-    /// The head of an item whose first token is of `lexeme`.
+    /// The head of an item whose first token is of `lexeme` and spelled
+    /// `spelled`, in a block whose items `sep` ends.
     ///
     /// # Specification
     /// trivial.
-    fn begun(lexeme: Lexeme) -> Self
+    fn begun(
+        lexeme: Lexeme,
+        spelled: &[u8],
+        sep: Sep,
+    ) -> Self
     {
         Self {
             lead: if lexeme == Lexeme::ArmBar {
                 Lead::Bar
             }
-            else if lexeme == Lexeme::LowerWord {
-                Lead::Word
+            else if lexeme != Lexeme::LowerWord {
+                Lead::Other
+            }
+            else if sep == Sep::Top
+                && RESERVED_WORDS.iter().any(|word| word.as_bytes() == spelled)
+            {
+                Lead::Keyword
             }
             else {
-                Lead::Other
+                Lead::Word
             },
             ..Self::default()
         }
@@ -451,7 +468,7 @@ impl Plan<'_>
         let wanted = match frame.sep {
             Sep::Semi => true,
             Sep::Decl => item.lead == Lead::Word && item.more,
-            Sep::Top => item.defined,
+            Sep::Top => item.defined || (item.lead == Lead::Keyword && item.more),
             Sep::Arms => false,
         };
         Unended(wanted && item.lead != Lead::Bar && !ended)
@@ -527,6 +544,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
 /// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
 /// - witness: `label::layout::tests::a_statement_s_line_final_equals_opens_a_block_after_it`
+/// - witness: `label::layout::tests::a_word_at_column_zero_ends_the_declaration_before_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
 #[expect(clippy::too_many_lines, reason = "one column-stack state machine")]
 pub(super) fn lay_out(
@@ -782,7 +800,7 @@ pub(super) fn lay_out(
         }
         if let Some(frame) = frames.last_mut() {
             if begins || restart {
-                frame.head = Head::begun(token.lexeme);
+                frame.head = Head::begun(token.lexeme, spelled, frame.sep);
                 frame.items = frame.items.saturating_add(1);
             }
             else {
@@ -1691,14 +1709,14 @@ mod tests
             marked("theory S where {\n  sort A : Type sort B : Type\n}\n"),
             "theory S where {\n  sort A : Type sort B : Type⟪;⟫\n}\n"
         );
-        // A declaration at column zero ends a `def` before it, whose value
-        // form takes a `;`, and nothing else: an attribute, a lone word and a
-        // form that takes no `;` stay whole.
+        // A line at column zero ends the declaration before it, when a
+        // reserved word begins that declaration, as `def` and `oper` do. An
+        // attribute and a token that is no word end nothing after them.
         assert_eq!(
             marked(
                 "def f(x : A) -> A = x\n@[checks]\ndef g(x : A) -> A = x\noper h : A\n§\nrelease x ;\n"
             ),
-            "def f(x : A) -> A = x⟪;⟫\n@[checks]\ndef g(x : A) -> A = x⟪;⟫\noper h : A\n§\nrelease x ;\n"
+            "def f(x : A) -> A = x⟪;⟫\n@[checks]\ndef g(x : A) -> A = x⟪;⟫\noper h : A⟪;⟫\n§\nrelease x ;\n"
         );
         // A `{` right after `=` opens a block expression, whose `}` ends no
         // item: the `def` takes its `;` at the next item, in a source and in a
@@ -1714,6 +1732,44 @@ mod tests
         // The end of the source ends nothing, so a source cut short stays
         // open where it stops.
         assert_eq!(marked("def f(x : A) -> A = x"), "def f(x : A) -> A = x");
+    }
+
+    #[test]
+    fn a_word_at_column_zero_ends_the_declaration_before_it()
+    {
+        // An `import`, a `type`, a `module` and a `world` end at the next
+        // word at column zero, as a `def` does. The end of the source ends
+        // nothing.
+        assert_eq!(
+            marked(
+                "import std.process\nimport std.io (a,\n  b)\ntype T = A\nmodule N = M\nworld w\ndef f(x : T) -> T = x\n"
+            ),
+            "import std.process⟪;⟫\nimport std.io (a,\n  b)⟪;⟫\ntype T = A⟪;⟫\nmodule N = M⟪;⟫\nworld w⟪;⟫\ndef f(x : T) -> T = x\n"
+        );
+        // A written `;` takes no second one, and an attribute at column zero
+        // ends the declaration before it.
+        assert_eq!(
+            marked("import std.process;\nimport std.io\n@[checks]\ndef f(x : A) -> A = x;\n"),
+            "import std.process;\nimport std.io⟪;⟫\n@[checks]\ndef f(x : A) -> A = x;\n"
+        );
+        // A `pub` alone on its line marks the declaration after it, and a
+        // form that no reserved word begins is a stray. Neither takes a
+        // separator.
+        assert_eq!(
+            marked("pub\ndef f(x : A) -> A = x;\nprint x\ndef g(x : A) -> A = x;\n"),
+            "pub\ndef f(x : A) -> A = x;\nprint x\ndef g(x : A) -> A = x;\n"
+        );
+        // A declaration whose body closes has its end.
+        assert_eq!(
+            marked("data D : Type where\n  | A : D\ndef f(x : A) -> A { x }\ndef g : A = x;\n"),
+            "data D : Type where⟪{⟫\n  | A : D⟪}⟫\ndef f(x : A) -> A { x }\ndef g : A = x;\n"
+        );
+        // A declaration in a `rec` block ends as a declaration of the source
+        // does.
+        assert_eq!(
+            marked("rec {\n  type T = A\n  def f(x : T) -> T = x\n}\n"),
+            "rec {\n  type T = A⟪;⟫\n  def f(x : T) -> T = x⟪;⟫\n}\n"
+        );
     }
 
     #[test]
@@ -1800,10 +1856,10 @@ mod tests
             "theory S where⟪{⟫\n  sort A : Type⟪;⟫⟪}⟫\n T where⟪{⟫\n  sort B : Type⟪;⟫⟪}⟫\n"
         );
         // A line that closes a bracket it never opened belongs to an item
-        // before it.
+        // before it, and the word at column zero after it ends that item.
         assert_eq!(
             marked("theory S where\n  sort A : Type\n checks ]\ntheory T where\n  sort B : Type\n"),
-            "theory S where⟪{⟫\n  sort A : Type⟪;⟫⟪}⟫\n checks ]\ntheory T where⟪{⟫\n  sort B : Type⟪;⟫⟪}⟫\n"
+            "theory S where⟪{⟫\n  sort A : Type⟪;⟫⟪}⟫\n checks ]⟪;⟫\ntheory T where⟪{⟫\n  sort B : Type⟪;⟫⟪}⟫\n"
         );
         // A line at column zero closes every block, though the next line
         // stands at a block's column.
