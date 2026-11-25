@@ -1,5 +1,5 @@
 extern "rust" from "boundary" as Boundary {
-  def add(x : u32, n : u32) -> u32;
+  def add(x : u32, n : u32) -> u32
   def negate(x : i64) -> i64;
 }
 extern "rust" from "idle" as Idle { def peek(x : u64) -> u64; }

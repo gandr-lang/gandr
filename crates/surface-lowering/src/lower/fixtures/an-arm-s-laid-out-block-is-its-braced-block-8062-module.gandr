@@ -8,7 +8,7 @@ def laid(b : Bool, x : Integer) -> Integer =
 def braced(b : Bool, x : Integer) -> Integer = {
   match b {
     | true => {
-      let y = x;
+      let y = x
       y
     }
     | false => x

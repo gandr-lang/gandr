@@ -1,11 +1,11 @@
 def offer_laid() -> Unit =
-  let d = fork (c : +{go : end, stop : end}) { select c go; close c };
+  let d = fork (c : +{go : end, stop : end}) { select c go; close c }
   offer d where
     | go => close d
     | stop => close d
 
 def offer_braced() -> Unit =
-  let d = fork (c : +{go : end, stop : end}) { select c go; close c };
+  let d = fork (c : +{go : end, stop : end}) { select c go; close c }
   offer d {
     | go => close d
     | stop => close d
