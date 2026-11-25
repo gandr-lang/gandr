@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x51964dc9a9983be0`
+- Grammar fingerprint: `0x79c95f4c55bb811b`
 - Rules: 161 — 160 committed, 1 internal
-- Molds: 3113
+- Molds: 3114
 - Attributes: 24
 
 ## Reading a form
@@ -38,7 +38,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`import_declaration`](../corpus/ledger/syntax/import-declaration.gandr) | `import ⦅ ⟨string.type⟩ ‖ ‹identifier› ⦅ . ‹identifier› ⦆* ⦆ ⦅ as ‹identifier› ⦆? ⦅ : ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⦅ via ‹identifier› ‖ renaming { ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? } ⦆? ⦆? ⦅ ( ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ) ⦆? ;` | `item.singleton` | `import_declaration` * | admitted | Keyword, StringLit, Escape, Variable, Other, Member, VariableDef, Type |
 | [`world_declaration`](../corpus/ledger/syntax/world-declaration.gandr) | `world ‹identifier› ⦅ requires [ ⦅ TYPE : TYPE ‖ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦅ , ⦅ TYPE : TYPE ‖ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆* ⦅ , ⦆? ] ⦆? ;` | `item.singleton` | `world_declaration` * | admitted | Keyword, Label, Other, Type |
 | [`offers_declaration`](../corpus/ledger/syntax/offers-declaration.gandr) | `offers [ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦅ = ‹type_identifier› ⦅ via ‹identifier› ‖ renaming { ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? } ⦆? ⦆? ⦆ ⦅ , ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦅ = ‹type_identifier› ⦅ via ‹identifier› ‖ renaming { ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? } ⦆? ⦆? ⦆ ⦆* ⦅ , ⦆? ] ;` | `item.singleton` | `offers_declaration` * | admitted | Keyword, Other, Type, Member, Variable |
-| [`rec_block`](../corpus/ledger/syntax/rec-block.gandr) | `rec { ⦅ ITEM ⦆* }` | `item.singleton` | `rec_block` * | admitted | Keyword, Other |
+| [`rec_block`](../corpus/ledger/syntax/rec-block.gandr) | `rec ⦅ where ⦆? { ⦅ ITEM ⦆* }` | `item.singleton` | `rec_block` * | admitted | Keyword, Other |
 | [`pub_declaration`](../corpus/ledger/syntax/pub-declaration.gandr) | `pub` | `item.singleton` | `pub_declaration` * | admitted | Keyword |
 | [`attribute_block`](../corpus/ledger/syntax/attribute-block.gandr) | `@[ ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦆* ⦅ , ⦆? ]` | `item.singleton` | `attribute_block` | admitted | Other |
 | [`inner_attribute_block`](../corpus/ledger/syntax/inner-attribute-block.gandr) | `@![ ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦆* ⦅ , ⦆? ]` | `item.singleton` | `inner_attribute_block` * | unadmitted | Other |
@@ -282,7 +282,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `import_declaration` | item | 41 | `import` | — | 8 |
 | `world_declaration` | item | 26 | `world` | — | 12 |
 | `offers_declaration` | item | 52 | `offers` | — | 22 |
-| `rec_block` | item | 3 | `rec` | — | 0 |
+| `rec_block` | item | 4 | `rec` | — | 0 |
 | `pub_declaration` | item | 1 | `pub` | — | 0 |
 | `attribute_block` | item | 12 | `@[` | — | 4 |
 | `inner_attribute_block` | item | 12 | `@![` | — | 4 |
@@ -461,8 +461,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `-->` | 31 | 5 | 0 |
 | `<=>` | 27 | 5 | 0 |
 | `==>` | 27 | 5 | 0 |
+| `where` | 25 | 12 | 0 |
 | `<->` | 24 | 4 | 0 |
-| `where` | 24 | 11 | 0 |
 | `shared` | 23 | 8 | 0 |
 | `type` | 23 | 5 | 1 |
 | `consumed` | 22 | 7 | 0 |
