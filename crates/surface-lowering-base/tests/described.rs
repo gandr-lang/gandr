@@ -923,7 +923,7 @@ fn a_codata_observation_s_type_answers_at_its_universe()
         ),
         "the family itself at its kind, `Type[-]`"
     );
-    let argument = entry(&types, span("(a);", "a"), DescribedRole::Type);
+    let argument = entry(&types, span("a;\n}", "a"), DescribedRole::Type);
     assert_eq!(
         ty(argument),
         ty(head),

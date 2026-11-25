@@ -5103,7 +5103,7 @@ impl TypeTable
             .within(&binders)
             .typing(&types)
             .scoped(&regions);
-        // A recursive definition's own binder writes its claim, `f[<](…)`; a
+        // A recursive definition's own binder writes its claim, `f [<] …`; a
         // type at a node records no telescope, so its calls write every
         // argument.
         let printer = context
@@ -5481,7 +5481,7 @@ impl TypeTable
     ///   from a non-dependent arrow put back. A recursive definition's own
     ///   binder is declared under a generated name, so a type that names the
     ///   declaration reads the declaration; a type that names the binder writes
-    ///   its claim, `f[<](…)`, which no function outside the definition lowers.
+    ///   its claim, `f [<] …`, which no function outside the definition lowers.
     ///   It is [`RoundTrip::Open`] when the table does not know a binder's type
     ///   — a capability scope's, a described member's — or the function does
     ///   not lower, and for a static arrow whose domain classifies no codes
@@ -8654,8 +8654,8 @@ mod tests
         assert!(
             trips
                 .iter()
-                .any(|&(ref spelled, _)| spelled.contains("Standard.after(Integer)(")),
-            "the call's result applied once more prints as two lists: {trips:?}"
+                .any(|&(ref spelled, _)| spelled.contains("(Standard.after Integer) ")),
+            "the call's result applied once more holds the call in parentheses: {trips:?}"
         );
         assert!(
             trips
@@ -9274,7 +9274,7 @@ mod tests
     }
 
     /// A member's type that names a helper the module's seal hides prints as
-    /// the module's body writes it, `first(g, a, z)`, and reads back inside
+    /// the module's body writes it, `first g a z`, and reads back inside
     /// the module. Two sealed modules each hold a `first`: each type reads its
     /// own module's helper, and the second module's types read back past the
     /// first module's probes (#5391).
@@ -9284,9 +9284,9 @@ mod tests
         let module = |name: &str| {
             format!(
                 "module {name} : Model(Fam) where\n  type Con = Type;\n  def base() -> Type {{ return \
-                 Unit }}\n  def first(g : Type, a : g -> Type, z : *{{x : g, y : a(x)}}) -> g {{ z.0 \
-                 }}\n  def second(g : Type, a : g -> Type) -> (z : *{{x : g, y : a(x)}}) -> a(first(g, \
-                 a, z)) =\n    return fun (z) {{ z.1 }}\n"
+                 Unit }}\n  def first(g : Type, a : g -> Type, z : *{{x : g, y : a x}}) -> g {{ z.0 \
+                 }}\n  def second(g : Type, a : g -> Type) -> (z : *{{x : g, y : a x}}) -> a (first \
+                 g a z) =\n    return fun (z) {{ z.1 }}\n"
             )
         };
         let written = format!(
@@ -9304,13 +9304,13 @@ mod tests
         );
         let helped: Vec<(&str, &RoundTrip)> = read
             .iter()
-            .filter(|read| read.spelled.contains("first("))
+            .filter(|read| read.spelled.contains("(first "))
             .map(|read| (read.spelled.as_str(), &read.trip))
             .collect();
         assert!(
             helped.len() >= 4
                 && helped.iter().all(|&(spelled, trip)| {
-                    *trip == RoundTrip::Equal && spelled.contains("a(first(g, a, z))")
+                    *trip == RoundTrip::Equal && spelled.contains("a (first g a z)")
                 }),
             "each module's member type names its helper bare and reads back equal: {helped:?}"
         );
@@ -9331,7 +9331,7 @@ mod tests
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         let named: Vec<(&str, &RoundTrip)> = read
             .iter()
-            .filter(|read| read.spelled.contains("fam(1)"))
+            .filter(|read| read.spelled.contains("fam 1"))
             .map(|read| (read.spelled.as_str(), &read.trip))
             .collect();
         assert!(
@@ -9355,7 +9355,7 @@ mod tests
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         let wrapped: Vec<&RoundTrip> = read
             .iter()
-            .filter(|read| read.spelled == "first(1) -> first(1)")
+            .filter(|read| read.spelled == "(first 1) -> (first 1)")
             .map(|read| &read.trip)
             .collect();
         let different: Vec<&str> = read
@@ -9374,7 +9374,7 @@ mod tests
     }
 
     /// #5390: a type that applies a call to a tuple of a number and a
-    /// boolean, in the call's one list and in a second list that applies its
+    /// boolean, as the call's one argument and as the argument of the call's
     /// result, reads back to its certificate.
     #[test]
     fn a_tuple_argument_of_a_call_in_a_type_reads_back_5390()
@@ -9385,7 +9385,7 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
 
         let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
-        for spelled in ["pairs(*{3, true})", "curried(Unit)(*{3, false})"] {
+        for spelled in ["pairs *{3, true}", "(curried Unit) *{3, false}"] {
             let trips: Vec<&RoundTrip> = read
                 .iter()
                 .filter(|read| read.spelled == spelled)
@@ -10286,10 +10286,10 @@ mod tests
             ("Ob :", Subject::Binder, "Type"),
             ("Hom(dom", Subject::Binder, "+U (Ob -> Ob -> -F Type)"),
             ("dom", Subject::Binder, "Ob"),
-            ("id :", Subject::Binder, "+U ((a : Ob) -> -F Hom(a, a))"),
+            ("id :", Subject::Binder, "+U ((a : Ob) -> -F (Hom a a))"),
             ("Hom a a;", Subject::Type, "Type"),
-            ("id a ==>", Subject::Term, "+U ((a : Ob) -> -F Hom(a, a))"),
-            (" a ==>", Subject::Term, "Hom(a, a)"),
+            ("id a ==>", Subject::Term, "+U ((a : Ob) -> -F (Hom a a))"),
+            (" a ==>", Subject::Term, "Hom a a"),
         ];
         for (needle, subject, ty) in rows {
             assert_eq!(
@@ -10824,8 +10824,8 @@ mod tests
             .map(|back| (back.spelled, back.trip))
             .collect();
         for spelled in [
-            "(x : Type) -> -F Path[.A = Type] same(same(x)) x",
-            "*{a : +U (Type -> -F Type), b : (b : Type) -> Path[.A = Type] same(a(b)) b}",
+            "(x : Type) -> -F (Path[.A = Type] (same (same x)) x)",
+            "*{a : +U (Type -> -F Type), b : (b : Type) -> Path[.A = Type] (same (a b)) b}",
         ] {
             assert!(
                 trips.iter().any(|&(ref printed, _)| printed == spelled),
@@ -11270,7 +11270,7 @@ mod tests
         assert!(
             reads
                 .iter()
-                .any(|&(ref spelled, _)| spelled.starts_with("args(d, f(")),
+                .any(|&(ref spelled, _)| spelled.starts_with("args d (f ")),
             "a printed type is the rest's computed type: {reads:?}"
         );
         let moved: Vec<_> = reads
@@ -11422,7 +11422,7 @@ mod tests
     /// #3584: inside a recursive definition, a type that names the declaration
     /// reads back as the declaration's, though the definition's own binder
     /// carries the same name. A type that names the binder spells it as a
-    /// call of it is written, `f[<](…)`, its uniform parameters first, and no
+    /// call of it is written, `f [<] …`, its uniform parameters first, and no
     /// function outside the definition reads it. A field that a decoder's
     /// arm passes back holds the binder's decode, and the constructor checks
     /// it against the declaration's, so its two types read apart.
@@ -11454,12 +11454,12 @@ mod tests
                 .map(|read| read.trip.clone())
         };
         assert_eq!(
-            trip("fresh(y, ys) -> -F Type"),
+            trip("(fresh y ys) -> -F Type"),
             Some(RoundTrip::Equal),
             "the freshness a cons's evidence is at reads the declaration `fresh`"
         );
         assert_eq!(
-            trip("elD[<](d, a) -> UD d"),
+            trip("(elD [<] d a) -> UD d"),
             Some(RoundTrip::Open),
             "the field's decode is the binder, written after its uniform parameter"
         );
@@ -11477,8 +11477,8 @@ mod tests
             .collect();
         assert!(
             matches!(sides.as_slice(), [
-                (ReadSite::Own(_), "unloop[<](a) -> Loop"),
-                (ReadSite::CheckedAgainst(_), "unloop(a) -> Loop")
+                (ReadSite::Own(_), "(unloop [<] a) -> Loop"),
+                (ReadSite::CheckedAgainst(_), "(unloop a) -> Loop")
             ]),
             "the field reads at the binder's decode, then at the declaration's: {sides:?}"
         );
