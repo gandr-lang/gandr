@@ -141,6 +141,12 @@ jobs:
           restore-keys: |
             gate-${{ matrix.slug }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-
             gate-${{ matrix.slug }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+      # A build fetches the crates of the host alone. A test of the driver
+      # resolves its tree for `wasm32-wasip3` with `--offline`, so the suites
+      # fetch the crates of each target first.
+      - name: fetch the crates of each target
+        if: ${{ matrix.nextest }}
+        run: cargo fetch --locked
       - name: run the gate
         run: ${{ matrix.run }}
       - name: save the target directory
