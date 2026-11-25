@@ -177,6 +177,7 @@ impl RewriteName
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn label(self) -> &'static str
     {
         match self {
@@ -209,6 +210,7 @@ impl RewriteName
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn named(text: &str) -> Option<&'static [Self]>
     {
         let index = Self::EVERY.iter().position(|name| name.label() == text)?;
@@ -1182,7 +1184,8 @@ fn word(child: Child<'_>) -> bool
     match child {
         Child::Leaf(leaf) => {
             let text = <&str>::from(leaf.text);
-            text.starts_with(|first: char| first.is_ascii_lowercase()) && !BUILTIN_WORDS.contains(&text)
+            text.starts_with(|first: char| first.is_ascii_lowercase())
+                && !BUILTIN_WORDS.contains(&text)
         },
         Child::Node(_) => false,
     }
@@ -3904,35 +3907,63 @@ impl<'source> Respelling<'_, 'source>
             return None;
         }
         let own = |part: &Part<'source>, spelled: &str| matches!(part.role, Role::Own(text) if <&str>::from(text) == spelled);
-        let head = match prefix {
-            [Part { role: Role::Own(name), .. }] if <&str>::from(*name).starts_with(char::is_uppercase) => Head::Capital(*name),
-            [Part { role: Role::Own(name), .. }] => Head::Word(*name, Descent::No),
-            [Part { role: Role::Own(name), .. }, open, less, close]
-                if own(open, "[") && own(less, "<") && own(close, "]") =>
-            {
-                Head::Word(*name, Descent::Yes)
+        let head = match *prefix {
+            [
+                Part {
+                    role: Role::Own(name),
+                    ..
+                },
+            ] if <&str>::from(name).starts_with(char::is_uppercase) => Head::Capital(name),
+            [
+                Part {
+                    role: Role::Own(name),
+                    ..
+                },
+            ] => Head::Word(name, Descent::No),
+            [
+                Part {
+                    role: Role::Own(name),
+                    ..
+                },
+                ref open,
+                ref less,
+                ref close,
+            ] if own(open, "[") && own(less, "<") && own(close, "]") => {
+                Head::Word(name, Descent::Yes)
             },
-            [Part { role: Role::Operand(_), .. }, dot, link @ ..]
-                if own(dot, ".")
-                    && link.len() % 2 == 1
-                    && link.iter().enumerate().all(|(index, part)| {
-                        if index % 2 == 1 {
-                            own(part, ".")
-                        }
-                        else {
-                            matches!(part.role, Role::Own(text) if <&str>::from(text) != ".")
-                        }
-                    }) =>
+            [
+                Part {
+                    role: Role::Operand(_),
+                    ..
+                },
+                ref dot,
+                ref link @ ..,
+            ] if own(dot, ".")
+                && link.len() % 2 == 1
+                && link.iter().enumerate().all(|(index, part)| {
+                    if index % 2 == 1 {
+                        own(part, ".")
+                    }
+                    else {
+                        matches!(part.role, Role::Own(text) if <&str>::from(text) != ".")
+                    }
+                }) =>
             {
                 Head::Written
             },
-            [Part { role: Role::Operand(_), .. }, open, rest @ ..]
-                if own(open, "[")
-                    && matches!(
-                        rest,
-                        [Part { role: Role::Own(_), .. }, close] | [_, Part { role: Role::Own(_), .. }, close]
-                            if own(close, "]")
-                    ) =>
+            [
+                Part {
+                    role: Role::Operand(_),
+                    ..
+                },
+                ref open,
+                ref rest @ ..,
+            ] if own(open, "[")
+                && matches!(
+                    *rest,
+                    [Part { role: Role::Own(_), .. }, ref close] | [_, Part { role: Role::Own(_), .. }, ref close]
+                        if own(close, "]")
+                ) =>
             {
                 Head::Written
             },

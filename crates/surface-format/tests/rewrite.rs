@@ -2388,12 +2388,13 @@ fn a_type_application_is_written_juxtaposed_5708()
 fn a_selected_rewrite_keeps_a_bare_claim()
 {
     let grammar = grammar();
-    let template =
-        include_str!("rewrite/unformatted/a-type-application-is-written-juxtaposed-5708.gandr");
-    let claimed = |parameter: &str| {
-        format!("@[checks]\n{}", template.replace("{parameter}", parameter))
+    let written = |parameter: &str| {
+        format!(
+            include_str!("rewrite/unformatted/a-type-application-is-written-juxtaposed-5708.gandr"),
+            parameter = parameter
+        )
     };
-    let source = claimed("Parcel(Integer)");
+    let source = format!("@[checks]\n{}", written("Parcel(Integer)"));
     assert_eq!(
         spelled(
             &grammar,
@@ -2401,11 +2402,11 @@ fn a_selected_rewrite_keeps_a_bare_claim()
             Form::Sugared,
             Selection::Only(&[RewriteName::TypeApplication])
         ),
-        claimed("Parcel Integer")
+        format!("@[checks]\n{}", written("Parcel Integer"))
     );
     assert_eq!(
         spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
-        template.replace("{parameter}", "Parcel Integer")
+        written("Parcel Integer")
     );
 }
 

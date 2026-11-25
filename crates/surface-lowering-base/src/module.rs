@@ -6641,9 +6641,14 @@ impl<'source> Collector<'_, 'source>
                 && let Some(mode) = receiver_of(
                     &header,
                     |tile| self.name_of(tile),
-                    |operand| match self.tree.node(operand.node).map(|node| shape_of(self.pbg, node)) {
+                    |operand| match self
+                        .tree
+                        .node(operand.node)
+                        .map(|node| shape_of(self.pbg, node))
+                    {
                         Some(Ok(Shape::Form { name, .. })) => Some(name),
-                        Some(Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_)) | None => None,
+                        Some(Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_))
+                        | None => None,
                     },
                 )
             {

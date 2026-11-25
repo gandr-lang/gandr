@@ -2850,7 +2850,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         }
         // A type's call in parentheses at the head, `(f a) b`, is read with
         // the spine as one call, so each node under the head takes the slot.
-        if Some(application) == self.cx().pbg.application_in(gandr_surface_grammar::Sort::Type) {
+        if Some(application)
+            == self
+                .cx()
+                .pbg
+                .application_in(gandr_surface_grammar::Sort::Type)
+        {
             self.own_written(spine, position);
         }
     }
@@ -12452,11 +12457,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let head = match *pieces.pieces.as_slice() {
-            [Piece::Tile { at: head, .. }, _, .., Piece::Tile { label, .. }]
-                if label == TileName::PAREN_CLOSE =>
-            {
-                head
-            },
+            [
+                Piece::Tile { at: head, .. },
+                _,
+                ..,
+                Piece::Tile { label, .. },
+            ] if label == TileName::PAREN_CLOSE => head,
             _ => {
                 return CapabilityRef::new(self.host_ref())
                     .moded_type(site, Cursor::new(&pieces.pieces, site.at.span));
@@ -12464,17 +12470,20 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         };
         let mode = self.cx().name_at(head);
         self.type_application(site, Cursor::new(&pieces.pieces, site.at.span))
-            .map_err(|refusal| match refusal {
-                LoweringRefusal::UnresolvedName { span, .. }
-                | LoweringRefusal::UnresolvedTypeHead { head: span, .. }
-                    if span == head.span =>
-                {
+            .map_err(|refusal| {
+                let unnamed = matches!(refusal,
+                    LoweringRefusal::UnresolvedName { span, .. }
+                    | LoweringRefusal::UnresolvedTypeHead { head: span, .. }
+                        if span == head.span);
+                if unnamed {
                     LoweringRefusal::StrayReceiverMode {
                         span: site.at.span,
                         mode,
                     }
-                },
-                other => other,
+                }
+                else {
+                    refusal
+                }
             })
     }
 

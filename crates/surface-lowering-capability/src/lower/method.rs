@@ -318,8 +318,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///   `receiver` is the function's receiver mode.
     /// - ensures: `Ok` when every mode word stands on the first parameter of a
     ///   method, named `self`, and every moded type on that parameter, `m T`,
-    ///   on a method whose mode is deduced. A moded type on any other
-    ///   parameter is an application, `f a`, which the type's lowering reads.
+    ///   on a method whose mode is deduced. A moded type on any other parameter
+    ///   is an application, `f a`, which the type's lowering reads.
     /// - fails: [`LoweringRefusal::StrayReceiverMode`] at the first mode word
     ///   or receiver's mode variable that does not;
     ///   [`LoweringRefusal::UnknownMold`] reading a parameter's type.
@@ -1009,7 +1009,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 else {
                     return Err(refused);
                 };
-                let Some((_, Former::StagedType | Former::TypeApplication)) = self.cx().form_at(view)?
+                let Some((_, Former::StagedType | Former::TypeApplication)) =
+                    self.cx().form_at(view)?
                 else {
                     return Err(refused);
                 };
@@ -1036,7 +1037,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 read_pieces(self.cx().pbg, self.cx().tree, staged.node, &mut pieces)?;
                 element
             },
-            [.., Piece::Operand(element), Piece::Tile { label: TileName::PAREN_CLOSE, .. }] => element,
+            [
+                ..,
+                Piece::Operand(element),
+                Piece::Tile {
+                    label: TileName::PAREN_CLOSE,
+                    ..
+                },
+            ] => element,
             _ => return Err(refused),
         };
         let &[
