@@ -12,6 +12,13 @@
 # source did not change stays fresh under the new dates of the checkout. Only
 # a run on `main` saves a cache: a pull request of a fork reads the cache of
 # `main`.
+#
+# kache stands in front of rustc. It gets each unit that the target directory
+# lacks from the OCI repository `ghcr.io/<this repository>/kache`, when a run
+# of `main` compiled that unit before. kache writes to the repository only on
+# a push to a protected branch, and only the job of a push to `main` has the
+# permission to write packages. The token of a pull request of a fork can
+# only read.
 name: gates
 
 on:
@@ -47,6 +54,11 @@ jobs:
       && !github.event.pull_request.draft) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    # GitHub gives the token of a pull request of a fork read access only,
+    # whatever this block asks. So only a push to `main` can write packages.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -125,6 +137,26 @@ jobs:
       - name: install cargo-nextest
         if: ${{ matrix.nextest }}
         run: curl --proto '=https' --tlsv1.2 -fsSL https://get.nexte.st/0.9.150/linux | tar -xzf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+      # The release asset of kache, checked against its pinned digest. The
+      # archive has the client and its engine, which work only as a pair.
+      - name: install kache
+        if: ${{ matrix.target }}
+        env:
+          KACHE_VERSION: v2.2.0
+          KACHE_SHA256: eeb6e72b9f55d0e9d61cae0789ffa8f3ab8c33bef166b7af655cc0806447ebac
+        run: |
+          archive="$RUNNER_TEMP/kache.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$archive" \
+            "https://github.com/kunobi-ninja/kache/releases/download/$KACHE_VERSION/kache-x86_64-unknown-linux-musl.tar.gz"
+          echo "$KACHE_SHA256  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "${CARGO_HOME:-$HOME/.cargo}/bin" kache kache-engine
+          config="$RUNNER_TEMP/kache.toml"
+          printf '[cache.remote]\ntype = "oci"\nrepository = "ghcr.io/%s/kache"\nprefix = "gates"\n' "${GITHUB_REPOSITORY,,}" > "$config"
+          {
+            echo "KACHE_CONFIG=$config"
+            echo "RUSTC_WRAPPER=kache"
+          } >> "$GITHUB_ENV"
+          kache --version
       # The newest cache of `main` for this gate, the toolchain and the lock
       # file; else the newest one for this gate and the toolchain.
       - name: restore the target directory
@@ -148,7 +180,17 @@ jobs:
         if: ${{ matrix.nextest }}
         run: cargo fetch --locked
       - name: run the gate
+        env:
+          KACHE_OCI_USERNAME: ${{ github.actor }}
+          KACHE_OCI_PASSWORD: ${{ github.token }}
         run: ${{ matrix.run }}
+      # The daemon sends each queued upload before it ends, and the runner
+      # then goes away. The counts show the hits of the run.
+      - name: stop kache
+        if: ${{ always() && matrix.target }}
+        run: |
+          kache stats || true
+          kache daemon stop
       - name: save the target directory
         if: ${{ always() && matrix.target && github.event_name == 'push' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
