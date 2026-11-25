@@ -1595,6 +1595,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "joined-definition",
             "type-application",
             "body-after-equals",
+            "handler-words",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2597,6 +2598,80 @@ fn a_brace_body_moves_after_the_equals_6318()
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, Selection::Every),
+            moved,
+            "{form}: a second pass changes nothing"
+        );
+    }
+}
+
+/// A capability scope is written `effect … handle` in either form and alone
+/// in a selection: its lead `handle` is `effect`, and the `with` before its
+/// clauses or its model is `handle`. A scope with no answer changes its lead
+/// alone, each manifest sort keeps its `with`, a comment among the clauses
+/// keeps its place, and a scope written `effect … handle` stays. A second
+/// pass changes nothing.
+#[test]
+fn a_handler_is_written_effect_then_handle()
+{
+    let grammar = grammar();
+    let source = include_str!("rewrite/unformatted/a-handler-is-written-effect-then-handle.gandr");
+    let only = Selection::Only(&[RewriteName::HandlerWords]);
+    let moved = spelled(&grammar, source, Form::Sugared, only);
+    expect![[r#"
+        theory State where
+          sort S : Type+;
+          sort C : Type;
+          oper get : (k : pi+ (s : S). C) --> C;
+          oper put : (s : S, k : C) --> C;
+
+        module Passing : Model(State) with sort S = Integer where
+          type C = Integer -> Integer;
+          def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
+            fun (s) { let after = k s; after s }
+          def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
+            fun (_old) { k s }
+
+        def clauses() -> Integer =
+          effect st : State with sort S = Integer {
+            let a = st.get
+            pure a + 1
+          } handle {
+            // each read answers four
+            | pure(x) => pure x
+            | oper get(k) => k 4
+            | oper put(s, k) => k *{}
+          }
+
+        def model() -> Integer -> Integer =
+          effect st : State with sort S = Integer {
+            st.put 4
+            pure fun (_s) { pure st.get }
+          } handle Passing
+
+        def inScope() -> Integer -> Integer =
+          effect st : State with sort S = Integer {
+            st.put 4
+            pure fun (_s) { pure st.get }
+          }
+
+        def kept() -> Integer =
+          effect st : State with sort S = Integer {
+            pure 1
+          } handle {
+            | pure(x) => pure x
+            | oper get(k) => k 4
+            | oper put(s, k) => k *{}
+          }
+    "#]]
+    .assert_eq(&moved);
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, only),
+            moved,
+            "{form}: the words move alike"
+        );
+        assert_eq!(
+            spelled(&grammar, moved.as_str(), form, only),
             moved,
             "{form}: a second pass changes nothing"
         );
