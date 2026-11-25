@@ -1108,31 +1108,8 @@ mod sweeps
     /// The admitted blocks whose rules part, each by its source and its
     /// declaration, beside the unit that removes it.
     ///
-    /// - `Flat` holds `pair low mid ==> low` and `pair mid low ==> mid` beside
-    ///   the symmetry of `pair`. The check derives a rule that joins `low` and
-    ///   `mid`, and the value that crosses does not carry it, because the
-    ///   kernel compares two rules of a `theory` block as written. The unit
-    ///   `theory-pairs-each-order` makes the kernel form the pair under the
-    ///   symmetry, so the kernel refuses `Flat` and its pin leaves; the unit
-    ///   `theory-derived-rule-under-symmetry` then admits it with the derived
-    ///   rule.
-    pub(super) const PARTING: [(&str, &str, &str); 3] = [
-        (
-            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-between.gandr",
-            "Flat",
-            "theory-pairs-each-order",
-        ),
-        (
-            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-first.gandr",
-            "Flat",
-            "theory-pairs-each-order",
-        ),
-        (
-            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-last.gandr",
-            "Flat",
-            "theory-pairs-each-order",
-        ),
-    ];
+    /// No admitted block parts, so the list is empty.
+    pub(super) const PARTING: [(&str, &str, &str); 0] = [];
 
     #[test]
     fn each_admitted_block_with_rules_joins_its_critical_pairs()

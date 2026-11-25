@@ -30,8 +30,9 @@
 //!    of the names it is applied to last (read up to η), and it covers every
 //!    argument of the instantiation;
 //! 3. each derived rule is, up to its variables' names, the two normal forms
-//!    under the rules before it of the critical pair it names, so it is an
-//!    equation the rules before it prove;
+//!    under the rules before it of the critical pair it names, in some
+//!    arrangement of the two arguments at each node of a symbol of a symmetry,
+//!    so it is an equation the rules before it prove;
 //! 4. every critical pair joins: a pair one of whose rules instantiates a
 //!    variable, is conditioned or fires under a row in the second-order reading
 //!    of [`higher`], every other first order.
@@ -42,12 +43,13 @@
 //! does not carry, or one whose peak does not replay, leaves its pair to part
 //! in step 4 or is refused by name in step 3.
 //!
-//! A symmetry, the rule that swaps the two arguments of one symbol, is no step:
-//! no normal form rewrites by it. A normal form reads the other rules under the
-//! symmetries instead. A left side matches in each arrangement of the two
-//! arguments at each of its nodes of a symbol of a symmetry, and two
+//! A symmetry, the rule that swaps the last two arguments of one symbol, is no
+//! step: no normal form rewrites by it. A normal form reads the other rules
+//! under the symmetries instead. A left side matches in each arrangement of
+//! those two arguments at each of its nodes of a symbol of a symmetry, and two
 //! occurrences of one variable bind two subterms that agree under the
-//! symmetries.
+//! symmetries. A symbol as written has its two arguments alone. In the indexed
+//! reading the indices of its sort stand before them, and they stay in place.
 //!
 //! Over an indexed sort the written terms do not carry the indices their
 //! sorting fixes, so two laws' overlap can part where the typing makes its
@@ -875,45 +877,62 @@ impl TheoryRule
         self.holes.at(at)
     }
 
-    /// The symbol whose two arguments the rule swaps, `f x y` to `f y x`; none
-    /// for every other rule.
+    /// The symbol whose last two arguments the rule swaps, `f x y` to `f y x`;
+    /// none for every other rule.
     ///
     /// # Specification
     /// - ensures: the symbol exactly when the rule instantiates no variable, is
     ///   not conditioned and states no row, its left side is that symbol over
-    ///   the variables `0` and `1`, and its right side is that symbol over `1`
-    ///   and `0`.
+    ///   two or more arguments that are the variables `0`, `1`, … in a row, and
+    ///   its right side is that symbol over the same variables with the last
+    ///   two in the other order. A rule as written has the two arguments alone;
+    ///   the arguments before them are the indices that the indexed reading
+    ///   writes first.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a rule that swaps the two arguments of one operation
     ///   is a symmetry of that operation; the same rule over two symbols, or
-    ///   one that keeps the order, is none.
+    ///   one that keeps the order, is none; a symmetry over a sort with two
+    ///   indices is a symmetry in the indexed reading.
     /// - witness: `theory_rules::tests::a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291`
     /// - witness: `theory_rules::tests::a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset`
+    /// - witness: `theory_rules::tests::a_symmetry_over_an_indexed_sort_is_decided_with_its_indices`
     fn symmetry(&self) -> Option<TheorySymbol>
     {
         if self.instantiates || self.conditioned || self.row != RuleRow::default() {
             return None;
         }
-        let (first, second) = (
-            TheoryNode::Variable(RuleVariable::from(0_u32)),
-            TheoryNode::Variable(RuleVariable::from(1_u32)),
-        );
-        match (&*self.left, &*self.right) {
-            (
-                &[TheoryNode::Symbol(symbol), left_first, left_second],
-                &[head, right_first, right_second],
-            ) if head == TheoryNode::Symbol(symbol)
-                && left_first == first
-                && left_second == second
-                && right_first == second
-                && right_second == first =>
-            {
-                Some(symbol)
-            },
-            _ => None,
-        }
+        let (&TheoryNode::Symbol(symbol), &TheoryNode::Symbol(head)) =
+            (self.left.first()?, self.right.first()?)
+        else {
+            return None;
+        };
+        let (written, turned) = (self.left.get(1 ..)?, self.right.get(1 ..)?);
+        let lead = written.len().checked_sub(ARRANGEMENTS.len())?;
+        let variable = |ordinal: usize| {
+            u32::try_from(ordinal)
+                .ok()
+                .map(|ordinal| TheoryNode::Variable(RuleVariable::from(ordinal)))
+        };
+        let swaps =
+            head == symbol
+                && turned.len() == written.len()
+                && written.iter().zip(turned).enumerate().all(
+                    |(place, (&as_written, &as_turned))| {
+                        // The two places after the indices name each other.
+                        let other = if place < lead {
+                            place
+                        }
+                        else {
+                            lead.saturating_add(lead)
+                                .saturating_add(1)
+                                .saturating_sub(place)
+                        };
+                        Some(as_written) == variable(place) && Some(as_turned) == variable(other)
+                    },
+                );
+        swaps.then_some(symbol)
     }
 
     /// How the rule's critical pairs are decided: second-order when it
@@ -924,8 +943,9 @@ impl TheoryRule
     /// - ensures: [`TheoryRuleReading::SecondOrder`] when the rule instantiates
     ///   a variable, is conditioned or states a row. Otherwise
     ///   [`TheoryRuleReading::Symmetry`] exactly when the left side is one
-    ///   symbol over the variables `0` and `1` and the right side is that
-    ///   symbol over `1` and `0`. Otherwise [`TheoryRuleReading::FirstOrder`].
+    ///   symbol over the variables `0`, `1`, … in a row and the right side is
+    ///   that symbol over the same variables with the last two in the other
+    ///   order. Otherwise [`TheoryRuleReading::FirstOrder`].
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1369,19 +1389,25 @@ impl TheoryRules
     ///   occurrences, its variables numbered by first occurrence, every right
     ///   variable bound on the left); the path order puts every left side above
     ///   its right; each derived rule's peak names two rules before it and an
-    ///   operation position of the outer one's left side, other than the root
-    ///   of one rule overlapping itself, whose critical pair's two normal forms
-    ///   under the rules before it are the rule's two sides, up to renaming its
-    ///   variables; every critical pair one of whose rules instantiates a
-    ///   variable or is conditioned joins in the second-order reading
-    ///   ([`Self::second_order`]); and every other critical pair normalizes to
-    ///   one term under the rules that instantiate nothing and are not
-    ///   conditioned, each left side matched under the symmetries of the rules
-    ///   ([`Self::normalize`]). Peaks and first-order pairs are those of
-    ///   [`Self::decided`], the rules read with their indices where the
-    ///   presentation has that reading, so an overlap a sorting rules out is no
-    ///   pair. Otherwise the first failing rule in that order and its fault; a
-    ///   divergent or undecided overlap is named at its outer rule.
+    ///   operation position of the outer one's left side whose critical pair,
+    ///   in some arrangement of the inner left side other than the root of one
+    ///   rule overlapping itself as written, has as its two normal forms under
+    ///   the rules before it the rule's two sides, up to renaming its variables
+    ///   and up to the symmetries ([`replays`]); every critical pair one of
+    ///   whose rules instantiates a variable or is conditioned joins in the
+    ///   second-order reading ([`Self::second_order`]); and every other
+    ///   critical pair normalizes to one term under the rules that instantiate
+    ///   nothing and are not conditioned, each left side matched under the
+    ///   symmetries of the rules ([`Self::normalize`]). Such a pair stands with
+    ///   its inner left side in each arrangement of the two arguments at each
+    ///   of its nodes of a symbol of a symmetry, so a rule overlaps its own
+    ///   other arrangements at the root, and its two normal forms are one term
+    ///   when their representatives are equal ([`representative`]). Peaks and
+    ///   first-order pairs are those of [`Self::decided`], the rules read with
+    ///   their indices where the presentation has that reading, so an overlap a
+    ///   sorting rules out is no pair. Otherwise the first failing rule in that
+    ///   order and its fault; a divergent or undecided overlap is named at its
+    ///   outer rule.
     /// - provides: the kernel's own decision that a presentation's rules are a
     ///   convergent rewriting system deciding the equations its written rules
     ///   generate, re-derived at every admission and replay.
@@ -1419,6 +1445,7 @@ impl TheoryRules
     /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
     /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
     /// - witness: `theory_rules::tests::conditioned_rules_join_under_the_condition_their_overlap_composes_2448`
+    /// - witness: `theory_rules::tests::a_pair_stands_in_each_order_under_a_symmetry`
     #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules.len()))]
     #[inline]
     pub fn decide(
@@ -1451,13 +1478,14 @@ impl TheoryRules
         let first = decided.len().saturating_sub(self.peaks.len());
         let mut work = PairBuffers::default();
         self.symmetries(&mut work.symmetric);
+        let mut arranged = Arrangement::default();
         for (offset, &peak) in self.peaks.iter().enumerate() {
             let index = first.saturating_add(offset);
             let (Some(before), Some(rule)) = (decided.get(.. index), decided.get(index))
             else {
                 return Err(refuse(index, TheoryRuleFault::NoPeak));
             };
-            match self.joins(before, peak, rule, &mut work, fuel) {
+            match self.joins(before, peak, rule, (&mut arranged, &mut work), fuel) {
                 Ok(Verdict::Holds) => {},
                 Ok(Verdict::Fails) => return Err(refuse(index, TheoryRuleFault::NoPeak)),
                 Err(Exhausted) => return Err(refuse(index, TheoryRuleFault::Exhausted)),
@@ -1469,8 +1497,10 @@ impl TheoryRules
                 if !matches!(node, TheoryNode::Symbol(_)) {
                     continue;
                 }
-                for inner in 0 .. decided.len() {
-                    if position == 0 && inner == outer {
+                for (inner, other) in decided.iter().enumerate() {
+                    if rule.reading() != TheoryRuleReading::FirstOrder
+                        || other.reading() != TheoryRuleReading::FirstOrder
+                    {
                         continue;
                     }
                     let peak = CriticalPeak {
@@ -1478,45 +1508,143 @@ impl TheoryRules
                         position: SidePosition(position),
                         inner: RuleIndex::from(inner),
                     };
-                    let other = decided.get(inner);
-                    if rule.reading() != TheoryRuleReading::FirstOrder
-                        || other
-                            .is_some_and(|other| other.reading() != TheoryRuleReading::FirstOrder)
-                    {
-                        continue;
-                    }
-                    let joined = self.pair(decided, peak, &mut work, fuel).and_then(|pair| {
-                        if pair == Verdict::Fails {
-                            return Ok(Verdict::Holds);
+                    symmetric_sites(other.left(), &work.symmetric, &mut arranged.sites);
+                    let Selection(count) = orders(&arranged.sites);
+                    for selection in 0 .. count {
+                        // A rule overlaps its own left side at the root as
+                        // written by one term, which is no pair.
+                        if selection == 0 && position == 0 && inner == outer {
+                            continue;
                         }
-                        self.normalize(
+                        match self.joined(
                             decided,
-                            &mut work.by_outer,
-                            (&work.symmetric, &mut work.matching, &mut work.rewritten),
+                            (peak, Selection(selection)),
+                            (&mut arranged, &mut work),
                             fuel,
-                        )?;
-                        self.normalize(
-                            decided,
-                            &mut work.by_inner,
-                            (&work.symmetric, &mut work.matching, &mut work.rewritten),
-                            fuel,
-                        )?;
-                        Ok(Verdict::from(work.by_outer == work.by_inner))
-                    });
-                    match joined {
-                        Ok(Verdict::Holds) => {},
-                        Ok(Verdict::Fails) => {
-                            return Err(refuse(
-                                outer,
-                                TheoryRuleFault::Diverges(RuleIndex::from(inner)),
-                            ));
-                        },
-                        Err(Exhausted) => return Err(refuse(outer, TheoryRuleFault::Exhausted)),
+                        ) {
+                            Ok(Verdict::Holds) => {},
+                            Ok(Verdict::Fails) => {
+                                return Err(refuse(
+                                    outer,
+                                    TheoryRuleFault::Diverges(RuleIndex::from(inner)),
+                                ));
+                            },
+                            Err(Exhausted) => {
+                                return Err(refuse(outer, TheoryRuleFault::Exhausted));
+                            },
+                        }
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    /// Whether the critical pair `peak` names over `rules`, with the inner
+    /// left side in the arrangement `selection`, joins: no pair, or two normal
+    /// forms that are one term under the symmetries.
+    ///
+    /// # Specification
+    /// - requires: `rules` are well formed and oriented; `arranged.sites` are
+    ///   [`symmetric_sites`] of the inner rule's left side; `work.symmetric`
+    ///   are [`Self::symmetries`].
+    /// - ensures: positive exactly when [`Self::reducts`] gives no pair for
+    ///   `selection`, or the two normal forms that it leaves are two terms
+    ///   whose representatives ([`representative`]) are equal.
+    /// - fails: [`Exhausted`] when `fuel` runs out first.
+    /// - panics: none.
+    /// - executable: none — the pair and its normal forms are what this
+    ///   computes.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two rules that overlap only in the other order of one
+    ///   left side part; a rule parts from its own other order; two rules whose
+    ///   normal forms differ by a swap join.
+    /// - witness: `theory_rules::tests::a_pair_stands_in_each_order_under_a_symmetry`
+    fn joined(
+        &self,
+        rules: &[TheoryRule],
+        (peak, selection): (CriticalPeak, Selection),
+        (arranged, work): (&mut Arrangement, &mut PairBuffers),
+        fuel: &mut RewriteFuel,
+    ) -> Result<Verdict, Exhausted>
+    {
+        if self.reducts(rules, (peak, selection), (arranged, work), fuel)? == Verdict::Fails {
+            return Ok(Verdict::Holds);
+        }
+        representative(&work.symmetric, &mut work.by_outer, fuel)?;
+        representative(&work.symmetric, &mut work.by_inner, fuel)?;
+        Ok(Verdict::from(work.by_outer == work.by_inner))
+    }
+
+    /// The two normal forms under `rules` of the critical pair `peak` names,
+    /// with the inner left side in the arrangement `selection`, into `work`'s
+    /// two terms.
+    ///
+    /// # Specification
+    /// - requires: `rules` are well formed and oriented; `arranged.sites` are
+    ///   [`symmetric_sites`] of the inner rule's left side; `work.symmetric`
+    ///   are [`Self::symmetries`].
+    /// - ensures: positive exactly when [`Self::pair`] gives a pair for the
+    ///   inner left side that [`reordered`] writes for `selection`, the written
+    ///   side for the selection zero; `work.by_outer` and `work.by_inner` then
+    ///   hold the two sides of the pair in normal form under `rules`.
+    /// - fails: [`Exhausted`] when `fuel` runs out first.
+    /// - panics: none.
+    /// - executable: none — the pair and its normal forms are what this
+    ///   computes.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::joined`] and [`Self::joins`].
+    /// - witness: `theory_rules::tests::a_pair_stands_in_each_order_under_a_symmetry`
+    /// - witness: `theory_rules::tests::a_derived_rule_replays_its_peak_in_each_order_under_a_symmetry`
+    fn reducts(
+        &self,
+        rules: &[TheoryRule],
+        (peak, selection): (CriticalPeak, Selection),
+        (arranged, work): (&mut Arrangement, &mut PairBuffers),
+        fuel: &mut RewriteFuel,
+    ) -> Result<Verdict, Exhausted>
+    {
+        let Some(inner) = rules.get(usize::from(peak.inner))
+        else {
+            return Ok(Verdict::Fails);
+        };
+        let left = if selection == Selection(0) {
+            inner.left()
+        }
+        else {
+            reordered(
+                inner.left(),
+                (&arranged.sites, selection),
+                &|node: TheoryNode| node_arity(node, &|symbol: TheorySymbol| self.width(symbol)),
+                (&mut arranged.order, &mut arranged.pending),
+                fuel,
+            )?;
+            &arranged.order
+        };
+        if self.pair(rules, peak, left, work, fuel)? == Verdict::Fails {
+            return Ok(Verdict::Fails);
+        }
+        self.normalize(
+            rules,
+            &mut work.by_outer,
+            (&work.symmetric, &mut work.matching, &mut work.rewritten),
+            fuel,
+        )?;
+        self.normalize(
+            rules,
+            &mut work.by_inner,
+            (&work.symmetric, &mut work.matching, &mut work.rewritten),
+            fuel,
+        )?;
+        Ok(Verdict::Holds)
     }
 
     /// Decide the critical pairs one of whose rules instantiates a variable
@@ -1641,9 +1769,10 @@ impl TheoryRules
     /// - requires: these rules are well formed.
     /// - ensures: [`Some`] with the first peak, in order of the outer rule, the
     ///   position and the inner rule, that [`Self::decide`] would replay for
-    ///   `rule` appended after these rules; [`None`] when none does. What
-    ///   `search` held before is never read, so one search serves every rule a
-    ///   caller asks about.
+    ///   `rule` appended after these rules, in some arrangement of the inner
+    ///   left side under the symmetries; [`None`] when none does. What `search`
+    ///   held before is never read, so one search serves every rule a caller
+    ///   asks about.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     ///
@@ -1653,8 +1782,10 @@ impl TheoryRules
     /// # Adequacy
     /// - hypothesis: L3 — each rule a group's completion derives is found at a
     ///   peak of the rules before it, and the peaks found replay; a rule no
-    ///   pair reaches has none.
+    ///   pair reaches has none; a rule that joins two rules that overlap only
+    ///   in the other order of one left side is found at their peak.
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+    /// - witness: `theory_rules::tests::a_derived_rule_replays_its_peak_in_each_order_under_a_symmetry`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |peak| peak.is_none_or(|peak| usize::from(peak.outer) < self.decided().len() && usize::from(peak.inner) < self.decided().len())))]
     #[inline]
     pub fn peak_of(
@@ -1664,7 +1795,10 @@ impl TheoryRules
         fuel: &mut RewriteFuel,
     ) -> Result<Option<CriticalPeak>, Exhausted>
     {
-        let work = &mut search.0;
+        let PeakSearch {
+            ref mut work,
+            ref mut arranged,
+        } = *search;
         self.symmetries(&mut work.symmetric);
         let decided = self.decided();
         for (outer, overlapped) in decided.iter().enumerate() {
@@ -1673,15 +1807,12 @@ impl TheoryRules
                     continue;
                 }
                 for inner in 0 .. decided.len() {
-                    if position == 0 && inner == outer {
-                        continue;
-                    }
                     let peak = CriticalPeak {
                         outer: RuleIndex::from(outer),
                         position: SidePosition(position),
                         inner: RuleIndex::from(inner),
                     };
-                    if self.joins(decided, peak, rule, work, fuel)? == Verdict::Holds {
+                    if self.joins(decided, peak, rule, (arranged, work), fuel)? == Verdict::Holds {
                         return Ok(Some(peak));
                     }
                 }
@@ -1833,13 +1964,14 @@ impl TheoryRules
         Some(Position(at))
     }
 
-    /// Write to `symmetric` each symbol whose two arguments a symmetry of the
-    /// rules swaps, in ascending order.
+    /// Write to `symmetric` each symbol whose last two arguments a symmetry of
+    /// the rules swaps, in ascending order.
     ///
     /// # Specification
-    /// - ensures: `symmetric` holds the symbol of each rule of [`Self::rules`]
-    ///   that [`TheoryRule::symmetry`] names, sorted, and nothing of a previous
-    ///   call.
+    /// - ensures: `symmetric` holds the symbol of each rule of
+    ///   [`Self::decided`] that [`TheoryRule::symmetry`] names, sorted, and
+    ///   nothing of a previous call. So a pair of the indexed reading reads the
+    ///   symbol that carries its indices.
     /// - panics: none.
     /// - executable: none — the list is the body's own scan of the rules.
     ///
@@ -1849,15 +1981,17 @@ impl TheoryRules
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`matched_under`]: a left side matches in the
-    ///   other order with the symmetry written before the rule and after it.
+    ///   other order with the symmetry written before the rule and after it;
+    ///   over a sort with two indices a rule joins its own other order.
     /// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
+    /// - witness: `theory_rules::tests::a_symmetry_over_an_indexed_sort_is_decided_with_its_indices`
     fn symmetries(
         &self,
         symmetric: &mut SmallVec<TheorySymbol, 0, Global>,
     )
     {
         symmetric.clear();
-        symmetric.extend(self.rules.iter().filter_map(TheoryRule::symmetry));
+        symmetric.extend(self.decided().iter().filter_map(TheoryRule::symmetry));
         symmetric.sort_unstable();
     }
 
@@ -2015,18 +2149,22 @@ impl TheoryRules
         core::iter::successors(Some(first), move |at| ends.get(at.0).copied()).take(arity)
     }
 
-    /// Whether `peak`, over `before`, replays as `rule`: the two normal forms
-    /// of its critical pair under `before` are `rule`'s sides, in either
-    /// order, up to renaming the variables.
+    /// Whether `peak`, over `before`, replays as `rule`: in some arrangement of
+    /// its inner left side, the two normal forms of its critical pair under
+    /// `before` are `rule`'s sides, in either order, up to renaming the
+    /// variables and up to the symmetries.
     ///
     /// # Specification
-    /// - requires: `before` and `rule` are well formed.
+    /// - requires: `before` and `rule` are well formed; `work.symmetric` are
+    ///   [`Self::symmetries`].
     /// - ensures: positive exactly when the peak names two rules of `before`
-    ///   and an operation position of the outer one's left side, other than the
-    ///   root of one rule overlapping itself, their left sides unify there, and
-    ///   the two reducts' normal forms under `before`, read with their
-    ///   variables numbered by first occurrence across both, are `rule`'s left
-    ///   and right sides so read, or its right and left.
+    ///   and an operation position of the outer one's left side and, for some
+    ///   arrangement of the inner left side at its nodes of a symbol of a
+    ///   symmetry, other than the written one at the root of one rule
+    ///   overlapping itself, the two left sides unify there and the two
+    ///   reducts' normal forms under `before` are `rule`'s two sides as
+    ///   [`replays`] reads them. The peak names no arrangement: the first one
+    ///   that replays, in ascending order of the selections, decides.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — restating it needs the pair and the normal forms
@@ -2036,69 +2174,62 @@ impl TheoryRules
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::decide`].
+    /// - hypothesis: L3 — as [`Self::decide`]; beside a symmetry a rule that
+    ///   joins two constants replays the peak of two rules that overlap only in
+    ///   the other order of one left side.
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+    /// - witness: `theory_rules::tests::a_derived_rule_replays_its_peak_in_each_order_under_a_symmetry`
     fn joins(
         &self,
         before: &[TheoryRule],
         peak: CriticalPeak,
         rule: &TheoryRule,
-        work: &mut PairBuffers,
+        (arranged, work): (&mut Arrangement, &mut PairBuffers),
         fuel: &mut RewriteFuel,
     ) -> Result<Verdict, Exhausted>
     {
-        if usize::from(peak.outer) >= before.len()
-            || usize::from(peak.inner) >= before.len()
-            || (peak.position.0 == 0 && peak.outer == peak.inner)
-            || self.pair(before, peak, work, fuel)? == Verdict::Fails
-        {
+        let Some(inner) = before.get(usize::from(peak.inner))
+        else {
+            return Ok(Verdict::Fails);
+        };
+        if usize::from(peak.outer) >= before.len() {
             return Ok(Verdict::Fails);
         }
-        self.normalize(
-            before,
-            &mut work.by_outer,
-            (&work.symmetric, &mut work.matching, &mut work.rewritten),
-            fuel,
-        )?;
-        self.normalize(
-            before,
-            &mut work.by_inner,
-            (&work.symmetric, &mut work.matching, &mut work.rewritten),
-            fuel,
-        )?;
-        canonical_flats(
-            &work.by_outer,
-            &work.by_inner,
-            (&mut work.canonical, &mut work.seen_nodes),
-        );
         canonical_sides(
             rule.left(),
             rule.right(),
             (&mut work.stated, &mut work.seen_ordinals),
         );
         let split = rule.left().len();
-        if (work.by_outer.len(), &work.canonical) == (split, &work.stated) {
-            return Ok(Verdict::Holds);
+        symmetric_sites(inner.left(), &work.symmetric, &mut arranged.sites);
+        let Selection(count) = orders(&arranged.sites);
+        for selection in 0 .. count {
+            // A rule overlaps its own left side at the root as written by one
+            // term, which is no pair.
+            if selection == 0 && peak.position.0 == 0 && peak.outer == peak.inner {
+                continue;
+            }
+            if self.reducts(before, (peak, Selection(selection)), (arranged, work), fuel)?
+                == Verdict::Holds
+                && replays(work, split, fuel)? == Verdict::Holds
+            {
+                return Ok(Verdict::Holds);
+            }
         }
-        canonical_flats(
-            &work.by_inner,
-            &work.by_outer,
-            (&mut work.canonical, &mut work.seen_nodes),
-        );
-        Ok(Verdict::from(
-            (work.by_inner.len(), &work.canonical) == (split, &work.stated),
-        ))
+        Ok(Verdict::Fails)
     }
 
-    /// Whether the overlap `peak` names over `rules` exists, the unifier left
-    /// in `work`'s graph.
+    /// Whether the overlap of `inner_left` with the outer rule of `peak` at its
+    /// position exists over `rules`, the unifier left in `work`'s graph.
     ///
     /// # Specification
-    /// - requires: the rules `peak` names are well formed.
+    /// - requires: the outer rule `peak` names is well formed; `inner_left` is
+    ///   the left side of its inner rule in one arrangement of the arguments of
+    ///   its nodes of a symbol of a symmetry.
     /// - ensures: positive exactly when the position holds an operation of the
-    ///   outer rule's left side and the inner rule's left side unifies with the
-    ///   subterm there, the two rules' variables kept apart and the unifier
-    ///   passing the occurs check.
+    ///   outer rule's left side and `inner_left` unifies with the subterm
+    ///   there, the two rules' variables kept apart and the unifier passing the
+    ///   occurs check.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — the unifier this builds is the only witness of the
@@ -2118,14 +2249,12 @@ impl TheoryRules
         &self,
         rules: &[TheoryRule],
         peak: CriticalPeak,
+        inner_left: &[TheoryNode],
         work: &mut PairBuffers,
         fuel: &mut RewriteFuel,
     ) -> Result<Verdict, Exhausted>
     {
-        let (Some(outer), Some(inner)) = (
-            rules.get(usize::from(peak.outer)),
-            rules.get(usize::from(peak.inner)),
-        )
+        let Some(outer) = rules.get(usize::from(peak.outer))
         else {
             return Ok(Verdict::Fails);
         };
@@ -2152,7 +2281,7 @@ impl TheoryRules
         };
         let Some(inner_root) = work.graph.load(
             self,
-            inner.left(),
+            inner_left,
             &mut work.inner_variables,
             None,
             (&mut work.positions, &mut work.stack),
@@ -2168,10 +2297,13 @@ impl TheoryRules
         Ok(Verdict::Holds)
     }
 
-    /// The critical pair `peak` names over `rules`, into `work`'s two terms.
+    /// The critical pair `peak` names over `rules` with `inner_left` as the
+    /// left side of its inner rule, into `work`'s two terms.
     ///
     /// # Specification
-    /// - requires: the rules `peak` names are well formed.
+    /// - requires: the rules `peak` names are well formed; `inner_left` is the
+    ///   inner rule's left side in one arrangement of the arguments of its
+    ///   nodes of a symbol of a symmetry, each variable at its ordinal.
     /// - ensures: positive exactly when neither rule instantiates a variable or
     ///   is conditioned and [`Self::overlap`] is; `work.by_outer` then holds
     ///   the outer rule's right side under the unifier and `work.by_inner` its
@@ -2192,6 +2324,7 @@ impl TheoryRules
         &self,
         rules: &[TheoryRule],
         peak: CriticalPeak,
+        inner_left: &[TheoryNode],
         work: &mut PairBuffers,
         fuel: &mut RewriteFuel,
     ) -> Result<Verdict, Exhausted>
@@ -2210,7 +2343,7 @@ impl TheoryRules
         };
         if outer.reading() != TheoryRuleReading::FirstOrder
             || inner.reading() != TheoryRuleReading::FirstOrder
-            || self.overlap(rules, peak, work, fuel)? == Verdict::Fails
+            || self.overlap(rules, peak, inner_left, work, fuel)? == Verdict::Fails
         {
             return Ok(Verdict::Fails);
         }
@@ -2563,14 +2696,26 @@ struct MatchBuffers
 {
     /// A matched left side's bindings.
     bindings: SmallVec<Option<Span>, 0, Global>,
-    /// The positions of a left side's nodes of a symbol of a symmetry.
-    sites: SmallVec<Position, 0, Global>,
-    /// A left side in one arrangement of the arguments of those nodes.
-    order: SmallVec<TheoryNode, 0, Global>,
-    /// The subterms of a left side still to write in an arrangement.
-    pending: SmallVec<Position, 0, Global>,
+    /// A left side in an arrangement other than the written one.
+    arranged: Arrangement,
     /// The two subterms that two occurrences of one variable meet.
     spans: Copies,
+}
+
+/// The buffers that write a left side in one arrangement of the arguments of
+/// its nodes of a symbol of a symmetry.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Arrangement
+{
+    /// The positions of the left side's nodes of a symbol of a symmetry.
+    sites: SmallVec<Position, 0, Global>,
+    /// The left side in the arrangement.
+    order: SmallVec<TheoryNode, 0, Global>,
+    /// The subterms of the left side still to write.
+    pending: SmallVec<Position, 0, Global>,
 }
 
 /// Where `left` matches `term` at `start` as written or, failing that, in an
@@ -2614,9 +2759,12 @@ where
 {
     let MatchBuffers {
         ref mut bindings,
-        ref mut sites,
-        ref mut order,
-        ref mut pending,
+        arranged:
+            Arrangement {
+                ref mut sites,
+                ref mut order,
+                ref mut pending,
+            },
         ref mut spans,
     } = *matching;
     let written = matched(symmetric, (term, start), left, (bindings, spans), fuel)?;
@@ -2633,7 +2781,7 @@ where
         reordered(
             left,
             (sites, Selection(selection)),
-            width,
+            &|node: TheoryNode| node_arity(node, width),
             (order, pending),
             fuel,
         )?;
@@ -2698,13 +2846,14 @@ fn orders(sites: &[Position]) -> Selection
 /// in the arrangement that `selection` names for it.
 ///
 /// # Specification
-/// - requires: `left` is one term by `width`; `sites` are positions of `left`,
-///   in ascending order.
+/// - requires: `left` is one term by `arity`, which gives the count of the
+///   arguments of a node; `sites` are positions of `left`, in ascending order.
 /// - ensures: `order` holds the pre-order of `left` where the node at
-///   `sites[i]` holds its arguments in the arrangement of [`ARRANGEMENTS`] that
-///   digit `i` of `selection` names, when that arrangement has the arity of the
-///   node. Each other node holds its arguments as written, and each variable
-///   keeps its ordinal. `order` has the nodes of `left`, so it has its length.
+///   `sites[i]` holds its last arguments in the arrangement of [`ARRANGEMENTS`]
+///   that digit `i` of `selection` names, when the node has that many arguments
+///   or more. The arguments before them stay in place. Each other node holds
+///   its arguments as written, and each variable keeps its ordinal. `order` has
+///   the nodes of `left`, so it has its length.
 /// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node written
 ///   and per node of each argument that the walk measures.
 /// - panics: none.
@@ -2720,20 +2869,23 @@ fn orders(sites: &[Position]) -> Selection
 ///   buffers, growth within the left side's nodes
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`matched_under`].
+/// - hypothesis: L3 — as [`matched_under`] for a left side, and as
+///   [`TheoryRules::decide`] for a normal form of a pair.
 /// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
-fn reordered<W>(
-    left: &[TheoryNode],
+/// - witness: `theory_rules::tests::a_derived_rule_replays_its_peak_in_each_order_under_a_symmetry`
+fn reordered<N, A>(
+    left: &[N],
     (sites, Selection(selection)): (&[Position], Selection),
-    width: &W,
+    arity: &A,
     (order, pending): (
-        &mut SmallVec<TheoryNode, 0, Global>,
+        &mut SmallVec<N, 0, Global>,
         &mut SmallVec<Position, 0, Global>,
     ),
     fuel: &mut RewriteFuel,
 ) -> Result<(), Exhausted>
 where
-    W: Fn(TheorySymbol) -> Position,
+    N: Copy,
+    A: Fn(N) -> usize,
 {
     order.clear();
     pending.clear();
@@ -2745,16 +2897,12 @@ where
             continue;
         };
         order.push(node);
-        let arity = match node {
-            TheoryNode::Symbol(symbol) => width(symbol).0,
-            TheoryNode::Instance(_, count) => usize::from(count),
-            TheoryNode::Variable(_) => 0,
-        };
+        let count = arity(node);
         let first = pending.len();
         let mut argument = Position(at.saturating_add(1));
-        for _place in 0 .. arity {
+        for _place in 0 .. count {
             pending.push(argument);
-            argument = left_end(left, argument, width, fuel)?;
+            argument = left_end(left, argument, arity, fuel)?;
         }
         let arrangement = sites
             .binary_search(&Position(at))
@@ -2764,53 +2912,76 @@ where
             .and_then(|digit| selection.checked_div(digit))
             .and_then(|rest| rest.checked_rem(ARRANGEMENTS.len()))
             .and_then(|named| ARRANGEMENTS.get(named))
-            .filter(|arrangement| arrangement.len() == arity);
+            .filter(|arrangement| arrangement.len() <= count);
         // The stack gives the subterm pushed last first, so the arguments go
         // on it again from the last place to the first, and the written starts
         // below them leave.
-        for place in (0 .. arity).rev() {
+        for place in (0 .. count).rev() {
             let written = arrangement
-                .and_then(|arrangement| arrangement.get(place).copied())
+                .and_then(|arrangement| {
+                    let lead = count.checked_sub(arrangement.len())?;
+                    let turned = arrangement.get(place.checked_sub(lead)?)?;
+                    turned.checked_add(lead)
+                })
                 .unwrap_or(place);
             if let Some(&start) = pending.get(first.saturating_add(written)) {
                 pending.push(start);
             }
         }
-        pending.replace_range(first .. first.saturating_add(arity), core::iter::empty());
+        pending.replace_range(first .. first.saturating_add(count), core::iter::empty());
     }
     Ok(())
 }
 
-/// One past the end of the subterm of `side` starting at `start`, each symbol
-/// over the `width` subterms it states; the end of `side` when it runs out
-/// first.
+/// One past the end of the subterm of `side` starting at `start`, each node
+/// over the subterms that `arity` counts for it; the end of `side` when it
+/// runs out first.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
 /// [`Exhausted`] when `fuel` runs out first; one unit per node.
-fn left_end<W>(
-    side: &[TheoryNode],
+fn left_end<N, A>(
+    side: &[N],
     start: Position,
-    width: &W,
+    arity: &A,
     fuel: &mut RewriteFuel,
 ) -> Result<Position, Exhausted>
 where
-    W: Fn(TheorySymbol) -> Position,
+    N: Copy,
+    A: Fn(N) -> usize,
 {
     let (mut at, mut owed) = (start.0, 1_usize);
     while let Some(next) = owed.checked_sub(1) {
         fuel.charge()?;
-        owed = match side.get(at) {
-            Some(&TheoryNode::Symbol(symbol)) => next.saturating_add(width(symbol).0),
-            Some(&TheoryNode::Instance(_, count)) => next.saturating_add(usize::from(count)),
-            Some(&TheoryNode::Variable(_)) => next,
-            None => return Ok(Position(side.len())),
+        let Some(&node) = side.get(at)
+        else {
+            return Ok(Position(side.len()));
         };
+        owed = next.saturating_add(arity(node));
         at = at.saturating_add(1);
     }
     Ok(Position(at))
+}
+
+/// How many subterms the node `node` of a rule's side heads, a symbol over the
+/// `width` subterms it states.
+///
+/// # Specification
+/// trivial.
+fn node_arity<W>(
+    node: TheoryNode,
+    width: &W,
+) -> usize
+where
+    W: Fn(TheorySymbol) -> Position,
+{
+    match node {
+        TheoryNode::Symbol(symbol) => width(symbol).0,
+        TheoryNode::Instance(_, count) => usize::from(count),
+        TheoryNode::Variable(_) => 0,
+    }
 }
 
 /// Where `left` matches `term` at `start`: the end of the matched subterm,
@@ -2953,17 +3124,17 @@ fn agree(
     Ok(Verdict::from(first == second))
 }
 
-/// Put the two arguments of each node of `term` of a symbol of `symmetric` in
-/// ascending order, from the last node to the first.
+/// Put the last two arguments of each node of `term` of a symbol of
+/// `symmetric` in ascending order, from the last node to the first.
 ///
 /// # Specification
 /// - requires: `term` is one term; `symmetric` is in ascending order.
 /// - ensures: each node of `term` of a symbol of `symmetric` over two arguments
-///   holds them in ascending order of their pre-order sequences, each argument
-///   itself so arranged. A term is a pre-order sequence with its arities, so
-///   the order of two sequences is a total order of terms, and two terms that
-///   share their variables agree under the symmetries exactly when the two
-///   results are equal.
+///   or more holds its last two in ascending order of their pre-order
+///   sequences, each argument itself so arranged. A term is a pre-order
+///   sequence with its arities, so the order of two sequences is a total order
+///   of terms, and two terms that share their variables agree under the
+///   symmetries exactly when the two results are equal.
 /// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node, and
 ///   one per node of the two arguments of each node turned.
 /// - panics: none.
@@ -2974,22 +3145,38 @@ fn agree(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`agree`].
+/// - hypothesis: L3 — as [`agree`]; over a sort with two indices the two normal
+///   forms of a pair are compared past the indices.
 /// - witness: `theory_rules::tests::a_repeated_variable_binds_two_terms_that_agree_under_a_symmetry`
+/// - witness: `theory_rules::tests::a_symmetry_over_an_indexed_sort_is_decided_with_its_indices`
 fn representative(
     symmetric: &[TheorySymbol],
     term: &mut [Flat],
     fuel: &mut RewriteFuel,
 ) -> Result<(), Exhausted>
 {
+    if symmetric.is_empty() {
+        return Ok(());
+    }
     for at in (0 .. term.len()).rev() {
         fuel.charge()?;
-        let under = matches!(
-            term.get(at),
-            Some(&Flat::Symbol(symbol, 2)) if symmetric.binary_search(&symbol).is_ok()
-        );
-        let first = Position(at.saturating_add(1));
-        let (true, Some(second)) = (under, flat_end(term, first))
+        let Some(&Flat::Symbol(symbol, count)) = term.get(at)
+        else {
+            continue;
+        };
+        if symmetric.binary_search(&symbol).is_err() {
+            continue;
+        }
+        // The two arguments that the symmetry swaps stand after the indices.
+        let Some(first) = count.checked_sub(ARRANGEMENTS.len()).and_then(|lead| {
+            (0 .. lead).try_fold(Position(at.saturating_add(1)), |start, _index| {
+                flat_end(term, start)
+            })
+        })
+        else {
+            continue;
+        };
+        let Some(second) = flat_end(term, first)
         else {
             continue;
         };
@@ -3318,14 +3505,179 @@ impl Precedence for StatedRanks<'_>
     }
 }
 
+/// Whether the two normal forms `work.by_outer` and `work.by_inner` of a pair
+/// are the two sides `work.stated` of a derived rule, in either order, up to
+/// renaming the variables and up to the symmetries.
+///
+/// # Specification
+/// - requires: `work.stated` are [`canonical_sides`] of the rule, whose left
+///   side has `split` nodes; each normal form is one term; `work.symmetric` is
+///   in ascending order.
+/// - ensures: positive exactly when, for some arrangement of the two arguments
+///   at each node of a symbol of `work.symmetric` in each of the two normal
+///   forms, the two so arranged, read with their variables numbered by first
+///   occurrence across both ([`canonical_flats`]), are the rule's left and
+///   right sides so read, or its right and left. The first occurrence of a
+///   variable changes with the order of two arguments, so no one representative
+///   decides this, and the arrangements are tried in ascending order of the
+///   selections. With no symbol in `work.symmetric` the one arrangement is the
+///   written one.
+/// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node written
+///   in an arrangement and per node compared.
+/// - panics: none.
+/// - measure: the selections of the two normal forms, the count of the
+///   arrangements to the count of their nodes of a symbol of a symmetry;
+///   `fuel`.
+/// - executable: none — the arrangements are the body's own search.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryRules::joins`].
+/// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+/// - witness: `theory_rules::tests::a_derived_rule_replays_its_peak_in_each_order_under_a_symmetry`
+fn replays(
+    work: &mut PairBuffers,
+    split: usize,
+    fuel: &mut RewriteFuel,
+) -> Result<Verdict, Exhausted>
+{
+    let PairBuffers {
+        ref symmetric,
+        ref by_outer,
+        ref by_inner,
+        ref stated,
+        ref mut canonical,
+        ref mut seen_nodes,
+        replay:
+            ReplayBuffers {
+                ref mut sites,
+                ref mut arranged,
+                ref mut pending,
+            },
+        ..
+    } = *work;
+    if by_outer.len().saturating_add(by_inner.len()) != stated.len()
+        || (by_outer.len() != split && by_inner.len() != split)
+    {
+        return Ok(Verdict::Fails);
+    }
+    let arity = |node: Flat| match node {
+        Flat::Symbol(_, arity) => arity,
+        Flat::Variable(_) => 0,
+    };
+    flat_sites(by_outer, symmetric, &mut sites.0);
+    flat_sites(by_inner, symmetric, &mut sites.1);
+    let (Selection(outer_count), Selection(inner_count)) = (orders(&sites.0), orders(&sites.1));
+    for outer in 0 .. outer_count {
+        let first: &[Flat] = if outer == 0 {
+            by_outer
+        }
+        else {
+            reordered(
+                by_outer,
+                (&sites.0, Selection(outer)),
+                &arity,
+                (&mut arranged.0, pending),
+                fuel,
+            )?;
+            &arranged.0
+        };
+        for inner in 0 .. inner_count {
+            let second: &[Flat] = if inner == 0 {
+                by_inner
+            }
+            else {
+                reordered(
+                    by_inner,
+                    (&sites.1, Selection(inner)),
+                    &arity,
+                    (&mut arranged.1, pending),
+                    fuel,
+                )?;
+                &arranged.1
+            };
+            for _node in 0 .. stated.len() {
+                fuel.charge()?;
+            }
+            canonical_flats(first, second, (canonical, seen_nodes));
+            if first.len() == split && *canonical == *stated {
+                return Ok(Verdict::Holds);
+            }
+            canonical_flats(second, first, (canonical, seen_nodes));
+            if second.len() == split && *canonical == *stated {
+                return Ok(Verdict::Holds);
+            }
+        }
+    }
+    Ok(Verdict::Fails)
+}
+
+/// Write to `sites` the positions of `term` that hold a symbol of
+/// `symmetric`, in ascending order.
+///
+/// # Specification
+/// - requires: `symmetric` is in ascending order.
+/// - ensures: `sites` holds each position of `term` whose node is a symbol that
+///   `symmetric` holds, and no other position.
+/// - panics: none.
+/// - executable: none — the positions are the body's own scan.
+///
+/// # Cost
+/// - allocation: one position for each such node in the reused buffer, growth
+///   within the term's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`replays`].
+/// - witness: `theory_rules::tests::a_derived_rule_replays_its_peak_in_each_order_under_a_symmetry`
+fn flat_sites(
+    term: &[Flat],
+    symmetric: &[TheorySymbol],
+    sites: &mut SmallVec<Position, 0, Global>,
+)
+{
+    sites.clear();
+    sites.extend(
+        term.iter()
+            .enumerate()
+            .filter(|&(_, &node)| {
+                matches!(node, Flat::Symbol(symbol, _) if symmetric.binary_search(&symbol).is_ok())
+            })
+            .map(|(at, _)| Position(at)),
+    );
+}
+
+/// The buffers that write the two normal forms of a pair in each arrangement
+/// of the arguments of their nodes of a symbol of a symmetry.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct ReplayBuffers
+{
+    /// The positions of those nodes in each of the two normal forms.
+    sites: (SmallVec<Position, 0, Global>, SmallVec<Position, 0, Global>),
+    /// Each of the two normal forms in an arrangement other than the written
+    /// one.
+    arranged: (SmallVec<Flat, 0, Global>, SmallVec<Flat, 0, Global>),
+    /// The subterms of a normal form still to write.
+    pending: SmallVec<Position, 0, Global>,
+}
+
 /// The buffers [`TheoryRules::peak_of`] seeks a peak in, kept by its caller
 /// so that a search for each of many rules allocates them once.
 ///
 /// # Specification
 /// trivial.
-#[repr(transparent)]
 #[derive(Debug, Default)]
-pub struct PeakSearch(PairBuffers);
+pub struct PeakSearch
+{
+    /// The buffers of a pair.
+    work: PairBuffers,
+    /// The inner left side of a pair in one arrangement.
+    arranged: Arrangement,
+}
 
 /// The buffers a critical pair is built and normalized in, reused across
 /// pairs.
@@ -3360,6 +3712,8 @@ struct PairBuffers
     /// Each symbol whose two arguments a symmetry of the rules swaps, in
     /// ascending order.
     symmetric: SmallVec<TheorySymbol, 0, Global>,
+    /// The two normal forms in each arrangement, as a derived rule replays.
+    replay: ReplayBuffers,
     /// A firing rule's right side, built before it replaces its redex.
     rewritten: SmallVec<Flat, 0, Global>,
     /// The pair's normal forms, renumbered.

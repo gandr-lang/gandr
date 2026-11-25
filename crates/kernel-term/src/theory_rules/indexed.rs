@@ -56,6 +56,11 @@
 //! not fix. The reading only narrows the critical pairs to the well-sorted
 //! ones, so declining it decides no presentation the written reading does not.
 //!
+//! A symmetry reads as each other rule does. Its symbol carries its indices
+//! first, and the rule swaps the two arguments after them, so it is a symmetry
+//! of the indexed reading also ([`TheoryRuleReading::Symmetry`]). The pair of
+//! a rule and its own other order then unifies the indices of the two.
+//!
 //! The front end's `gandr_theory_computads::Indexing` reads a description's
 //! laws the same way; the kernel re-derives the indices from the value rather
 //! than trusting the producer's.
@@ -1021,7 +1026,7 @@ impl<'arena> Reader<'arena>
         if self
             .rules
             .iter()
-            .any(|rule| rule.reading() != TheoryRuleReading::FirstOrder)
+            .any(|rule| rule.reading() == TheoryRuleReading::SecondOrder)
         {
             return None;
         }
