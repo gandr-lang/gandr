@@ -1,7 +1,7 @@
-def handled() -> -F Unit = handle c : std.process.Exit.Eff {
+def handled() -> -F Unit = effect c : std.process.Exit.Eff {
   let code = c.exit 1
   pure code
-} with {
+} handle {
   | pure(x) => pure *{}
   | oper exit(status, k) => pure *{}
 };
