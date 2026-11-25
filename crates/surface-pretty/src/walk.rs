@@ -1930,19 +1930,20 @@ enum Elaboration
 ///   (#1102, #4508) and a call there is juxtaposed (#5211); a type for a type
 ///   slot of a value or a computation that writes itself — an annotation, a
 ///   binder's type, a typed bind's result — where the expression grammar embeds
-///   a type; `surface` itself otherwise. A quote, any other nested or returned
-///   computation and an ascription, elided or written as the match that answers
-///   it, write nothing of their own around a slot, so their slot is read as
-///   they are; the endpoints of a path or a bridge type, `Path[.A = A](x, y)`,
-///   are expressions in either sort unless its carrier is a universe, since the
-///   grammar reads a universe's endpoints, codes, as types and any other
-///   carrier's as expressions; any other type former's value slot is read as
-///   the type is, since every type application reads its arguments in the
-///   type's own sort. A computation's slot that takes a computation — an arm, a
-///   bound computation, the rest of a bind — is an expression, since the
-///   lowering reads a computation that a type decodes as a body, where a call
-///   is juxtaposed (#7564). A call reads its own head and arguments as
-///   expressions, which [`Walk::visit`] schedules itself.
+///   a type; a type for an arrow's domain and codomain, since an arrow is a
+///   type form wherever it stands; `surface` itself otherwise. A quote, any
+///   other nested or returned computation and an ascription, elided or written
+///   as the match that answers it, write nothing of their own around a slot, so
+///   their slot is read as they are; the endpoints of a path or a bridge type,
+///   `Path[.A = A](x, y)`, are expressions in either sort unless its carrier is
+///   a universe, since the grammar reads a universe's endpoints, codes, as
+///   types and any other carrier's as expressions; any other type former's
+///   value slot is read as the type is, since every type application reads its
+///   arguments in the type's own sort. A computation's slot that takes a
+///   computation — an arm, a bound computation, the rest of a bind — is an
+///   expression, since the lowering reads a computation that a type decodes as
+///   a body, where a call is juxtaposed (#7564). A call reads its own head and
+///   arguments as expressions, which [`Walk::visit`] schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
 /// - panics: none.
@@ -7591,11 +7592,12 @@ impl Walk<'_, '_>
     ///   to from the occurrence; past every open binder of the zone, an
     ///   intuitionistic variable reads as the context binder it counts out to,
     ///   innermost last, a recursive definition's own written with its claim,
-    ///   `name[<]` or `name[>]`; `?`, approximate and recorded unbound, for a
-    ///   linear variable past every open binder, one past the context, and a
-    ///   context binder the source cannot name, recorded primed for a context
-    ///   binder whose prime ASCII cannot write, and recorded exhausted when the
-    ///   generated names ran out.
+    ///   `name[<]` or `name[>]`, apart from the name where a type's sort reads
+    ///   it; `?`, approximate and recorded unbound, for a linear variable past
+    ///   every open binder, one past the context, and a context binder the
+    ///   source cannot name, recorded primed for a context binder whose prime
+    ///   ASCII cannot write, and recorded exhausted when the generated names
+    ///   ran out.
     /// - provides: the spelling of a bound variable and of an endpoint.
     /// - fails: the builder's refusal.
     /// - panics: none.
@@ -7654,10 +7656,20 @@ impl Walk<'_, '_>
                     (None, Some(recursive))
                         if position == Some(ContextPosition(usize::from(recursive.uniform))) =>
                     {
-                        Ok(format!("{}{}", name.as_ref(), match recursive.claim {
-                            Recursion::Descends => "[<]",
-                            Recursion::Productive => "[>]",
-                        }))
+                        let apart = if self.surface == Surface::Expression {
+                            ""
+                        }
+                        else {
+                            " "
+                        };
+                        Ok(format!(
+                            "{}{apart}{}",
+                            name.as_ref(),
+                            match recursive.claim {
+                                Recursion::Descends => "[<]",
+                                Recursion::Productive => "[>]",
+                            }
+                        ))
                     },
                     (None, _) => Ok(String::from(name.as_ref())),
                     (Some(Unspelled::Primed), _) => Err(Unspelled::Primed),

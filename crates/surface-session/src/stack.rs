@@ -3,17 +3,17 @@
 //! # The form store keeps the spines of each form beside its region
 //!
 //! **Choice.** A spine is one application the parser molded: a juxtaposed
-//! application `f x y`, with its head, where its first slot opens, where each
-//! slot but the last ends and where it closes; or a family's application
-//! `List(a)` that writes its own `(`, with its `,` tiles and its `)`. The form
-//! store reads the spines of each form it joins off the molded tree, which
-//! holds the parser's repairs, and keeps them with the region it lays for the
-//! form. Their offsets count from the start of the form's region, so a form
-//! that the next parse takes up whole keeps its spines as they are, and a
-//! keystroke reads the spines of the forms it joins and no others. A query
-//! takes the form whose region holds the offset and walks its spines from the
-//! innermost outward. It reads no type: a face takes the head's type and the
-//! type a slot was checked against from the judgement's type table.
+//! application `f x y` or `List a`, with its head, where its first slot opens,
+//! where each slot but the last ends and where it closes; or a family's
+//! application `List(a)` that writes its own `(`, with its `,` tiles and its
+//! `)`. The form store reads the spines of each form it joins off the molded
+//! tree, which holds the parser's repairs, and keeps them with the region it
+//! lays for the form. Their offsets count from the start of the form's region,
+//! so a form that the next parse takes up whole keeps its spines as they are,
+//! and a keystroke reads the spines of the forms it joins and no others. A
+//! query takes the form whose region holds the offset and walks its spines from
+//! the innermost outward. It reads no type: a face takes the head's type and
+//! the type a slot was checked against from the judgement's type table.
 //!
 //! **Alternatives.** The language server read every call of a text off the
 //! whole tree once per change and answered the innermost call only. That walk
@@ -200,17 +200,17 @@ impl Spines
     /// # Specification
     /// - requires: `tree` was parsed under `grammar`; `forms` are children of
     ///   its root that start at or after `origin`.
-    /// - ensures: one spine per juxtaposed application whose left operands down
-    ///   to its head are applications: its innermost left operand as its head,
-    ///   the start of its first argument as its opening, the end of each
-    ///   argument but the last as a separator, each argument, and its end as
-    ///   its close. One spine per family application that writes an opening `(`
-    ///   among its own tiles: its first child as its head, its own `,` tiles as
-    ///   separators, the children between its brackets as its arguments, and
-    ///   its own `)` as its close, or its end when the parser closed it.
-    ///   Ascending by opening, each naming the innermost spine that holds it;
-    ///   the inner applications of a juxtaposed spine are no spines of their
-    ///   own.
+    /// - ensures: one spine per juxtaposed application, of expressions or of
+    ///   types, whose left operands down to its head are applications of its
+    ///   own sort: its innermost left operand as its head, the start of its
+    ///   first argument as its opening, the end of each argument but the last
+    ///   as a separator, each argument, and its end as its close. One spine per
+    ///   family application that writes an opening `(` among its own tiles: its
+    ///   first child as its head, its own `,` tiles as separators, the children
+    ///   between its brackets as its arguments, and its own `)` as its close,
+    ///   or its end when the parser closed it. Ascending by opening, each
+    ///   naming the innermost spine that holds it; the inner applications of a
+    ///   juxtaposed spine are no spines of their own.
     /// - provides: the spines the form store keeps with a form's region.
     /// - fails: never.
     /// - panics: none.
@@ -459,12 +459,12 @@ impl Walk<'_, '_>
     ///
     /// # Specification
     /// - requires: the walk's tree was parsed under its grammar.
-    /// - ensures: when `at` is an application whose left operands down to its
-    ///   head are applications, each with its three parts written, the spine
-    ///   with the innermost left operand as its head, the start of the first
-    ///   argument as its opening, the end of each argument but the last as a
-    ///   separator, each argument, and the end of `at` as its close; none
-    ///   otherwise.
+    /// - ensures: when `at` is an application, of expressions or of types,
+    ///   whose left operands down to its head are applications of its sort,
+    ///   each with its three parts written, the spine with the innermost left
+    ///   operand as its head, the start of the first argument as its opening,
+    ///   the end of each argument but the last as a separator, each argument,
+    ///   and the end of `at` as its close; none otherwise.
     /// - panics: none.
     /// - executable: none — a clause would walk the spine again.
     ///
