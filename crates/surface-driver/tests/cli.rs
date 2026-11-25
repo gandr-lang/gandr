@@ -3561,6 +3561,54 @@ fn a_fold_at_two_swapped_variables_is_decided_again_by_the_kernel_8367()
     }
 }
 
+/// The kernel decides the rules of a `data` block with the symmetry of a
+/// constructor again, and it reads each left side in each order of the two
+/// fields. The coincidence check admits the block with the symmetry before
+/// its rules, between them and after them. Each source settles under
+/// `--recheck`: a block that the checker admits and the kernel refuses faults
+/// the run. Two of the paths need a rule in the order that the block does not
+/// write.
+#[test]
+fn a_data_block_with_the_symmetry_of_a_constructor_settles_in_each_place_of_the_symmetry()
+{
+    const SYMMETRY: &str = "  rule : Pair x y <=> Pair y x;\n";
+    const ABSORBS: &str = "  rule : Pair Low x <=> Low;\n";
+    const UNIT: &str = "  rule : Pair High x <=> x;\n";
+    let scratch = Scratch::new(Path::new("symmetry-of-a-constructor"));
+    for (name, [first, second, third]) in [
+        ("first.gandr", [SYMMETRY, ABSORBS, UNIT]),
+        ("between.gandr", [ABSORBS, SYMMETRY, UNIT]),
+        ("last.gandr", [ABSORBS, UNIT, SYMMETRY]),
+    ] {
+        let text = [
+            "data Flat : Type where\n  | Low : Flat\n  | High : Flat\n  | Pair : (x : Flat, y : \
+             Flat) --> Flat\n",
+            first,
+            second,
+            third,
+            "\ndef absorbedFirst(x : Flat) -> Path (Pair Low x) Low = Path.here Low;\n",
+            "\ndef absorbedSecond(x : Flat) -> Path (Pair x Low) Low = Path.here Low;\n",
+            "\ndef unitFirst(x : Flat) -> Path (Pair High x) x = Path.here x;\n",
+            "\ndef unitSecond(x : Flat) -> Path (Pair x High) x = Path.here x;\n",
+            "\ndef eitherOrder(x : Flat, y : Flat) -> Path (Pair x y) (Pair y x) = Path.here \
+             (Pair y x);\n",
+        ]
+        .concat();
+        let source = scratch.file(Path::new(name), Text::from(text.as_str()));
+        let mut command = gandr(&["check", "--recheck"]);
+        command.arg(&source);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{name}: {}", stderr(&output));
+        let report = stdout(&output);
+        for line in ["declarations: 6 settled, 0 unsettled", "verdict: settled"] {
+            assert!(
+                report.lines().any(|found| found == line),
+                "{name}: {report}"
+            );
+        }
+    }
+}
+
 /// The kernel decides a path between two orders of two fields again where a
 /// side is a call. The checker names the crossed pairing at the value that the
 /// call returns, and the kernel replays it at that value. The source settles

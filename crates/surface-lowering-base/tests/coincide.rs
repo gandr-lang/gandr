@@ -1094,6 +1094,127 @@ fn a_call_that_no_rule_matches_is_normal_past_a_symmetry()
     });
 }
 
+/// The symmetry of a constructor forms peaks and rewrites nothing, as the
+/// symmetry of an operation does. Each rule over constructors that overlaps
+/// the symmetry derives its other order, so the place of the symmetry among
+/// the rules of a `data` block decides nothing. A term reaches one normal form
+/// in each order of its two fields, and a term that no rule matches is its own
+/// normal form.
+#[test]
+fn a_symmetry_of_a_constructor_is_no_rewrite_in_each_place()
+{
+    for (source, place) in [
+        (
+            include_str!(
+                "coincide/fixtures/a-symmetry-of-a-constructor-is-no-rewrite-written-first.gandr"
+            ),
+            "first",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-symmetry-of-a-constructor-is-no-rewrite-written-between.gandr"
+            ),
+            "between",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-symmetry-of-a-constructor-is-no-rewrite-written-last.gandr"
+            ),
+            "last",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref cells] = *module.cells().declarations.as_slice()
+            else {
+                panic!("one block")
+            };
+            let Coincidence::Joined(ref certificates) = cells.coincidence
+            else {
+                panic!(
+                    "the block joins with its symmetry written {place}: {:?}",
+                    module.cells().diagnostics
+                )
+            };
+            // The one variable of a derived rule takes its name from the peak
+            // of the rule: `x` or `y`, with a prime where the peak renames it.
+            // The place of the symmetry decides that name.
+            let mut derived: Vec<String> = certificates
+                .derived_terms
+                .iter()
+                .map(|derived| {
+                    format!("{} ==> {}", derived.rule.0, derived.rule.1)
+                        .replace('\'', "")
+                        .replace('y', "x")
+                })
+                .collect();
+            derived.sort();
+            assert_eq!(
+                derived,
+                ["Pair(x, High) ==> x", "Pair(x, Low) ==> Low"],
+                "the symmetry written {place}: each rule of the pair derives its other order"
+            );
+            let family = module.declarations().iter().next().unwrap();
+            for (call, normal) in [
+                ("Pair(Mid, Mid)", "Pair(Mid, Mid)"),
+                ("Pair(Low, Mid)", "Low"),
+                ("Pair(Mid, Low)", "Low"),
+                ("Pair(High, Mid)", "Mid"),
+                ("Pair(Mid, High)", "Mid"),
+                ("Pair(Pair(Mid, High), Low)", "Low"),
+            ] {
+                assert_eq!(
+                    module
+                        .normal_form(family, CallText::from(call))
+                        .map(|form| form.normal.to_string()),
+                    Ok(String::from(normal)),
+                    "the symmetry written {place}: {call}"
+                );
+            }
+        });
+    }
+}
+
+/// A rule over constructors that gives two results in its two orders under a
+/// symmetry is refused in each place of the symmetry. The rule takes the pair
+/// of two pairs to the first field of each one, and no rule joins two
+/// variables.
+#[test]
+fn a_rule_that_tears_under_the_symmetry_of_a_constructor_is_uncompleted()
+{
+    for (source, place) in [
+        (
+            include_str!(
+                "coincide/fixtures/a-rule-that-tears-under-the-symmetry-of-a-constructor-is-uncompleted-written-first.gandr"
+            ),
+            "first",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-rule-that-tears-under-the-symmetry-of-a-constructor-is-uncompleted-written-last.gandr"
+            ),
+            "last",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+            else {
+                panic!(
+                    "one cell diagnostic with the symmetry written {place}: {:?}",
+                    module.cells().diagnostics
+                )
+            };
+            assert!(
+                matches!(
+                    diagnostic.fault,
+                    CellFault::Coherence(CoherenceFault::Uncompleted { .. })
+                ),
+                "the symmetry written {place}: the two orders of the rule give two variables: {:?}",
+                diagnostic.fault
+            );
+        });
+    }
+}
+
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
 /// failure passed for a cut is ill sorted. Over 2-cells a vertical composite

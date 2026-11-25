@@ -28,21 +28,21 @@
 //!    forms are both headed by a constructor is refused as
 //!    [`LoweringRefusal::RulesDiverge`] at the later rule, naming the earlier
 //!    one, the peak and both normal forms kept in the cell diagnostic
-//!    ([`CoherenceFault::Diverges`]): no rule joins two values. Any other
-//!    divergent pair is joined by the rule it derives — both its sides are
-//!    reducts of one peak, so it follows from the rules before it — its left
-//!    side headed by an operation and oriented by the path order
-//!    (`orient_rules_with`): first over the precedence the block's rules and
-//!    the ranking rules derived so far induce, and failing that as a ranking
-//!    rule itself, its calls raising its head. The rule is appended to the
-//!    reading's store and the joining resumed at the pair that parted: every
-//!    pair a rule makes with the rules before it is decided before any pair of
-//!    a later one, so a pair already joined is never decided again. A pair no
-//!    direction orients is refused as [`LoweringRefusal::RulesUncompleted`]. A
-//!    derived rule that embeds a rule derived from one of its pair's cells
-//!    (`embeds`), and is that rule with one subterm wrapped in a context, the
-//!    rest renamed, where no rule of the store rewrites any further wrapping
-//!    (`rule_keeps_growing`), is refused as
+//!    ([`CoherenceFault::Diverges`]): no rule joins two values. The pair of a
+//!    rule and a symmetry is the exception, below. Any other divergent pair is
+//!    joined by the rule it derives — both its sides are reducts of one peak,
+//!    so it follows from the rules before it — its left side headed by an
+//!    operation and oriented by the path order (`orient_rules_with`): first
+//!    over the precedence the block's rules and the ranking rules derived so
+//!    far induce, and failing that as a ranking rule itself, its calls raising
+//!    its head. The rule is appended to the reading's store and the joining
+//!    resumed at the pair that parted: every pair a rule makes with the rules
+//!    before it is decided before any pair of a later one, so a pair already
+//!    joined is never decided again. A pair no direction orients is refused as
+//!    [`LoweringRefusal::RulesUncompleted`]. A derived rule that embeds a rule
+//!    derived from one of its pair's cells (`embeds`), and is that rule with
+//!    one subterm wrapped in a context, the rest renamed, where no rule of the
+//!    store rewrites any further wrapping (`rule_keeps_growing`), is refused as
 //!    [`LoweringRefusal::RulesNeverComplete`] naming both rules
 //!    ([`CoherenceFault::NeverCompletes`]): each round wraps the rule before,
 //!    so completion never ends. A family a rule completion would derive later
@@ -52,12 +52,26 @@
 //!    [`LoweringRefusal::RulesUndecided`], which reports the budget and no
 //!    verdict.
 //!
+//! A symmetry is a rule that swaps the two arguments of one operation or the
+//! two fields of one constructor. It forms peaks and rewrites nothing
+//! (`symmetric_cells`). A rule that overlaps the symmetry parts from it at its
+//! own left side in the other order, and that term is the left side of the
+//! rule the pair derives. Over a constructor, the derived rule has that
+//! constructor at its head, and it has the one direction from the other order
+//! to the result of the rule. The path order must orient it, or the pair is
+//! refused as [`LoweringRefusal::RulesUncompleted`]. The kernel gets the
+//! written rules of a presented type, and it reads each left side in each
+//! order of the two fields by its own decision. So the derived rule of a
+//! constructor is a cell of this check.
+//!
 //! A block that passes is orthogonal — no two of its rules overlap — or
 //! joined, with one replaying certificate per critical pair and one per
 //! derived rule ([`Coincidence`], [`DerivedRule`]). A derived rule's left
-//! side is headed by an operation, so a constructor term stays a normal form
-//! of the completed rules: the value a decision tree computes for a call is
-//! the completed rules' normal form of it. Witnesses:
+//! side is headed by an operation, or it is the other order of a rule under
+//! the symmetry of a constructor. So a constructor term with no symmetry
+//! below it stays a normal form of the completed rules: the value a decision
+//! tree computes for a call is the completed rules' normal form of it.
+//! Witnesses:
 //! `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`,
 //! `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`,
 //! `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`,
@@ -509,7 +523,8 @@ pub enum CoherenceFault
     },
     /// The rule and an earlier one overlap at `peak` and rewrite it to two
     /// normal forms each headed by a constructor or a results tuple: no rule
-    /// joins two values.
+    /// joins two values. The other order of a rule under a symmetry is no
+    /// such pair.
     Diverges
     {
         /// The earlier rule's written interval.
@@ -807,12 +822,11 @@ impl fmt::Display for PairTerm
 ///   composite pair's witness and every derived rule otherwise. Each derived
 ///   rule's cell is appended to `store` or to the presented reading's store, in
 ///   derivation order, so the store a reading rewrites with ends with them.
-/// - ensures: a face that is the symmetry of an operation
-///   ([`RuleReading::Symmetry`]) forms peaks and normalizes nothing in each
+/// - ensures: a face that is a symmetry ([`RuleReading::Symmetry`]), of an
+///   operation or of a constructor, forms peaks and normalizes nothing in each
 ///   reading ([`PairJoining::past`]). A rule that overlaps it parts from it at
 ///   the other order of the rule, and the reading derives that order as a rule,
-///   so the place of the symmetry among the rules decides nothing. The symmetry
-///   of a constructor is read as each other rule.
+///   so the place of the symmetry among the rules decides nothing.
 /// - panics: none.
 ///
 /// # Errors
@@ -834,10 +848,13 @@ impl fmt::Display for PairTerm
 ///   overlap composes, and a restriction of nothing dropped beside extrusion
 ///   parts from it under its condition; a theory with the symmetry of its meet
 ///   joins with the other order of each rule of the meet derived, with the
-///   symmetry written last or first; reporting the earlier rule's span,
+///   symmetry written last or first, and a `data` block with the symmetry of a
+///   constructor joins so with the symmetry written first, between its rules or
+///   last; a rule that gives two results in its two orders under the symmetry
+///   of a constructor is uncompleted; reporting the earlier rule's span,
 ///   deciding joinability first, reading the circle in the sequent store alone,
 ///   normalizing by the symmetry, or deriving a rule between two constructor
-///   terms changes one of them.
+///   terms that are not the two orders of one rule changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -849,6 +866,8 @@ impl fmt::Display for PairTerm
 /// - witness: `tests::coincide::a_scope_extrusion_family_never_completes`
 /// - witness: `tests::coincide::conditioned_rules_join_under_the_condition_their_overlap_composes_2448`
 /// - witness: `tests::coincide::a_symmetry_is_no_rewrite_in_either_place`
+/// - witness: `tests::coincide::a_symmetry_of_a_constructor_is_no_rewrite_in_each_place`
+/// - witness: `tests::coincide::a_rule_that_tears_under_the_symmetry_of_a_constructor_is_uncompleted`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
@@ -880,15 +899,16 @@ pub(crate) fn decide<G>(
         return Err((rule_span(usize::from(index)), CoherenceFault::Unoriented));
     }
     let nameable = naming_port(description).is_some();
-    // A symmetry of an operation forms peaks and normalizes nothing, in each
-    // reading. A rule that overlaps it parts from it at the other order of the
-    // rule, and completion derives that order as a rule.
+    // A symmetry forms peaks and normalizes nothing, in each reading. A rule
+    // that overlaps it parts from it at the other order of the rule, and
+    // completion derives that order as a rule.
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
     // The sequent reading fires a cell only at a command's root, so the
     // composite criterion's argument does not hold there, and its pairs take
     // no class.
-    let mut joining = PairJoining::past(symmetric_cells(description, faces));
+    let idle = symmetric_cells(description, faces);
+    let mut joining = PairJoining::past(idle.clone());
     let (commands, derived_commands) = match joining.resume(&rewriting, budget) {
         Joinability::Joined(certificates) => (certificates, Vec::new()),
         first @ (Joinability::Diverges { .. } | Joinability::Undecided(_)) => {
@@ -896,6 +916,7 @@ pub(crate) fn decide<G>(
             let reading = Reading {
                 description,
                 faces,
+                idle: &idle,
                 rule_span: &rule_span,
                 at,
             };
@@ -924,11 +945,13 @@ pub(crate) fn decide<G>(
                 Maybe::Absent(_) => None,
             };
             let mut criterion = CompositeCriterion::new();
-            let mut joining = PairJoining::past(symmetric_cells(description, &presented.faces));
+            let idle = symmetric_cells(description, &presented.faces);
+            let mut joining = PairJoining::past(idle.clone());
             let first = joining.resume_with(&presented.store, budget, &mut criterion);
             let reading = Reading {
                 description,
                 faces: &presented.faces,
+                idle: &idle,
                 rule_span: &rule_span,
                 at,
             };
@@ -1028,6 +1051,9 @@ struct Reading<'block, G, S>
     description: &'block TheoryDesc<G>,
     /// Each written face the reading admitted, with its cell.
     faces: &'block [(AdmittedFaceIndex, CellId)],
+    /// The cells of the reading that are a symmetry: they form peaks and
+    /// normalize nothing.
+    idle: &'block BTreeSet<CellId>,
     /// A written face's span, by its index among the description's rules.
     rule_span: &'block S,
     /// The declaration's interval: the span of a cell no face wrote.
@@ -1100,12 +1126,14 @@ where
     /// # Specification
     /// - requires: `first` is what `joining` last answered over `store` under
     ///   `scheme`; `read` writes a term of the reading as the term it denotes.
-    /// - ensures: a divergent pair whose two normal forms are both headed by a
-    ///   constructor or a results tuple is [`CoherenceFault::Diverges`]; one
-    ///   either of whose normal forms writes no term, or which no direction
-    ///   with an operation at the left side's head orients — riding the
-    ///   precedence the block's rules and the ranking rules derived so far
-    ///   induce, or failing that ranking it — is
+    /// - ensures: the other order of a rule is a pair one of whose two cells is
+    ///   a symmetry of the reading and whose reduct by the symmetry no rule
+    ///   rewrites. A divergent pair whose two normal forms are both headed by a
+    ///   constructor or a results tuple, and which is no other order of a rule,
+    ///   is [`CoherenceFault::Diverges`]; one either of whose normal forms
+    ///   writes no term, or which no direction that [`orient_derived`] admits
+    ///   orients — riding the precedence the block's rules and the ranking
+    ///   rules derived so far induce, or failing that ranking it — is
     ///   [`CoherenceFault::Uncompleted`]; an oriented rule embedding a rule
     ///   derived as one of the pair's cells, which [`rule_keeps_growing`] finds
     ///   it wraps at one point where no left side of the written rules, those
@@ -1131,10 +1159,12 @@ where
     ///   refused, a group's inverse law completes, and a divergence the order
     ///   leaves apart is uncompleted; a scope-extrusion family is refused at
     ///   its second derived rule, and completes beside a rule flattening its
-    ///   third wrapping.
+    ///   third wrapping; a rule over constructors derives its other order under
+    ///   a symmetry.
     /// - witness: `tests::coincide::a_groups_inverse_law_completes_to_the_rules_it_derives`
     /// - witness: `tests::coincide::a_permuted_call_no_order_orients_is_uncompleted`
     /// - witness: `tests::coincide::a_scope_extrusion_family_never_completes`
+    /// - witness: `tests::coincide::a_symmetry_of_a_constructor_is_no_rewrite_in_each_place`
     #[spec(captures: before = store.len(), ensures: |ret| ret.as_ref().is_err()
         || ret.as_ref().is_ok_and(|completed| usize::from(store.len()) == usize::from(before).saturating_add(completed.1.len())
             && completed.1.iter().all(|derived| bool::from(derived.replay(store)))))]
@@ -1211,15 +1241,29 @@ where
             else {
                 return Err(uncompleted(overlap, left, right));
             };
-            // Two values: both normal forms headed by a constructor or a
-            // results tuple, which no rule's left side is headed by.
-            if matches!(
-                (left_term.view(), right_term.view()),
-                (
-                    TermView::Ctor { .. } | TermView::Results { .. },
-                    TermView::Ctor { .. } | TermView::Results { .. }
-                )
+            // A pair of a rule and a symmetry, where no rule rewrites the
+            // reduct by the symmetry: that reduct is the left side of the rule
+            // in its other order.
+            let other_order = match (
+                self.idle.contains(&overlap.left),
+                self.idle.contains(&overlap.right),
             ) {
+                (true, false) if left_steps.is_empty() => Some(RuleDirection::LeftToRight),
+                (false, true) if right_steps.is_empty() => Some(RuleDirection::RightToLeft),
+                (true | false, true | false) => None,
+            };
+            // Two values: both normal forms headed by a constructor or a
+            // results tuple, which no rule's left side is headed by but the
+            // other order of a rule under a symmetry of a constructor.
+            if other_order.is_none()
+                && matches!(
+                    (left_term.view(), right_term.view()),
+                    (
+                        TermView::Ctor { .. } | TermView::Results { .. },
+                        TermView::Ctor { .. } | TermView::Results { .. }
+                    )
+                )
+            {
                 let (peak, left, right) = parted(overlap, left, right);
                 return Err((span, CoherenceFault::Diverges {
                     first,
@@ -1236,10 +1280,9 @@ where
             }
             let Some((direction, joined)) = orient_derived(
                 self.description,
-                &mut ranking,
-                &mut riding,
-                left_term,
-                right_term,
+                (&mut ranking, &mut riding),
+                (left_term, right_term),
+                other_order,
             )
             else {
                 return Err(uncompleted(overlap, left, right));
@@ -1322,36 +1365,55 @@ where
 /// left, and otherwise ranks, its head raised above what it calls, in the same
 /// order. Its left side is headed by an operation, and in a `data` block,
 /// whose operations the kernel reads as rules over constructor patterns, over
-/// linear constructor patterns.
+/// linear constructor patterns. The other order of a rule over constructors
+/// is the exception: its left side is headed by a constructor, and it takes
+/// the one direction `other_order`.
 ///
 /// # Specification
-/// - ensures: [`Some`] exactly when one direction's left side is headed by an
-///   operation, over linear constructor patterns in a `data` block, and
-///   [`orient_rules_with`] over `description`, `ranking` and `riding` with that
-///   rule pushed onto `riding`, or failing every direction so, onto `ranking`,
-///   is [`Termination::Oriented`]; the rule then ends the list it was pushed
-///   onto, which is returned with its direction, and both lists are otherwise
-///   unchanged, as both are on [`None`].
+/// - requires: `other_order` is the direction from the reduct by a symmetry to
+///   the other reduct, where the pair is the other order of a rule, and
+///   [`None`] for each other pair.
+/// - ensures: where `other_order` names a direction whose left side is headed
+///   by a constructor, [`Some`] with that direction exactly when
+///   [`orient_rules_with`] with the rule pushed onto `riding` or onto `ranking`
+///   is [`Termination::Oriented`]. Otherwise [`Some`] exactly when one
+///   direction's left side is headed by an operation, over linear constructor
+///   patterns in a `data` block, and [`orient_rules_with`] over `description`,
+///   `ranking` and `riding` with that rule pushed onto `riding`, or failing
+///   every direction so, onto `ranking`, is [`Termination::Oriented`]. The rule
+///   then ends the list it was pushed onto, which is returned with its
+///   direction, and both lists are otherwise unchanged, as both are on
+///   [`None`].
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Reading::complete`]: a group's inverse law orients
 ///   each rule it derives, a derived rule calling an operation that calls its
 ///   head rides the precedence by the subterm property, a permuted call orients
-///   neither way, and a `data` block's derived rule is one the kernel reads.
+///   neither way, and a `data` block's derived rule is one the kernel reads;
+///   the other order of a rule over constructors takes its one direction.
 /// - witness: `tests::coincide::a_groups_inverse_law_completes_to_the_rules_it_derives`
 /// - witness: `tests::coincide::a_permuted_call_no_order_orients_is_uncompleted`
 /// - witness: `tests::coincide::a_data_blocks_derived_rule_is_a_pattern_rule`
+/// - witness: `tests::coincide::a_symmetry_of_a_constructor_is_no_rewrite_in_each_place`
 #[spec(captures: before = ranking.len().saturating_add(riding.len()), ensures: |ret|
     ranking.len().saturating_add(riding.len()) == before.saturating_add(usize::from(ret.is_some())))]
 fn orient_derived<G>(
     description: &TheoryDesc<G>,
-    ranking: &mut Rewrites,
-    riding: &mut Rewrites,
-    left: FreeTerm,
-    right: FreeTerm,
+    (ranking, riding): (&mut Rewrites, &mut Rewrites),
+    (left, right): (FreeTerm, FreeTerm),
+    other_order: Option<RuleDirection>,
 ) -> Option<(RuleDirection, Joined)>
 {
+    // The other order of a rule over constructors: its left side is the side
+    // that a constructor heads, in the one direction of the rule.
+    let other_order = other_order.filter(|&direction| {
+        let side = match direction {
+            RuleDirection::LeftToRight => &left,
+            RuleDirection::RightToLeft => &right,
+        };
+        matches!(side.view(), TermView::Ctor { .. })
+    });
     // The blocks whose operations the kernel reads as rules: an unparametrised
     // `data` family with constructors.
     let routed = description.polarity == DeclPolarity::Data
@@ -1388,7 +1450,7 @@ fn orient_derived<G>(
     let mut tried = (left, right);
     for joined in [Joined::Riding, Joined::Ranking] {
         for direction in [RuleDirection::LeftToRight, RuleDirection::RightToLeft] {
-            if heads_a_rule(&tried.0) {
+            if other_order.map_or_else(|| heads_a_rule(&tried.0), |order| order == direction) {
                 let list = match joined {
                     Joined::Riding => &mut *riding,
                     Joined::Ranking => &mut *ranking,
@@ -1408,21 +1470,20 @@ fn orient_derived<G>(
     None
 }
 
-/// The cells of `faces` that are the symmetry of an operation of
-/// `description`: the cells that form peaks and normalize nothing.
+/// The cells of `faces` that are a symmetry of `description`: the cells that
+/// form peaks and normalize nothing.
 ///
 /// # Specification
 /// - ensures: the cell of each face of `faces` whose rule reads as
-///   [`RuleReading::Symmetry`] and has an operation at the head of its left
-///   side, and no other cell. A derived rule has an operation at the head of
-///   its left side, so the symmetry of a constructor is read as each other
-///   rule.
+///   [`RuleReading::Symmetry`], of an operation or of a constructor, and no
+///   other cell.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`decide`] and [`normal_form`] for a symmetry.
 /// - witness: `tests::coincide::a_symmetry_is_no_rewrite_in_either_place`
 /// - witness: `tests::coincide::a_call_that_no_rule_matches_is_normal_past_a_symmetry`
+/// - witness: `tests::coincide::a_symmetry_of_a_constructor_is_no_rewrite_in_each_place`
 #[spec(ensures: |ret| ret.len() <= faces.len())]
 fn symmetric_cells<G>(
     description: &TheoryDesc<G>,
@@ -1435,10 +1496,7 @@ fn symmetric_cells<G>(
             description
                 .rules
                 .get(usize::from(index))
-                .is_some_and(|face| {
-                    face.reading() == RuleReading::Symmetry
-                        && matches!(face.lhs.view(), TermView::Op { .. })
-                })
+                .is_some_and(|face| face.reading() == RuleReading::Symmetry)
         })
         .map(|&(_, cell)| cell)
         .collect()
@@ -1855,8 +1913,8 @@ fn over_terms(
 /// # Specification
 /// - ensures: the path [`normalize_past`] takes past `idle` within
 ///   [`NORMAL_FORM_STEPS`] steps and the normal form `read` writes. A symmetry
-///   of an operation is idle ([`symmetric_cells`]), so a call that no other
-///   rule matches is its own normal form.
+///   is idle ([`symmetric_cells`]), so a call that no other rule matches is its
+///   own normal form.
 /// - fails: [`NormalFormFault::Exhausted`] when the budget runs out,
 ///   [`NormalFormFault::Uncertified`] when the path does not replay, then
 ///   [`NormalFormFault::Unwritable`] with `read`'s reason.
