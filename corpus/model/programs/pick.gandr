@@ -1,7 +1,7 @@
 //! `pick` chooses one of two words by a truth value.
 //!
 //! `Bool` is `Unit + Unit`, and `if` is a case of that sum.
-//! A program whose entry is `code` exits 3.
+//! A program whose entry is `picked` exits 3.
 
 /// `pick` gives 3 for a true flag and 5 for a false one.
 def pick(flag : Bool) -> u8 = if flag { 3u8 } else { 5u8 };
@@ -18,7 +18,7 @@ def taken() -> u8 = pick true;
 @[runs("5u8")]
 def skipped() -> u8 = pick false;
 
-/// `code` gives the choice for the held flag: the exit code of
+/// `picked` gives the choice for the held flag: the exit code of
 /// its compiled program.
 @[runs("3u8")]
-def code() -> u8 = { let flag = held; pick flag };
+def picked() -> u8 = { let flag = held; pick flag };

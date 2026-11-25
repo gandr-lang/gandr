@@ -3,7 +3,7 @@
 //!
 //! The checked addition gives the sum, or the unit when the sum is past the
 //! width. A case on that answer clamps it.
-//! A program whose entry is `code` exits 255.
+//! A program whose entry is `saturated` exits 255.
 
 /// The checked sum of two words.
 def add(a : u8, b : u8) -> u8 + Unit = u8.checked_add a b;
@@ -37,6 +37,6 @@ def direct() -> u8 = match u8.checked_add 200u8 100u8 {
   | +{.1 = u} => 255u8
 };
 
-/// `code` gives the clamped sum: the exit code of its compiled program.
+/// `saturated` gives the clamped sum: the exit code of its compiled program.
 @[runs("255u8")]
-def code() -> u8 = { let value = large; value };
+def saturated() -> u8 = { let value = large; value };

@@ -259,10 +259,10 @@ mod tests
             agreed,
             [
                 "left.missing",
-                "left.code",
+                "left.left_word",
                 "pick.taken",
                 "pick.skipped",
-                "pick.code"
+                "pick.picked"
             ],
             "the items whose compiled code gives the answer of the executor"
         );
