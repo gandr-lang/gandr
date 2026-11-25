@@ -37,6 +37,8 @@
 //! | `=>` ending the line of an item that a line-leading `\|` begins: an arm, a clause | a statement block after the `=>` | `;` |
 //! | `where` ending a `match` head or an `offer` head | an arm list | none: a line-leading `\|` separates arms |
 //! | `do` ending a line | a statement block | `;` |
+//! | `then` ending the line of an `if` head | the conditional's first block | `;` |
+//! | `else` ending a line | the conditional's last block, after the `else` | `;` |
 //! | `where` ending the line of `rec` | its declarations, as the source's | `;` after a declaration that a keyword begins, and one before the block's close |
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
@@ -72,6 +74,13 @@
 //! nothing, because a source in braces keeps its reading. The `=>` of an arm
 //! or of a clause keeps its tile in the same way, and its block closes at the
 //! next line that stands at the column of the arms or left of it.
+//!
+//! A line-final `then` of an `if` head is relabeled as the `{` of the first
+//! block, as a `do` is. The grammar has no tile for `then`, so a `then` that
+//! does not end its line is a word that no form reads. An `else` keeps its
+//! tile, as the `=>` of an arm does. A line that starts with `else` closes the
+//! blocks right of it by the column rule, and it continues the conditional:
+//! the pass writes no separator before it.
 //!
 //! The `=` of a `def` with no `->` result keeps its tile in the same way, and
 //! the `def` takes its `;` after the block's close. A `;` that ends the last
@@ -205,6 +214,9 @@ struct Head
     lead: Lead,
     /// The item holds a token after its first.
     more: bool,
+    /// The item has met an `if`, so a `then` that ends its line opens the
+    /// first block of the conditional.
+    conditional: bool,
 }
 
 impl Head
@@ -355,9 +367,9 @@ enum Pending
         /// The indentation of the opener's line.
         indent: u32,
     },
-    /// The `=>` of an arm or of a clause. It keeps its tile, and its block
-    /// opens after it.
-    Arm
+    /// The `=>` of an arm or of a clause, or an `else`. It keeps its tile, and
+    /// its block opens after it.
+    Kept
     {
         /// The indentation of the opener's line.
         indent: u32,
@@ -389,9 +401,9 @@ enum Pending
         /// The indentation of the opener's line.
         indent: u32,
     },
-    /// A `do`, at its index in the stream: when it ends its line, it becomes
-    /// the open of a statement block, as a `match` head's `where` becomes the
-    /// arms' open.
+    /// A `do`, or the `then` of an `if` head, at its index in the stream:
+    /// when it ends its line, it becomes the open of a statement block, as a
+    /// `match` head's `where` becomes the arms' open.
     Do
     {
         /// The `do`'s index.
@@ -607,6 +619,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::an_arm_s_line_final_arrow_opens_a_block_after_it`
 /// - witness: `label::layout::tests::a_line_final_do_opens_a_statement_block`
 /// - witness: `label::layout::tests::a_def_s_line_final_equals_opens_a_block_with_or_with_no_arrow`
+/// - witness: `label::layout::tests::a_then_and_an_else_open_the_blocks_of_a_conditional`
 /// - witness: `label::layout::tests::a_where_opens_the_arms_of_an_offer_and_the_declarations_of_a_rec`
 /// - witness: `label::layout::tests::a_word_at_column_zero_ends_the_declaration_before_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
@@ -675,11 +688,11 @@ pub(super) fn lay_out(
         let punct = matches!(token.lexeme, Lexeme::Punct);
         // A token inside a line that is no bracket, no punctuation and no
         // opener's keyword, met while no opener waits, only extends the item.
-        // Each such keyword is two, three or five bytes long.
+        // Each such keyword is two, three, four or five bytes long.
         if !line_start
             && !punct
             && (token.lexeme != Lexeme::LowerWord
-                || !matches!(token.end.saturating_sub(token.start), 2 | 3 | 5))
+                || !matches!(token.end.saturating_sub(token.start), 2 ..= 5))
             && !restart
             && pending == Pending::None
             && let Some(frame) = frames.last_mut()
@@ -739,7 +752,7 @@ pub(super) fn lay_out(
             | Pending::Do { indent, .. } => Some(Column(indent)),
             Pending::Statement { .. }
             | Pending::Definition { .. }
-            | Pending::Arm { .. }
+            | Pending::Kept { .. }
             | Pending::None => None,
         };
         let below = step
@@ -822,7 +835,7 @@ pub(super) fn lay_out(
                     }
                 }
             },
-            Pending::Arm { indent } => {
+            Pending::Kept { indent } => {
                 pending = Pending::None;
                 if line_start && !brace && column > indent {
                     plan.place(Lexeme::LayoutOpen);
@@ -917,6 +930,8 @@ pub(super) fn lay_out(
                 plan.close(&frame);
                 frames.pop();
             }
+            // A line that starts with `else` continues the form above it: it
+            // ends no item and begins none.
             if let Some(&frame) = frames.last()
                 && match frame.kind {
                     Kind::Layout { column: block } => block == column || stays,
@@ -926,6 +941,7 @@ pub(super) fn lay_out(
                     Kind::Brace { column: None } | Kind::Plain => false,
                 }
                 && !closer
+                && !(token.lexeme == Lexeme::LowerWord && spelled == b"else")
             {
                 if frame.sep != Sep::Arms
                     && !after_attribute
@@ -1064,7 +1080,7 @@ pub(super) fn lay_out(
                         | Pending::Arms { .. }
                         | Pending::Statement { .. }
                         | Pending::Definition { .. }
-                        | Pending::Arm { .. }
+                        | Pending::Kept { .. }
                         | Pending::ArmsWhere { .. }
                         | Pending::Do { .. } => Pending::Members {
                             indent: line_indent,
@@ -1077,11 +1093,32 @@ pub(super) fn lay_out(
                         },
                     };
                 },
-                // A `do` that ends its line opens a statement block. A `do`
-                // inside a line stays a word, which no form reads.
+                // A `do` that ends its line opens a statement block, and so
+                // does the `then` of an `if` head. Either word inside a line
+                // stays a word, which no form reads.
                 b"do" => {
                     pending = Pending::Do {
                         at: index,
+                        indent: line_indent,
+                    };
+                },
+                b"if" => {
+                    if let Some(frame) = frames.last_mut() {
+                        frame.head.conditional = true;
+                    }
+                },
+                b"then" => {
+                    if frames.last().is_some_and(|frame| frame.head.conditional) {
+                        pending = Pending::Do {
+                            at: index,
+                            indent: line_indent,
+                        };
+                    }
+                },
+                // An `else` keeps its tile. Its block opens after it, when
+                // the `else` ends its line.
+                b"else" if pending == Pending::None => {
+                    pending = Pending::Kept {
                         indent: line_indent,
                     };
                 },
@@ -1144,7 +1181,7 @@ pub(super) fn lay_out(
                         && opener_allowed
                         && pending == Pending::None
                     {
-                        pending = Pending::Arm {
+                        pending = Pending::Kept {
                             indent: line_indent,
                         };
                     }
@@ -1234,7 +1271,7 @@ pub(super) fn lay_out(
             Pending::Arms { .. }
             | Pending::Statement { .. }
             | Pending::Definition { .. }
-            | Pending::Arm { .. }
+            | Pending::Kept { .. }
             | Pending::None => {},
         }
     }
@@ -1604,8 +1641,10 @@ fn next_line(
     let continues = |token: &Token| {
         matches!(
             (token.lexeme, spelled(token)),
-            (Lexeme::LowerWord, b"where" | b"match" | b"do")
-                | (Lexeme::Punct, b"=" | b"," | b"->" | b"=>" | b":")
+            (
+                Lexeme::LowerWord,
+                b"where" | b"match" | b"do" | b"then" | b"else"
+            ) | (Lexeme::Punct, b"=" | b"," | b"->" | b"=>" | b":")
         )
     };
     let Some(&first) = rest.first()
@@ -2107,6 +2146,49 @@ mod tests
         assert_eq!(
             marked("def three : Integer = g\n  3;\n"),
             "def three : Integer = g\n  3;\n"
+        );
+    }
+
+    #[test]
+    fn a_then_and_an_else_open_the_blocks_of_a_conditional()
+    {
+        // A line-final `then` of an `if` head is the first block's brace. A
+        // line that starts with `else` closes that block and continues the
+        // conditional, and an `else` that ends its line opens the last block
+        // after it.
+        assert_eq!(
+            marked("def f(b : Bool) -> Integer =\n  if b then\n    1\n  else\n    2\n"),
+            "def f(b : Bool) -> Integer ⟪=→{⟫\n  if b ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    2⟪}⟫⟪}⟫\n"
+        );
+        // A chain: `else if c then` opens the block of the second test.
+        assert_eq!(
+            marked(
+                "def f(n : Integer) -> Integer =\n  if n > 1 then\n    2\n  else if n > 0 then\n    1\n  else\n    0\n"
+            ),
+            "def f(n : Integer) -> Integer ⟪=→{⟫\n  if n > 1 ⟪then→{⟫\n    2⟪}⟫\n  else if n > 0 ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    0⟪}⟫⟪}⟫\n"
+        );
+        // The conditional's last close ends no statement, so the line end
+        // writes the separator of the statement that holds it.
+        assert_eq!(
+            marked(
+                "def f(b : Bool) -> Integer =\n  let n = if b then\n    1\n  else\n    2\n  n\n"
+            ),
+            "def f(b : Bool) -> Integer ⟪=→{⟫\n  let n = if b ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    2⟪}⟫⟪;⟫\n  n⟪}⟫\n"
+        );
+        // A line that starts with `else` after a block in braces continues
+        // the conditional too.
+        assert_eq!(
+            marked("def f(b : Bool) -> Integer {\n  if b { 1 }\n  else { 2 }\n}\n"),
+            "def f(b : Bool) -> Integer {\n  if b { 1 }\n  else { 2 }\n}\n"
+        );
+        // A `then` inside a line, or after no `if`, stays a word.
+        assert_eq!(
+            marked("def f(b : Bool) -> Integer =\n  if b then 1 else 2\n"),
+            "def f(b : Bool) -> Integer ⟪=→{⟫\n  if b then 1 else 2⟪}⟫\n"
+        );
+        assert_eq!(
+            marked("def f() -> A =\n  g then\n    x\n"),
+            "def f() -> A ⟪=→{⟫\n  g then\n    x⟪}⟫\n"
         );
     }
 
