@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x3e6882e1c84c91c5`
-- Rules: 162 — 161 committed, 1 internal
-- Molds: 3195
+- Grammar fingerprint: `0xd7005f692643dbbd`
+- Rules: 163 — 162 committed, 1 internal
+- Molds: 3196
 - Attributes: 24
 
 ## Reading a form
@@ -143,7 +143,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`string.expression`](../corpus/ledger/syntax/string.expression.gandr) | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ‖ ${ EXPRESSION } ⦆* "` | `expression.atom` | `string` | admitted | StringLit, Escape, Other |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 46 rules
+## `type` — 47 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -183,6 +183,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`mu_session_type`](../corpus/ledger/syntax/mu-session-type.gandr) | `rec ‹type_variable› => TYPE` | `type.arrow` | `mu_session_type` | admitted | Keyword, TypeVariable, Operator |
 | [`primitive_type`](../corpus/ledger/syntax/primitive-type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ u8 ‖ u16 ‖ i8 ‖ i16 ‖ usize ‖ isize ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void ‖ Buf` | `type.atom` | `primitive_type` | admitted | TypeBuiltin |
 | [`unknown_type`](../corpus/ledger/syntax/unknown-type.gandr) | `?` | `type.atom` | `unknown_type` * | unadmitted | TypeBuiltin |
+| [`wildcard.type`](../corpus/ledger/syntax/wildcard.type.gandr) | `_` | `type.atom` | `wildcard` | admitted | Variable |
 | [`type_identifier`](../corpus/ledger/syntax/type-identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | admitted | Type |
 | [`type_variable`](../corpus/ledger/syntax/type-variable.gandr) | `‹type_variable›` | `type.atom` | `type_variable` | admitted | TypeVariable |
 | [`descent_type`](../corpus/ledger/syntax/descent-type.gandr) | `[ < ]` | `type.atom` | `descent_type` * | admitted | Other, Operator |
@@ -268,7 +269,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload | a declaration or an operation |
 | [`frobenius`](../corpus/ledger/attributes/frobenius.gandr) | no payload | a sort |
 
-## Decisions — 109 of 162 rules decided at every token
+## Decisions — 110 of 163 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -422,6 +423,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `mu_session_type` | type | 3 | `rec` | — | 0 |
 | `primitive_type` | type | 23 | `Any` `Boolean` `Buf` `Char` `Integer` `Never` `String` `Symbol` `Unit` `Unknown` `Void` `f32` `f64` `i16` `i32` `i64` `i8` `isize` `u16` `u32` `u64` `u8` `usize` | — | 0 |
 | `unknown_type` | type | 1 | `?` | — | 0 |
+| `wildcard.type` | type | 1 | `_` | — | 0 |
 | `type_identifier` | type | 1 | `type_identifier` | `type_application` | 0 |
 | `type_variable` | type | 1 | `type_variable` | `moded_type`, `type_application` | 0 |
 | `descent_type` | type | 3 | `[` | `f_type.result`, `f_type.result.labelled` | 0 |
@@ -458,7 +460,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `{` | 63 | 29 | 2 |
 | `[` | 62 | 34 | 5 |
 | `number` | 59 | 33 | 3 |
-| `_` | 48 | 7 | 2 |
+| `_` | 49 | 8 | 3 |
 | `=>` | 40 | 9 | 0 |
 | `-->` | 31 | 5 | 0 |
 | `<=>` | 27 | 5 | 0 |

@@ -17,10 +17,10 @@ error[PhaseDependence]: the type `R` depends on the value `three`; a type depend
    ╰ help: make the static member's type depend only on static members
 
 error[PhaseDependence]: the type `At` depends on the value `z`; a type depends only on types
-   ╭▸ corpus/pathological/modules/phase.gandr:36:18
+   ╭▸ corpus/pathological/modules/phase.gandr:36:22
    │
-36 │   type At = Path(S.z, S.z);
-   │                  ━━━ a value a type depends on
+36 │   type At = Path S.z S.z;
+   │                      ━━━ a value a type depends on
    │
    ├ note: `At` is refused with PhaseDependence, as its expectation states
    ╰ help: make the static member's type depend only on static members
