@@ -66,7 +66,7 @@ One row per directory: the directory and what it is.
 crates/
 ├── boot-alloc/                    whole pages from the kernel's mapping calls with no libc, and a heap in size classes over them
 ├── boot-core/                     the operations on a range of bytes that allocate nothing: copy, move, fill, compare, search, and the checks of UTF-8 and of a zero byte
-├── boot-io/                       the IO core with no libc: open a file, read it and close it, each by the crate's own system call
+├── boot-io/                       the IO core with no libc: open a file, read it, write to a descriptor and close it, each by the crate's own system call
 ├── core-checker-base/             the faces, module run and refusals
 ├── core-checker-bridge/           kernel readmission, staging families
 ├── core-checker/                  the checking judgement under one name

@@ -82,7 +82,7 @@ INSERT INTO purpose VALUES('boot-core','check::find_zero','function','Finds the 
 INSERT INTO purpose VALUES('boot-core','search','module','Finds a byte or a range of bytes in a range.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-core','search::find_byte','function','Finds the first position of a byte in a range.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-core','search::find_range','function','Finds the first position at which a range holds a whole needle.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('boot-io','','crate','Gives the bootstrap the read of a file with no libc: the `boot` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','','crate','Gives the bootstrap the read of a file and the write to a descriptor with no libc: the `boot` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','Descriptor','struct','The number that the kernel gives for an open file.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','ErrorNumber','struct','An error number of the host, which a refusal carries.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','Io','struct','The handle of the IO core, which each operation takes from its start to its stop.',NULL,'fits','sound',NULL);
@@ -93,6 +93,7 @@ INSERT INTO purpose VALUES('boot-io','open','function','Opens the file at a path
 INSERT INTO purpose VALUES('boot-io','read','function','Writes the next bytes of an open file into the start of a place.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','start','function','Gives the handle that each other operation takes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','stop','function','Ends the handle of the IO core.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-io','write','function','Gives the first bytes of a range to a descriptor, and the count that the kernel took.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','elaborating::ResumeError','enum','An invalid request to fill or resume a module declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','elaborating::Session','struct','A module elaboration, admitting only checked hole fillings as mutations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','staging::Allowance','struct','The work each job of a check may spend, granted afresh to every job so no job''s allowance depends on how the jobs were scheduled.',NULL,'fits','sound',NULL);

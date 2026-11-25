@@ -1,4 +1,4 @@
-//! The three file calls on Linux, each a system call by the crate's own
+//! The four file calls on Linux, each a system call by the crate's own
 //! function in assembly. No libc stands between the crate and the kernel.
 
 use core::num::NonZeroU16;
@@ -138,6 +138,41 @@ pub unsafe fn read(
             descriptor_word(descriptor),
             Raw(place.base.addr()),
             Raw(place.length.0),
+            Raw(0),
+        ])
+    };
+    answer(raw).map(|count| Length(count.0))
+}
+
+/// Gives at most `bytes.length` bytes of `bytes` to `descriptor`.
+///
+/// # Safety
+///
+/// - unsafe invariants: the bytes of `bytes` are readable where it is not
+///   empty.
+///
+/// # Specification
+/// - ensures: the count that the kernel took, or its error number.
+/// - panics: none.
+/// - executable: none — the kernel takes the bytes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the bytes of a write reach the other end of a socket, and
+///   a socket that cannot take each byte gives a short count.
+/// - witness: `tests::write::a_write_gives_each_byte_to_the_other_end`
+/// - witness: `tests::write::a_full_socket_takes_a_short_write_of_the_first_bytes`
+pub unsafe fn write(
+    descriptor: Descriptor,
+    bytes: Range,
+) -> Result<Length, ErrorNumber>
+{
+    // SAFETY: the caller's invariants hold for the bytes of the range, and the
+    // call writes no memory of the process.
+    let raw = unsafe {
+        arch::syscall4(arch::WRITE, [
+            descriptor_word(descriptor),
+            Raw(bytes.base.addr()),
+            Raw(bytes.length.0),
             Raw(0),
         ])
     };

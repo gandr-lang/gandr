@@ -3,7 +3,7 @@ name = "gandr-boot-io"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The IO core of the bootstrap with no libc: open a file, read it and close it, each by the crate's own system call"
+description = "The IO core of the bootstrap with no libc: open a file, read it, write to a descriptor and close it, each by the crate's own system call"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -24,9 +24,9 @@ path = "tests/lib.rs"
 name = "descriptor"
 path = "tests/descriptor.rs"
 
-# The one dependency is `boot-core`, for the range of a path and the place of
-# a read. On Linux x86-64 each operation is a system call by the crate's own
-# function in assembly.
+# The one dependency is `boot-core`, for the range of a path and of a write,
+# and the place of a read. On Linux x86-64 each operation is a system call by
+# the crate's own function in assembly.
 [dependencies]
 gandr-boot-core.workspace = true
 

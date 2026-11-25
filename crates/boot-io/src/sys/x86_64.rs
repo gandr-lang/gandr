@@ -10,6 +10,9 @@ use super::Raw;
 /// The number of `read` on x86-64.
 pub(super) const READ: Call = Call(0);
 
+/// The number of `write` on x86-64.
+pub(super) const WRITE: Call = Call(1);
+
 /// The number of `close` on x86-64.
 pub(super) const CLOSE: Call = Call(3);
 

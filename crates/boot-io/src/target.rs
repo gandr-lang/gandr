@@ -124,6 +124,29 @@ where
     match <Host<'_> as Supported>::NEVER {}
 }
 
+/// [`write`](crate::write) on a target with no system call of the crate.
+///
+/// # Safety
+///
+/// - unsafe invariants: none — no use of the function compiles.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// None: no use of the function compiles.
+#[inline]
+pub unsafe fn write(
+    _io: &Io,
+    _descriptor: Descriptor,
+    _bytes: Range,
+) -> Result<Length, Refused>
+where
+    for<'bound> Host<'bound>: Supported,
+{
+    match <Host<'_> as Supported>::NEVER {}
+}
+
 /// [`close`](crate::close) on a target with no system call of the crate.
 ///
 /// # Specification

@@ -1,23 +1,26 @@
-//! The IO core of the bootstrap, with no libc: open a file, read it and close
-//! it. The crate is of the layer `boot`, outside the integrity and the
-//! validity walls: it checks no term and keeps no value of the store.
+//! The IO core of the bootstrap, with no libc: open a file, read it, write to
+//! a descriptor and close it. The crate is of the layer `boot`, outside the
+//! integrity and the validity walls: it checks no term and keeps no value of
+//! the store.
 //!
 //! The tool chain reads each source through Rust's `std`, which links libc.
 //! The bootstrap needs these reads before gandr states them itself. Each
 //! operation here takes an [`Io`] that [`start`] gives and [`stop`] ends.
 //! [`open`] takes the path of a file as a [`Range`](gandr_boot_core::Range)
 //! of `boot-core`, and gives a [`Descriptor`]. [`read`] writes the next bytes
-//! of the file into a [`Place`](gandr_boot_core::Place), and [`close`] ends
-//! the descriptor. Each refusal is one [`Refused`]: the name of the operation
-//! and the error number of the kernel. No function allocates, and no function
-//! panics.
+//! of the file into a [`Place`](gandr_boot_core::Place), [`write`] gives the
+//! bytes of a [`Range`](gandr_boot_core::Range) to a descriptor, and
+//! [`close`] ends the descriptor. Each refusal is one [`Refused`]: the name of
+//! the operation and the error number of the kernel. No function allocates,
+//! and no function panics.
 //!
-//! [`open`], [`read`] and [`close`] each make one system call by the crate's
-//! own function in assembly, and they never repeat a call. So an interrupted
-//! call is a refusal with the error number `EINTR`, and the caller decides.
-//! The crate has no ring, so [`start`] and [`stop`] make no system call. A
-//! form that reads through a ring keeps the address of the page of its ring
-//! in its [`Io`].
+//! [`open`], [`read`], [`write`] and [`close`] each make one system call by
+//! the crate's own function in assembly, and they never repeat a call. So an
+//! interrupted call is a refusal with the error number `EINTR`, and a write
+//! that the kernel takes in part gives its count, and the caller decides. The
+//! crate has no ring, so [`start`] and [`stop`] make no system call. A form
+//! that reads through a ring keeps the address of the page of its ring in its
+//! [`Io`].
 //!
 //! A crate of the layer `boot` is a stage of the bootstrap. A twin in gandr
 //! replaces it, so each public function has no generic parameter and states
@@ -27,8 +30,8 @@
 //!
 //! The crate has the system calls of Linux on x86-64 alone. On each other
 //! target the crate compiles, and each use of [`start`], [`open`], [`read`],
-//! [`close`] or [`stop`] is one error of the compiler that names the target.
-//! A write, a seek and the walk of a directory are not in the crate.
+//! [`write`], [`close`] or [`stop`] is one error of the compiler that names
+//! the target. A seek and the walk of a directory are not in the crate.
 //!
 //! # References
 //!
@@ -59,6 +62,8 @@ pub use target::read;
 pub use target::start;
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 pub use target::stop;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+pub use target::write;
 
 /// The handle of the IO core, from [`start`] to [`stop`].
 ///
@@ -92,6 +97,8 @@ pub enum Operation
     Open,
     /// [`read`].
     Read,
+    /// [`write`].
+    Write,
     /// [`close`].
     Close,
     /// [`stop`].
@@ -114,6 +121,7 @@ impl fmt::Display for Operation
             Self::Start => "start",
             Self::Open => "open",
             Self::Read => "read",
+            Self::Write => "write",
             Self::Close => "close",
             Self::Stop => "stop",
         })
@@ -282,7 +290,7 @@ pub unsafe fn open(
 /// - witness: `tests::file::a_file_of_the_tree_reads_whole_in_steps_of_one_page`
 /// - witness: `tests::file::a_file_of_no_bytes_gives_the_count_zero_at_the_first_read`
 /// - witness: `tests::file::a_closed_descriptor_is_refused_with_ebadf`
-/// - witness: `descriptor::zero::with_descriptor_zero_closed_a_file_takes_it_and_reads_whole`
+/// - witness: `descriptor::zero::with_descriptor_zero_closed_a_file_takes_it_and_reads_whole_and_a_socket_takes_a_write`
 ///
 /// # Errors
 /// The kernel's error number under the name `read`.
@@ -297,6 +305,48 @@ pub unsafe fn read(
     let Io(_) = *io;
     // SAFETY: the caller's invariants hold for the bytes of the place.
     unsafe { sys::read(descriptor, place) }.map_err(|number| Refused::new(Operation::Read, number))
+}
+
+/// Gives the bytes of `bytes` to the file of `descriptor`, from its first
+/// byte.
+///
+/// # Safety
+///
+/// - unsafe invariants: the bytes of `bytes` are readable where it is not
+///   empty, and no other access writes them during the call.
+///
+/// # Specification
+/// - ensures: the count of the first bytes of `bytes` that the kernel took, at
+///   most its length. A count below the length is a short write: the kernel
+///   took those bytes alone, and the caller gives the rest in a next call. Or
+///   the kernel's error number under the name `write`, with no byte promised.
+/// - panics: none.
+/// - executable: none — the kernel takes the bytes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the bytes of a write equal the bytes that `std` reads at
+///   the other end of a socket; a socket that cannot take each byte at once
+///   takes the first bytes and gives their count; a closed descriptor is
+///   refused with `EBADF`; a socket with the descriptor 0 takes a write.
+/// - witness: `tests::write::a_write_gives_each_byte_to_the_other_end`
+/// - witness: `tests::write::a_full_socket_takes_a_short_write_of_the_first_bytes`
+/// - witness: `tests::write::a_write_to_a_closed_descriptor_is_refused_with_ebadf`
+/// - witness: `descriptor::zero::with_descriptor_zero_closed_a_file_takes_it_and_reads_whole_and_a_socket_takes_a_write`
+///
+/// # Errors
+/// The kernel's error number under the name `write`.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[inline]
+pub unsafe fn write(
+    io: &Io,
+    descriptor: Descriptor,
+    bytes: gandr_boot_core::Range,
+) -> Result<gandr_boot_core::Length, Refused>
+{
+    let Io(_) = *io;
+    // SAFETY: the caller's invariants hold for the bytes of the range.
+    unsafe { sys::write(descriptor, bytes) }
+        .map_err(|number| Refused::new(Operation::Write, number))
 }
 
 /// Closes `descriptor`.

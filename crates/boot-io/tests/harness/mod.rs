@@ -24,6 +24,8 @@ pub struct Subject
     pub open: unsafe fn(&Io, Range) -> Result<Descriptor, Refused>,
     /// The read of the next bytes of a file.
     pub read: unsafe fn(&Io, Descriptor, Place) -> Result<Length, Refused>,
+    /// The write of bytes to a descriptor.
+    pub write: unsafe fn(&Io, Descriptor, Range) -> Result<Length, Refused>,
     /// The close of a descriptor.
     pub close: fn(&Io, Descriptor) -> Result<(), Refused>,
     /// The stop of the IO core.
@@ -36,6 +38,7 @@ pub const SUBJECTS: [Subject; 1] = [Subject {
     start: gandr_boot_io::start,
     open: gandr_boot_io::open,
     read: gandr_boot_io::read,
+    write: gandr_boot_io::write,
     close: gandr_boot_io::close,
     stop: gandr_boot_io::stop,
 }];
