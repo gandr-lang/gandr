@@ -10,7 +10,6 @@
 
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 use std::process::Output;
 
 use crate::cli::Scratch;
@@ -33,7 +32,7 @@ fn repository() -> PathBuf
 /// trivial.
 fn run(source: &Path) -> Output
 {
-    Command::new(env!("CARGO_BIN_EXE_gandr"))
+    crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg(source)
         .current_dir(repository())
@@ -55,7 +54,7 @@ fn gandr_run_encloses_the_square_root_of_two_5700()
     let exemplar =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals/sqrt-two.gandr");
     let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
-    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let ran = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg(&exemplar)
         .env("XDG_CONFIG_HOME", &unconfigured)
@@ -90,7 +89,7 @@ fn gandr_run_decides_comparisons_5703()
         ),
         ("resume.gandr", "exhausted\nholds\nthe same work\n"),
     ] {
-        let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+        let ran = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
             .arg("run")
             .arg(reals.join(exemplar))
             .env("XDG_CONFIG_HOME", &unconfigured)
@@ -117,7 +116,7 @@ fn gandr_run_decides_and_encloses_through_the_builtins_5786()
     let exemplar =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals/trigonometry.gandr");
     let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
-    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+    let ran = crate::unbound(env!("CARGO_BIN_EXE_gandr"))
         .arg("run")
         .arg(&exemplar)
         .env("XDG_CONFIG_HOME", &unconfigured)
@@ -248,7 +247,7 @@ fn gandr_check_refuses_a_capability_past_its_grant_5705()
         Text::from("def reals : Cap {admit, decide} ;\n"),
     );
     let check = |grant: &str| {
-        Command::new(env!("CARGO_BIN_EXE_gandr"))
+        crate::unbound(env!("CARGO_BIN_EXE_gandr"))
             .arg("check")
             .arg("--grant")
             .arg(grant)
@@ -309,7 +308,7 @@ fn a_configured_profile_bounds_the_run_5704()
     let home =
         |profile: &str| configured(profile, &format!("\n[reals]\nprofile = \"{profile}\"\n"));
     let run_under = |home: &Path, source: &Path| {
-        Command::new(env!("CARGO_BIN_EXE_gandr"))
+        crate::unbound(env!("CARGO_BIN_EXE_gandr"))
             .arg("run")
             .arg(source)
             .current_dir(repository())

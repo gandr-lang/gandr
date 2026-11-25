@@ -228,7 +228,8 @@ pub fn profiled(home: &Path)
 ///   store. Neither `GANDR_TOOLCHAIN`, `GANDR_TOOLCHAIN_HANDOFF` nor the
 ///   `CARGO_MANIFEST_DIR` the test runner sets reaches the driver, so it
 ///   selects as a shell does and, with no toolchain under the test's data
-///   directory, runs itself.
+///   directory, runs itself. No jobserver of the host reaches it
+///   ([`crate::unbound`]), so a busy host's builds hold no part of it.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -248,7 +249,7 @@ where
     Argument: AsRef<std::ffi::OsStr>,
 {
     let homes = homes();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_gandr"));
+    let mut command = crate::unbound(env!("CARGO_BIN_EXE_gandr"));
     command.args(arguments);
     command.env("XDG_CONFIG_HOME", homes.join("config"));
     command.env("XDG_CACHE_HOME", homes.join("cache"));
@@ -4940,7 +4941,7 @@ impl Builds
         arguments: &[&std::ffi::OsStr],
     ) -> Command
     {
-        let mut command = Command::new(self.first.join("gandr"));
+        let mut command = crate::unbound(self.first.join("gandr"));
         for (key, value) in gandr::<&str>(&[]).get_envs() {
             let _set = match value {
                 Some(value) => command.env(key, value),
