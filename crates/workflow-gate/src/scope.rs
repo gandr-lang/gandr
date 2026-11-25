@@ -397,6 +397,7 @@ mod tests
 {
     use alloc::collections::BTreeSet;
     use std::path::Path;
+    use std::path::PathBuf;
     use std::process::Command;
 
     use super::Scoped;
@@ -514,8 +515,8 @@ mod tests
         assert_eq!(Scoped::None.arguments(), Vec::<String>::new());
     }
 
-    #[test]
-    fn each_crate_of_the_trunk_brings_each_crate_that_depends_on_it()
+    /// The root of the trunk and its crates, from its `cargo metadata`.
+    fn trunk() -> (PathBuf, Workspace)
     {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let root = root
@@ -537,6 +538,67 @@ mod tests
         assert!(output.status.success(), "cargo metadata ends with success");
         let workspace =
             Workspace::read(&Answer::from(output.stdout), &root).expect("the metadata reads");
+        (root, workspace)
+    }
+
+    /// Whether a Rust source below `dir` names a path that climbs to
+    /// `corpus/` or to `library/`.
+    fn climbs_to_the_corpus(dir: &Path) -> bool
+    {
+        let mut work: Vec<PathBuf> = vec![dir.to_path_buf()];
+        while let Some(path) = work.pop() {
+            let Ok(entries) = std::fs::read_dir(&path)
+            else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|name| name != "target") {
+                        work.push(path);
+                    }
+                }
+                else if path.extension().is_some_and(|extension| extension == "rs")
+                    && std::fs::read_to_string(&path)
+                        .is_ok_and(|text| text.contains("../corpus") || text.contains("../library"))
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn each_crate_that_reads_the_corpus_is_in_the_scope_of_the_corpus()
+    {
+        let (root, workspace) = trunk();
+        let table = table().expect("the table of the crate reads");
+        let members = workspace.members();
+        let Scoped::Packages(scope) = rule(&["corpus/a.gandr"], members, &table)
+        else {
+            panic!("a change of the corpus gives a set of crates");
+        };
+        // This crate names the two paths in the search, and reads neither.
+        let missing: Vec<&str> = members
+            .iter()
+            .filter(|member| member.name() != env!("CARGO_PKG_NAME"))
+            .filter(|member| !scope.contains(member.name()))
+            .filter(|member| climbs_to_the_corpus(&root.join(member.dir())))
+            .map(Member::name)
+            .collect();
+        assert_eq!(
+            missing,
+            Vec::<&str>::new(),
+            "a source of these crates reads below `corpus/` or `library/`, so `readers` of \
+             `scope.json` names each one, or a crate that it depends on"
+        );
+    }
+
+    #[test]
+    fn each_crate_of_the_trunk_brings_each_crate_that_depends_on_it()
+    {
+        let (_root, workspace) = trunk();
         let table = table().expect("the table of the crate reads");
         let members = workspace.members();
         let names: BTreeSet<&str> = members.iter().map(Member::name).collect();

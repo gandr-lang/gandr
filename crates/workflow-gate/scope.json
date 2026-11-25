@@ -1,5 +1,6 @@
 {
   "readers": [
+    "gandr-boot-io",
     "gandr-surface-dispatcher",
     "gandr-surface-evaluate",
     "gandr-surface-grammar",
