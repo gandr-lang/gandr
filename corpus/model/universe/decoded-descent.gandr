@@ -23,7 +23,7 @@ rec {
   pub data UL : Type where {
     | NatL : UL
     | ListL : (a : UL) --> UL
-    | PiL : (a : UL, b : +U (elL(a) -> -F UL)) --> UL
+    | PiL : (a : UL, b : +U ((elL a) -> -F UL)) --> UL
   }
 
   /// The `elL` decoder returns the value type of each code. It recurses below
@@ -36,19 +36,19 @@ rec {
         let e = elL[<] a
         return (List e)
       }
-      | PiL(a, b) => return (+U ((x : elL[<](a)) -> -F elL[<](b(x))))
+      | PiL(a, b) => return (+U ((x : elL [<] a) -> -F (elL [<] (b x))))
 }
 
 /// The `sumAt` function sums a list of decoded values through `f`. It recurses
 /// on the list with the element code and `f` fixed.
-def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List elL(a)) -> Nat =
+def rec sumAt(a : UL, f : +U ((elL a) -> -F Nat), v : List (elL a)) -> Nat =
   match v where
     | Nil => Zero
     | Cons(h, t) => plus (f h) (sumAt[<] a f t)
 
 /// The `total` function sums the naturals in a decoded value. Its list arm
 /// passes the list to `sumAt` with the sum at the element code.
-def rec total(c : UL) -> +U (elL(c) -> -F Nat) =
+def rec total(c : UL) -> +U ((elL c) -> -F Nat) =
   match c where
     | NatL => thunk { fun (v) { v } }
     | ListL(a) => thunk { fun (v) { sumAt a (total[<] a) v } }
@@ -57,7 +57,7 @@ def rec total(c : UL) -> +U (elL(c) -> -F Nat) =
 /// The `countBeside` function counts a value beside its code. The arm of the
 /// natural code finds the value at `Nat`.
 @[checks]
-def rec countBeside(c : UL, v : elL(c)) -> Nat =
+def rec countBeside(c : UL, v : elL c) -> Nat =
   match c where
     | NatL => v
     | ListL(a) => Zero

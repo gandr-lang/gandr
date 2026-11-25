@@ -21,9 +21,8 @@ def delay(x : Integer) -> -F (+U (-F Integer)) =
 
 /// The `delayed` proof states reflexivity at a suspended doubling.
 @[checks]
-def delayed(a : Integer) -> -F Path[.A = +U (-F Integer)](
-  thunk { become double a },
-  thunk { become double a }
+def delayed(a : Integer) -> -F (
+  Path[.A = +U (-F Integer)] (thunk { become double a }) (thunk { become double a })
 ) =
   return Path.here (thunk { become double a })
 

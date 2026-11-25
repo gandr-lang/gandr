@@ -6,5 +6,5 @@ data Two : Type where
   | R : Two
 
 @[refuses("CompoundEndpoint")]
-def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two =
+def curried(g : +U (Two -> Two -> -F Type), v : g L) -> -F Two =
   return L

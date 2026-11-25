@@ -27,10 +27,10 @@ def fam(c : Code) -> Type =
     | B => return Unit
 
 /// A predicate over a code and a value of its family.
-def pred(c : Code, v : fam(c)) -> Type = return Unit
+def pred(c : Code, v : fam c) -> Type = return Unit
 
 /// The goal reads `c` and `v`, and the type of `v` reads `c`.
-def go(c : Code, v : fam(c)) -> pred(c, v) =
+def go(c : Code, v : fam c) -> pred c v =
   match c where
     | A => *{}
     | B => *{}

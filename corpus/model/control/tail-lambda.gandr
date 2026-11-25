@@ -83,7 +83,7 @@ def right_arm(choice : Two) -> Two -> Two =
 
 /// The arm at `Zero` ends in a bare lambda under a refined parameter.
 @[explicit_exits]
-def refined_arm(n : Peano, _x : natOr(n)) -> Peano -> Peano =
+def refined_arm(n : Peano, _x : natOr n) -> Peano -> Peano =
   match n where
     | Zero => fun (u) {
       return u

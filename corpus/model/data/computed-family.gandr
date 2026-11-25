@@ -23,8 +23,8 @@ data Both(a : Type, b : Type) : Type where
 def pairOf(a : Type, b : Type) -> Type = return (Both a b);
 
 /// A pair of naturals at the type the definition computes.
-def bothZero : pairOf(Nat, Nat) = MkBoth Zero Zero;
+def bothZero : pairOf Nat Nat = MkBoth Zero Zero;
 
 /// A pair of naturals as the body of a function whose result type the
 /// definition computes.
-def bothOne(n : Nat) -> pairOf(Nat, Nat) = MkBoth (Succ n) n;
+def bothOne(n : Nat) -> pairOf Nat Nat = MkBoth (Succ n) n;

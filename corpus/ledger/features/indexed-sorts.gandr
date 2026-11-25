@@ -79,7 +79,7 @@ module Lists : Model(Carrier) where
 
 /// A client reaches the model's family through the model's name: `Lists.T`
 /// at `Integer` is the list of integers.
-def kept(xs : Lists.T(Integer)) -> List Integer = xs;
+def kept(xs : Lists.T Integer) -> List Integer = xs;
 
 /// A carrier into the computation types: `Type[-]` classifies the sort, so a
 /// model answers it with a family into the computation types.
@@ -105,11 +105,11 @@ theory Sections where
 module Pointwise : Model(Sections) where
   type Ctx = Type;
   type Fam(g : Ctx) = g -> Type;
-  type Sec(g : Ctx, a : Fam g) = (x : g) -> a(x);
+  type Sec(g : Ctx, a : Fam g) = (x : g) -> a x;
 
   /// The family that is `Unit` at every point.
   def whole(g : Type) -> g -> Type = fun (_x) { return Unit };
 
 /// A section of a family over the integers gives, at a point, a value of the
 /// type the family names there.
-def readAt(a : Integer -> Type, s : Pointwise.Sec(Integer, a), n : Integer) -> a(n) = s n;
+def readAt(a : Integer -> Type, s : Pointwise.Sec Integer a, n : Integer) -> a n = s n;

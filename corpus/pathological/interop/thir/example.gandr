@@ -11,13 +11,9 @@ import "../../../model/interop/thir/example.gandr";
 
 /// At true `example` answers one, so its claim to end at zero is refused.
 @[refuses("TypeMismatch")]
-def exampleAtTrueZero(post : Value -> Type) -> post(Int 0) -> wpFn(
-  Item,
-  identitySpec,
-  exampleBody,
-  True,
-  post
-) =
+def exampleAtTrueZero(post : Value -> Type) -> (post (
+  Int 0
+)) -> wpFn Item identitySpec exampleBody True post =
   fun (h) { h }
 
 /// At true the call of `identity` is reached, so the table decides it, and a
@@ -26,5 +22,5 @@ def exampleAtTrueZero(post : Value -> Type) -> post(Int 0) -> wpFn(
 def exampleAtTrueAnyTable(
   spec : Item * Value * (Value -> Type) -> Type,
   post : Value -> Type
-) -> post(Int 1) -> wpFn(Item, spec, exampleBody, True, post) =
+) -> (post (Int 1)) -> wpFn Item spec exampleBody True post =
   fun (h) { h }

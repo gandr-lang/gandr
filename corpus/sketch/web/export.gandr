@@ -41,7 +41,7 @@ def mean(xs : List Float, count : Nat) -> Float =
   List.sum xs / Float.ofNat count
 
 /// The verdict on `xs`, exported as `summarize`.
-pub def summarize (xs : List Float) -> Verdict =
+pub def summarize(xs : List Float) -> Verdict =
   match List.length xs where
     | 0 => Empty
     | count =>

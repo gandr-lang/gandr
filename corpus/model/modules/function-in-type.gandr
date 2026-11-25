@@ -28,7 +28,7 @@ module Standard where
 def point() -> Standard.unit = *{};
 
 /// An integer at the type a call names.
-def sameCalled() -> Standard.same(Integer) = 1;
+def sameCalled() -> Standard.same Integer = 1;
 
 /// An integer at the type a call's result names at one more argument.
-def indexed(n : Integer) -> Standard.after(Integer)(n) = 2;
+def indexed(n : Integer) -> (Standard.after Integer) n = 2;

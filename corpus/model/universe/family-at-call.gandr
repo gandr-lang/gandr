@@ -19,8 +19,8 @@ def useAtExtension(
   con : Type,
   tm : +U (con -> -F Type),
   extend : +U ((g : con) -> -F con),
-  q : +U ((g : con) -> -F tm(extend(g))),
-  use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
+  q : +U ((g : con) -> -F (tm (extend g))),
+  use : +U ((g : con) -> (t : tm g) -> -F Unit),
   g : con
 ) -> -F Unit =
   use (extend g) (q g)
@@ -31,8 +31,8 @@ def useAtExtension(
 def useAtVariable(
   con : Type,
   tm : +U (con -> -F Type),
-  q : +U ((g : con) -> -F tm(g)),
-  use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
+  q : +U ((g : con) -> -F (tm g)),
+  use : +U ((g : con) -> (t : tm g) -> -F Unit),
   g : con
 ) -> -F Unit =
   use g (q g)
@@ -45,8 +45,8 @@ def fieldAt(
     con : Type,
     tm : +U (con -> -F Type),
     extend : +U ((g : con) -> -F con),
-    q : +U ((g : con) -> -F tm(extend(g))),
-    use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
+    q : +U ((g : con) -> -F (tm (extend g))),
+    use : +U ((g : con) -> (t : tm g) -> -F Unit),
     law : +U ((g : con) -> -F Path[.A = Unit] (use (extend g) (q g)) *{})
   }
 ) -> -F Unit =
@@ -55,7 +55,7 @@ def fieldAt(
 /// The `familyRecord` value holds a family and an operation into it. The
 /// constant family gives the operation field the type `Unit -> Unit`.
 @[checks]
-def familyRecord : *{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
+def familyRecord : *{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F (tm g))};
 def familyRecord = *{Unit, *{thunk { fun (g) { return Unit } }, thunk { fun (g) { return *{} } }}};
 
 /// The `appliedVia` function applies a family through a definition. The call
@@ -66,10 +66,10 @@ def appliedVia(post : +U (Unit -> -F Type), x : Unit) -> Type = post x;
 /// `appliedVia(post, x)`. The unfolded definition converts with the call of the
 /// variable.
 @[checks]
-def appliedWrittenOut(post : +U (Unit -> -F Type), x : Unit, h : post(x)) -> appliedVia(post, x) =
+def appliedWrittenOut(post : +U (Unit -> -F Type), x : Unit, h : post x) -> appliedVia post x =
   h
 
 /// The `appliedFolded` function converts in the other direction. It returns
 /// `appliedVia(post, x)` at the type `post(x)`.
 @[checks]
-def appliedFolded(post : +U (Unit -> -F Type), x : Unit, h : appliedVia(post, x)) -> post(x) = h;
+def appliedFolded(post : +U (Unit -> -F Type), x : Unit, h : appliedVia post x) -> post x = h;

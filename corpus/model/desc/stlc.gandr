@@ -32,15 +32,15 @@ pub theory STLC where
   /// A context extended by a type.
   oper ext : (g : Con, a : Ty) --> Con;
   /// The newest variable.
-  oper vz : (g : Con, a : Ty) --> Var ext(g, a) a;
+  oper vz : (g : Con, a : Ty) --> Var (ext g a) a;
   /// An older variable.
-  oper vs : (x : Var g a, b : Ty) --> Var ext(g, b) a;
+  oper vs : (x : Var g a, b : Ty) --> Var (ext g b) a;
   /// A variable as a term.
   oper var : (x : Var g a) --> Tm g a;
   /// Abstraction.
-  oper lam : (t : Tm ext(g, a) b) --> Tm g arr(a, b);
+  oper lam : (t : Tm (ext g a) b) --> Tm g (arr a b);
   /// Application.
-  oper app : (t : Tm g arr(a, b), u : Tm g a) --> Tm g b;
+  oper app : (t : Tm g (arr a b), u : Tm g a) --> Tm g b;
 
 /// The object types.
 pub data ObjTy : Type where
@@ -142,18 +142,18 @@ pub type Ren(d : Ctx, g : Ctx) = (a : ObjTy) -> (Var g a -> Var d a);
 pub def rec sem(a : ObjTy, g : Ctx) -> Type =
   match a where
     | Base => return Nf g Base
-    | Arr(dom, cod) => return type((d : Ctx) -> (Ren d g -> (sem[<](dom, d) -> sem[<](cod, d))))
+    | Arr(dom, cod) => return type((d : Ctx) -> (Ren d g -> ((sem [<] dom d) -> sem [<] cod d)))
 
 /// The value of a semantic function at a renamer and an argument.
 pub def apply(
   g : Ctx,
   a : ObjTy,
   b : ObjTy,
-  w : sem(Arr a b, g),
+  w : sem (Arr a b) g,
   d : Ctx,
   r : Ren d g,
-  v : sem(a, d)
-) -> sem(b, d) =
+  v : sem a d
+) -> sem b d =
   ((w d) r) v
 
 /// A renaming lifted under one more entry, at one variable. The arm `Here`
@@ -209,14 +209,14 @@ pub data SemEnv : (g : Ctx, d : Ctx) --> Type where
     a : ObjTy,
     d : Ctx,
     rest : SemEnv g d,
-    v : sem(a, d)
+    v : sem a d
   ) --> SemEnv (Extend g a) d
 
 /// The shape of reflection beside reification: two members over a type,
 /// whose later parameters differ, and the first of which reads the type.
 rec {
   /// The depth of a semantic value's type.
-  def rec reflectDepth(a : ObjTy, _v : sem(a, Empty)) -> Integer =
+  def rec reflectDepth(a : ObjTy, _v : sem a Empty) -> Integer =
     match a where
       | Base => 0
       | Arr(dom, _cod) => { let n = reifyDepth[<] dom Empty; n + 1 }
@@ -233,7 +233,7 @@ def arrowDepth() -> Integer = reifyDepth (Arr Base Base) Empty;
 
 /// The lookup of a variable in an environment. Each inner case omits `ENil`
 /// and learns the indices of `ECons` from the equations that it binds.
-pub def rec lookVar(g : Ctx, a : ObjTy, x : Var g a, d : Ctx, rho : SemEnv g d) -> sem(a, d) =
+pub def rec lookVar(g : Ctx, a : ObjTy, x : Var g a, d : Ctx, rho : SemEnv g d) -> sem a d =
   match x where
     | Here(_h, _b) => match rho where
       | ECons(_h, _b, _d, _rest, v) => v

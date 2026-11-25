@@ -25,7 +25,7 @@ def overstated() -> Vec Integer (Succ (Succ Zero)) =
 /// A vector `m` long that claims the length `plus(m, Succ(Zero))`. That sum
 /// computes one past `m`.
 @[refuses("TypeMismatch")]
-def overPadded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Succ Zero) =
+def overPadded(m : Nat, v : Vec Integer m) -> Vec Integer (plus m (Succ Zero)) =
   v
 
 /// A family whose constructor states its element where its length goes.

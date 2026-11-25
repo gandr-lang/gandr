@@ -24,7 +24,7 @@ data Count : Type where
 /// A value of the first type with a value of the type it picks.
 data Twin(a : Type, b : a -> Type) : Type where
   /// The two values.
-  | MkTwin : (x : a, y : b(x)) --> Twin a b
+  | MkTwin : (x : a, y : b x) --> Twin a b
 
 /// The unit type at each count.
 def unitOfCount(m : Count) -> Type = return Unit
@@ -40,18 +40,18 @@ def oneType(u : Count) -> Type = return (Twin Count unitOfCount)
 
 /// The inner pair takes its type from the outer pair's field, which the call
 /// computes: the checker solves the inner pair's parameters.
-def nestedTwin(k : Count) -> twinType(Z) =
+def nestedTwin(k : Count) -> twinType Z =
   MkTwin Z (MkTwin Z *{})
 
 /// The same pair, written as a signature and a definition.
-def signedTwin : twinType(Z) = MkTwin Z (MkTwin Z *{});
+def signedTwin : twinType Z = MkTwin Z (MkTwin Z *{});
 
 /// The inner pair at its written type.
-def ascribedTwin(k : Count) -> twinType(Z) =
+def ascribedTwin(k : Count) -> twinType Z =
   MkTwin Z (MkTwin Z *{} : Twin Count unitOfCount)
 
 /// One pair at a computed type.
-def oneTwin(k : Count) -> oneType(Z) =
+def oneTwin(k : Count) -> oneType Z =
   MkTwin Z *{}
 
 /// A value of each type.
@@ -73,7 +73,7 @@ def rec spineType(spine : Spine) -> Type =
     | Done => return Unit
 
 /// A value two steps deep.
-def spineTwo : spineType(More (More Done)) = MkLayer "x" (MkLayer "y" *{});
+def spineTwo : spineType (More (More Done)) = MkLayer "x" (MkLayer "y" *{});
 
 /// A value three steps deep.
-def spineThree : spineType(More (More (More Done))) = MkLayer "x" (MkLayer "y" (MkLayer "z" *{}));
+def spineThree : spineType (More (More (More Done))) = MkLayer "x" (MkLayer "y" (MkLayer "z" *{}));

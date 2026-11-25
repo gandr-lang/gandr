@@ -43,4 +43,4 @@ module EqCode : Model(Eq) with sort Carrier = Code where
 def pathed : Path[.A = Code] (ofFlag (Yes == No)) Yes = Path.here Yes;
 
 /// The comparison in a stated type that the checker decodes.
-def written : decoded(ofFlag(Yes == No)) = "x";
+def written : decoded (ofFlag (Yes == No)) = "x";
