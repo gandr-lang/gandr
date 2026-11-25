@@ -2,9 +2,9 @@ error[HandlerCoverage]: the handler must handle every operation of its interface
    ╭▸ corpus/ledger/diagnostics/HandlerCoverage.gandr:9:3
    │
  8 │ ┌  def asked() -> Integer =
- 9 │ │┏   handle c : std.process.Exit.Eff {
+ 9 │ │┏   effect c : std.process.Exit.Eff {
 10 │ │┃     pure 1
-11 │ │┃   } with {
+11 │ │┃   } handle {
 12 │ │┃     | pure(x) => pure x
 13 │ │┃   }
    │ │┃   ╿

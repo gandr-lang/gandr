@@ -1,7 +1,7 @@
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
    ╭▸ corpus/ledger/diagnostics/HandlerUnlawful.gandr:13:3
    │
-13 │ ┏   handle st : Stored with sort S = Integer {
+13 │ ┏   effect st : Stored with sort S = Integer {
 14 │ ┃     st.put 1
 15 │ ┃     let a = st.get
 16 │ ┃     pure a

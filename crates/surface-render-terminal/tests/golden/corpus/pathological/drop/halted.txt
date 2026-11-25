@@ -2,7 +2,7 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
    ╭▸ corpus/pathological/drop/halted.gandr:29:40
    │
 26 │ ┌  def halted() -> Integer =
-27 │ │┌   handle h : Halt.Eff with sort R = Integer {
+27 │ │┌   effect h : Halt.Eff with sort R = Integer {
 28 │ ││     var n = 0
    │ ││     ─── checked against `-F [Halt.Eff, h : Halt.Eff] Integer`; while checking the scope of this hold
 29 │ ││     access n as v { abort v } unwind { h.halt 1 }
@@ -26,10 +26,10 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
    ╭▸ corpus/pathological/drop/halted.gandr:46:42
    │
 38 │ ┌  def abandoned() -> Integer =
-39 │ │┌   handle c : std.process.Exit.Eff {
+39 │ │┌   effect c : std.process.Exit.Eff {
 40 │ ││     let _ = c.exit 1
 41 │ ││     pure 0
-42 │ ││   } with {
+42 │ ││   } handle {
    ┆ ┆┆
 45 │ ││       var n = 0
    │ ││       ─── checked against `-F Integer`; while checking the scope of this hold
