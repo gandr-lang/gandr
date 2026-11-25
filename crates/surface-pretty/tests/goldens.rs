@@ -8760,12 +8760,13 @@ fn an_operation_with_no_continuation_prints_as_written_7968()
         )),
         "the clause of an operation with no continuation binds its payload alone"
     );
-    // The clause runs past the page, so the printer breaks it after
-    // `abandon` and indents the rest under its clause.
+    // The handler runs past the page after the subject's block. The layout
+    // with the fewest lines breaks that block and keeps the clauses on the
+    // line of its `}`.
     assert_eq!(
         written(exited),
         faithful(Written(
-            "effect a : std.process.Exit.Eff { *{} } handle {\n  | pure(a) => a\n  | oper exit(a, b) => { let c = abandon b ; 7 }\n}"
+            "effect a : std.process.Exit.Eff {\n  *{}\n} handle { | pure(a) => a | oper exit(a, b) => { let c = abandon b ; 7 } }"
         )),
         "a clause of an operation that resumes keeps its stack and its abandonment"
     );
