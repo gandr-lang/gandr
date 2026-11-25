@@ -8322,7 +8322,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { let b : Integer at a = pure a ; b } with { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff { let b : Integer at a = pure a ; b } handle { | pure(a) => a }"
         ))
     );
     let bound = core.value_type_kept(integer, Region::Bound(RegionBinder::from(0_u32)));
@@ -8338,7 +8338,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
             Root::Computation(CoreNode::Computation(bound_scoped))
         ),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { let b : Integer at ? = pure a ; b } with { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff { let b : Integer at ? = pure a ; b } handle { | pure(a) => a }"
         ))
     );
 }
@@ -8385,7 +8385,7 @@ fn a_scope_over_a_theory_spells_its_manifest_2382()
         assert_eq!(
             (presented.as_ref(), presented.fidelity()),
             (
-                "handle a : Labelled with sort K = Integer with sort L = String { a } with { | \
+                "effect a : Labelled with sort K = Integer with sort L = String { a } handle { | \
                  pure(a) => a }",
                 Fidelity::Faithful
             ),
@@ -8394,9 +8394,9 @@ fn a_scope_over_a_theory_spells_its_manifest_2382()
     }
 }
 
-/// A capability scope a model answers writes it as the source does, `with N`
-/// or no `with`, in place of the clauses the lowering derives from the model;
-/// a scope with no answer recorded writes its clauses (#3196).
+/// A capability scope a model answers writes it as the source does, `handle
+/// N` or no `handle`, in place of the clauses the lowering derives from the
+/// model; a scope with no answer recorded writes its clauses (#3196).
 #[test]
 fn a_scope_a_model_answers_spells_the_model_3196()
 {
@@ -8435,15 +8435,15 @@ fn a_scope_a_model_answers_spells_the_model_3196()
     for (answered, expected) in [
         (
             Some(Answered::Named(Name::from("Tagger"))),
-            "handle a : Labelled with sort K = Integer { a } with Tagger",
+            "effect a : Labelled with sort K = Integer { a } handle Tagger",
         ),
         (
             Some(Answered::InScope),
-            "handle a : Labelled with sort K = Integer { a }",
+            "effect a : Labelled with sort K = Integer { a }",
         ),
         (
             None,
-            "handle a : Labelled with sort K = Integer { a } with { | pure(a) => a | oper \
+            "effect a : Labelled with sort K = Integer { a } handle { | pure(a) => a | oper \
              label(a, b) => a }",
         ),
     ] {
@@ -8584,14 +8584,14 @@ fn a_continuation_is_resumed_by_its_call_941()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(called))),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => b *{} }"
+            "effect a : std.process.Exit.Eff { *{} } handle { | pure(a) => a | oper exit(a, b) => b *{} }"
         )),
         "a resumption with a returned value is the continuation's call"
     );
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(noted))),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => resume b\n                                                 (force a) }"
+            "effect a : std.process.Exit.Eff { *{} } handle { | pure(a) => a | oper exit(a, b) => resume b\n                                                   (force a) }"
         )),
         "a resumption with any other computation keeps the notation"
     );
@@ -8670,7 +8670,7 @@ fn an_operation_with_no_continuation_prints_as_written_7968()
     assert_eq!(
         written(halted),
         faithful(Written(
-            "handle a : Halt.Eff { *{} } with { | pure(a) => a | oper halt(a) => 7 }"
+            "effect a : Halt.Eff { *{} } handle { | pure(a) => a | oper halt(a) => 7 }"
         )),
         "the clause of an operation with no continuation binds its payload alone"
     );
@@ -8679,7 +8679,7 @@ fn an_operation_with_no_continuation_prints_as_written_7968()
     assert_eq!(
         written(exited),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => { let c = abandon\n                                                                                       b ; 7 } }"
+            "effect a : std.process.Exit.Eff { *{} } handle {\n  | pure(a) => a\n  | oper exit(a, b) => { let c = abandon b ; 7 }\n}"
         )),
         "a clause of an operation that resumes keeps its stack and its abandonment"
     );
@@ -8705,7 +8705,7 @@ fn a_return_leaving_a_handler_prints_as_written_941()
         reply: unit,
     }])
     .expect("one operation is a signature");
-    // `handle a : std.process.Exit.Eff { … } with { pure(a) => a }` over
+    // `effect a : std.process.Exit.Eff { … } handle { pure(a) => a }` over
     // `subject`.
     let scoped = |core: &mut CoreArena, subject| {
         let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -8738,28 +8738,28 @@ fn a_return_leaving_a_handler_prints_as_written_941()
     assert_eq!(
         spelled(&source, body(left)),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { return *{} } with { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff { return *{} } handle { | pure(a) => a }"
         )),
         "a shift over a returner in a subject the reset delimits is `return`"
     );
     assert_eq!(
         spelled(&source, body(looped_out)),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { loop { return *{} } } with { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff { loop { return *{} } } handle { | pure(a) => a }"
         )),
         "a `return` ending a loop's pass in a subject leaves the handler"
     );
     assert_eq!(
         spelled(&source, body(naming)),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { return b } with { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff { return b } handle { | pure(a) => a }"
         )),
         "a shift naming the stack it captures names the unwritten binder"
     );
     assert_eq!(
         spelled(&source, body(undelimited)),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { shift b { *{} } } with { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff { shift b { *{} } } handle { | pure(a) => a }"
         )),
         "a shift no reset delimits keeps the notation"
     );
@@ -9204,7 +9204,7 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : std.io.Ring.Eff { let b = a.alloc 4096 ; a.free\n                               b } with { | pure(a) => a | oper alloc(c, d, b) => b\n                                            d | oper free(a, b) => b *{} }"
+            "effect a : std.io.Ring.Eff { let b = a.alloc 4096 ; a.free\n                               b } handle { | pure(a) => a | oper alloc(c, d, b) => b\n                                              d | oper free(a, b) => b *{} }"
         ))
     );
 }

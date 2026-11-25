@@ -775,12 +775,12 @@ pub struct CoreSource<'arena>
     /// The name the source writes for the binder each lambda and each bind
     /// opens, ascending by the opener.
     openers: &'arena [(ComputationId, Name<'arena>)],
-    /// The theory each capability scope the source writes as `handle c : T
+    /// The theory each capability scope the source writes as `effect c : T
     /// with sort C = A … { … }` handles, with the sorts its manifest fixes,
     /// ascending by the scope.
     scopes: &'arena [(ComputationId, Modelled<'arena>)],
     /// The model answering each capability scope the source writes as
-    /// `handle c : T … { … } with N`, or with no `with`, as written,
+    /// `effect c : T … { … } handle N`, or with no `handle`, as written,
     /// ascending by the scope.
     answers: &'arena [(ComputationId, Answered<'arena>)],
     /// Each returner's row entries over a theory as the source writes them,

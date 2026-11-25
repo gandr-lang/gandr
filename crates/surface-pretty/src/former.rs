@@ -1084,8 +1084,8 @@ pub enum Former<'source, Node>
         /// The payload.
         payload: Node,
     },
-    /// A deep handler, `handle { c } with { | pure(x) => r | oper op(p, k) => b
-    /// | … }`: the subject, the return clause under one binder, and the
+    /// A deep handler, `effect { c } handle { | pure(x) => r | oper op(p, k) =>
+    /// b | … }`: the subject, the return clause under one binder, and the
     /// operation clauses the source answers by [`Source::component`] and
     /// names by [`Source::label`], each under the payload's and the
     /// resumption's binders.
@@ -1108,11 +1108,11 @@ pub enum Former<'source, Node>
         /// The payload.
         payload: Node,
     },
-    /// A capability scope, `handle c : I { c } with { … }`, or over a theory
-    /// with the sorts it fixes, `handle c : T with sort C = A … { c } with {
+    /// A capability scope, `effect c : I { c } handle { … }`, or over a theory
+    /// with the sorts it fixes, `effect c : T with sort C = A … { c } handle {
     /// … }`: a handler whose subject stands under the capability's binder.
-    /// A scope a model answers writes it, `with N` or no `with`, in place of
-    /// the clauses.
+    /// A scope a model answers writes it, `handle N` or no `handle`, in place
+    /// of the clauses.
     Scope
     {
         /// The handled interface's name.
