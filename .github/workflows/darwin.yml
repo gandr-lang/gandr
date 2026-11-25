@@ -1,0 +1,101 @@
+# The plain suite of `main` on the hosted runner for macOS arm64, one time
+# each day. The gates of a landing run on Linux only, so this run is the
+# check that the tree still builds and passes its tests on macOS.
+#
+# The run reads and saves one target cache of its own. Cargo compares sources
+# by content (`.cargo/config.toml`), so a restored unit whose source did not
+# change stays fresh under the new dates of the checkout.
+name: darwin
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# One run at a time. A run that a dispatch starts while the daily one runs
+# waits for it.
+concurrency:
+  group: darwin-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # The cache holds no incremental state. A restored unit with the same
+  # source content is fresh without it.
+  CARGO_INCREMENTAL: "0"
+  # A sweep test lists the corpus sources that a change touches by a diff from
+  # `GANDR_SWEEP_BASE`. A run of one commit has no change, so the base is the
+  # commit itself; with no base, the test needs an `origin/main` that the
+  # checkout of a branch does not have.
+  GANDR_SWEEP_BASE: ${{ github.sha }}
+
+jobs:
+  plain-suite:
+    name: plain suite (macOS)
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: check out the tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The key hashes the pin file, so a change of the pin is a new cache.
+      - name: restore the toolchain
+        id: toolchain
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.rustup/toolchains/*
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+      # With no argument, rustup reads `rust-toolchain.toml`: its channel, its
+      # components and its profile.
+      - name: install the toolchain
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+      - name: save the toolchain
+        if: ${{ steps.toolchain.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.rustup/toolchains/*
+          key: ${{ steps.toolchain.outputs.cache-primary-key }}
+      # The version of the pin in `mise.toml`.
+      - name: install cargo-nextest
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl --proto '=https' --tlsv1.2 -fsSL https://get.nexte.st/0.9.150/mac | tar -xzf - -C "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # The newest cache of this run for the toolchain and the lock file; else
+      # the newest one for the toolchain.
+      - name: restore the target directory
+        id: target
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: darwin-plain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            darwin-plain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-
+            darwin-plain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+      # A build fetches the crates of the host alone. A test of the driver
+      # resolves its tree for `wasm32-wasip3` with `--offline`, so the run
+      # fetches the crates of each target first.
+      - name: fetch the crates of each target
+        run: cargo fetch --locked
+      - name: run the plain suite
+        run: cargo nextest run --workspace --locked --no-fail-fast
+      - name: save the target directory
+        if: ${{ always() && steps.target.outcome == 'success' && steps.target.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ steps.target.outputs.cache-primary-key }}
