@@ -11,8 +11,8 @@ theory Stored where
 @[refuses("HandlerUnlawful")]
 def forgetful() -> Integer =
   handle st : Stored with sort S = Integer {
-    st.put 1;
-    let a = st.get;
+    st.put 1
+    let a = st.get
     pure a
   } with {
     | pure(x) => pure x

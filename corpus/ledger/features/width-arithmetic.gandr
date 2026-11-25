@@ -1,4 +1,5 @@
-/// `width-arithmetic`: arithmetic on a width that stops at the end of its range.
+/// `width-arithmetic`: arithmetic on a width that stops at the end
+/// of its range.
 ///
 /// Implemented: `std.overflow` declares `Overflow.Eff`.
 /// Its one operation `overflow` passes no continuation.
@@ -20,7 +21,7 @@ import std.overflow (Overflow, Reason, Overflowed);
 
 /// The sum of two `u8` values, or the overflow of `add`.
 def addU8(a : u8, b : u8) -> [o : Overflow.Eff with sort R = Reason] u8 =
-  let sum = u8.to_integer a + u8.to_integer b;
+  let sum = u8.to_integer a + u8.to_integer b
   match sum <= 255 where
     | true => u8.from_integer sum
     | false => o.overflow (Reason "add" Overflowed)
@@ -29,7 +30,7 @@ def addU8(a : u8, b : u8) -> [o : Overflow.Eff with sort R = Reason] u8 =
 @[runs("+{.1 = Reason \"add\" Overflowed}")]
 def overflowed() -> u8 + Reason =
   handle o : Overflow.Eff with sort R = Reason {
-    let s = addU8 255u8 1u8;
+    let s = addU8 255u8 1u8
     pure +{.0 = s}
   } with {
     | pure(x) => pure x
@@ -40,7 +41,7 @@ def overflowed() -> u8 + Reason =
 @[runs("+{.0 = 201u8}")]
 def summed() -> u8 + Reason =
   handle o : Overflow.Eff with sort R = Reason {
-    let s = addU8 200u8 1u8;
+    let s = addU8 200u8 1u8
     pure +{.0 = s}
   } with {
     | pure(x) => pure x

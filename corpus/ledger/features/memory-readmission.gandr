@@ -22,8 +22,8 @@ data Side : Type where
 @[runs("12")]
 def doubled() -> Integer =
   var c = 3
-  access c as v { resume v (v + v) };
-  access c as v { resume v (v + 6) };
+  access c as v { resume v (v + v) }
+  access c as v { resume v (v + 6) }
   pure c
 
 /// The reduct of `doubled`. Each access answers the unit beside the value

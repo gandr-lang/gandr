@@ -2,7 +2,7 @@
 /// before. A loop that breaks at once. Its row states `Partial`, because a
 /// loop may diverge.
 def once(x : Integer) -> [Partial] Integer =
-  let y = loop { break(x) };
+  let y = loop { break(x) }
   y
 
 /// The seed runs the loop in a definition's value.

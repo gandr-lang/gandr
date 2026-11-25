@@ -27,13 +27,13 @@ pub def touch[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r)
 def passNatural() -> Integer =
   var s = 5
   handle outer : std.process.Exit.Eff {
-    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w }
     handle inner : std.process.Exit.Eff {
       let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner] (fun (x) {
-        let y : (() -> Integer) at outer = pass x;
+        let y : (() -> Integer) at outer = pass x
         pure y
       }) (fun (x) { let z : (() -> Integer) at inner = x; pass z }) = Path.here
-        (fun (x) { let y : (() -> Integer) at outer = pass x; pure y });
+        (fun (x) { let y : (() -> Integer) at outer = pass x; pure y })
       force k
     } with {
       | pure(y) => pure y
@@ -50,13 +50,13 @@ def passNatural() -> Integer =
 def touchNatural() -> Integer =
   var s = 5
   handle outer : std.process.Exit.Eff {
-    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w }
     handle inner : std.process.Exit.Eff {
       let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner] (fun (x) {
-        let y : (() -> Integer) at outer = touch x;
+        let y : (() -> Integer) at outer = touch x
         pure y
       }) (fun (x) { let z : (() -> Integer) at inner = x; touch z }) = Path.here
-        (fun (x) { let y : (() -> Integer) at outer = touch x; pure y });
+        (fun (x) { let y : (() -> Integer) at outer = touch x; pure y })
       force k
     } with {
       | pure(y) => pure y

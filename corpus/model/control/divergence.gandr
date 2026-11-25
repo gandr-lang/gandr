@@ -13,11 +13,11 @@
 /// row says it may not.
 def spin(x : Bool) -> [Partial] Bool =
   let y = loop {
-    let below = 1 < 0;
+    let below = 1 < 0
     match below where
       | true => break(x)
       | false => continue
-  };
+  }
   y
 
 /// A caller of `spin` holds `Partial` in its own row.
@@ -27,7 +27,7 @@ def spinOn(x : Bool) -> [Partial] Bool =
 /// `once` states `Partial` even though it breaks at once.
 /// Its row records every possible loop behavior.
 pub def once(x : Integer) -> [Partial] Integer =
-  let y = loop { break(x) };
+  let y = loop { break(x) }
   y
 
 /// It runs, at a row holding `Partial`.
@@ -43,7 +43,7 @@ def rec unused(x : Bool) -> Bool =
 /// An unread empty-row call does not change the next computation.
 /// `unreadCall` proves that equality.
 def unreadCall(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b] (fun (x) {
-  let _ = g x;
+  let _ = g x
   f x
 }) f =
   Path.here f
@@ -65,7 +65,7 @@ def apply(a : Type, b : Type, h : a -> b, x : a) -> b =
 /// The kernel replays the discard from its certificate.
 /// It unfolds `apply` after the discard.
 def unreadApplied(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b] (fun (x) {
-  let _ = g x;
+  let _ = g x
   apply a b f x
 }) f =
   Path.here f

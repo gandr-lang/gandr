@@ -20,7 +20,7 @@ import std.process;
 def ambiguous() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say ();
+      say ()
       pure 0
     } with {
       | pure(x) => pure x
@@ -53,7 +53,7 @@ def defaulted() -> [o : std.io.Console.Eff] Unit = std.io.Console.print "default
 @[refuses("CapabilityAmplified")]
 def misplaced() -> Integer =
   handle p : std.process.Exit.Eff {
-    say[.out = p] ();
+    say[.out = p] ()
     pure 0
   } with {
     | pure(x) => pure x

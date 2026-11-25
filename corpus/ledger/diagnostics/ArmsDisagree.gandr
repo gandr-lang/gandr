@@ -4,6 +4,6 @@
 def seat_arms_leave_it_apart() -> Unit =
   let desk = fork (seat : &{next : end, retire : end}) {
     offer seat { | next => close seat | retire => pure *{} }
-  };
+  }
   select desk next
   close desk

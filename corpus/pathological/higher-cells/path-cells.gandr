@@ -88,8 +88,8 @@ theory Skipping where
 @[refuses("HandlerUnlawful")]
 def discarding() -> Integer =
   handle st : Skipping with sort S = Integer {
-    st.put 1;
-    let a = st.get;
+    st.put 1
+    let a = st.get
     pure a
   } with {
     | pure(x) => pure x

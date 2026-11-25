@@ -12,7 +12,7 @@ def nested() -> [Partial] Integer =
   while i > 0 {
     while n < 3 {
       access n as v { resume v (v + 1) }
-    };
+    }
     access i as u { resume u (u - 1) }
-  };
+  }
   pure n

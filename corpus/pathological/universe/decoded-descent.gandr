@@ -27,8 +27,8 @@ def rec totalDirect(c : UL) -> elL(c) -> Nat =
       match v -> -F Nat where
         | Nil => Zero
         | Cons(h, t) => {
-          let each = totalDirect[<] a;
-          let rest = totalDirect[<] (ListL a);
+          let each = totalDirect[<] a
+          let rest = totalDirect[<] (ListL a)
           plus (each h) (rest t)
         }
     } }

@@ -46,7 +46,7 @@ def rec parity(n : Nat) -> Nat =
   match n where
     | Zero => Zero
     | Succ(p) => {
-      let q = parity[<] p;
+      let q = parity[<] p
       match q where
         | Zero => Succ Zero
         | Succ(r) => Zero

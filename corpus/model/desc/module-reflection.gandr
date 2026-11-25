@@ -50,11 +50,11 @@ def sortOf(ports : Theory) -> String =
 def rec memberLines(chain : Theory) -> String =
   match chain where
     | Theory.Const(name, inputs, outputs, rest) => {
-      let r = memberLines[<] rest;
+      let r = memberLines[<] rest
       concat (concat (concat name " : ") (concat (sortOf outputs) "\n")) r
     }
     | Theory.Oper(name, inputs, outputs, rest) => {
-      let r = memberLines[<] rest;
+      let r = memberLines[<] rest
       concat (concat (concat name " -> ") (concat (sortOf outputs) "\n")) r
     }
     | Theory.End => ""

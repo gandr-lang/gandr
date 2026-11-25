@@ -11,8 +11,8 @@ import std.io;
 @[refuses("BufferRead")]
 def readWhileHeld() -> Unit =
   handle r : std.io.Ring.Eff {
-    let b = r.alloc 4096;
-    let copied : Buf = b;
+    let b = r.alloc 4096
+    let copied : Buf = b
     r.free b
   } with {
     | pure(x) => pure x

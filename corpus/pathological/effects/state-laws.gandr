@@ -10,8 +10,8 @@ import "../../model/effects/state.gandr";
 @[refuses("HandlerUnlawful")]
 def forgetful() -> Integer =
   handle st : StatePutGet with sort S = Integer {
-    st.put 1;
-    let a = st.get;
+    st.put 1
+    let a = st.get
     pure a
   } with {
     | pure(x) => pure x
@@ -25,8 +25,8 @@ def forgetful() -> Integer =
 @[refuses("HandlerUnlawful")]
 def accumulating() -> (Integer -> Integer) =
   handle st : StatePutLaws with sort S = Integer {
-    st.put 1;
-    let a = st.get;
+    st.put 1
+    let a = st.get
     pure thunk { fun (s : Integer) { pure a } }
   } with {
     | pure(x) => pure x

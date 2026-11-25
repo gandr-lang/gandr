@@ -6,7 +6,7 @@
 def twoSteps(m : *{start : () -> Integer, step : Integer -> Integer}) -> Integer =
   match m where
     | *{.start = s, .step = t} => {
-      let zero = s ();
+      let zero = s ()
       t (t zero)
     }
 

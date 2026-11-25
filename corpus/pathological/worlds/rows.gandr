@@ -33,6 +33,6 @@ def unrequired() -> [std.io.Console.Eff] Unit =
 @[refuses("TypeMismatch")]
 @[entry(*{near, bare})]
 def bound() -> [std.io.Console.Eff] Unit = {
-  let printed = migrate [bare] { std.io.Console.print "bare" };
+  let printed = migrate [bare] { std.io.Console.print "bare" }
   pure printed
 };

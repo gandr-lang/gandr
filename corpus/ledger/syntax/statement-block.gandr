@@ -3,6 +3,6 @@
 @[checks]
 def later : () -> Integer;
 def later = thunk {
-  let one = 1;
+  let one = 1
   return one + 1
 };

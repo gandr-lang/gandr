@@ -15,10 +15,10 @@ def rec stores(p : Program) -> Integer =
   match p where
     | Done(_x) => 0
     | Get(k) => {
-      let q = k 0;
+      let q = k 0
       stores[<] q
     }
     | Put(_t, k) => {
-      let r = stores[<] k;
+      let r = stores[<] k
       r + 1
     }

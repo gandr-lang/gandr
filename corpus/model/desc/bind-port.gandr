@@ -35,7 +35,7 @@ theory Receive where
 def rec abstracted(chain : Theory) -> Integer =
   match chain where
     | Abstracted(name, sort, indices, atoms, binders, rest) => {
-      let r = abstracted[<] rest;
+      let r = abstracted[<] rest
       r + 1
     }
     | Port(name, sort, indices, rest) => abstracted[<] rest
@@ -47,8 +47,8 @@ def rec abstracted(chain : Theory) -> Integer =
 def rec abstracting(chain : Theory) -> Integer =
   match chain where
     | Oper(name, inputs, outputs, rest) => {
-      let here = abstracted inputs;
-      let r = abstracting[<] rest;
+      let here = abstracted inputs
+      let r = abstracting[<] rest
       here + r
     }
     | Const(name, inputs, outputs, rest) => abstracting[<] rest

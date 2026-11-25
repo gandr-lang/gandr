@@ -17,7 +17,7 @@ def three() -> Nat = next (Succ Zero);
 
 /// A suspended function is named at its written type and called.
 def apply(n : Nat) -> Nat =
-  let f : Nat -> Nat = fun (x) { Succ x };
+  let f : Nat -> Nat = fun (x) { Succ x }
   f n
 
 /// A computation that returns a `Nat` is no `Unit`.

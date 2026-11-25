@@ -43,5 +43,5 @@ def zero() -> Integer =
 /// The false branch continues the block.
 @[runs("9")]
 def early() -> Integer =
-  if 1 < 0 { return 4 } else { pure *{} };
+  if 1 < 0 { return 4 } else { pure *{} }
   9

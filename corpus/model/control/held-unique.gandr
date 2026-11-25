@@ -26,7 +26,7 @@ def counted() -> Integer =
 /// `untouched` aborts before its grade-one view reads.
 /// The tuple stays in the hold.
 def untouched() -> Unit =
-  var[1] p = *{1, 2};
+  var[1] p = *{1, 2}
   access p as v { abort v } unwind { pure *{} }
 
 /// A hold at the default grade, under which each read copies.

@@ -42,7 +42,7 @@ def mixed() -> Integer =
 @[refuses("DependentBind")]
 def escaped() -> Integer =
   let y = {
-    module m = ints;
+    module m = ints
     m.seed
-  };
+  }
   7

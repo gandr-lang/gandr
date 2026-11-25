@@ -30,13 +30,13 @@ def counts() -> *{done : Integer, left : Integer} =
 /// A field of that record reads at the operator as it reads in place.
 @[entry(*{operator, seat}), runs("3")]
 def projectedDone() -> Integer =
-  let r : *{done : Integer, left : Integer} = migrate [seat] { pure *{.done = 3, .left = 4} };
+  let r : *{done : Integer, left : Integer} = migrate [seat] { pure *{.done = 3, .left = 4} }
   r.done
 
 /// A field of a record nested in the answer reads the same way.
 @[entry(*{operator, seat}), runs("3")]
 def projectedInner() -> Integer =
-  let r : *{inner : *{done : Integer}} = migrate [seat] { pure *{.inner = *{.done = 3}} };
+  let r : *{inner : *{done : Integer}} = migrate [seat] { pure *{.inner = *{.done = 3}} }
   r.inner.done
 
 /// A datatype of integers comes back, field by field open.
@@ -69,6 +69,6 @@ def bareRecord() -> *{done : Integer, later : () -> Integer} =
 def forcedLater() -> Integer =
   let r : *{done : Integer, later : () -> Integer} = migrate [seat] {
     pure *{.done = 3, .later = thunk { pure 4 }}
-  };
+  }
   let later : () -> Integer = run r.later
   force later

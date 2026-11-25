@@ -111,7 +111,7 @@ def readTwice() -> Integer =
 @[runs("cons 1 (cons 5 nil)")]
 def raised() -> List Integer =
   var xs = pair
-  (xs.nth 1) as w { resume w (w + 3) };
+  (xs.nth 1) as w { resume w (w + 3) }
   pure xs
 
 /// The same write through the method's path: the list is the call's first
@@ -119,12 +119,12 @@ def raised() -> List Integer =
 @[runs("cons 1 (cons 5 nil)")]
 def raisedByPath() -> List Integer =
   var xs = pair
-  (Places.nth xs 1) as w { resume w (w + 3) };
+  (Places.nth xs 1) as w { resume w (w + 3) }
   pure xs
 
 /// An abort asks an exclusive lend as well and writes nothing back.
 @[runs("cons 1 (cons 2 nil)")]
 def abandonedView() -> List Integer =
   var xs = pair
-  (xs.first ()) as w { abort w };
+  (xs.first ()) as w { abort w }
   pure xs

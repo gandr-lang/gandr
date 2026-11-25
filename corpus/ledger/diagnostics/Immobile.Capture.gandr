@@ -18,6 +18,6 @@ world seat;
 @[entry(*{operator, seat})]
 def dispatched() -> () -> Seat.Dispatch =
   migrate [seat] {
-    let task = Seat.task;
+    let task = Seat.task
     pure thunk { pure task }
   }

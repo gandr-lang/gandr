@@ -28,30 +28,30 @@ def encode(c : Integer) -> List Integer =
   match one where
     | true => Cons c Nil
     | false => {
-      let two = c < 2048;
+      let two = c < 2048
       match two where
         | true => {
-          let lead = int.div c 64;
-          let low = int.mod c 64;
+          let lead = int.div c 64
+          let low = int.mod c 64
           Cons (192 + lead) (Cons (128 + low) Nil)
         }
         | false => {
-          let three = c < 65536;
+          let three = c < 65536
           match three where
             | true => {
-              let lead = int.div c 4096;
-              let rest = int.mod c 4096;
-              let mid = int.div rest 64;
-              let low = int.mod c 64;
+              let lead = int.div c 4096
+              let rest = int.mod c 4096
+              let mid = int.div rest 64
+              let low = int.mod c 64
               Cons (224 + lead) (Cons (128 + mid) (Cons (128 + low) Nil))
             }
             | false => {
-              let lead = int.div c 262144;
-              let rest = int.mod c 262144;
-              let high = int.div rest 4096;
-              let tail = int.mod c 4096;
-              let mid = int.div tail 64;
-              let low = int.mod c 64;
+              let lead = int.div c 262144
+              let rest = int.mod c 262144
+              let high = int.div rest 4096
+              let tail = int.mod c 4096
+              let mid = int.div tail 64
+              let low = int.mod c 64
               Cons (240 + lead) (Cons (128 + high) (Cons (128 + mid) (Cons (128 + low) Nil)))
             }
         }

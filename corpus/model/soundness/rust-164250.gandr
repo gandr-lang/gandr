@@ -12,7 +12,7 @@ import std.process;
 def kept() -> Integer =
   var l = 42
   handle inner : std.process.Exit.Eff {
-    let q2 : (() -> Integer) at inner = access shared l as w { pure pure w };
+    let q2 : (() -> Integer) at inner = access shared l as w { pure pure w }
     force q2
   } with {
     | pure(y) => pure y

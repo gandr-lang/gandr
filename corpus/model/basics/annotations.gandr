@@ -46,21 +46,21 @@ def chosen(b : Bool) -> Integer =
 /// the pair's type.
 @[runs("2")]
 def bound() -> Integer =
-  let *{b, n} = *{(true : Bool), 2};
+  let *{b, n} = *{(true : Bool), 2}
   n
 
 /// The kernel synthesises the pair type.
 /// The annotation ascribes the otherwise untyped injection under its sum label.
 @[runs("2")]
 def injected() -> Integer =
-  let *{b, n} = *{(+{.yes = *{}} : +{yes : Unit, no : Unit}), 2};
+  let *{b, n} = *{(+{.yes = *{}} : +{yes : Unit, no : Unit}), 2}
   n
 
 /// This injection writes the second `Bool` summand.
 /// The annotation makes it read as `false`.
 @[runs("2")]
 def falsity() -> Integer =
-  let *{b, n} = *{(+{.1 = *{}} : Bool), 2};
+  let *{b, n} = *{(+{.1 = *{}} : Bool), 2}
   n
 
 /// `doubled` accepts an annotated argument.
@@ -78,5 +78,5 @@ def headed() -> Integer = (doubled : Integer -> Integer) 3;
 /// Its annotated pattern binds both names under the product type.
 @[runs("1")]
 def split() -> Integer =
-  let *{y, z} : Integer * Integer = *{1, 2};
+  let *{y, z} : Integer * Integer = *{1, 2}
   y

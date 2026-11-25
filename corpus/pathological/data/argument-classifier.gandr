@@ -27,7 +27,7 @@ def rec size(a : Type, xs : List a) -> Integer =
   match xs where
     | Nil => 0
     | Cons(_, rest) => {
-      let n = size[<] a rest;
+      let n = size[<] a rest
       n + 1
     }
 

@@ -37,9 +37,13 @@ import "../../model/interop/thir/buddy-pop.gandr";
 /// specification at every value and postcondition.
 def exampleSpecified : *{
   m : Expr Item,
-  meets : (b : Value, post : Value -> Type, exampleSpec(b, post)) -> wpFn(Item, identitySpec, m, b, post)
+  meets : (
+    b : Value,
+    post : Value -> Type,
+    exampleSpec(b, post)
+  ) -> wpFn(Item, identitySpec, m, b, post)
 } = *{exampleBody, fun (b) { fun (post) { fun (h) {
-  let meets = exampleMeets b post;
+  let meets = exampleMeets b post
   meets h
 } } }};
 

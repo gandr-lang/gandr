@@ -5,7 +5,7 @@ import std.list (List);
 
 /// A block's value bound, then read with a local beside it.
 def answer() -> Integer =
-  let n = { pure 40 };
+  let n = { pure 40 }
   let one = 1
   let m : Integer = n + one
   m + one
@@ -30,7 +30,7 @@ def doubled() -> Integer =
 /// A `var` holds a value over the rest of its block; an access writes it.
 def counted() -> Integer =
   var c = 1
-  access c as v { resume v (v + 1) };
+  access c as v { resume v (v + 1) }
   pure c
 
 /// An assignment writes a held place. `=` writes the right side's value, and

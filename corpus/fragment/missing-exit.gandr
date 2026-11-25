@@ -45,5 +45,5 @@ def lambda(n : Nat) -> -F Nat = pure n;
 
 @[checks]
 def bound(n : Nat) -> -F Nat =
-  let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p };
+  let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p }
   return m

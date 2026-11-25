@@ -51,9 +51,9 @@ pub def repeatOnto(c : Integer, n : Integer, onto : List Integer) -> [Partial] L
   var acc = onto
   var left = n
   while left > 0 {
-    access acc as a { resume a (Cons c a : List Integer) };
+    access acc as a { resume a (Cons c a : List Integer) }
     access left as v { resume v (v - 1) }
-  };
+  }
   pure acc
 
 /// This test keeps `hi` inline.

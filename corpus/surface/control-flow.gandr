@@ -25,7 +25,7 @@ def spin(n : Nat) -> [Partial] Nat =
 
 /// A `break` with a value leaves the loop with it, and what follows reads it.
 def first(n : Nat) -> [Partial] Nat =
-  let m = loop { break(Succ n) };
+  let m = loop { break(Succ n) }
   Succ m
 
 /// The value the `break` left with, one further.
@@ -38,7 +38,7 @@ def pick(n : Nat) -> [Partial] Nat =
     match n where
       | Zero => break(n)
       | Succ(p) => break(p)
-  };
+  }
   Succ m
 
 /// The successor arm leaves with the predecessor.
@@ -68,7 +68,7 @@ def hand_one() -> [Partial] Nat = become hand (Succ Zero);
 
 /// A `while` that returns from its first pass when its condition holds.
 def until_done(n : Integer) -> [Partial] Integer =
-  while n > 0 { return n };
+  while n > 0 { return n }
   0
 
 /// Three is above zero, so the loop returns it.
@@ -85,7 +85,7 @@ def sift(n : Nat) -> [Partial] Nat =
     match n where
       | Zero => { break; }
       | Succ(p) => { tick p; continue; }
-  };
+  }
   n
 
 /// Zero breaks at once.
@@ -95,7 +95,7 @@ def sift_zero() -> [Partial] Nat = become sift Zero;
 /// A loop inside a handler's body leaves with its value to the body.
 def handled(n : Nat) -> [Partial] Nat =
   handle c : std.process.Exit.Eff {
-    let m = loop { break(Succ n) };
+    let m = loop { break(Succ n) }
     pure m
   } with {
     | pure(x) => pure Succ x
@@ -117,7 +117,7 @@ def skip(n : Nat) -> Nat =
 @[refuses("OutsideLoop")]
 def held(n : Nat) -> Nat =
   loop {
-    let t = thunk { break(n) };
+    let t = thunk { break(n) }
     continue
   }
 
@@ -129,7 +129,7 @@ def find_succ(xs : List Nat, otherwise : Nat) -> Nat =
     match x where
       | Zero => continue
       | Succ(p) => return p
-  };
+  }
   otherwise
 
 /// The search returns from the second cell.
@@ -149,5 +149,5 @@ def for_each(xs : List Nat) -> Unit =
 /// another type does not check.
 @[refuses("TypeMismatch")]
 def for_value(xs : List Nat) -> Nat =
-  let m = for x in xs { break(x) };
+  let m = for x in xs { break(x) }
   m

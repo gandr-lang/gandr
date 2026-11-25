@@ -2,5 +2,5 @@
 /// stands where no `let` binds its one linear end to a name.
 @[refuses("OutOfFragment.Unbound")]
 def forked_unbound() -> Unit =
-  fork (seat : end) { close seat };
+  fork (seat : end) { close seat }
   return *{}

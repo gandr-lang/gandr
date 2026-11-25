@@ -17,7 +17,7 @@ import std.process;
 def unkept() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
-    let k : () -> Integer = access shared s as w { pure thunk { pure w } };
+    let k : () -> Integer = access shared s as w { pure thunk { pure w } }
     force k
   } with {
     | pure(x) => pure x
@@ -31,9 +31,9 @@ def keptExclusive() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
     access s as v {
-      let k : (() -> Integer) at c = thunk { pure v };
+      let k : (() -> Integer) at c = thunk { pure v }
       resume v v
-    };
+    }
     pure 0
   } with {
     | pure(x) => pure x
@@ -46,8 +46,8 @@ def keptExclusive() -> Integer =
 def written() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
-    access s as v { resume v (v + 1) };
+    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } }
+    access s as v { resume v (v + 1) }
     force k
   } with {
     | pure(x) => pure x
@@ -60,8 +60,8 @@ def written() -> Integer =
 def rewrapped() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
-    let j : () -> Integer = thunk { force k };
+    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } }
+    let j : () -> Integer = thunk { force k }
     force j
   } with {
     | pure(x) => pure x
@@ -74,7 +74,7 @@ def rewrapped() -> Integer =
 def answered() -> () -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
+    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } }
     pure k
   } with {
     | pure(x) => pure x
@@ -86,8 +86,8 @@ def answered() -> () -> Integer =
 @[refuses("HeldKept")]
 def writtenInHold() -> Integer =
   var s = 3
-  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
-  access s as v { resume v (v + 1) };
+  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } }
+  access s as v { resume v (v + 1) }
   force k
 
 /// A thunk kept in no region that forces the one kept in the hold's region:
@@ -95,6 +95,6 @@ def writtenInHold() -> Integer =
 @[refuses("KeptEscaped")]
 def leftHold() -> Integer =
   var s = 3
-  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
-  let j : () -> Integer = thunk { force k };
+  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } }
+  let j : () -> Integer = thunk { force k }
   force j

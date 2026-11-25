@@ -86,7 +86,7 @@ def oneArena : Path builtABC builtBAC = *{
 def walk(r : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer}) -> Integer =
   match r where
     | *{.start = s, .next = n, .label = l} => {
-      let once = n s;
+      let once = n s
       l (n once)
     }
 

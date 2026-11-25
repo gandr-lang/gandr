@@ -16,12 +16,12 @@
     (series (event left 0) (parallel (event left 1) (series (event right 0) (event right 1)))))
 ]
 def finished() -> Unit =
-  let desk = fork (seat : +{done : end}) { select seat done; drop seat };
+  let desk = fork (seat : +{done : end}) { select seat done; drop seat }
   offer desk { | done => drop desk }
 
 /// `mixed` closes one fork endpoint and drops the other.
 /// Each action ends its endpoint.
 @[runs("*{}"), traces(decomposes seat (parallel (event left 0) (event right 0)))]
 def mixed() -> Unit =
-  let desk = fork (seat : end) { close seat };
+  let desk = fork (seat : end) { close seat }
   drop desk

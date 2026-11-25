@@ -8,7 +8,7 @@ import std.io;
 @[refuses("BufferUnreturned")]
 def neverFreed() -> Unit =
   handle r : std.io.Ring.Eff {
-    let b = r.alloc 4096;
+    let b = r.alloc 4096
     pure *{}
   } with {
     | pure(x) => pure x

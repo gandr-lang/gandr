@@ -16,7 +16,7 @@ def summedTwice(n : Integer) -> Integer = n + n;
 
 /// Four times its argument, statements in a block after `=`.
 def quadruple(n : Integer) -> Integer = {
-  let m = summedTwice n;
+  let m = summedTwice n
   summedTwice m
 };
 

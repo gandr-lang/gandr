@@ -29,7 +29,7 @@ theory Chain where
 
 @[refuses("UndescribedMember.OperationFiller")]
 oper accumulate : (stream : Stream) --> (out : Stream) {
-  node : zip(stream, state) --> (next, out);
+  node : zip(stream, state) --> (next, out)
   feed : (next) --> (state);
 }
 

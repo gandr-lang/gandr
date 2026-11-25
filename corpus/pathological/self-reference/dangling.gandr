@@ -16,13 +16,13 @@ def dangling() -> Integer =
   var x = 5
   let r : Integer = handle c : std.process.Exit.Eff {
     let k = access x as v {
-      c.exit 1;
-      resume v (v + 7);
+      c.exit 1
+      resume v (v + 7)
       pure thunk { pure v }
-    };
+    }
     force k
   } with {
     | pure(y) => pure y
     | oper exit(code, k) => k *{}
-  };
+  }
   pure x

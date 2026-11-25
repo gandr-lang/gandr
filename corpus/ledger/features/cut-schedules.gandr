@@ -50,8 +50,8 @@ def rec sum(t : Tree) -> Integer =
   match t where
     | Leaf(n) => n
     | Node(l, r) => {
-      let a = sum[<] l;
-      let b = sum[<] r;
+      let a = sum[<] l
+      let b = sum[<] r
       a + b
     }
 

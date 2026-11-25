@@ -31,13 +31,13 @@ def counted(amount : Integer) -> Integer =
 /// A fork's child that closes its end once `finish` holds it.
 @[refuses("UsedAfterClose")]
 def reused() -> Unit =
-  let desk = fork (seat : end) { finish seat; close seat };
+  let desk = fork (seat : end) { finish seat; close seat }
   close desk
 
 /// A fork's child that hands its end where a number stands.
 @[refuses("EndpointAsValue")]
 def miscounted() -> Unit =
-  let desk = fork (seat : end) { let total = counted seat; close seat };
+  let desk = fork (seat : end) { let total = counted seat; close seat }
   close desk
 
 /// A recursive protocol followed by calling itself on the same endpoint.

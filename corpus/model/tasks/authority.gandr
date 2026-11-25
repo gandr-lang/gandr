@@ -16,19 +16,19 @@ import std.process;
 /// A task reads through its parent's capability and returns the text.
 def reader(c : Cap { read }) -> [std.fs.Eff] Unit =
   let found = fork (task : Task.Join) {
-    let text = c.read Task.notes;
-    send task text;
+    let text = c.read Task.notes
+    send task text
     close task
-  };
+  }
   let text = recv found
   close found
 
 /// A parent exits through its capability while its task's end stays open.
 def exiter(c : Cap { exit }) -> [std.process.Exit.Eff] Unit =
   let found = fork (task : Task.Join) {
-    send task Task.notes;
+    send task Task.notes
     close task
-  };
+  }
   c.exit 1
   let text = recv found
   close found
