@@ -889,6 +889,10 @@ impl Band
             // A lambda binds loose, as the printer binds it, so a parenthesis
             // around one as a first argument leads its juxtaposition (#5750).
             | "lambda_expression"
+            // A thunk is a keyword form, which binds loose: an argument of a
+            // type's juxtaposition keeps its parentheses, `args d (thunk { f
+            // })`.
+            | "thunk_expression"
             // A word before a type is a moded type, whose type runs to the
             // arrow's band: `f a` applies `f` by juxtaposition.
             | "moded_type" => Self::Loose,
