@@ -1,5 +1,9 @@
 //! The homotopy basis of B₃⁺ reduced by its critical triples, as Example
-//! 7.5.8 of Ara and others states it, and the refusals of the reduction.
+//! 7.5.8 of Ara and others states it, and the refusals of the reduction. The
+//! basis of the theory `Tally` of the corpus with its symmetry idle, in each
+//! order of its rules.
+
+use alloc::collections::BTreeSet;
 
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
@@ -15,6 +19,7 @@ use gandr_theory_coherent_resolutions::Composite;
 use gandr_theory_coherent_resolutions::Joinability;
 use gandr_theory_coherent_resolutions::MovePlace;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
+use gandr_theory_coherent_resolutions::PairJoining;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::TripleIndex;
 use gandr_theory_coherent_resolutions::Witness;
@@ -673,4 +678,166 @@ fn a_cell_that_copies_a_variable_is_refused()
         Basis::new(&store, &[], budget()),
         Err(BasisRefusal::Nonlinear(id)) if id == CellId::from(0_usize)
     ));
+}
+
+/// A rule of the theory `Tally` of the corpus, over the toy alphabet: `add`
+/// is `meet`, `Zero` is `none` and `Succ(Zero)` is `all`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Tally
+{
+    /// `meetNone`: `meet none x ==> none`. It erases `x`.
+    None,
+    /// `meetAll`: `meet all x ==> x`.
+    All,
+    /// `meetComm`: `meet x y <=> meet y x`, the symmetry.
+    Swap,
+    /// The rule that the completion derives from `meetNone` and the
+    /// symmetry: `meet x none ==> none`. It erases `x`.
+    NoneRight,
+    /// The rule that the completion derives from `meetAll` and the
+    /// symmetry: `meet x all ==> x`.
+    AllRight,
+}
+
+impl Tally
+{
+    /// The two sides of the rule.
+    ///
+    /// # Specification
+    /// trivial.
+    fn sides(self) -> (Toy, Toy)
+    {
+        let all = || Toy::succ(Toy::zero());
+        let x = || Toy::var("x");
+        match self {
+            Self::None => (Toy::add(Toy::zero(), x()), Toy::zero()),
+            Self::All => (Toy::add(all(), x()), x()),
+            Self::Swap => (Toy::add(x(), Toy::var("y")), Toy::add(Toy::var("y"), x())),
+            Self::NoneRight => (Toy::add(x(), Toy::zero()), Toy::zero()),
+            Self::AllRight => (Toy::add(x(), all()), x()),
+        }
+    }
+}
+
+/// Each order of `rules`.
+///
+/// # Specification
+/// trivial.
+fn orders(rules: &[Tally]) -> Vec<Vec<Tally>>
+{
+    let Some((&first, rest)) = rules.split_first()
+    else {
+        return vec![Vec::new()];
+    };
+    let mut each = Vec::new();
+    for order in orders(rest) {
+        for at in 0 ..= order.len() {
+            let mut placed = order.clone();
+            placed.insert(at, first);
+            each.push(placed);
+        }
+    }
+    each
+}
+
+/// The store of `rules` in their order, and the cell of the symmetry.
+///
+/// # Specification
+/// trivial.
+fn tally(rules: &[Tally]) -> (CellStore<ToyAlphabet>, BTreeSet<CellId>)
+{
+    let mut store = CellStore::new();
+    let mut idle = BTreeSet::new();
+    for &rule in rules {
+        let (lhs, rhs) = rule.sides();
+        let id = store.insert(toy_cell(lhs, rhs));
+        if rule == Tally::Swap {
+            let _first = idle.insert(id);
+        }
+    }
+    (store, idle)
+}
+
+/// The homotopy basis of the theory `Tally` of the corpus, with its symmetry
+/// idle, in each order of its rules.
+///
+/// The written rules part beside the idle symmetry, so the basis needs the
+/// two rules that the completion derives. With them each pair joins, and the
+/// basis refuses the first rule that erases its variable. The rules that keep
+/// their variable have one critical triple, at `meet all all`. Its boundary
+/// is built only where a rule comes before the symmetry, because the
+/// strategy of the boundary fires the first cell and the symmetry has no
+/// normal form. The triple pairs no confluence, so the reduction removes
+/// none.
+#[test]
+fn the_basis_of_a_tally_with_its_symmetry_idle()
+{
+    use Tally::All;
+    use Tally::AllRight;
+    use Tally::None;
+    use Tally::NoneRight;
+    use Tally::Swap;
+
+    for order in orders(&[None, All, Swap]) {
+        let (store, idle) = tally(&order);
+        assert!(
+            matches!(
+                PairJoining::past(idle).resume(&store, budget()),
+                Joinability::Diverges { .. }
+            ),
+            "the written rules part beside the symmetry: {order:?}"
+        );
+    }
+    let whole = orders(&[None, All, Swap, NoneRight, AllRight]);
+    assert_eq!(whole.len(), 120);
+    for order in whole {
+        let (store, idle) = tally(&order);
+        let Joinability::Joined(certificates) = PairJoining::past(idle).resume(&store, budget())
+        else {
+            panic!("each pair joins with the derived rules: {order:?}");
+        };
+        assert_eq!(certificates.len(), 8, "{order:?}");
+        let erasing = order
+            .iter()
+            .position(|&rule| matches!(rule, None | NoneRight))
+            .map(CellId::from);
+        assert!(
+            matches!(
+                Basis::new(&store, &certificates, budget()),
+                Err(BasisRefusal::Nonlinear(id)) if Some(id) == erasing
+            ),
+            "the basis refuses the first rule that erases: {order:?}"
+        );
+    }
+    for order in orders(&[All, Swap, AllRight]) {
+        let (store, idle) = tally(&order);
+        let Joinability::Joined(certificates) = PairJoining::past(idle).resume(&store, budget())
+        else {
+            panic!("each pair joins: {order:?}");
+        };
+        assert_eq!(certificates.len(), 3, "{order:?}");
+        let mut basis = Basis::new(&store, &certificates, budget()).expect("the basis builds");
+        assert_eq!(basis.triples().len(), 1, "{order:?}");
+        let unbuilt: &[TripleIndex] = if order.first() == Some(&Swap) {
+            &[TripleIndex::from(0_usize)]
+        }
+        else {
+            &[]
+        };
+        assert_eq!(
+            basis.unbuilt(),
+            unbuilt,
+            "the boundary is built where a rule comes before the symmetry: {order:?}"
+        );
+        let cells = basis.cells();
+        let matching = basis.matching();
+        let mut scheme = matching.on(&mut basis);
+        let reduced = equivalence(&mut scheme, &cells, walk()).expect("the reduction is acyclic");
+        assert_eq!(
+            reduced.critical(),
+            cells.as_slice(),
+            "the triple pairs no confluence: {order:?}"
+        );
+        assert_eq!(reduced.removals(), [], "{order:?}");
+    }
 }
