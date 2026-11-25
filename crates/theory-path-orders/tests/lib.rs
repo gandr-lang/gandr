@@ -8,3 +8,6 @@ mod decreasing;
 
 #[cfg(test)]
 mod lpo;
+
+#[cfg(test)]
+mod strata;
