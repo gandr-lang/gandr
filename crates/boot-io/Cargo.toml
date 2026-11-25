@@ -30,8 +30,9 @@ path = "tests/descriptor.rs"
 [dependencies]
 gandr-boot-core.workspace = true
 
-# The witness of an interrupted call sets the handler of a signal and sends the
-# signal to the thread of a read. The crate makes no use of `nix`.
+# The witnesses of an interrupted call set the handler of a signal and send
+# the signal to the thread of a read or of a write. The crate makes no use of
+# `nix`.
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dev-dependencies]
 nix.workspace = true
 

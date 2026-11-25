@@ -1699,8 +1699,9 @@ default-features = false
 # The store's crash test makes its child not dumpable before the child
 # aborts.
 #
-# The IO core's witness of an interrupted call sets a handler of `SIGUSR1`
-# with no restart, and sends the signal to the thread of a read that waits.
+# The IO core's witnesses of an interrupted call set a handler of `SIGUSR1`
+# with no restart, and send the signal to the thread of a read or of a write
+# that waits.
 # features:
 # - term: `pty::openpty`
 # - fs: `sys::statfs::statfs`, the type name of a filesystem on macOS, and
@@ -1708,10 +1709,10 @@ default-features = false
 # - process: `sys::prctl::set_dumpable`, on Linux, the child of the store's
 #   crash test
 # - pthread: `sys::pthread::pthread_self` and `sys::pthread::pthread_kill`,
-#   the thread of the read in the IO core's witness
+#   the thread of the call in the IO core's witnesses
 # - resource: `sys::resource::getrusage`, the CPU and the voluntary switches
 #   of each row of the store's load
-# - signal: `sys::signal::sigaction`, the handler of the IO core's witness
+# - signal: `sys::signal::sigaction`, the handler of the IO core's witnesses
 # consumers:
 # - boot-io (dev, Linux x86-64)
 # - storage-store (dev)
