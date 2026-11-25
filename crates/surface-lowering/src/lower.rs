@@ -5262,6 +5262,44 @@ mod tests
     }
 
     #[test]
+    fn an_arm_s_laid_out_block_is_its_braced_block_8062()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(include_str!(
+                "lower/fixtures/an-arm-s-laid-out-block-is-its-braced-block-8062-module.gandr"
+            )),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        for (laid, braced, reason) in [
+            (
+                "laid",
+                "braced",
+                "an arm whose `=>` ends its line holds the block on the lines after it",
+            ),
+            (
+                "laid_one",
+                "braced_one",
+                "one expression on the line after the `=>` is a block of that expression",
+            ),
+        ] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(laid), body(braced)),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
     fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));

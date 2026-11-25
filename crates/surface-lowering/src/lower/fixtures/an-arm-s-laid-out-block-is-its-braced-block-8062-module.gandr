@@ -1,0 +1,29 @@
+def laid(b : Bool, x : Integer) -> Integer =
+  match b where
+    | true =>
+      let y = x
+      y
+    | false => x
+
+def braced(b : Bool, x : Integer) -> Integer = {
+  match b {
+    | true => {
+      let y = x;
+      y
+    }
+    | false => x
+  }
+};
+
+def laid_one(b : Bool, x : Integer) -> Integer =
+  match b where
+    | true =>
+      x
+    | false => 0
+
+def braced_one(b : Bool, x : Integer) -> Integer = {
+  match b {
+    | true => { x }
+    | false => 0
+  }
+};
