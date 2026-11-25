@@ -1,5 +1,14 @@
-INSERT INTO purpose VALUES('runtime-mlir','','crate','Gives the runtime the MLIR shim, MLIR text to an object and a machine body to its facts, through one C library, and the print and the read of a term of a signature as that text: the `runtime` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','','crate','Gives the runtime the MLIR shim, MLIR text to an object and a machine body to its facts, through one C library; the lowering of focused definitions to that text; and the print and the read of a term of a signature: the `runtime` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-mlir','CompileError','enum','Names the step of the shim that refused a text, with its diagnostics.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','entry::ENTRY','constant','Names the symbol of the entry of a program, which the link names as its entry.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','entry::Entry','struct','Prints the entry of a program with no libc and its block of the exit system call, for one main definition.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','export::Export','struct','Prints the symbol of an exported definition: a function of the C convention that calls the function of the definition.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','lower::Definition','struct','Holds one definition of a module for the lowering: its name, its focused value and its declared type.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','lower::Form','enum','Names the form of a command or a type that the lowering refuses, and names by its variant each node that the lowering has no form for.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','lower::Lowered','struct','Holds the functions of a lowered module, which print as one module of the `gandr` dialect.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','lower::Symbol','struct','Holds the name of a definition as an MLIR symbol.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','lower::lower','function','Lowers each focused definition of a module to one function of the `gandr` dialect, or refuses the first form that it has no layout for.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-mlir','lower::named','function','Refuses a name that is not a bare identifier of MLIR.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-mlir','naming::AttributeForm','struct','Holds the MLIR attribute of one port of an operation: its name and how its value prints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-mlir','naming::AttributeKind','enum','Names how the value of the attribute of a port prints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-mlir','naming::ConstantForm','struct','Holds the MLIR value of one constant of a sort of constants.',NULL,'fits','sound',NULL);

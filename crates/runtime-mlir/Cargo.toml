@@ -3,7 +3,7 @@ name = "gandr-runtime-mlir"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The Rust side of the MLIR shim: MLIR text and a target go in, an object comes out."
+description = "The Rust side of the MLIR shim: focused definitions lower to MLIR text, and MLIR text and a target go in, an object comes out."
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -23,10 +23,13 @@ full = []
 
 [dependencies]
 anodized.workspace = true
+gandr-core-sequent.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-cell-complexes.workspace = true
 gandr-theory-levitation.workspace = true
 
 [dev-dependencies]
-gandr-core-term.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true

@@ -908,6 +908,41 @@ pub struct MachineOperation
     pub instruction: MachineInstruction,
 }
 
+/// The operation of a `checked_` row of a width, whose answer is absent when
+/// the exact result is outside the width.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CheckedInstruction
+{
+    /// The sum of two values.
+    Add,
+    /// The first value less the second.
+    Sub,
+    /// The product of two values.
+    Mul,
+    /// The first value shifted toward the high bits by the second.
+    Shl,
+    /// The first value shifted toward the low bits by the second, with its
+    /// sign for a signed width.
+    Shr,
+}
+
+/// What a `checked_` row of a width computes: the width of its operands, and
+/// the operation whose answer is the sum of the width and `Unit`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CheckedOperation
+{
+    /// The width of the operands, and of the value of a present answer.
+    pub width: IntegerWidth,
+    /// The operation.
+    pub instruction: CheckedInstruction,
+}
+
 /// The answer of a `checked_` form: a value of the width, or its absence.
 ///
 /// # Specification
@@ -1134,6 +1169,56 @@ impl Primitive
             | WidthOperation::Order(_) => return None,
         };
         Some(MachineOperation { width, instruction })
+    }
+
+    /// What a `checked_` row of a width computes, when the row is one: its
+    /// width, and the operation whose answer is absent outside the width.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some` exactly for a row of a width that is `checked_add`,
+    ///   `checked_sub`, `checked_mul`, `checked_shl` or `checked_shr`. Its
+    ///   width is the width of the result of the row.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — on the bounds of each width, an absent answer of the
+    ///   operation is exactly an absent answer of the row's own evaluation, and
+    ///   a present one is its value; an operation that names another row's
+    ///   changes one.
+    /// - witness: `primitive::tests::a_checked_row_answers_as_its_evaluation`
+    #[spec(ensures: |ret| ret.is_none_or(|operation| self.0.result == PrimitiveType::Checked(operation.width)
+        && matches!(self.0.operation, Operation::Width(WidthOperation::Checked(_) | WidthOperation::CheckedShl | WidthOperation::CheckedShr))))]
+    #[inline]
+    #[must_use]
+    pub fn checked_operation(self) -> Option<CheckedOperation>
+    {
+        let PrimitiveType::Checked(width) = self.0.result
+        else {
+            return None;
+        };
+        let Operation::Width(operation) = self.0.operation
+        else {
+            return None;
+        };
+        let instruction = match operation {
+            WidthOperation::Checked(Arithmetic::Add) => CheckedInstruction::Add,
+            WidthOperation::Checked(Arithmetic::Sub) => CheckedInstruction::Sub,
+            WidthOperation::Checked(Arithmetic::Mul) => CheckedInstruction::Mul,
+            WidthOperation::CheckedShl => CheckedInstruction::Shl,
+            WidthOperation::CheckedShr => CheckedInstruction::Shr,
+            WidthOperation::Wrapping(_)
+            | WidthOperation::Saturating(_)
+            | WidthOperation::Div
+            | WidthOperation::Rem
+            | WidthOperation::And
+            | WidthOperation::Or
+            | WidthOperation::Xor
+            | WidthOperation::Not
+            | WidthOperation::Order(_) => return None,
+        };
+        Some(CheckedOperation { width, instruction })
     }
 
     /// Mint the curried computation signature described by this row.
