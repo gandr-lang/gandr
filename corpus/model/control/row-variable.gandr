@@ -40,6 +40,7 @@ def quiet[r : Row](s : String) -> [r] Unit =
   } with {
     | pure(x) => pure x
     | oper print(line, k) => k *{}
+    | oper write_bytes(bytes, k) => k 0
   }
 
 /// `quietRun` handles the printed line.

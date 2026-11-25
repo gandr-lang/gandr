@@ -73,4 +73,5 @@ def printed() -> Integer =
       let rest = k *{}
       pure rest + 1
     }
+    | oper write_bytes(bytes, k) => k 0
   }

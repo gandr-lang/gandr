@@ -1,4 +1,5 @@
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::IntegerWidth;
 use quenchant_shape::shape::Maybe;
 
 use super::AuthorityError;
@@ -36,6 +37,8 @@ fn an_operation_names_the_interface_offering_it()
         ("transmit", NET),
         ("eprint", STDERR),
         ("read_line", STDIN),
+        ("read_bytes", STDIN),
+        ("write_bytes", CONSOLE),
     ] {
         let Maybe::Present(found) = host.offering(&OperationName::from(operation))
         else {
@@ -97,6 +100,9 @@ fn host_interfaces_pin_names_payloads_and_replies()
     let precision = arena.value_type_product(&[integer, integer]);
     let endpoints = arena.value_type_product(&[string, string]);
     let counters = arena.value_type_list(integer);
+    let byte = arena.value_type_base(BaseType::Fixed(IntegerWidth::U8));
+    let bytes = arena.value_type_list(byte);
+    let read = arena.value_type_product(&[integer, bytes]);
     let expected = [
         (&host.exec, EXEC, alloc::vec![("exec", command, output)]),
         (&host.fs, FS, alloc::vec![
@@ -115,9 +121,15 @@ fn host_interfaces_pin_names_payloads_and_replies()
             ("path", unit, strings)
         ]),
         (&host.partial, PARTIAL, alloc::vec![]),
-        (&host.console, CONSOLE, alloc::vec![("print", string, unit)]),
+        (&host.console, CONSOLE, alloc::vec![
+            ("print", string, unit),
+            ("write_bytes", bytes, integer)
+        ]),
         (&host.stderr, STDERR, alloc::vec![("eprint", string, unit)]),
-        (&host.stdin, STDIN, alloc::vec![("read_line", unit, string)]),
+        (&host.stdin, STDIN, alloc::vec![
+            ("read_bytes", integer, read),
+            ("read_line", unit, string)
+        ]),
         (&host.net, NET, alloc::vec![
             ("accept", unit, status),
             ("connect", string, integer),

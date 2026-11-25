@@ -11,7 +11,15 @@
 // interfaces where it imports this module, `import std.io;`, and this module
 // names its own.
 //
+// `write_bytes` and `read_bytes` move bytes as a list of `u8`. A byte is not
+// text: the host adds no newline and reads no UTF-8. `read_line` and
+// `read_bytes` read one input, and `print` and `write_bytes` write one output
+// in the order of the calls.
+//
 // - see: #4523
+
+// The bytes that `write_bytes` writes and `read_bytes` reads.
+import std.list (List);
 
 /// One line, written to standard output through `console`.
 pub def print(console : Cap { print }, line : String) -> [std.io.Console.Eff] Unit =
@@ -25,3 +33,17 @@ pub def eprint(console : Cap { eprint }, line : String) -> [std.io.Stderr.Eff] U
 /// answers the empty string once the input runs out.
 pub def read_line(console : Cap { read_line }) -> [std.io.Stdin.Eff] String =
   console.read_line
+
+/// Each byte of `bytes`, written to standard output through `console`, with
+/// no newline. It answers the count of the bytes, or a negative error number.
+pub def write_bytes(console : Cap { write_bytes }, bytes : List u8) -> [std.io.Console.Eff] Integer =
+  console.write_bytes bytes
+
+/// One read of at most `count` bytes of standard input through `console`. It
+/// answers the count of the bytes read, or a negative error number, and those
+/// bytes. The count 0 with no byte is the end of the input, and a count below
+/// 1 answers `-22`.
+pub def read_bytes(console : Cap { read_bytes }, count : Integer) -> [std.io.Stdin.Eff] (
+  Integer * List u8
+) =
+  console.read_bytes count

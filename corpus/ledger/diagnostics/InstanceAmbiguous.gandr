@@ -17,8 +17,10 @@ def ambiguous() -> Integer =
     } with {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }

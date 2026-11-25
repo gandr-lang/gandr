@@ -14,7 +14,13 @@
 
 /// The ambient authority: every host operation a landed module of `std`
 /// reaches, held once, as `main`'s parameter.
-pub type Authority = Cap { print, eprint, read_line };
+pub type Authority = Cap { print, eprint, read_line, write_bytes, read_bytes };
 
 /// The standard streams' root capability, opened from `authority`.
-pub def console(authority : Authority) -> Cap { print, eprint, read_line } = authority;
+pub def console(authority : Authority) -> Cap {
+  print,
+  eprint,
+  read_line,
+  write_bytes,
+  read_bytes
+} = authority;

@@ -1,16 +1,20 @@
 //! The console of a run: where the lines that `Console.print` and
-//! `Stderr.eprint` perform go, and where `Stdin.read_line` reads.
+//! `Stderr.eprint` perform go, where the bytes of `Console.write_bytes` go, and
+//! where `Stdin.read_line` and `Stdin.read_bytes` read.
 //!
-//! A [`Console`] takes each line that a run prints and gives each line that it
-//! reads. A run takes its console as [`Streams`], the closed set of the known
-//! consoles, so the run stage has one instance and each operation is one match.
-//! [`Streams::Standard`] writes to standard output or standard error and reads
-//! standard input. [`Captured`] keeps the lines and answers from the input that
-//! it gets, so a test or a corpus expectation reads what the program printed.
-//! [`Closed`] fails each operation, as a stream whose reader is gone does. The
-//! run stage serves the three streams on a console (`evaluate::console`). The
-//! script and the session give the console to a run, so these types stay below
-//! the run stage.
+//! A [`Console`] takes each line and each byte that a run writes and gives each
+//! line and each byte that it reads. A run takes its console as [`Streams`],
+//! the closed set of the known consoles, so the run stage has one instance and
+//! each operation is one match. [`Streams::Standard`] writes to standard output
+//! or standard error and reads standard input. [`Captured`] keeps the lines and
+//! the bytes and answers from the input that it gets, so a test or a corpus
+//! expectation reads what the program wrote. [`Closed`] fails each operation,
+//! as a stream whose reader is gone does. The run stage serves the three
+//! streams on a console (`evaluate::console`). The script and the session give
+//! the console to a run, so these types stay below the run stage.
+//!
+//! A read of a line and a read of bytes read one input: each continues at the
+//! byte after the last byte that the other read.
 
 use alloc::collections::VecDeque;
 use alloc::string::String;
@@ -36,6 +40,67 @@ pub enum Input
     Line(String),
     /// The console could not read.
     Failed,
+}
+
+/// The number of an error of the host, as `errno` gives it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(transparent)]
+pub struct ErrorNumber(i32);
+
+impl ErrorNumber
+{
+    /// The error of a stream whose file is not open for the operation,
+    /// `EBADF`.
+    pub const NOT_OPEN: Self = Self(9);
+    /// The error of a write to a pipe whose reader is gone, `EPIPE`.
+    pub const NO_READER: Self = Self(32);
+    /// The error of an input or an output that failed with no number of its
+    /// own, `EIO`.
+    pub const FAILED: Self = Self(5);
+
+    /// The number of `error`, or [`Self::FAILED`] when it holds none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    fn of(error: &std::io::Error) -> Self
+    {
+        error.raw_os_error().map_or(Self::FAILED, Self)
+    }
+}
+
+impl From<ErrorNumber> for i32
+{
+    /// The number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(number: ErrorNumber) -> Self
+    {
+        number.0
+    }
+}
+
+/// What one read of bytes of input came to.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Bytes
+{
+    /// The bytes of one read, no more than the count asked; none at the end
+    /// of input.
+    Read(Vec<u8>),
+    /// The console could not read, with the number of the error.
+    Failed(ErrorNumber),
+}
+
+/// Whether a console wrote bytes.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Wrote
+{
+    /// Each byte was written.
+    Written,
+    /// The console could not write them, with the number of the error.
+    Failed(ErrorNumber),
 }
 
 /// A line a run prints, without its newline.
@@ -126,35 +191,78 @@ pub trait Console
     ///   reads it and then the empty string.
     /// - witness: `gandr-surface-evaluate::evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
     fn read_line(&mut self) -> Input;
+
+    /// Write each byte of `bytes` to standard output, in the output of
+    /// [`Self::print`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Wrote::Written`] once each byte is written, with no newline
+    ///   after them; [`Wrote::Failed`] with the number of the error when they
+    ///   could not be.
+    /// - executable: none — the trait states the console's obligation; each
+    ///   body is an implementor's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an entry writing the bytes 0, 10 and 255 leaves them
+    ///   in [`Captured`], in order.
+    /// - witness: `gandr-surface-evaluate::evaluate::entry::tests::an_entry_reads_and_writes_bytes`
+    fn write_bytes(
+        &mut self,
+        bytes: &[u8],
+    ) -> Wrote;
+
+    /// Make one read of at most `limit` bytes of input.
+    ///
+    /// # Specification
+    /// - requires: `limit` is at least 1.
+    /// - ensures: [`Bytes::Read`] with the next bytes of the input, at least
+    ///   one and no more than `limit`, or none once the input is spent;
+    ///   [`Bytes::Failed`] with the number of the error when it could not be
+    ///   read.
+    /// - executable: none — the trait states the console's obligation; each
+    ///   body is an implementor's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an entry reading from [`Captured`] fed the bytes 0,
+    ///   10 and 255 reads them in order, then none.
+    /// - witness: `gandr-surface-evaluate::evaluate::entry::tests::an_entry_reads_and_writes_bytes`
+    fn read_bytes(
+        &mut self,
+        limit: usize,
+    ) -> Bytes;
 }
 
-/// A console keeping every line it is handed, in order, each stream apart,
-/// and answering reads from the input it was fed.
+/// A console keeping every line and every byte it is handed, in order, each
+/// stream apart, and answering reads from the input it was fed.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Captured
 {
     /// The lines written to standard output, the first first.
     lines: Vec<String>,
+    /// The bytes written to standard output by `write_bytes`, the first first.
+    written: Vec<u8>,
     /// The lines written to standard error, the first first.
     errors: Vec<String>,
-    /// The input not yet read, the next first.
-    input: VecDeque<String>,
+    /// The input not yet read, the next byte first.
+    input: VecDeque<u8>,
 }
 
 impl Captured
 {
-    /// A console reading `input`, each line with its newline, the first first.
+    /// A console reading the bytes of `input`, the first first.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn fed(input: Vec<String>) -> Self
+    pub fn fed(input: &[u8]) -> Self
     {
         Self {
             lines: Vec::new(),
+            written: Vec::new(),
             errors: Vec::new(),
-            input: VecDeque::from(input),
+            input: input.iter().copied().collect(),
         }
     }
 
@@ -169,6 +277,18 @@ impl Captured
         &self.lines
     }
 
+    /// The bytes written to standard output by `write_bytes`, the first
+    /// first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn written(&self) -> &[u8]
+    {
+        &self.written
+    }
+
     /// The lines written to standard error, the first first.
     ///
     /// # Specification
@@ -180,8 +300,8 @@ impl Captured
         &self.errors
     }
 
-    /// Drop every line written, keeping the input and the room the lines
-    /// took: what lets one console serve the runs of a distribution.
+    /// Drop every line and every byte written, keeping the input and the room
+    /// they took: what lets one console serve the runs of a distribution.
     ///
     /// # Specification
     /// trivial.
@@ -189,6 +309,7 @@ impl Captured
     pub fn clear(&mut self)
     {
         self.lines.clear();
+        self.written.clear();
         self.errors.clear();
     }
 }
@@ -223,14 +344,55 @@ impl Console for Captured
         Printed::Written
     }
 
-    /// The next line fed, or the empty string once they are spent.
+    /// The next line fed, its newline kept, or the empty string once the
+    /// input is spent. A line that is not UTF-8 fails.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the line, growth within the line
+    #[inline]
+    fn read_line(&mut self) -> Input
+    {
+        let length = self
+            .input
+            .iter()
+            .position(|&byte| byte == b'\n')
+            .map_or(self.input.len(), |newline| newline.saturating_add(1));
+        let line: Vec<u8> = self.input.drain(.. length).collect();
+        String::from_utf8(line).map_or(Input::Failed, Input::Line)
+    }
+
+    /// Keep `bytes`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn read_line(&mut self) -> Input
+    fn write_bytes(
+        &mut self,
+        bytes: &[u8],
+    ) -> Wrote
     {
-        Input::Line(self.input.pop_front().unwrap_or_default())
+        self.written.extend_from_slice(bytes);
+        Wrote::Written
+    }
+
+    /// The next `limit` bytes fed, or fewer at the end of the input.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes read, growth within the read
+    #[inline]
+    fn read_bytes(
+        &mut self,
+        limit: usize,
+    ) -> Bytes
+    {
+        let length = limit.min(self.input.len());
+        Bytes::Read(self.input.drain(.. length).collect())
     }
 }
 
@@ -325,6 +487,34 @@ impl Console for Closed
     {
         self.ask();
         Input::Failed
+    }
+
+    /// Count the bytes and fail them, as on a pipe whose reader is gone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn write_bytes(
+        &mut self,
+        _bytes: &[u8],
+    ) -> Wrote
+    {
+        self.ask();
+        Wrote::Failed(ErrorNumber::NO_READER)
+    }
+
+    /// Count the read and fail it, as on an input that is not open.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn read_bytes(
+        &mut self,
+        _limit: usize,
+    ) -> Bytes
+    {
+        self.ask();
+        Bytes::Failed(ErrorNumber::NOT_OPEN)
     }
 }
 
@@ -441,6 +631,66 @@ impl Console for Streams<'_>
             },
             Self::Captured(ref mut captured) => captured.read_line(),
             Self::Closed(ref mut closed) => closed.read_line(),
+        }
+    }
+
+    /// Write `bytes` to standard output, or hand them to the console held.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
+    #[inline]
+    fn write_bytes(
+        &mut self,
+        bytes: &[u8],
+    ) -> Wrote
+    {
+        match *self {
+            Self::Standard => match std::io::stdout().lock().write_all(bytes) {
+                Ok(()) => Wrote::Written,
+                Err(error) => Wrote::Failed(ErrorNumber::of(&error)),
+            },
+            Self::Captured(ref mut captured) => captured.write_bytes(bytes),
+            Self::Closed(ref mut closed) => closed.write_bytes(bytes),
+        }
+    }
+
+    /// One read of at most `limit` bytes of standard input, through the
+    /// buffer that a read of a line reads too, or the console held's next
+    /// bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes read, growth within the read
+    #[inline]
+    fn read_bytes(
+        &mut self,
+        limit: usize,
+    ) -> Bytes
+    {
+        match *self {
+            Self::Standard => {
+                let mut input = std::io::stdin().lock();
+                let read = match input.fill_buf() {
+                    Ok(buffered) => Bytes::Read(
+                        buffered
+                            .get(.. limit.min(buffered.len()))
+                            .map_or_else(Vec::new, <[u8]>::to_vec),
+                    ),
+                    Err(error) => Bytes::Failed(ErrorNumber::of(&error)),
+                };
+                if let Bytes::Read(ref bytes) = read {
+                    input.consume(bytes.len());
+                }
+                drop(input);
+                read
+            },
+            Self::Captured(ref mut captured) => captured.read_bytes(limit),
+            Self::Closed(ref mut closed) => closed.read_bytes(limit),
         }
     }
 }

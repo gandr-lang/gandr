@@ -32,6 +32,7 @@ def resolved() -> Integer =
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// Two instances handled around the call, the outer named: its clause
@@ -45,10 +46,12 @@ def namedOuter() -> Integer =
     } with {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// `namedInner` selects the inner console instance.
@@ -61,10 +64,12 @@ def namedInner() -> Integer =
     } with {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// `relayed` passes instance `o` to `say`.
@@ -82,6 +87,7 @@ def sayLineRuns() -> Integer =
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// Steps down to the ground, which a recursion takes apart one by one.
@@ -114,6 +120,7 @@ def descendRuns() -> Integer =
       let n = k *{}
       pure (n + 1)
     }
+    | oper write_bytes(bytes, k) => k 0
   }
 
 /// `both` holds two console instances.
@@ -133,10 +140,12 @@ def outerFirst() -> Integer =
     } with {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// `innerFirst` swaps the two `both` instances.
@@ -150,10 +159,12 @@ def innerFirst() -> Integer =
     } with {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// A suspended computation at the function's own instance, run by it: the
@@ -180,8 +191,10 @@ def bothWrittenRuns() -> Integer =
     } with {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } with {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
