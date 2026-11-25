@@ -68,8 +68,9 @@
 //! `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<path here> mise run ci:recovery`
 //! re-records one source, and the diff is read for recovery regressions.
 //!
-//! `check:corpus` holds every source of both roots to the sugared form with
-//! `gandr fmt --check --form=sugared`. A source whose claim is a former's own
+//! `check:corpus-format` holds every source of both roots to the sugared form
+//! with `gandr fmt --check --form=sugared`, which names each source out of it
+//! and its declaration. A source whose claim is a former's own
 //! shape keeps the explicit form under `@[ form(explicit) ]`: the arity sources
 //! (`surface/arity/` `product`, `sum` and `records`), the engine's fragment and
 //! classifier sources (`fragment/`, `classifier/`), the universe sources
