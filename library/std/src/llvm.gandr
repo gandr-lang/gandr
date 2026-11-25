@@ -18,10 +18,11 @@
 //!   value of the term has one name, as in MLIR.
 //!
 //! An operation with a variable count of operands has one operation for each
-//! count that `std` uses. `acquire` and `release` are reserved words, so each
-//! ordering has the prefix `order_`, and each operation of an atomic
-//! read-modify-write has the prefix `rmw_`. Each other name is the name of the
-//! dialect.
+//! count that `std` uses. `acquire`, `release`, `select` and `return` are
+//! reserved words. So each ordering has the prefix `order_`, each operation of
+//! an atomic read-modify-write has the prefix `rmw_`, and the block names
+//! `llvm.select` and `llvm.return` as `choose` and `ret`. The documentation of
+//! each operation gives its text in the dialect.
 /// The admitted part of the `llvm` dialect.
 pub theory Llvm where
   /// The types of values.
