@@ -1,0 +1,115 @@
+# Twin census
+
+A twin is a function of a crate that gandr source states. A crate is under the emitter when `gandr-runtime-emitter` depends on it by a normal or a build dependency, directly or through other crates. A twin of such a crate runs as an object, and not as a record that the runtime loads.
+
+`twin-census --write` writes this file from `cargo metadata`. `twin-census --check` refuses it when it is not the census of the workspace.
+
+| Crate | Under the emitter |
+| ----- | ----------------- |
+| `boot-alloc` | yes |
+| `boot-core` | no |
+| `boot-io` | no |
+| `core-checker` | no |
+| `core-checker-base` | no |
+| `core-checker-bridge` | no |
+| `core-content` | yes |
+| `core-fork` | yes |
+| `core-incremental` | no |
+| `core-nbe` | no |
+| `core-nbe-base` | no |
+| `core-publish` | no |
+| `core-sequent` | yes |
+| `core-session` | yes |
+| `core-term` | yes |
+| `core-unify` | no |
+| `kernel-check-memo` | yes |
+| `kernel-conversion-trace` | yes |
+| `kernel-core` | yes |
+| `kernel-core-base` | yes |
+| `kernel-data` | yes |
+| `kernel-strata` | yes |
+| `kernel-term` | yes |
+| `runtime-emitter` | the emitter |
+| `runtime-net` | no |
+| `runtime-rust-record` | no |
+| `runtime-stencils` | yes |
+| `storage-artifact` | no |
+| `storage-chunker` | yes |
+| `storage-records` | no |
+| `storage-schema` | no |
+| `storage-store` | no |
+| `storage-values` | yes |
+| `surface-agentic` | no |
+| `surface-build-identity` | no |
+| `surface-corpus` | no |
+| `surface-diagnostics` | no |
+| `surface-dispatcher` | no |
+| `surface-driver` | no |
+| `surface-evaluate` | no |
+| `surface-features` | no |
+| `surface-format` | no |
+| `surface-grammar` | no |
+| `surface-layout` | no |
+| `surface-lowering` | no |
+| `surface-lowering-base` | no |
+| `surface-lowering-capability` | no |
+| `surface-lowering-exits` | no |
+| `surface-lowering-expression` | no |
+| `surface-lowering-identity` | no |
+| `surface-lowering-model` | no |
+| `surface-lowering-native` | no |
+| `surface-lsp` | no |
+| `surface-lsp-base` | no |
+| `surface-lsp-core` | no |
+| `surface-lsp-diagnostics` | no |
+| `surface-lsp-navigation` | no |
+| `surface-parser` | no |
+| `surface-pretty` | no |
+| `surface-render-remote` | no |
+| `surface-render-terminal` | no |
+| `surface-repl` | no |
+| `surface-session` | no |
+| `surface-syntax` | no |
+| `surface-tui` | no |
+| `theory-cell-complexes` | yes |
+| `theory-cell-complexes-tools` | no |
+| `theory-cellular-sheaves` | no |
+| `theory-circuit-algebras` | yes |
+| `theory-coherent-resolutions` | yes |
+| `theory-computads` | no |
+| `theory-decomposition-spaces` | no |
+| `theory-deep-inference` | yes |
+| `theory-discrete-morse` | yes |
+| `theory-dynamic-graphs` | yes |
+| `theory-e-graphs` | no |
+| `theory-exact-reals` | yes |
+| `theory-graded-posets` | yes |
+| `theory-graphs` | yes |
+| `theory-levitation` | yes |
+| `theory-nominal-automata` | no |
+| `theory-order-maintenance` | yes |
+| `theory-ordered-algebras` | yes |
+| `theory-path-orders` | yes |
+| `theory-probability` | no |
+| `theory-shapes` | no |
+| `theory-sites` | yes |
+| `theory-spec-combinators` | yes |
+| `theory-stone-duality` | yes |
+| `theory-virtual-doctrines` | no |
+| `workflow-build-state` | no |
+| `workflow-coverage-guard` | no |
+| `workflow-debt-ledger` | no |
+| `workflow-gate` | no |
+| `workflow-github` | no |
+| `workflow-host-tools` | no |
+| `workflow-hotpath-guard` | no |
+| `workflow-lane-budget` | no |
+| `workflow-ledger-tasks` | no |
+| `workflow-parser-report` | no |
+| `workflow-prose` | no |
+| `workflow-spec-cost` | no |
+| `workflow-sweep` | no |
+| `workflow-test-timing` | no |
+| `workflow-twin-census` | no |
+
+Crates under the emitter: 32 of 105.

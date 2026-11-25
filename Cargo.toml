@@ -107,6 +107,7 @@ members = [
   "crates/workflow-spec-cost",
   "crates/workflow-sweep",
   "crates/workflow-test-timing",
+  "crates/workflow-twin-census",
 ]
 # The reader links rustc's own libraries, which the `rustc-dev` component
 # supplies and which no other crate links. So it builds in a workspace of its
@@ -251,6 +252,7 @@ default-features = false
 # - workflow-spec-cost
 # - workflow-sweep
 # - workflow-test-timing
+# - workflow-twin-census
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
 git = "https://github.com/gandr-lang/quenchant"
@@ -337,6 +339,7 @@ default-features = false
 # - workflow-prose
 # - workflow-spec-cost
 # - workflow-test-timing
+# - workflow-twin-census
 [workspace.dependencies.clap]
 version = "4.6.6"
 default-features = false
@@ -2119,6 +2122,7 @@ default-features = false
 # - workflow-lane-budget
 # - workflow-prose
 # - workflow-spec-cost
+# - workflow-twin-census
 [workspace.dependencies.serde]
 version = "1.0.229"
 default-features = false
@@ -2154,6 +2158,7 @@ features = ["alloc", "derive"]
 # - workflow-parser-report
 # - workflow-prose
 # - workflow-spec-cost
+# - workflow-twin-census
 [workspace.dependencies.serde_json]
 version = "1.0.151"
 default-features = false

@@ -1,0 +1,429 @@
+//! **Twin census**: for each crate of the workspace, whether the emitter
+//! depends on it, read from `cargo metadata`.
+//!
+//! A twin is a function of a crate that gandr source states. Two carriers run
+//! it: an object that a build links, and a record that the runtime loads
+//! through the emitter. A crate that `gandr-runtime-emitter` depends on cannot
+//! take the record, because the emitter runs before the record loads. So the
+//! census marks each crate that the emitter reaches.
+//!
+//! - [`Workspace::read`] reads the JSON of `cargo metadata` with its resolved
+//!   graph: each crate of the workspace with its directory, and each crate that
+//!   the emitter reaches by a normal or a build dependency, directly or through
+//!   other crates. A dev dependency is no part of the emitter.
+//! - [`Workspace::render`] writes the text of `ledger/twin-census.md`.
+//! - [`stale`] compares a committed text with the rendered one and names each
+//!   crate whose row differs.
+//!
+//! The graph is the one that Cargo resolves for the workspace, with the
+//! features of each member unified. So an optional dependency that a different
+//! member turns on counts as a dependency of the emitter, as it does in a build
+//! of the workspace.
+
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+use core::fmt::Write as _;
+
+use anodized::spec;
+
+/// The package of the emitter.
+pub const EMITTER: &str = "gandr-runtime-emitter";
+
+/// The path of the census below the root of the workspace.
+pub const CENSUS_PATH: &str = "ledger/twin-census.md";
+
+/// Why the census could not read the metadata, or why a committed census is
+/// not the workspace's.
+///
+/// # Specification
+/// - provides: one variant for each refusal, each with the text or the crates
+///   that it refuses, so the message names what must change.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CensusError
+{
+    /// The text is not the JSON of `cargo metadata` with its resolved graph.
+    Metadata
+    {
+        /// The reason of the JSON reader.
+        reason: String,
+    },
+    /// The workspace has no package `gandr-runtime-emitter`.
+    NoEmitter,
+    /// The committed census is not the census of the workspace.
+    Stale
+    {
+        /// Each crate whose row differs, is absent, or has no crate.
+        rows: Vec<String>,
+    },
+}
+
+impl fmt::Display for CensusError
+{
+    /// The refusal, with the crates that it names.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: none
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Metadata { ref reason } => {
+                write!(
+                    f,
+                    "the metadata is not the JSON of `cargo metadata`: {reason}"
+                )
+            },
+            Self::NoEmitter => write!(f, "the workspace has no package `{EMITTER}`"),
+            Self::Stale { ref rows } => write!(
+                f,
+                "`{CENSUS_PATH}` is not the census of the workspace; write it with \
+                 `twin-census --write`. The rows that differ: {}",
+                rows.join(", ")
+            ),
+        }
+    }
+}
+
+impl core::error::Error for CensusError
+{
+}
+
+/// What Cargo's metadata holds of one package.
+#[derive(Debug, serde::Deserialize)]
+struct Package
+{
+    /// The identifier of the package in the resolved graph.
+    id: String,
+    /// The package's name.
+    name: String,
+    /// The absolute path of the package's manifest.
+    manifest_path: String,
+}
+
+/// The kind of one edge of the resolved graph: `null` for a normal
+/// dependency, `"dev"` or `"build"`.
+#[repr(transparent)]
+#[derive(Debug, serde::Deserialize)]
+struct DepKind
+{
+    /// The kind, absent for a normal dependency.
+    kind: Option<String>,
+}
+
+/// One edge of the resolved graph.
+#[derive(Debug, serde::Deserialize)]
+struct NodeDep
+{
+    /// The identifier of the package that the edge reaches.
+    pkg: String,
+    /// The kinds of the edge.
+    dep_kinds: Vec<DepKind>,
+}
+
+/// One node of the resolved graph.
+#[derive(Debug, serde::Deserialize)]
+struct Node
+{
+    /// The identifier of the package.
+    id: String,
+    /// Each edge of the package.
+    deps: Vec<NodeDep>,
+}
+
+/// The resolved graph of the metadata.
+#[repr(transparent)]
+#[derive(Debug, serde::Deserialize)]
+struct Resolve
+{
+    /// Each node.
+    nodes: Vec<Node>,
+}
+
+/// The parts of Cargo's metadata that the census reads.
+#[derive(Debug, serde::Deserialize)]
+struct Metadata
+{
+    /// Each package of the graph.
+    packages: Vec<Package>,
+    /// The identifiers of the packages of the workspace.
+    workspace_members: Vec<String>,
+    /// The resolved graph.
+    resolve: Resolve,
+}
+
+/// Where a crate stands with respect to the emitter.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Standing
+{
+    /// The crate is the emitter.
+    Emitter,
+    /// The emitter depends on the crate.
+    Under,
+    /// The emitter does not depend on the crate.
+    Apart,
+}
+
+/// Each crate of the workspace, by its directory below `crates/`, with its
+/// standing.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Workspace(BTreeMap<String, Standing>);
+
+impl Workspace
+{
+    /// The census of the workspace whose `cargo metadata --format-version 1`
+    /// printed `metadata`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a text that is not the metadata is refused.
+    /// - ensures: one entry for each package of the workspace, keyed by the
+    ///   name of its directory. The emitter is [`Standing::Emitter`]. A package
+    ///   is [`Standing::Under`] exactly when a path of normal or build edges of
+    ///   the resolved graph leads from the emitter to it.
+    /// - provides: the rows of the census.
+    /// - fails: [`CensusError::Metadata`] when `metadata` is not the JSON of
+    ///   the metadata with its resolved graph; [`CensusError::NoEmitter`] when
+    ///   no package of the workspace is the emitter.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Cost
+    /// - allocation: the parsed metadata, the edges of the graph and one entry
+    ///   for each crate, growth within the metadata
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a graph of five crates separates a normal edge, a
+    ///   build edge through a second crate, a dev edge and a crate with no
+    ///   edge; a text that is not JSON and a workspace with no emitter are each
+    ///   refused by name.
+    /// - witness: `tests::census::a_crate_under_the_emitter_is_marked_and_a_dev_edge_is_not`
+    /// - witness: `tests::census::metadata_with_no_emitter_or_no_json_is_refused_by_name`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |workspace| {
+        workspace.0.values().filter(|&&standing| standing == Standing::Emitter).count() == 1
+    }))]
+    #[inline]
+    pub fn read(metadata: &[u8]) -> Result<Self, CensusError>
+    {
+        let parsed: Metadata =
+            serde_json::from_slice(metadata).map_err(|error| CensusError::Metadata {
+                reason: error.to_string(),
+            })?;
+        let members: BTreeSet<&str> = parsed
+            .workspace_members
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let emitter = parsed
+            .packages
+            .iter()
+            .find(|package| package.name == EMITTER && members.contains(package.id.as_str()))
+            .ok_or(CensusError::NoEmitter)?;
+        let edges: BTreeMap<&str, Vec<&str>> = parsed
+            .resolve
+            .nodes
+            .iter()
+            .map(|node| {
+                let reached = node
+                    .deps
+                    .iter()
+                    .filter(|dep| {
+                        dep.dep_kinds
+                            .iter()
+                            .any(|kind| kind.kind.as_deref() != Some("dev"))
+                    })
+                    .map(|dep| dep.pkg.as_str())
+                    .collect();
+                (node.id.as_str(), reached)
+            })
+            .collect();
+        let mut reached: BTreeSet<&str> = BTreeSet::new();
+        let mut frontier = alloc::vec![emitter.id.as_str()];
+        while let Some(id) = frontier.pop() {
+            for &next in edges.get(id).map_or(&[][..], Vec::as_slice) {
+                if reached.insert(next) {
+                    frontier.push(next);
+                }
+            }
+        }
+        let crates = parsed
+            .packages
+            .iter()
+            .filter(|package| members.contains(package.id.as_str()))
+            .map(|package| {
+                let standing = if package.id == emitter.id {
+                    Standing::Emitter
+                }
+                else if reached.contains(package.id.as_str()) {
+                    Standing::Under
+                }
+                else {
+                    Standing::Apart
+                };
+                (directory(&package.manifest_path), standing)
+            })
+            .collect();
+        Ok(Self(crates))
+    }
+
+    /// The count of crates under the emitter, and the count of crates.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first count is the count of [`Standing::Under`] entries;
+    ///   the second is the count of entries.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: none
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::read`].
+    /// - witness: `tests::census::a_crate_under_the_emitter_is_marked_and_a_dev_edge_is_not`
+    #[spec(ensures: |ret| ret.0 <= ret.1 && ret.1 == self.0.len())]
+    #[must_use]
+    #[inline]
+    pub fn counts(&self) -> (usize, usize)
+    {
+        let under = self
+            .0
+            .values()
+            .filter(|&&standing| standing == Standing::Under)
+            .count();
+        (under, self.0.len())
+    }
+
+    /// The text of `ledger/twin-census.md`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one row for each crate, in the order of its directory, with
+    ///   `yes`, `no` or `the emitter`, and one line with the counts of
+    ///   [`Self::counts`].
+    /// - panics: none.
+    /// - executable: none — the text is its golden's to show.
+    ///
+    /// # Cost
+    /// - allocation: the text, growth within the crates
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the golden of a graph of five crates.
+    /// - witness: `tests::census::a_crate_under_the_emitter_is_marked_and_a_dev_edge_is_not`
+    #[must_use]
+    #[inline]
+    pub fn render(&self) -> String
+    {
+        let mut text = String::from(
+            "# Twin census\n\nA twin is a function of a crate that gandr source states. A crate is \
+             under the emitter when `gandr-runtime-emitter` depends on it by a normal or a build \
+             dependency, directly or through other crates. A twin of such a crate runs as an \
+             object, and not as a record that the runtime loads.\n\n`twin-census --write` writes \
+             this file from `cargo metadata`. `twin-census --check` refuses it when it is not \
+             the census of the workspace.\n\n| Crate | Under the emitter |\n| ----- | \
+             ----------------- |\n",
+        );
+        for (name, standing) in &self.0 {
+            let cell = match *standing {
+                Standing::Emitter => "the emitter",
+                Standing::Under => "yes",
+                Standing::Apart => "no",
+            };
+            let _infallible = writeln!(text, "| `{name}` | {cell} |");
+        }
+        let (under, all) = self.counts();
+        let _infallible = writeln!(text, "\nCrates under the emitter: {under} of {all}.");
+        text
+    }
+}
+
+/// The name of the directory of the manifest at `manifest_path`.
+///
+/// # Specification
+/// trivial.
+fn directory(manifest_path: &str) -> String
+{
+    let dir = manifest_path
+        .strip_suffix("/Cargo.toml")
+        .unwrap_or(manifest_path);
+    String::from(dir.rsplit('/').next().unwrap_or(dir))
+}
+
+/// The crate that a row of a census names, and the row.
+///
+/// # Specification
+/// trivial.
+fn rows(text: &str) -> BTreeMap<&str, &str>
+{
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("| `")?;
+            let (name, _cell) = rest.split_once('`')?;
+            Some((name, line))
+        })
+        .collect()
+}
+
+/// Each crate whose row differs between the committed census `committed` and
+/// the rendered census `rendered`, or none when the two texts are equal.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Ok` exactly when the two texts are equal. Otherwise
+///   [`CensusError::Stale`] with each crate whose row is in one text and not in
+///   the other, in order; with the line of the counts when only the text
+///   outside the rows differs.
+/// - fails: as `ensures` states.
+/// - panics: none.
+///
+/// # Errors
+/// [`CensusError::Stale`].
+///
+/// # Cost
+/// - allocation: the rows of the two texts and the names that differ, error
+///   path
+///
+/// # Adequacy
+/// - hypothesis: L3 — a census with one row changed, one row missing and one
+///   row of no crate names the three crates; an equal text passes.
+/// - witness: `tests::census::a_stale_census_is_refused_with_the_rows_that_differ`
+#[spec(ensures: |ret| ret.is_ok() == (committed == rendered))]
+#[inline]
+pub fn stale(
+    committed: &str,
+    rendered: &str,
+) -> Result<(), CensusError>
+{
+    if committed == rendered {
+        return Ok(());
+    }
+    let before = rows(committed);
+    let after = rows(rendered);
+    let names: BTreeSet<&str> = before.keys().chain(after.keys()).copied().collect();
+    let mut differ: Vec<String> = names
+        .into_iter()
+        .filter(|name| before.get(name) != after.get(name))
+        .map(String::from)
+        .collect();
+    if differ.is_empty() {
+        differ.push(String::from("the text outside the rows"));
+    }
+    Err(CensusError::Stale { rows: differ })
+}

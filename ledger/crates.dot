@@ -135,6 +135,7 @@ digraph crates {
     "workflow-spec-cost";
     "workflow-sweep";
     "workflow-test-timing";
+    "workflow-twin-census";
   }
   "boot-data" -> "boot-alloc";
   "boot-data" -> "boot-core";
