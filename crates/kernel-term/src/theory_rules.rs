@@ -42,6 +42,13 @@
 //! does not carry, or one whose peak does not replay, leaves its pair to part
 //! in step 4 or is refused by name in step 3.
 //!
+//! A symmetry, the rule that swaps the two arguments of one symbol, is no step:
+//! no normal form rewrites by it. A normal form reads the other rules under the
+//! symmetries instead. A left side matches in each arrangement of the two
+//! arguments at each of its nodes of a symbol of a symmetry, and two
+//! occurrences of one variable bind two subterms that agree under the
+//! symmetries.
+//!
 //! Over an indexed sort the written terms do not carry the indices their
 //! sorting fixes, so two laws' overlap can part where the typing makes its
 //! sides one: a category's `comp(id(a), id(b))`. Steps 3 and 4 then read
@@ -1369,7 +1376,8 @@ impl TheoryRules
     ///   variable or is conditioned joins in the second-order reading
     ///   ([`Self::second_order`]); and every other critical pair normalizes to
     ///   one term under the rules that instantiate nothing and are not
-    ///   conditioned. Peaks and first-order pairs are those of
+    ///   conditioned, each left side matched under the symmetries of the rules
+    ///   ([`Self::normalize`]). Peaks and first-order pairs are those of
     ///   [`Self::decided`], the rules read with their indices where the
     ///   presentation has that reading, so an overlap a sorting rules out is no
     ///   pair. Otherwise the first failing rule in that order and its fault; a
@@ -1442,6 +1450,7 @@ impl TheoryRules
         let decided = self.decided();
         let first = decided.len().saturating_sub(self.peaks.len());
         let mut work = PairBuffers::default();
+        self.symmetries(&mut work.symmetric);
         for (offset, &peak) in self.peaks.iter().enumerate() {
             let index = first.saturating_add(offset);
             let (Some(before), Some(rule)) = (decided.get(.. index), decided.get(index))
@@ -1483,13 +1492,13 @@ impl TheoryRules
                         self.normalize(
                             decided,
                             &mut work.by_outer,
-                            (&mut work.bindings, &mut work.rewritten),
+                            (&work.symmetric, &mut work.matching, &mut work.rewritten),
                             fuel,
                         )?;
                         self.normalize(
                             decided,
                             &mut work.by_inner,
-                            (&mut work.bindings, &mut work.rewritten),
+                            (&work.symmetric, &mut work.matching, &mut work.rewritten),
                             fuel,
                         )?;
                         Ok(Verdict::from(work.by_outer == work.by_inner))
@@ -1656,6 +1665,7 @@ impl TheoryRules
     ) -> Result<Option<CriticalPeak>, Exhausted>
     {
         let work = &mut search.0;
+        self.symmetries(&mut work.symmetric);
         let decided = self.decided();
         for (outer, overlapped) in decided.iter().enumerate() {
             for (position, &node) in overlapped.left().iter().enumerate() {
@@ -1821,6 +1831,34 @@ impl TheoryRules
             at = at.checked_add(1)?;
         }
         Some(Position(at))
+    }
+
+    /// Write to `symmetric` each symbol whose two arguments a symmetry of the
+    /// rules swaps, in ascending order.
+    ///
+    /// # Specification
+    /// - ensures: `symmetric` holds the symbol of each rule of [`Self::rules`]
+    ///   that [`TheoryRule::symmetry`] names, sorted, and nothing of a previous
+    ///   call.
+    /// - panics: none.
+    /// - executable: none — the list is the body's own scan of the rules.
+    ///
+    /// # Cost
+    /// - allocation: one symbol for each symmetry in the reused buffer, growth
+    ///   within the rules
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`matched_under`]: a left side matches in the
+    ///   other order with the symmetry written before the rule and after it.
+    /// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
+    fn symmetries(
+        &self,
+        symmetric: &mut SmallVec<TheorySymbol, 0, Global>,
+    )
+    {
+        symmetric.clear();
+        symmetric.extend(self.rules.iter().filter_map(TheoryRule::symmetry));
+        symmetric.sort_unstable();
     }
 
     /// The buffers of the path order over these rules, holding each symbol
@@ -2019,13 +2057,13 @@ impl TheoryRules
         self.normalize(
             before,
             &mut work.by_outer,
-            (&mut work.bindings, &mut work.rewritten),
+            (&work.symmetric, &mut work.matching, &mut work.rewritten),
             fuel,
         )?;
         self.normalize(
             before,
             &mut work.by_inner,
-            (&mut work.bindings, &mut work.rewritten),
+            (&work.symmetric, &mut work.matching, &mut work.rewritten),
             fuel,
         )?;
         canonical_flats(
@@ -2227,13 +2265,16 @@ impl TheoryRules
     /// - ensures: `term` rewritten until no rule instantiating nothing and not
     ///   conditioned matches at any position: the redex rewritten next is the
     ///   one starting last in pre-order, and at one position the first such
-    ///   rule in order fires. A left side's repeated variable matches only
-    ///   equal subterms. Each node compared or copied costs one unit of `fuel`.
-    ///   A second-order rule fires nowhere: its instantiation substitutes under
-    ///   a binder the first-order term does not mark. A conditioned rule fires
-    ///   nowhere either: whether its instance names an atom it may not is a
-    ///   question about the instance this reading does not ask.
-    ///   [`Self::decide`] decides every pair either takes part in by the
+    ///   rule in order fires. A left side matches as [`matched_under`] states
+    ///   it for `symmetric`, the symbols of the symmetries: in each arrangement
+    ///   of the two arguments at each of its nodes of such a symbol, a repeated
+    ///   variable binding subterms that agree under the symmetries. No rewrite
+    ///   is by a symmetry. Each node compared or copied costs one unit of
+    ///   `fuel`. A second-order rule fires nowhere: its instantiation
+    ///   substitutes under a binder the first-order term does not mark. A
+    ///   conditioned rule fires nowhere either: whether its instance names an
+    ///   atom it may not is a question about the instance this reading does not
+    ///   ask. [`Self::decide`] decides every pair either takes part in by the
     ///   second-order reading, so a first-order pair is decided without them.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
@@ -2246,14 +2287,17 @@ impl TheoryRules
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::decide`]: a group's critical pairs
     ///   normalize through its inverse law, which matches only a term whose two
-    ///   arguments agree.
+    ///   arguments agree; beside a symmetry a rule with a constant on the left
+    ///   of the symbol fires on a term that holds it on the right.
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+    /// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
     fn normalize(
         &self,
         rules: &[TheoryRule],
         term: &mut SmallVec<Flat, 0, Global>,
-        (bindings, built): (
-            &mut SmallVec<Option<Span>, 0, Global>,
+        (symmetric, matching, built): (
+            &[TheorySymbol],
+            &mut MatchBuffers,
             &mut SmallVec<Flat, 0, Global>,
         ),
         fuel: &mut RewriteFuel,
@@ -2262,7 +2306,7 @@ impl TheoryRules
         normal_form(
             rules,
             term,
-            (bindings, built),
+            (symmetric, matching, built),
             |symbol| self.width(symbol),
             fuel,
         )
@@ -2274,9 +2318,11 @@ impl TheoryRules
 /// [`TheoryRules::normalize`] states it.
 ///
 /// # Specification
-/// - requires: `rules` are well formed and oriented; `term` is one term.
+/// - requires: `rules` are well formed and oriented; `term` is one term;
+///   `symmetric` is in ascending order.
 /// - ensures: as [`TheoryRules::normalize`], each symbol a right side writes
-///   taking its arity from `width`.
+///   taking its arity from `width`. With no symbol in `symmetric` a left side
+///   matches as written alone.
 /// - fails: [`Exhausted`] when `fuel` runs out first.
 /// - panics: none.
 /// - executable: none — as [`TheoryRules::normalize`].
@@ -2293,11 +2339,13 @@ impl TheoryRules
 ///   normalizes a sort by the laws of lower rank the same way.
 /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
 /// - witness: `theory_rules::tests::a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042`
+/// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
 fn normal_form<W>(
     rules: &[TheoryRule],
     term: &mut SmallVec<Flat, 0, Global>,
-    (bindings, built): (
-        &mut SmallVec<Option<Span>, 0, Global>,
+    (symmetric, matching, built): (
+        &[TheorySymbol],
+        &mut MatchBuffers,
         &mut SmallVec<Flat, 0, Global>,
     ),
     width: W,
@@ -2317,7 +2365,14 @@ where
                 .iter()
                 .filter(|rule| rule.reading() == TheoryRuleReading::FirstOrder)
             {
-                let Some(end) = matched(term, Position(start), rule.left(), bindings, fuel)?
+                let Some(end) = matched_under(
+                    symmetric,
+                    (term, Position(start)),
+                    rule.left(),
+                    &width,
+                    matching,
+                    fuel,
+                )?
                 else {
                     continue;
                 };
@@ -2329,7 +2384,7 @@ where
                             built.push(Flat::Symbol(symbol, width(symbol).0));
                         },
                         TheoryNode::Variable(variable) => {
-                            if let Some(&Some(span)) = bindings.get(ordinal(variable).0) {
+                            if let Some(&Some(span)) = matching.bindings.get(ordinal(variable).0) {
                                 for &copied in term.get(span.from.0 .. span.to.0).unwrap_or(&[]) {
                                     fuel.charge()?;
                                     built.push(copied);
@@ -2448,7 +2503,7 @@ impl From<bool> for Verdict
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Flat
 {
     /// A symbol over its next `arity` subterms.
@@ -2478,15 +2533,297 @@ fn flat_end(
     Some(Position(at))
 }
 
+/// The arrangements of the two arguments of a symbol of a symmetry: as
+/// written, then swapped. Each lists, for each place, the argument that stands
+/// there.
+const ARRANGEMENTS: [[usize; 2]; 2] = [[0, 1], [1, 0]];
+
+/// One arrangement for each node of a left side under a symmetry, as one
+/// number: the digit of a node, in the base of the count of the arrangements,
+/// names its arrangement, the first node at the lowest digit. A count of such
+/// selections is one past the last.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Selection(usize);
+
+/// The two subterms that two occurrences of one variable meet, each as its
+/// representative.
+type Copies = (SmallVec<Flat, 0, Global>, SmallVec<Flat, 0, Global>);
+
+/// The buffers a match under the symmetries reuses from left side to left
+/// side.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct MatchBuffers
+{
+    /// A matched left side's bindings.
+    bindings: SmallVec<Option<Span>, 0, Global>,
+    /// The positions of a left side's nodes of a symbol of a symmetry.
+    sites: SmallVec<Position, 0, Global>,
+    /// A left side in one arrangement of the arguments of those nodes.
+    order: SmallVec<TheoryNode, 0, Global>,
+    /// The subterms of a left side still to write in an arrangement.
+    pending: SmallVec<Position, 0, Global>,
+    /// The two subterms that two occurrences of one variable meet.
+    spans: Copies,
+}
+
+/// Where `left` matches `term` at `start` as written or, failing that, in an
+/// other arrangement of the two arguments at each of its nodes of a symbol of
+/// `symmetric`: the end of the matched subterm, each variable's binding left
+/// in `matching`.
+///
+/// # Specification
+/// - requires: `left` is well formed and `term` is one term; `symmetric` is in
+///   ascending order; `width` gives the arity of each symbol of `left`.
+/// - ensures: [`Some`] exactly when [`matched`] matches `left` as written or,
+///   where `left` and the subterm at `start` have one head, an arrangement that
+///   [`reordered`] writes, the first in ascending order of the selections. A
+///   variable keeps its ordinal in each arrangement, so a right side builds
+///   from the bindings as for the written order. With no symbol in `symmetric`
+///   the answer is that of the written order.
+/// - fails: [`Exhausted`] when `fuel` runs out first.
+/// - panics: none.
+/// - measure: the selections, the count of the arrangements to the count of the
+///   nodes of `left` under a symmetry; `fuel`, which each one charges.
+/// - executable: none — as [`matched`].
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rule with a constant on the left of a symbol of a
+///   symmetry fires on a term that holds the constant on the right, with the
+///   symmetry written before the rule and after it.
+/// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
+fn matched_under<W>(
+    symmetric: &[TheorySymbol],
+    (term, start): (&[Flat], Position),
+    left: &[TheoryNode],
+    width: &W,
+    matching: &mut MatchBuffers,
+    fuel: &mut RewriteFuel,
+) -> Result<Option<Position>, Exhausted>
+where
+    W: Fn(TheorySymbol) -> Position,
+{
+    let MatchBuffers {
+        ref mut bindings,
+        ref mut sites,
+        ref mut order,
+        ref mut pending,
+        ref mut spans,
+    } = *matching;
+    let written = matched(symmetric, (term, start), left, (bindings, spans), fuel)?;
+    let rooted = matches!(
+        (left.first(), term.get(start.0)),
+        (Some(&TheoryNode::Symbol(wanted)), Some(&Flat::Symbol(found, _))) if wanted == found
+    );
+    if written.is_some() || symmetric.is_empty() || !rooted {
+        return Ok(written);
+    }
+    symmetric_sites(left, symmetric, sites);
+    let Selection(count) = orders(sites);
+    for selection in 1 .. count {
+        reordered(
+            left,
+            (sites, Selection(selection)),
+            width,
+            (order, pending),
+            fuel,
+        )?;
+        let found = matched(symmetric, (term, start), order, (bindings, spans), fuel)?;
+        if found.is_some() {
+            return Ok(found);
+        }
+    }
+    Ok(None)
+}
+
+/// Write to `sites` the positions of `left` that hold a symbol of `symmetric`,
+/// in ascending order.
+///
+/// # Specification
+/// - requires: `symmetric` is in ascending order.
+/// - ensures: `sites` holds each position of `left` whose node is a symbol that
+///   `symmetric` holds, and no other position.
+/// - panics: none.
+/// - executable: none — the positions are the body's own scan.
+///
+/// # Cost
+/// - allocation: one position for each such node in the reused buffer, growth
+///   within the left side's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_under`].
+/// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
+fn symmetric_sites(
+    left: &[TheoryNode],
+    symmetric: &[TheorySymbol],
+    sites: &mut SmallVec<Position, 0, Global>,
+)
+{
+    sites.clear();
+    sites.extend(
+        left.iter()
+            .enumerate()
+            .filter(|&(_, &node)| {
+                matches!(node, TheoryNode::Symbol(symbol) if symmetric.binary_search(&symbol).is_ok())
+            })
+            .map(|(at, _)| Position(at)),
+    );
+}
+
+/// The count of the selections of a left side with the nodes `sites` under a
+/// symmetry: the count of the arrangements to the count of the nodes.
+///
+/// # Specification
+/// trivial.
+fn orders(sites: &[Position]) -> Selection
+{
+    Selection(
+        u32::try_from(sites.len())
+            .ok()
+            .and_then(|nodes| ARRANGEMENTS.len().checked_pow(nodes))
+            .unwrap_or(usize::MAX),
+    )
+}
+
+/// Write to `order` the side `left` with the arguments of each node of `sites`
+/// in the arrangement that `selection` names for it.
+///
+/// # Specification
+/// - requires: `left` is one term by `width`; `sites` are positions of `left`,
+///   in ascending order.
+/// - ensures: `order` holds the pre-order of `left` where the node at
+///   `sites[i]` holds its arguments in the arrangement of [`ARRANGEMENTS`] that
+///   digit `i` of `selection` names, when that arrangement has the arity of the
+///   node. Each other node holds its arguments as written, and each variable
+///   keeps its ordinal. `order` has the nodes of `left`, so it has its length.
+/// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node written
+///   and per node of each argument that the walk measures.
+/// - panics: none.
+/// - measure: the nodes of `left` not yet written; the loop holds a stack of
+///   the subterms still to write, and does not recurse.
+/// - executable: none — the order is the body's own construction.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the arranged side and the stack of its subterms in the reused
+///   buffers, growth within the left side's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_under`].
+/// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
+fn reordered<W>(
+    left: &[TheoryNode],
+    (sites, Selection(selection)): (&[Position], Selection),
+    width: &W,
+    (order, pending): (
+        &mut SmallVec<TheoryNode, 0, Global>,
+        &mut SmallVec<Position, 0, Global>,
+    ),
+    fuel: &mut RewriteFuel,
+) -> Result<(), Exhausted>
+where
+    W: Fn(TheorySymbol) -> Position,
+{
+    order.clear();
+    pending.clear();
+    pending.push(Position(0));
+    while let Some(Position(at)) = pending.pop() {
+        fuel.charge()?;
+        let Some(&node) = left.get(at)
+        else {
+            continue;
+        };
+        order.push(node);
+        let arity = match node {
+            TheoryNode::Symbol(symbol) => width(symbol).0,
+            TheoryNode::Instance(_, count) => usize::from(count),
+            TheoryNode::Variable(_) => 0,
+        };
+        let first = pending.len();
+        let mut argument = Position(at.saturating_add(1));
+        for _place in 0 .. arity {
+            pending.push(argument);
+            argument = left_end(left, argument, width, fuel)?;
+        }
+        let arrangement = sites
+            .binary_search(&Position(at))
+            .ok()
+            .and_then(|site| u32::try_from(site).ok())
+            .and_then(|site| ARRANGEMENTS.len().checked_pow(site))
+            .and_then(|digit| selection.checked_div(digit))
+            .and_then(|rest| rest.checked_rem(ARRANGEMENTS.len()))
+            .and_then(|named| ARRANGEMENTS.get(named))
+            .filter(|arrangement| arrangement.len() == arity);
+        // The stack gives the subterm pushed last first, so the arguments go
+        // on it again from the last place to the first, and the written starts
+        // below them leave.
+        for place in (0 .. arity).rev() {
+            let written = arrangement
+                .and_then(|arrangement| arrangement.get(place).copied())
+                .unwrap_or(place);
+            if let Some(&start) = pending.get(first.saturating_add(written)) {
+                pending.push(start);
+            }
+        }
+        pending.replace_range(first .. first.saturating_add(arity), core::iter::empty());
+    }
+    Ok(())
+}
+
+/// One past the end of the subterm of `side` starting at `start`, each symbol
+/// over the `width` subterms it states; the end of `side` when it runs out
+/// first.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Exhausted`] when `fuel` runs out first; one unit per node.
+fn left_end<W>(
+    side: &[TheoryNode],
+    start: Position,
+    width: &W,
+    fuel: &mut RewriteFuel,
+) -> Result<Position, Exhausted>
+where
+    W: Fn(TheorySymbol) -> Position,
+{
+    let (mut at, mut owed) = (start.0, 1_usize);
+    while let Some(next) = owed.checked_sub(1) {
+        fuel.charge()?;
+        owed = match side.get(at) {
+            Some(&TheoryNode::Symbol(symbol)) => next.saturating_add(width(symbol).0),
+            Some(&TheoryNode::Instance(_, count)) => next.saturating_add(usize::from(count)),
+            Some(&TheoryNode::Variable(_)) => next,
+            None => return Ok(Position(side.len())),
+        };
+        at = at.saturating_add(1);
+    }
+    Ok(Position(at))
+}
+
 /// Where `left` matches `term` at `start`: the end of the matched subterm,
 /// each variable's binding left in `bindings`.
 ///
 /// # Specification
-/// - requires: `left` is well formed and `term` is one term.
+/// - requires: `left` is well formed and `term` is one term; `symmetric` is in
+///   ascending order.
 /// - ensures: [`Some`] exactly when every symbol of `left` stands at the
 ///   corresponding position of the subterm at `start` and a variable's every
-///   occurrence binds equal subterms; `bindings` then holds each variable's
-///   span of `term`, by ordinal.
+///   occurrence binds subterms that agree under the symmetries ([`agree`]),
+///   which are equal subterms when `symmetric` is empty; `bindings` then holds
+///   each variable's span of `term` at its first occurrence, by ordinal.
 /// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node read or
 ///   compared.
 /// - panics: none.
@@ -2503,11 +2840,12 @@ fn flat_end(
 /// - hypothesis: L3 — as [`TheoryRules::decide`]: the inverse law matches a
 ///   product of an inverse and its own argument and no other.
 /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+/// - witness: `theory_rules::tests::a_repeated_variable_binds_two_terms_that_agree_under_a_symmetry`
 fn matched(
-    term: &[Flat],
-    start: Position,
+    symmetric: &[TheorySymbol],
+    (term, start): (&[Flat], Position),
     left: &[TheoryNode],
-    bindings: &mut SmallVec<Option<Span>, 0, Global>,
+    (bindings, spans): (&mut SmallVec<Option<Span>, 0, Global>, &mut Copies),
     fuel: &mut RewriteFuel,
 ) -> Result<Option<Position>, Exhausted>
 {
@@ -2536,14 +2874,8 @@ fn matched(
                     else {
                         return Ok(None);
                     };
-                    if bound.len() != here.len() {
+                    if agree(symmetric, (bound, here), spans, fuel)? == Verdict::Fails {
                         return Ok(None);
-                    }
-                    for (one, other) in bound.iter().zip(here) {
-                        fuel.charge()?;
-                        if one != other {
-                            return Ok(None);
-                        }
                     }
                 }
                 else {
@@ -2562,6 +2894,124 @@ fn matched(
         }
     }
     Ok(Some(Position(at)))
+}
+
+/// Whether the terms `one` and `other` agree under the symmetries of
+/// `symmetric`: whether a swap of the two arguments at some of their nodes of
+/// such a symbol makes them equal.
+///
+/// # Specification
+/// - requires: each of `one` and `other` is one term; `symmetric` is in
+///   ascending order.
+/// - ensures: positive exactly when the two are equal node by node or, with a
+///   symbol in `symmetric`, their representatives ([`representative`]) are.
+///   `spans` is scratch.
+/// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node
+///   compared, copied or arranged.
+/// - panics: none.
+/// - executable: none — the representatives are the body's own computation.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: a copy of each of the two terms in the reused buffers, growth
+///   within the two terms' nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rule whose left side repeats a variable fires on two
+///   orders of one pair beside the symmetry of the pair, and not without it.
+/// - witness: `theory_rules::tests::a_repeated_variable_binds_two_terms_that_agree_under_a_symmetry`
+fn agree(
+    symmetric: &[TheorySymbol],
+    (one, other): (&[Flat], &[Flat]),
+    spans: &mut Copies,
+    fuel: &mut RewriteFuel,
+) -> Result<Verdict, Exhausted>
+{
+    if one.len() != other.len() {
+        return Ok(Verdict::Fails);
+    }
+    let mut written = Verdict::Holds;
+    for (left, right) in one.iter().zip(other) {
+        fuel.charge()?;
+        if left != right {
+            written = Verdict::Fails;
+            break;
+        }
+    }
+    if written == Verdict::Holds || symmetric.is_empty() {
+        return Ok(written);
+    }
+    let (ref mut first, ref mut second) = *spans;
+    first.clear();
+    first.extend(one.iter().copied());
+    representative(symmetric, first, fuel)?;
+    second.clear();
+    second.extend(other.iter().copied());
+    representative(symmetric, second, fuel)?;
+    Ok(Verdict::from(first == second))
+}
+
+/// Put the two arguments of each node of `term` of a symbol of `symmetric` in
+/// ascending order, from the last node to the first.
+///
+/// # Specification
+/// - requires: `term` is one term; `symmetric` is in ascending order.
+/// - ensures: each node of `term` of a symbol of `symmetric` over two arguments
+///   holds them in ascending order of their pre-order sequences, each argument
+///   itself so arranged. A term is a pre-order sequence with its arities, so
+///   the order of two sequences is a total order of terms, and two terms that
+///   share their variables agree under the symmetries exactly when the two
+///   results are equal.
+/// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node, and
+///   one per node of the two arguments of each node turned.
+/// - panics: none.
+/// - measure: the positions of `term`, from the last.
+/// - executable: none — the arrangement is the body's own rewrite of `term`.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`agree`].
+/// - witness: `theory_rules::tests::a_repeated_variable_binds_two_terms_that_agree_under_a_symmetry`
+fn representative(
+    symmetric: &[TheorySymbol],
+    term: &mut [Flat],
+    fuel: &mut RewriteFuel,
+) -> Result<(), Exhausted>
+{
+    for at in (0 .. term.len()).rev() {
+        fuel.charge()?;
+        let under = matches!(
+            term.get(at),
+            Some(&Flat::Symbol(symbol, 2)) if symmetric.binary_search(&symbol).is_ok()
+        );
+        let first = Position(at.saturating_add(1));
+        let (true, Some(second)) = (under, flat_end(term, first))
+        else {
+            continue;
+        };
+        let Some(end) = flat_end(term, second)
+        else {
+            continue;
+        };
+        let turned = matches!(
+            (term.get(first.0 .. second.0), term.get(second.0 .. end.0)),
+            (Some(one), Some(other)) if other < one
+        );
+        if !turned {
+            continue;
+        }
+        for _node in first.0 .. end.0 {
+            fuel.charge()?;
+        }
+        if let Some(arguments) = term.get_mut(first.0 .. end.0) {
+            arguments.rotate_left(second.0.saturating_sub(first.0));
+        }
+    }
+    Ok(())
 }
 
 /// One node of a term as two terms are compared up to their variables' names.
@@ -2905,8 +3355,11 @@ struct PairBuffers
     by_outer: SmallVec<Flat, 0, Global>,
     /// The pair's side rewritten by the inner rule.
     by_inner: SmallVec<Flat, 0, Global>,
-    /// A matched left side's bindings.
-    bindings: SmallVec<Option<Span>, 0, Global>,
+    /// The buffers of a match of a left side.
+    matching: MatchBuffers,
+    /// Each symbol whose two arguments a symmetry of the rules swaps, in
+    /// ascending order.
+    symmetric: SmallVec<TheorySymbol, 0, Global>,
     /// A firing rule's right side, built before it replaces its redex.
     rewritten: SmallVec<Flat, 0, Global>,
     /// The pair's normal forms, renumbered.

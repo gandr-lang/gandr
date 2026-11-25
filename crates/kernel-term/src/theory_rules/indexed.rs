@@ -86,6 +86,7 @@ use crate::theory_rules::Flat;
 use crate::theory_rules::Graph;
 use crate::theory_rules::GraphNode;
 use crate::theory_rules::Mark;
+use crate::theory_rules::MatchBuffers;
 use crate::theory_rules::Node;
 use crate::theory_rules::Ordinal;
 use crate::theory_rules::PRESENTATION_FUEL;
@@ -308,8 +309,8 @@ struct Indexer
     walk: SmallVec<(Node, Position), 0, Global>,
     /// The indices no rule variable is, in order of first meeting.
     unknowns: SmallVec<Node, 0, Global>,
-    /// Each variable's binding as a sort is normalized.
-    bindings: SmallVec<Option<Span>, 0, Global>,
+    /// The buffers of a match as a sort is normalized.
+    matching: MatchBuffers,
     /// A right side as a sort's normalization builds it.
     rewritten: SmallVec<Flat, 0, Global>,
 }
@@ -1349,10 +1350,12 @@ impl Indexer
             self.graph
                 .expand(*sort, &mut self.flat, &mut self.flattening, fuel)
                 .ok()?;
+            // The indexed reading holds no symmetry, so no symbol stands in
+            // the list and each left side matches as written.
             normal_form(
                 below,
                 &mut self.flat,
-                (&mut self.bindings, &mut self.rewritten),
+                (&[], &mut self.matching, &mut self.rewritten),
                 width,
                 fuel,
             )

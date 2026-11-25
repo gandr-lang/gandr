@@ -363,6 +363,103 @@ fn a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset()
 }
 
 #[test]
+fn a_left_side_matches_in_each_order_under_a_symmetry()
+{
+    // pair = 0, low = 1, g = 2.
+    let symbols =
+        SmallVec::<_, 0, Global>::from_iter([operation!(1, 2), operation!(0, 0), operation!(2, 1)]);
+    let symmetry = rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]);
+    // `pair(low, x) ==> low`.
+    let absorbs = rule(&[s!(0), s!(1), v!(0)], &[s!(1)]);
+    // `g(pair(low, x)) ==> pair(x, low)`.
+    let turns = rule(&[s!(2), s!(0), s!(1), v!(0)], &[s!(0), v!(0), s!(1)]);
+    // `g(low) ==> low` joins the pair of the two rules above: `pair(x, low)`
+    // is `low` by the first one in the other order of its left side.
+    let joins = rule(&[s!(2), s!(1)], &[s!(1)]);
+    for symmetry_first in [true, false] {
+        let (rules, absorbs_at) = if symmetry_first {
+            ([symmetry.clone(), absorbs.clone(), turns.clone()], 1_usize)
+        }
+        else {
+            ([absorbs.clone(), turns.clone(), symmetry.clone()], 0_usize)
+        };
+        let turns_at = absorbs_at + 1;
+        let written = TheoryRules::new(symbols.clone(), SmallVec::<_, 0, Global>::from_iter(rules));
+        assert_eq!(
+            written.decide(&mut fuel()),
+            Err(TheoryRuleRefusal {
+                rule: RuleIndex::from(turns_at),
+                fault: TheoryRuleFault::Diverges(RuleIndex::from(absorbs_at)),
+            }),
+            "`g(pair(low, x))` is `low` and `g(low)`, and no written rule joins the two \
+             (symmetry first: {symmetry_first})"
+        );
+        let peak = CriticalPeak {
+            outer: RuleIndex::from(turns_at),
+            position: SidePosition::from(1_usize),
+            inner: RuleIndex::from(absorbs_at),
+        };
+        assert_eq!(
+            written.peak_of(&joins, &mut PeakSearch::default(), &mut fuel()),
+            Ok(Some(peak)),
+            "the pair's normal forms are `low` and `g(low)` (symmetry first: {symmetry_first})"
+        );
+        let mut completed = written;
+        completed.derive(joins.clone(), peak);
+        assert_eq!(
+            completed.decide(&mut fuel()),
+            Ok(()),
+            "the derived rule replays its peak and joins the pair (symmetry first: \
+             {symmetry_first})"
+        );
+    }
+}
+
+#[test]
+fn a_repeated_variable_binds_two_terms_that_agree_under_a_symmetry()
+{
+    // pair = 0, low = 1, same = 2, f = 3.
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
+        operation!(1, 2),
+        operation!(0, 0),
+        operation!(2, 2),
+        operation!(3, 2),
+    ]);
+    let symmetry = rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]);
+    // `same(x, x) ==> low`.
+    let alike = rule(&[s!(2), v!(0), v!(0)], &[s!(1)]);
+    // `f(x, y) ==> same(pair(x, y), pair(y, x))`.
+    let turned = rule(&[s!(3), v!(0), v!(1)], &[
+        s!(2),
+        s!(0),
+        v!(0),
+        v!(1),
+        s!(0),
+        v!(1),
+        v!(0),
+    ]);
+    // `f(x, y) ==> low`.
+    let lowered = rule(&[s!(3), v!(0), v!(1)], &[s!(1)]);
+    let decided = |rules: &[TheoryRule]| {
+        TheoryRules::new(
+            symbols.clone(),
+            SmallVec::<_, 0, Global>::from_iter(rules.iter().cloned()),
+        )
+        .decide(&mut fuel())
+    };
+    assert_eq!(
+        decided(&[alike.clone(), turned.clone(), lowered.clone()]),
+        refused!(1, TheoryRuleFault::Diverges(RuleIndex::from(2_usize))),
+        "with no symmetry `pair(x, y)` and `pair(y, x)` are two terms, so `same` stays"
+    );
+    assert_eq!(
+        decided(&[symmetry, alike, turned, lowered]),
+        Ok(()),
+        "beside the symmetry the two pairs are one term, so `same` rewrites to `low`"
+    );
+}
+
+#[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {
     let symbols = SmallVec::<_, 0, Global>::from_iter([
