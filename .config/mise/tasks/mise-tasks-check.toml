@@ -2214,10 +2214,13 @@ fi
 echo "census check OK: $(jq length .config/census/cases.json) cases give their recorded output"
 '''
 
-# The purposes ledger. Its dump builds with every constraint, and it is its
-# own re-dump. Each concern tag is a key of the concerns ledger, once in its
-# row. A site of that concern covers the tagged item.
-# - see: `ledger/purposes.sql`, `ledger/concerns.sql`
+# The purposes ledger: the schema `.config/purposes/schema.sql`, and the rows
+# of each crate in `crates/<crate>/purposes.sql`. The rows build with every
+# constraint, and the dump of the whole, split by `ledger-split` of
+# `gandr-workflow-ledger-split`, gives each file again. So a row stands in the
+# file of its own crate. Each concern tag is a key of the concerns ledger,
+# once in its row. A site of that concern covers the tagged item.
+# - see: `ledger/concerns.sql`
 #
 # A site covers its module, the modules below it and their items. A site at
 # the empty module covers its whole crate.
@@ -2234,9 +2237,11 @@ echo "census check OK: $(jq length .config/census/cases.json) cases give their r
 # `GATE_SCOPE` excludes each package that the change does not reach.
 # - see: #6895
 #
-# A change of the ledgers, of the check's programs or of the ledger tasks
-# documents each rowed crate. A run with no `GATE_BASE` does the same. A rowed
-# crate with no package stays in, because its rows are a finding in any scope.
+# A change of the concerns ledger, of the schema, of the check's programs or
+# of the ledger tasks documents each rowed crate. A run with no `GATE_BASE`
+# does the same. A change of the rows of a crate is a change of the crate, so
+# the gate reaches it. A rowed crate with no package stays in, because its
+# rows are a finding in any scope.
 #
 # Rustdoc lists no entry that a `cfg` of the host omits. So a row whose entry
 # only some systems compile has a `held_by` row for each such system. A host
@@ -2265,18 +2270,26 @@ failed=0
 .config/cases/run.bash 'purposes coverage' .config/purposes/coverage.json --program .config/purposes/coverage.jq || failed=1
 .config/purposes/held-cases.bash || failed=1
 db="$fresh/purposes.db"
-sqlite3 -bail "$db" < ledger/purposes.sql
-sqlite3 "$db" .dump > "$fresh/purposes.sql"
-if ! cmp -s "$fresh/purposes.sql" ledger/purposes.sql; then
-  diff -u ledger/purposes.sql "$fresh/purposes.sql" >&2 || true
-  echo 'ledger/purposes.sql is not its own re-dump; normalize it with `mise run ledger:purposes`' >&2
+{ cat .config/purposes/schema.sql; echo 'BEGIN;'; cat crates/*/purposes.sql; echo 'COMMIT;'; } | sqlite3 -bail "$db"
+mkdir -p "$fresh/split/.config/purposes" "$fresh/tree/.config/purposes"
+for crate in crates/*/; do mkdir -p "$fresh/split/$crate" "$fresh/tree/$crate"; done
+sqlite3 "$db" .dump > "$fresh/dump.sql"
+if ! .config/gate-scope/tool.bash gandr-workflow-ledger-split ledger-split \
+  --schema "$fresh/split/.config/purposes/schema.sql" --rows "$fresh/split/crates/{}/purposes.sql" "$fresh/dump.sql" > /dev/null; then
+  echo 'purposes: the dump does not split into the files of the tree; a row names a crate with no directory under crates/, or no crate' >&2
+  failed=1
+fi
+cp .config/purposes/schema.sql "$fresh/tree/.config/purposes/"
+for file in crates/*/purposes.sql; do cp "$file" "$fresh/tree/$file"; done
+if ! diff -ru "$fresh/tree" "$fresh/split" >&2; then
+  echo 'the purposes files are not the split of their own dump; a row stands in the file of another crate, or out of order; normalize them with `mise run ledger:purposes`' >&2
   failed=1
 fi
 sqlite3 -bail "$db" < ledger/concerns.sql
 mapfile -t rowed < <(sqlite3 "$db" 'SELECT DISTINCT crate FROM purpose ORDER BY crate;')
 checked=("${rowed[@]}")
 if (( ${#rowed[@]} )) && [[ ${GATE_SCOPE:-} == *--exclude* && -n ${GATE_BASE:-} ]] \
-  && git diff --quiet "$GATE_BASE" -- ledger/purposes.sql ledger/concerns.sql .config/purposes/ .config/mise/tasks/mise-tasks-ledger.toml \
+  && git diff --quiet "$GATE_BASE" -- ledger/concerns.sql .config/purposes/ .config/mise/tasks/mise-tasks-ledger.toml \
   && [[ -z $(git ls-files --others --exclude-standard -- ledger/ .config/purposes/) ]]; then
   mapfile -t checked < <(cargo metadata --locked --no-deps --format-version 1 | jq -r --arg scope "$GATE_SCOPE" '
     ([$scope | scan("--exclude ([^ ]+)")[0]]) as $out

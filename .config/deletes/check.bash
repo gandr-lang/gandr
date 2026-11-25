@@ -8,8 +8,9 @@
 #     the packages that the change touches, at the base in a scratch worktree
 #     and at the head in this one. A test is an item that a test unit holds
 #     and its library unit does not;
-#   - the rows of each table of `ledger/*.sql`, by primary key, and the lines
-#     of `.config/dead-weight/kept.txt`;
+#   - the rows of each table of `ledger/*.sql`, and of the purposes ledger in
+#     `.config/purposes/schema.sql` and `crates/<crate>/purposes.sql`, by
+#     primary key, and the lines of `.config/dead-weight/kept.txt`;
 #   - the files under `corpus/`, `docs/` and `ledger/`, and each crate's
 #     `README.md`, by path.
 # The records come from the merge base, never from an artifact, since a stale
@@ -206,18 +207,27 @@ if [[ $mode == full ]]; then
   # The act of each item and test that leaves and whose body stands at an
   # item that the head adds (`acts.bash`, #7058).
   "$here/acts.bash" "$base" "$scratch/items-base.json" "$scratch/items-head.json" > "$scratch/acts.json"
-  # The keys of each ledger table at a revision, as `<table>:<key>,<key>`.
+  # The keys of each ledger table at a revision, as `<table>:<key>,<key>`. The
+  # purposes ledger is its schema and the rows of each crate, read as one.
   ledger_keys() {
     local rev=$1 file table
     while IFS= read -r file; do
-      git show "$rev:$file" > "$scratch/ledger.sql"
+      if [[ $file == .config/purposes/schema.sql ]]; then
+        {
+          git show "$rev:$file"
+          git ls-tree -r --name-only "$rev" -- crates | awk '/^crates\/[^\/]+\/purposes\.sql$/' \
+            | while IFS= read -r rows; do git show "$rev:$rows"; done
+        } > "$scratch/ledger.sql"
+      else
+        git show "$rev:$file" > "$scratch/ledger.sql"
+      fi
       sqlite3 :memory: ".read $scratch/ledger.sql" "SELECT name FROM sqlite_master WHERE type = 'table'" | while IFS= read -r table; do
         local columns
         columns=$(sqlite3 :memory: ".read $scratch/ledger.sql" "SELECT group_concat(name, ' || '','' || ') FROM pragma_table_info('$table') WHERE pk > 0")
         [[ -n $columns ]] || columns=rowid
         sqlite3 :memory: ".read $scratch/ledger.sql" "SELECT '$table:' || $columns FROM $table"
       done
-    done < <(git ls-tree --name-only "$rev" -- ledger/ | awk '/\.sql$/')
+    done < <(git ls-tree --name-only "$rev" -- ledger/ .config/purposes/ | awk '/^ledger\/.*\.sql$|^\.config\/purposes\/schema\.sql$/')
   }
   ledger_keys "$base" | sort -u > "$scratch/ledger-base"
   ledger_keys HEAD | sort -u > "$scratch/ledger-head"
@@ -256,7 +266,11 @@ if [[ $mode == full ]]; then
     comm -23 "$scratch/ledger-base" "$scratch/ledger-head" | while IFS= read -r key; do
       table=${key%%:*}
       fields=${key#*:}
-      file=$(git grep -l -F -e "INSERT INTO $table " "$base" -- 'ledger/*.sql' | awk 'NR == 1 { sub("^[^:]*:", ""); print }')
+      if [[ $table == purpose || $table == held_by ]]; then
+        file="crates/${fields%%,*}/purposes.sql"
+      else
+        file=$(git grep -l -F -e "INSERT INTO $table " "$base" -- 'ledger/*.sql' | awk 'NR == 1 { sub("^[^:]*:", ""); print }')
+      fi
       second=$(awk -F, '{ print ($2 == "" ? $1 : $2) }' <<< "$fields")
       # A row of `purpose` names an item of a crate: `<crate>,<path>,<kind>`.
       names=$(jq -n -c --arg key "$key" --arg table "$table" --arg fields "$fields" \

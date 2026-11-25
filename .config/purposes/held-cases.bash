@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The cases of `.config/purposes/findings.sql` on the systems that hold an
-# entry (#7674). Each case builds a ledger from the schema of
-# `ledger/purposes.sql` and `ledger/concerns.sql`, with its own rows, entries
-# and host system, and compares the findings with the lines it states. It
-# prints each failing case and exits 1 on any failure.
+# entry (#7674). Each case builds a ledger from `.config/purposes/schema.sql`
+# and `ledger/concerns.sql`, with its own rows, entries and host system, and
+# compares the findings with the lines it states. It prints each failing case
+# and exits 1 on any failure.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 scratch=$(mktemp -d)
@@ -15,7 +15,7 @@ linux="INSERT INTO held_by VALUES('surface-dispatcher','pool::ring::with_ring','
 pool=$'surface-dispatcher\tpool::Pool\tstruct\tsrc/pool.rs:1\t'
 ring=$'surface-dispatcher\tpool::ring::with_ring\tfunction\tsrc/pool/ring.rs:44\t'
 none="surface-dispatcher::pool::ring::with_ring (function): a row naming no entry of \`mise run purposes:list surface-dispatcher\`; correct its path or kind, or delete it"
-elsewhere="surface-dispatcher::pool::ring::with_ring (function, src/pool/ring.rs:44): listed on darwin, and its held_by rows name other systems alone; add INSERT INTO held_by VALUES('surface-dispatcher','pool::ring::with_ring','function','darwin'); to ledger/purposes.sql, or delete its held_by rows"
+elsewhere="surface-dispatcher::pool::ring::with_ring (function, src/pool/ring.rs:44): listed on darwin, and its held_by rows name other systems alone; add INSERT INTO held_by VALUES('surface-dispatcher','pool::ring::with_ring','function','darwin'); to crates/surface-dispatcher/purposes.sql, or delete its held_by rows"
 orphan="surface-dispatcher::pool::ring::with_ring (function): a held_by row for linux with no purpose row; add its purpose row, or delete it"
 reason=$'surface-dispatcher\tpool::waited\tmodule\tsrc/pool.rs:9\titem'
 plain=$'surface-dispatcher\tpool::ring\tmodule\tsrc/pool/ring.rs:1\t'
@@ -32,7 +32,7 @@ fail() {
 findings() {
   local name=$1 system=$2 rows=$3 entries=$4 expected=$5 db="$scratch/$1.db" found
   {
-    awk '/^INSERT INTO /{next} {print}' "$root/ledger/purposes.sql"
+    cat "$root/.config/purposes/schema.sql"
     echo "$rows"
   } | sqlite3 -bail "$db"
   sqlite3 -bail "$db" < "$root/ledger/concerns.sql"

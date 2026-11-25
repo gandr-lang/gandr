@@ -27,7 +27,7 @@ UNION ALL
 SELECT l.shown || ' (' || l.kind || ', ' || l.location || '): a public item with no row; add'
   || ' INSERT INTO purpose VALUES(' || quote(l.crate) || ',' || quote(l.path) || ',' || quote(l.kind)
   || ',''<purpose>'',<concerns>,''<naming>'',''<doc>'',<finding>);'
-  || ' to ledger/purposes.sql, each column as its schema there states, then run `mise run ledger:purposes`'
+  || ' to crates/' || l.crate || '/purposes.sql, each column as .config/purposes/schema.sql states, then run `mise run ledger:purposes`'
 FROM listed l
 WHERE l.kind NOT IN ('crate', 'module')
   AND NOT EXISTS (SELECT 1 FROM purpose p WHERE (p.crate, p.path, p.kind) = (l.crate, l.path, l.kind))
@@ -41,7 +41,7 @@ UNION ALL
 SELECT l.shown || ' (' || l.kind || ', ' || l.location || '): listed on ' || (SELECT system FROM host)
   || ', and its held_by rows name other systems alone; add'
   || ' INSERT INTO held_by VALUES(' || quote(l.crate) || ',' || quote(l.path) || ',' || quote(l.kind) || ',' || quote((SELECT system FROM host)) || ');'
-  || ' to ledger/purposes.sql, or delete its held_by rows'
+  || ' to crates/' || l.crate || '/purposes.sql, or delete its held_by rows'
 FROM listed l
 WHERE EXISTS (SELECT 1 FROM elsewhere o WHERE (o.crate, o.path, o.kind) = (l.crate, l.path, l.kind))
 UNION ALL

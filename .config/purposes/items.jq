@@ -1,4 +1,4 @@
-# The entries the purposes ledger rows for one crate (`ledger/purposes.sql`),
+# The entries the purposes ledger rows for one crate (`crates/<crate>/purposes.sql`),
 # read from the rustdoc JSON of the crate's library built without private
 # items. `$crate` is the crate's directory under `crates/`. Prints one
 # tab-separated line per entry, sorted by path, then kind:

@@ -1,0 +1,5 @@
+INSERT INTO purpose VALUES('surface-lowering','lower::closure::CarriedOrigins','struct','Holds the origins a closure''s lowering carries, so the closure''s origins are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','lower::closure::ClosureLowering','struct','Holds a closure''s lowering, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','lower::closure::Onto','enum','Names the target a closure''s lowering lowers onto, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','lower::lower_module','function','Lowers a module''s molded tree into a core arena, so the module''s declarations are minted.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','lower::lower_unit','function','Lowers a unit''s sources one at a time into one arena, so a sibling''s declarations are the prefix of its importer''s constants.',NULL,'fits','sound',NULL);

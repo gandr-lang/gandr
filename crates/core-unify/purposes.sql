@@ -1,0 +1,12 @@
+INSERT INTO purpose VALUES('core-unify','meta::MetaCount','struct','A count of metavariables.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','meta::MetaId','struct','A metavariable''s place in its metacontext, in declaration order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','meta::Metas','struct','The metavariables of one problem, each with its context and its solution, and the equations that wait on them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','meta::declaration','module','Names the reason the declaration is refused.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','meta::meta_lookup','module','Names the reason the lookup finds nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Equation','struct','One equation, posed under a set of intuitionistic binders.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Postponed','struct','An equation the solver could not answer most generally when it met it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Reason','enum','Why an equation waits in the store.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Refutation','enum','Evidence that no solution exists, stable under every instantiation.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Side','enum','One side of an equation, in the family both sides share.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Verdict','enum','What a run decided.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::solve','function','Solve equations in order, binding metas where an equation forces it and postponing in its store what no step answers most generally.',NULL,'fits','sound',NULL);
