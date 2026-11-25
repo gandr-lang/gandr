@@ -84,6 +84,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # A sweep test lists the corpus sources that the change touches by a
+      # diff from `GANDR_SWEEP_BASE`. The base is the commit that the event
+      # changes: the head of `main` before the push, or the base of the pull
+      # request. The checkout holds one commit, so the step fetches the base
+      # alone.
+      - name: fetch the sweep base
+        if: ${{ matrix.nextest }}
+        env:
+          BASE: ${{ github.event_name == 'push' && github.event.before || github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE"
+          echo "GANDR_SWEEP_BASE=$BASE" >> "$GITHUB_ENV"
       # The key hashes the pin file, so a change of the pin is a new cache.
       - name: restore the toolchain
         id: toolchain
