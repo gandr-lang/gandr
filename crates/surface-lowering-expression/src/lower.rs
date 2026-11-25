@@ -14906,6 +14906,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         self.group(site, inner);
+        // A group at a parameter of a static classifier holds the type
+        // operator: `apply (fun (Y) { Y }) Integer` (#4508).
+        if let Some(&classifier) = self.cx().static_lambdas.get(&site.at.node) {
+            let _first = self.cx_mut().static_lambdas.insert(inner.node, classifier);
+        }
         self.read(inner.node, site.reading);
 
         self.plan(site, Plan::Transparent(inner.node));
