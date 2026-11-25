@@ -30,10 +30,15 @@ gandr-theory-cell-complexes.workspace = true
 gandr-theory-levitation.workspace = true
 
 [dev-dependencies]
+gandr-core-checker.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-dispatcher = { workspace = true, features = ["fixture"] }
+gandr-surface-evaluate.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
 
 [lints]
 workspace = true
