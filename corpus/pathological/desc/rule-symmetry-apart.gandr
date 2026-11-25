@@ -8,8 +8,9 @@
 //! meet. It refuses a block where the two orders of one rule give two results.
 //!
 //! The checker compares two terms in each order of the arguments of a meet.
-//! It refuses a case with no arm where one order joins the two terms. It
-//! refuses each such case where a pair of rules does not join.
+//! It refuses a case with no arm where one order joins the two terms. A block
+//! whose rules do not join gives no type of terms, so a case over them is
+//! refused by the refusal of the block.
 //!
 //! - see: #8323
 
@@ -45,10 +46,10 @@ def ordersNotApart(
 ) -> Hollow =
   match e {}
 
-/// The rule gives two results for the meet of two pairs, so no two terms are
-/// apart by these rules.
+/// The rules of `Torn` do not join, so the block is refused and its terms are
+/// no type: the case is refused at them, by the refusal of the block.
 ///
 /// - see: #8323
-@[refuses("NotApart")]
+@[refuses("RulesUncompleted")]
 def tornApart(e : Path[.A = Terms Torn] Torn.low Torn.high) -> Hollow =
   match e {}
