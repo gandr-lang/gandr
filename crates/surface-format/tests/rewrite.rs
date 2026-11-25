@@ -2382,6 +2382,33 @@ fn a_type_application_is_written_juxtaposed_5708()
     }
 }
 
+/// A run that selects one rewrite applies that rewrite alone. A bare
+/// `@[checks]` claim, which the sugared form leaves out, stays.
+#[test]
+fn a_selected_rewrite_keeps_a_bare_claim()
+{
+    let grammar = grammar();
+    let template =
+        include_str!("rewrite/unformatted/a-type-application-is-written-juxtaposed-5708.gandr");
+    let claimed = |parameter: &str| {
+        format!("@[checks]\n{}", template.replace("{parameter}", parameter))
+    };
+    let source = claimed("Parcel(Integer)");
+    assert_eq!(
+        spelled(
+            &grammar,
+            source.as_str(),
+            Form::Sugared,
+            Selection::Only(&[RewriteName::TypeApplication])
+        ),
+        claimed("Parcel Integer")
+    );
+    assert_eq!(
+        spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
+        template.replace("{parameter}", "Parcel Integer")
+    );
+}
+
 /// A constructor's result is written juxtaposed in either form, also where
 /// its first argument takes parentheses: `--> Var (Extend gamma a) a` and
 /// `--> Fin (Succ n)` read as the call forms they replace (#5803).
