@@ -182,7 +182,7 @@ default-features = false
 # - kernel-core
 # - kernel-strata
 # - kernel-term
-# - runtime-mlir (full)
+# - runtime-mlir
 # - runtime-net
 # - runtime-rust-record
 # - storage-artifact
@@ -563,6 +563,7 @@ path = "crates/core-session"
 # - core-unify
 # - kernel-core (dev)
 # - runtime-emitter
+# - runtime-mlir (dev)
 # - runtime-stencils (dev)
 # - surface-corpus
 # - surface-diagnostics
@@ -899,6 +900,7 @@ path = "crates/surface-format"
 # DAG, the built-in surface the melder pushes over, and the table pairing
 # each glyph with its ASCII spelling.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus
 # - surface-diagnostics (dev)
 # - surface-dispatcher
@@ -933,6 +935,7 @@ path = "crates/surface-layout"
 # Lowering the surface into the core: resolution, module collection, the
 # attribute side table, the origin table and the refusal classifier.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -1058,6 +1061,7 @@ path = "crates/surface-lsp-navigation"
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus (dev)
 # - surface-diagnostics (dev)
 # - surface-dispatcher
@@ -1131,6 +1135,7 @@ path = "crates/surface-session"
 
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
+# - runtime-mlir (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -1351,6 +1356,7 @@ default-features = false
 # - core-checker (dev)
 # - core-incremental
 # - core-term
+# - runtime-mlir
 # - surface-dispatcher (dev)
 # - surface-lowering
 # - surface-lowering-base

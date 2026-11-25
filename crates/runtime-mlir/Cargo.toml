@@ -15,14 +15,22 @@ links = "gandr_mlir_shim"
 publish.workspace = true
 
 # `full` builds the C++ shim of `cxx/` with the MLIR toolchain of the pin and
-# links it, so the two entries exist. Without it the crate builds no C++ and
-# holds the types of the entries alone. The facade `anodized` gives the
-# executable specifications of the entries.
+# links it, so the two entries exist. Without it the crate builds no C++. It
+# holds the types of the entries, the print of a term and the read of the
+# facts of a body into a term.
 [features]
-full = ["dep:anodized"]
+full = []
 
 [dependencies]
-anodized = { workspace = true, optional = true }
+anodized.workspace = true
+gandr-theory-levitation.workspace = true
+
+[dev-dependencies]
+gandr-core-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-syntax.workspace = true
 
 [lints]
 workspace = true

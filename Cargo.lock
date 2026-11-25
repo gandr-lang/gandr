@@ -1547,6 +1547,12 @@ dependencies = [
 name = "gandr-runtime-mlir"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-term",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "gandr-theory-levitation",
  "quenchant-anodized",
 ]
 
