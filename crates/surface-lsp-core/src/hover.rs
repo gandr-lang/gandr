@@ -2635,7 +2635,7 @@ mod tests
             marked(SourceText::from(include_str!(
                 "hover/unformatted/a-decode-written-as-a-type-hovers-as-a-type-419.gandr"
             ))),
-            Ok(fenced(SourceText::from("decoded(f) : Type")))
+            Ok(fenced(SourceText::from("decoded f : Type")))
         );
     }
 
@@ -2659,7 +2659,7 @@ mod tests
             marked(SourceText::from(include_str!(
                 "hover/unformatted/a-constructor-applied-inside-a-type-hovers-its-text-420.gandr"
             ))),
-            Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U")))
+            Ok(fenced(SourceText::from("Arrow NatC NatC : U")))
         );
     }
 
