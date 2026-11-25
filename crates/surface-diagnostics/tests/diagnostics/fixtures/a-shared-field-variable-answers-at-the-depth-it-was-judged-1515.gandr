@@ -1,7 +1,7 @@
-def selfEquiv(b : Type) -> *{x : b, y : b, p : Path[.A = b](x, y)} ≃ *{
+def selfEquiv(b : Type) -> *{x : b, y : b, p : Path[.A = b] x y} ≃ *{
   x : b,
   y : b,
-  p : Path[.A = b](x, y)
+  p : Path[.A = b] x y
 } {
   *{
     fun (w) { w },
