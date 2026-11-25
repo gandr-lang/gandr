@@ -734,7 +734,6 @@ fn operand_of(
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType
-        | Former::ModedType
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ParenthesizedType

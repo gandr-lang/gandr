@@ -1688,7 +1688,6 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType
-        | Former::ModedType
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock

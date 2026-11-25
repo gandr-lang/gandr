@@ -140,6 +140,7 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Run;
 use crate::form::TileName;
+use crate::form::own_pieces;
 use crate::form::read_pieces;
 use crate::import::ImportResolution;
 use crate::module::Container;
@@ -458,12 +459,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         declared: Placed,
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((_, Former::ModedType)) = self.cx().form_at(declared)?
+        let Some((FormName::MODED_TYPE, _)) = self.cx().form_at(declared)?
         else {
             return Ok(None);
         };
         let mut pieces = Pieces::new();
-        read_pieces(self.cx().pbg, self.cx().tree, declared.node, &mut pieces)?;
+        own_pieces(self.cx().pbg, self.cx().tree, declared.node, &mut pieces)?;
 
         Ok(match *pieces.pieces.as_slice() {
             [
@@ -1221,14 +1222,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         let refused = LoweringRefusal::ViewNotPlace { span: result.span };
         let mut pieces = Pieces::new();
         let view = match self.cx().form_at(result)? {
-            Some((_, Former::StagedType)) => result,
+            Some((_, Former::StagedType | Former::TypeApplication)) => result,
             Some((_, Former::ReturnerType)) => {
                 read_pieces(self.cx().pbg, self.cx().tree, result.node, &mut pieces)?;
                 let &[Piece::Tile { .. }, Piece::Operand(view)] = pieces.pieces.as_slice()
                 else {
                     return Err(refused);
                 };
-                let Some((_, Former::StagedType)) = self.cx().form_at(view)?
+                let Some((_, Former::StagedType | Former::TypeApplication)) = self.cx().form_at(view)?
                 else {
                     return Err(refused);
                 };
@@ -1237,6 +1238,27 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             Some(_) | None => return Err(refused),
         };
         read_pieces(self.cx().pbg, self.cx().tree, view.node, &mut pieces)?;
+        // The juxtaposed view `View[m] a` applies the staged head `View[m]` to
+        // its element; the glued view `View[m](a)` writes both in one form.
+        let element = match *pieces.pieces.as_slice() {
+            [
+                Piece::Operand(staged),
+                Piece::Tile {
+                    label: TileName::PAREN_OPEN,
+                    ..
+                },
+                Piece::Operand(element),
+                Piece::Tile {
+                    label: TileName::PAREN_CLOSE,
+                    ..
+                },
+            ] if matches!(self.cx().form_at(staged)?, Some((_, Former::StagedType))) => {
+                read_pieces(self.cx().pbg, self.cx().tree, staged.node, &mut pieces)?;
+                element
+            },
+            [.., Piece::Operand(element), Piece::Tile { label: TileName::PAREN_CLOSE, .. }] => element,
+            _ => return Err(refused),
+        };
         let &[
             Piece::Operand(head),
             Piece::Tile {
@@ -1251,19 +1273,28 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 label: TileName::BRACKET_CLOSE,
                 ..
             },
-            Piece::Tile {
-                label: TileName::PAREN_OPEN,
-                ..
-            },
-            Piece::Operand(element),
-            Piece::Tile {
-                label: TileName::PAREN_CLOSE,
-                ..
-            },
+            ref rest @ ..,
         ] = pieces.pieces.as_slice()
         else {
             return Err(refused);
         };
+        let listed = matches!(
+            *rest,
+            [
+                Piece::Tile {
+                    label: TileName::PAREN_OPEN,
+                    ..
+                },
+                Piece::Operand(listed),
+                Piece::Tile {
+                    label: TileName::PAREN_CLOSE,
+                    ..
+                },
+            ] if listed == element
+        );
+        if !(listed || rest.is_empty()) {
+            return Err(refused);
+        }
         let viewed = matches!(self.cx().form_at(head)?, Some((_, Former::TypeHead)))
             && self.cx().name_at(head).as_ref() == "View";
         if !viewed {

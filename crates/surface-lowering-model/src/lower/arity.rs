@@ -220,6 +220,7 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Run;
 use crate::form::TileName;
+use crate::form::own_pieces;
 use crate::form::read_pieces;
 use crate::origin::Origin;
 use crate::resolve::Bound;
@@ -455,9 +456,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                             });
                             break;
                         },
-                        Some((_, Former::ModedType)) => {
+                        Some((FormName::MODED_TYPE, _)) => {
                             let mut moded = Pieces::new();
-                            read_pieces(self.cx().pbg, self.cx().tree, key.node, &mut moded)?;
+                            own_pieces(self.cx().pbg, self.cx().tree, key.node, &mut moded)?;
                             let (
                                 Maybe::Absent(_),
                                 &[Piece::Tile { at: word, .. }, Piece::Operand(rest)],
@@ -1013,7 +1014,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                 | Former::AtType
                 | Former::StagedType
                 | Former::ExtensionType
-                | Former::ModedType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock

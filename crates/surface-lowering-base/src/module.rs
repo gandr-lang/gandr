@@ -5140,7 +5140,6 @@ impl<'source> Collector<'_, 'source>
                     | Former::AtType
                     | Former::StagedType
                     | Former::ExtensionType
-                    | Former::ModedType
                     | Former::Scope
                     | Former::Import
                     | Former::Module
@@ -6642,9 +6641,9 @@ impl<'source> Collector<'_, 'source>
                 && let Some(mode) = receiver_of(
                     &header,
                     |tile| self.name_of(tile),
-                    |operand| match self.root_former(operand) {
-                        Ok(Maybe::Present(former)) => Some(former),
-                        Ok(Maybe::Absent(_)) | Err(_) => None,
+                    |operand| match self.tree.node(operand.node).map(|node| shape_of(self.pbg, node)) {
+                        Some(Ok(Shape::Form { name, .. })) => Some(name),
+                        Some(Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_)) | None => None,
                     },
                 )
             {
