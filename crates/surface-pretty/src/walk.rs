@@ -2296,13 +2296,34 @@ impl Binding
 #[derive(Clone, Copy, Debug)]
 struct Piece
 {
-    /// The document.
+    /// The document, which reads as written wherever its binding admits it.
     doc: Doc,
     /// How loosely it binds.
     binding: Binding,
     /// The fields it spells, where it is a link of a dependent record whose
     /// first field's label it writes as the source does.
     fields: Option<Fields>,
+    /// The document where the piece ends its line, when it differs from
+    /// `doc`: each block that ends the piece's line opened by its layout
+    /// word, and each statement of a block that breaks on a line of its own
+    /// with no `;`. A token after it on its line would read into its last
+    /// block, so only a piece that ends its line takes it.
+    laid: Option<Doc>,
+}
+
+impl Piece
+{
+    /// The document where the piece ends its line.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn laid(&self) -> Doc
+    {
+        match self.laid {
+            Some(laid) => laid,
+            None => self.doc,
+        }
+    }
 }
 
 /// The fields a link of a dependent record spells, `l : A, …` without the
@@ -5348,11 +5369,52 @@ enum Part
     Tight,
     /// A line break that breaks with the block around it.
     Line,
-    /// The parts so far are a block's head, ending with its opening brace.
-    Open,
+    /// The end of a statement before the next: ` ;` where the block around
+    /// it stands on one line, a line break with no `;` where it breaks, as
+    /// the layout pass places the separator at the line's end.
+    Separator,
+    /// The parts so far are a block's head, before its opener.
+    Open(BlockOpener),
     /// The block opened last ends: its body two columns in, the brace
-    /// closing it on a line of its own.
+    /// closing it on a line of its own, or, where its opener is a layout word
+    /// and the block ends its line, no closer: the next line closes it.
     Close,
+}
+
+/// What opens a block, as its head ends.
+///
+/// A block on one line stands between braces after any opener. A block that
+/// breaks after a layout word writes the word in place of the brace and no
+/// closer, as the layout pass reads a line-final layout word as the open of
+/// the block below it and a line to the left as its close.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BlockOpener
+{
+    /// `do`: a block of statements after a head that ends in an
+    /// expression, a loop's, a lambda's, a thunk's, a fork's or a
+    /// migration's.
+    Do,
+    /// `where`: the arms of a `match` or an `offer`.
+    Where,
+    /// A brace in each layout: a form the printer writes with no layout
+    /// word, a handler, a notation of the printer and an access.
+    Brace,
+}
+
+impl BlockOpener
+{
+    /// The glyphs that end the head where the block breaks.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn laid(self) -> &'static str
+    {
+        match self {
+            Self::Do => " do",
+            Self::Where => " where",
+            Self::Brace => " {",
+        }
+    }
 }
 
 /// The parts of one former's spelling as they are built, and how many child
@@ -5555,16 +5617,28 @@ impl Parts
         }
     }
 
-    /// Appends a block over the next child's piece: the parts so far its
-    /// head, ending with its opening brace.
+    /// Appends a block over the next child's piece under `opener`: the parts
+    /// so far its head.
     ///
     /// # Specification
     /// trivial.
-    fn body(&mut self) -> &mut Self
+    fn body(
+        &mut self,
+        opener: BlockOpener,
+    ) -> &mut Self
     {
-        self.part(Part::Open)
+        self.part(Part::Open(opener))
             .piece(Binding::Sequence)
             .part(Part::Close)
+    }
+
+    /// Appends the end of a statement before the next statement's piece.
+    ///
+    /// # Specification
+    /// trivial.
+    fn then(&mut self) -> &mut Self
+    {
+        self.part(Part::Separator).piece(Binding::Sequence)
     }
 }
 
@@ -7002,6 +7076,9 @@ struct Walk<'walk, 'names>
     unrecorded: BTreeSet<OpenBinders>,
     /// The fields the join being closed spells, which its piece takes.
     fields: Option<Fields>,
+    /// The document the join being closed writes where its piece ends its
+    /// line, when it differs from the piece's own, which its piece takes.
+    laid: Option<Doc>,
     /// The parts of the formers spelled by parts whose children are being
     /// walked, innermost last; each join takes its own.
     forms: Vec<Vec<Part>>,
@@ -7185,6 +7262,7 @@ impl Walk<'_, '_>
             doc,
             binding: Binding::Atom,
             fields: None,
+            laid: None,
         });
         Ok(())
     }
@@ -7343,6 +7421,7 @@ impl Walk<'_, '_>
                 Binding::Atom
             },
             fields: None,
+            laid: None,
         });
         Ok(())
     }
@@ -7631,6 +7710,7 @@ impl Walk<'_, '_>
             doc,
             binding: Binding::Atom,
             fields: None,
+            laid: None,
         });
         Ok(())
     }
@@ -8701,6 +8781,7 @@ impl Walk<'_, '_>
                 doc,
                 binding: domain.binding,
                 fields: None,
+                laid: None,
             });
         }
         entries.reverse();
@@ -9239,7 +9320,7 @@ impl Walk<'_, '_>
         }
         if piece.binding == Binding::Sequence {
             let open = self.leaf(Glyphs("{"))?;
-            return self.block(open, piece.doc);
+            return Ok(self.block(open, None, piece)?.0);
         }
         self.parenthesized(piece.doc)
     }
@@ -9382,22 +9463,28 @@ impl Walk<'_, '_>
         self.builder.concat(head, diagram)
     }
 
-    /// `head`, `body` and a closing brace, as one group: on one line, a space
-    /// inside each brace, or `body` on its own lines two columns in and the
-    /// brace on a line of its own. `body` is aligned at the column it starts
-    /// at: a line it breaks on the brace's own line starts at its first
-    /// token's column, where the layout begins the brace's next item, or past
-    /// it under a nest, where the layout reads the item on.
+    /// `body` as a block after `braced`, and after `laid` where the block
+    /// ends its line: on one line, `braced body }` with a space inside each
+    /// brace, or `body` on its own lines two columns in, its statements one a
+    /// line with no `;`. Broken after `braced`, the closing brace stands on a
+    /// line of its own; broken after `laid`, no closer is written, and the
+    /// line after the block, to its left, closes it. `body` is aligned at the
+    /// column it starts at: a line it breaks on the brace's own line starts at
+    /// its first token's column, where the layout begins the block's next
+    /// item, or past it under a nest, where the layout reads the item on.
     ///
     /// # Specification
-    /// - requires: `head` ends with its opening brace.
-    /// - ensures: a group whose flat branch is `head body }` with one space
-    ///   either side of `body` and whose broken branch breaks after `head`,
-    ///   indents `body` two columns and puts the closer on its own line; every
-    ///   soft line inside `body` breaks with the group unless a group of its
-    ///   own holds it, and indents from the column `body` starts at.
-    /// - provides: the layout of a lambda's, a thunk's and a bound block's
-    ///   body.
+    /// - requires: `braced` ends with its opening brace, and `laid`, where
+    ///   given, with the layout word that opens the block.
+    /// - ensures: the block written anywhere, a choice whose flat branch is
+    ///   `braced body }` and whose broken branch breaks after `braced`, indents
+    ///   `body`'s laid document two columns and puts the closer on its own
+    ///   line; and, where `laid` is given and the composer lays out, the block
+    ///   where it ends its line, the same choice with `laid` and no closer in
+    ///   the broken branch. A composer that writes one line takes the flat
+    ///   branch, so neither broken branch is built for it.
+    /// - provides: the layout of a lambda's, a thunk's, a loop's, an arm list's
+    ///   and a bound block's body.
     /// - fails: the builder's refusal.
     /// - panics: none.
     ///
@@ -9406,30 +9493,412 @@ impl Walk<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda over a bind at the wide page and at a page
-    ///   it overflows distinguishes a missing indent, a closer left inline and
-    ///   a statement separator that breaks apart from its block.
+    ///   it overflows distinguishes a missing indent, a closer left inline, a
+    ///   statement separator left at a line's end and a layout word written
+    ///   where a token follows the block.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_block_that_ends_its_line_breaks_after_its_layout_word`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
-            | Ok(doc) => doc != head && doc != body,
+            | Ok((doc, ref opened)) => doc != braced && doc != body.doc
+                && (opened.is_some() == (laid.is_some() && self.builder.lays_out())),
             | Err(PresentationError::Build(_)) => true,
             | Err(_) => false,
         },
     )]
     fn block(
         &mut self,
-        head: Doc,
-        body: Doc,
-    ) -> Result<Doc, PresentationError>
+        braced: Doc,
+        laid: Option<Doc>,
+        body: Piece,
+    ) -> Result<(Doc, Option<Doc>), PresentationError>
     {
-        let line = Doc::LINE;
-        let body = self.builder.align(body)?;
-        let inner = self.builder.concat(line, body)?;
-        let inner = self.builder.nest(NestAmount::from(CONTINUATION), inner)?;
         let close = self.leaf(Glyphs("}"))?;
-        let doc = self.builder.concat_all(&[head, inner, line, close])?;
-        self.builder.group(doc)
+        let indented = |walk: &mut Self, line: Doc, body: Doc| {
+            let body = walk.builder.align(body)?;
+            let inner = walk.builder.concat(line, body)?;
+            walk.builder.nest(NestAmount::from(CONTINUATION), inner)
+        };
+        let inner = indented(self, Doc::LINE, body.doc)?;
+        let flat = self
+            .builder
+            .concat_all(&[braced, inner, Doc::LINE, close])?;
+        if !self.builder.lays_out() {
+            return Ok((flat, None));
+        }
+        let inner = indented(self, Doc::HARD_LINE, body.laid())?;
+        let broken = self
+            .builder
+            .concat_all(&[braced, inner, Doc::HARD_LINE, close])?;
+        let doc = self.builder.broken_or_flat(broken, flat)?;
+        let opened = match laid {
+            Some(head) => {
+                let broken = self.builder.concat(head, inner)?;
+                Some(self.builder.broken_or_flat(broken, flat)?)
+            },
+            None => None,
+        };
+        Ok((doc, opened))
+    }
+
+    /// The statement `head = bound` before `rest`: `head = bound ; rest`
+    /// where the block around it stands on one line, and, where it breaks,
+    /// the statement on its own line with no `;` and `rest` on the next. A
+    /// bound block of statements opens after the `=` that ends its line.
+    ///
+    /// # Specification
+    /// - requires: `head` is the statement's head before its `=`, and `rest`
+    ///   the statements after it.
+    /// - ensures: the statement's document, and, where the composer lays out,
+    ///   its document where the block breaks; `bound` written as its laid
+    ///   document, which ends the statement's line.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bind of a call, of a lambda and of a bind, at the
+    ///   wide page and a narrow one, distinguish a `;` left at a line's end, a
+    ///   bound block braced where it ends its line, and a lambda opened by `do`
+    ///   before a token on its line.
+    /// - witness: `tests::goldens::a_block_that_ends_its_line_breaks_after_its_layout_word`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok((_, ref laid)) => laid.is_some() == self.builder.lays_out(),
+            | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn statement(
+        &mut self,
+        head: Doc,
+        bound: Piece,
+        rest: Piece,
+    ) -> Result<(Doc, Option<Doc>), PresentationError>
+    {
+        let equals = self.leaf(Glyphs(" = "))?;
+        let bare = self.bare_up_to(bound, Binding::Arrow)?;
+        let semicolon = self.leaf(Glyphs(" ;"))?;
+        let doc = self
+            .builder
+            .concat_all(&[head, equals, bare, semicolon, Doc::LINE, rest.doc])?;
+        if !self.builder.lays_out() {
+            return Ok((doc, None));
+        }
+        let stated = if bound.binding == Binding::Sequence {
+            let open = self.leaf(Glyphs(" = {"))?;
+            let braced = self.builder.concat(head, open)?;
+            let opener = self.leaf(Glyphs(" ="))?;
+            let opened = self.builder.concat(head, opener)?;
+            self.block(braced, Some(opened), bound)?
+                .1
+                .ok_or(PresentationError::Unbalanced)?
+        }
+        else {
+            self.builder.concat_all(&[head, equals, bound.laid()])?
+        };
+        let laid = self
+            .builder
+            .concat_all(&[stated, Doc::HARD_LINE, rest.laid()])?;
+        Ok((doc, Some(laid)))
+    }
+
+    /// `body` as a block after `head`, as [`Self::block`] writes it after
+    /// `head {`, and after `head do` where it ends its line.
+    ///
+    /// # Specification
+    /// - requires: `head` is a lambda's, a thunk's or a loop's head before its
+    ///   opener.
+    /// - ensures: as [`Self::block`], its braced head `head {` and its laid
+    ///   head `head do`.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::block`].
+    /// - witness: `tests::goldens::a_block_that_ends_its_line_breaks_after_its_layout_word`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok((doc, _)) => doc != head,
+            | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn opened(
+        &mut self,
+        head: Doc,
+        body: Piece,
+    ) -> Result<(Doc, Option<Doc>), PresentationError>
+    {
+        let brace = self.leaf(Glyphs(" {"))?;
+        let braced = self.builder.concat(head, brace)?;
+        let laid = if self.builder.lays_out() {
+            let word = self.leaf(Glyphs(BlockOpener::Do.laid()))?;
+            Some(self.builder.concat(head, word)?)
+        }
+        else {
+            None
+        };
+        self.block(braced, laid, body)
+    }
+
+    /// The document of a former spelled by `parts` over `children`, and the
+    /// document where it ends its line, when it holds a block, a statement's
+    /// end or a line.
+    ///
+    /// # Specification
+    /// - requires: `children` are the pieces the parts take in order, the first
+    ///   last, and `last` the pieces the [`Part::Last`] parts take.
+    /// - ensures: the parts written in order, each block as [`Self::block`]
+    ///   writes it after its head and ` {`; and, where the composer lays out
+    ///   and the parts hold an [`Part::Open`], a [`Part::Separator`] or a
+    ///   [`Part::Line`], the parts as they stand where the block around them
+    ///   breaks: each line a hard line, each statement's end a hard line with
+    ///   no `;`, each piece that ends its line its laid document, a block of
+    ///   statements after a text that ends in `=` or `=>` opened by that sign,
+    ///   and each block that ends its line under a layout word opened by the
+    ///   word.
+    /// - fails: the builder's refusal, or [`PresentationError::Unbalanced`]
+    ///   where the parts take other than `children` or open a block they do not
+    ///   close.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses and
+    /// [`PresentationError::Unbalanced`] when the parts and the pieces do not
+    /// match.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loop over statements, a `match` whose arm is a bind
+    ///   and a loop with statements after it, at the wide page and a narrow
+    ///   one, distinguish a `;` left at a line's end, a brace written where the
+    ///   layout word opens the block, an arm's block braced and a layout word
+    ///   before a token on its line.
+    /// - witness: `tests::goldens::a_block_that_ends_its_line_breaks_after_its_layout_word`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => true,
+            | Err(PresentationError::Render(_)) => false,
+        },
+    )]
+    fn parted(
+        &mut self,
+        parts: &[Part],
+        mut children: Vec<Piece>,
+        mut last: Vec<Piece>,
+    ) -> Result<(Doc, Option<Doc>), PresentationError>
+    {
+        let laying = self.builder.lays_out()
+            && parts
+                .iter()
+                .any(|part| matches!(*part, Part::Open(_) | Part::Separator | Part::Line));
+        let mut current = Vec::new();
+        let mut laid = Vec::new();
+        let mut heads: Vec<(Vec<Doc>, Vec<Doc>, BlockOpener)> = Vec::new();
+        // The text of the part written just before, which a block of
+        // statements after it may open by.
+        let mut written: Option<&str> = None;
+        for (index, part) in parts.iter().enumerate() {
+            let ends = matches!(
+                parts.get(index.saturating_add(1_usize)),
+                None | Some(&(Part::Separator | Part::Line | Part::Close))
+            );
+            let before = written.take();
+            match *part {
+                Part::Text(ref text) => {
+                    let leaf = self.leaf(Glyphs(text.as_ref()))?;
+                    current.push(leaf);
+                    if laying {
+                        laid.push(leaf);
+                    }
+                    written = Some(text.as_ref());
+                },
+                Part::Named(ref text, constant) => {
+                    let named = self.builder.named(Glyphs(text.as_ref()), constant)?;
+                    current.push(named);
+                    if laying {
+                        laid.push(named);
+                    }
+                },
+                Part::Piece(loosest) | Part::Last(loosest) => {
+                    let piece = if matches!(*part, Part::Piece(_)) {
+                        children.pop()
+                    }
+                    else {
+                        last.pop()
+                    }
+                    .ok_or(PresentationError::Unbalanced)?;
+                    let doc = self.bare_up_to(piece, loosest)?;
+                    current.push(doc);
+                    if !laying {
+                        continue;
+                    }
+                    let opener = before
+                        .and_then(|text| text.strip_suffix(' '))
+                        .filter(|text| text.ends_with(" =") || text.ends_with("=>"));
+                    let at_end = if !ends {
+                        doc
+                    }
+                    else if piece.binding <= loosest {
+                        piece.laid()
+                    }
+                    else if piece.binding == Binding::Sequence
+                        && let (Some(text), Some(opener)) = (before, opener)
+                    {
+                        // The block opens after the `=` or `=>` that ends
+                        // its line, in place of the text written before it.
+                        let _text = laid.pop();
+                        let sign = self.leaf(Glyphs(text))?;
+                        let brace = self.leaf(Glyphs("{"))?;
+                        let braced = self.builder.concat(sign, brace)?;
+                        let opened = self.leaf(Glyphs(opener))?;
+                        self.block(braced, Some(opened), piece)?
+                            .1
+                            .ok_or(PresentationError::Unbalanced)?
+                    }
+                    else {
+                        doc
+                    };
+                    laid.push(at_end);
+                },
+                Part::Spliced(ref content) => {
+                    let _literal = children.pop().ok_or(PresentationError::Unbalanced)?;
+                    if !content.is_empty() {
+                        let leaf = self.leaf(Glyphs(content.as_str()))?;
+                        current.push(leaf);
+                        if laying {
+                            laid.push(leaf);
+                        }
+                    }
+                },
+                Part::Argument => {
+                    let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
+                    let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                    current.push(self.space_or_break(head)?);
+                    if laying {
+                        let head = self.builder.concat_all(&core::mem::take(&mut laid))?;
+                        laid.push(self.space_or_break(head)?);
+                    }
+                    // After a type a `{` opens a definition's body, so a block
+                    // argument stands in parentheses (#5750).
+                    let argument = self.bare_up_to(piece, Binding::Atom)?;
+                    let argument = if piece.binding == Binding::Sequence {
+                        self.parenthesized(argument)?
+                    }
+                    else {
+                        argument
+                    };
+                    current.push(argument);
+                    if laying {
+                        laid.push(argument);
+                    }
+                },
+                Part::Binder(offset) => {
+                    let binder = self.binder(OpenBinders(offset))?;
+                    current.push(binder);
+                    if laying {
+                        laid.push(binder);
+                    }
+                },
+                Part::Endpoint(index) => {
+                    let variable = self.variable_leaf(Zone::Linear, index)?;
+                    current.push(variable);
+                    if laying {
+                        laid.push(variable);
+                    }
+                },
+                Part::Space | Part::Tight => {
+                    let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                    current.push(if matches!(*part, Part::Space) {
+                        self.space_or_break(head)?
+                    }
+                    else {
+                        self.none_or_break(head)?
+                    });
+                    if laying {
+                        let head = self.builder.concat_all(&core::mem::take(&mut laid))?;
+                        laid.push(if matches!(*part, Part::Space) {
+                            self.space_or_break(head)?
+                        }
+                        else {
+                            self.none_or_break(head)?
+                        });
+                    }
+                },
+                Part::Line => {
+                    current.push(Doc::LINE);
+                    if laying {
+                        laid.push(Doc::HARD_LINE);
+                    }
+                },
+                Part::Separator => {
+                    let semicolon = self.leaf(Glyphs(" ;"))?;
+                    current.push(semicolon);
+                    current.push(Doc::LINE);
+                    if laying {
+                        laid.push(Doc::HARD_LINE);
+                    }
+                },
+                Part::Open(opener) => heads.push((
+                    core::mem::take(&mut current),
+                    core::mem::take(&mut laid),
+                    opener,
+                )),
+                Part::Close => {
+                    let (head, head_laid, opener) =
+                        heads.pop().ok_or(PresentationError::Unbalanced)?;
+                    let body = Piece {
+                        doc: self.builder.concat_all(&core::mem::take(&mut current))?,
+                        binding: Binding::Sequence,
+                        fields: None,
+                        laid: if laying {
+                            Some(self.builder.concat_all(&core::mem::take(&mut laid))?)
+                        }
+                        else {
+                            None
+                        },
+                    };
+                    let brace = self.leaf(Glyphs(" {"))?;
+                    let head = self.builder.concat_all(&head)?;
+                    let braced = self.builder.concat(head, brace)?;
+                    current = Vec::from([self.block(braced, None, body)?.0]);
+                    if laying {
+                        let head = self.builder.concat_all(&head_laid)?;
+                        let braced = self.builder.concat(head, brace)?;
+                        let word = if opener != BlockOpener::Brace && ends {
+                            let word = self.leaf(Glyphs(opener.laid()))?;
+                            Some(self.builder.concat(head, word)?)
+                        }
+                        else {
+                            None
+                        };
+                        let (doc, opened) = self.block(braced, word, body)?;
+                        laid = Vec::from([opened.unwrap_or(doc)]);
+                    }
+                },
+            }
+        }
+        if !heads.is_empty() || !children.is_empty() {
+            return Err(PresentationError::Unbalanced);
+        }
+        let doc = self.builder.concat_all(&current)?;
+        let laid = if laying {
+            Some(self.builder.concat_all(&laid)?)
+        }
+        else {
+            None
+        };
+        Ok((doc, laid))
     }
 
     /// Spells one node, or schedules its children and their join.
@@ -9758,6 +10227,7 @@ impl Walk<'_, '_>
                                 doc,
                                 binding: Binding::Prefix,
                                 fields: None,
+                                laid: None,
                             });
                         }),
                     );
@@ -12577,8 +13047,13 @@ impl Walk<'_, '_>
         let mut parts = Parts::default();
         let clauses = |walk: &mut Self, parts: &mut Parts, count: crate::former::Arity| {
             let _ = parts
+<<<<<<< HEAD
                 .text(" handle {")
                 .part(Part::Open)
+=======
+                .text(" with")
+                .part(Part::Open(BlockOpener::Brace))
+>>>>>>> pr/58
                 .barred(Component::from(0_usize))
                 .text("pure(")
                 .part(Part::Binder(0_usize))
@@ -13005,9 +13480,9 @@ impl Walk<'_, '_>
             {
                 match reading {
                     Looped::Loop { rest, .. } => {
-                        let _ = parts.text("loop {").body();
+                        let _ = parts.text("loop").body(BlockOpener::Do);
                         if rest.is_some() {
-                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            let _ = parts.then();
                             writes(Production("block"), Binding::Sequence)
                         }
                         else {
@@ -13015,9 +13490,12 @@ impl Walk<'_, '_>
                         }
                     },
                     Looped::While { rest, .. } => {
-                        let _ = parts.text("while ").piece(Binding::Arrow).text(" {").body();
+                        let _ = parts
+                            .text("while ")
+                            .piece(Binding::Arrow)
+                            .body(BlockOpener::Do);
                         if rest.is_some() {
-                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            let _ = parts.then();
                             writes(Production("block"), Binding::Sequence)
                         }
                         else {
@@ -13033,12 +13511,11 @@ impl Walk<'_, '_>
                             .part(Part::Binder(2_usize))
                             .text(" in ")
                             .piece(Binding::Arrow)
-                            .text(" {")
-                            .part(Part::Open)
+                            .part(Part::Open(BlockOpener::Do))
                             .part(Part::Last(Binding::Sequence))
                             .part(Part::Close);
                         if rest.is_some() {
-                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            let _ = parts.then();
                             writes(Production("block"), Binding::Sequence)
                         }
                         else {
@@ -13052,13 +13529,12 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text("rec ")
                     .part(Part::Binder(0_usize))
-                    .text(" {")
-                    .body();
+                    .body(BlockOpener::Brace);
                 Binding::Prefix
             },
             Former::Reset(_) => {
                 self.note(Unspelled::Notation(Notation::Reset));
-                let _ = parts.text("reset {").body();
+                let _ = parts.text("reset").body(BlockOpener::Brace);
                 Binding::Prefix
             },
             Former::Shift(_) => {
@@ -13066,8 +13542,7 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text("shift ")
                     .part(Part::Binder(0_usize))
-                    .text(" {")
-                    .body();
+                    .body(BlockOpener::Brace);
                 Binding::Prefix
             },
             Former::Case { .. } | Former::Split { .. } | Former::ListCase { .. } => self
@@ -13078,7 +13553,7 @@ impl Walk<'_, '_>
                 if case_motive(source, motive, admits) == Motive::Written {
                     let _ = parts.text(" -> ").piece(Binding::Prefix);
                 }
-                let _ = parts.text(" {").part(Part::Open);
+                let _ = parts.part(Part::Open(BlockOpener::Where));
                 let mut shown = 0_usize;
                 for index in 0_usize .. usize::from(arity) {
                     let arm = arm(source, node, Component::from(index));
@@ -13156,8 +13631,7 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text("fold ")
                     .piece(Binding::Prefix)
-                    .text(" {")
-                    .part(Part::Open)
+                    .part(Part::Open(BlockOpener::Brace))
                     .text("nil => ")
                     .piece(Binding::Arrow)
                     .text(",")
@@ -13218,7 +13692,11 @@ impl Walk<'_, '_>
                 }
             },
             Former::Handle { clauses: count, .. } => {
+<<<<<<< HEAD
                 let _ = parts.text("effect {").body();
+=======
+                let _ = parts.text("handle").body(BlockOpener::Brace);
+>>>>>>> pr/58
                 clauses(self, &mut parts, count);
                 writes(Production("handle_expression"), Binding::Prefix)
             },
@@ -13244,7 +13722,7 @@ impl Walk<'_, '_>
                             .part(Part::Last(Binding::Sum)),
                     );
                 }
-                let _ = parts.text(" {").body();
+                let _ = parts.body(BlockOpener::Brace);
                 match answered {
                     Some(Answered::Named(model)) => {
                         let model = self.spelled(Some(model), Unspelled::Missing);
@@ -13319,8 +13797,7 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text("offer ")
                     .part(Part::Endpoint(endpoint))
-                    .text(" {")
-                    .part(Part::Open);
+                    .part(Part::Open(BlockOpener::Where));
                 for index in 0_usize .. usize::from(arms) {
                     let label = source.label(node, Component::from(index));
                     let name = self.spelled(label, Unspelled::Missing);
@@ -13341,11 +13818,9 @@ impl Walk<'_, '_>
                     .part(Part::Binder(0_usize))
                     .text(" : ")
                     .piece(Binding::Arrow)
-                    .text(") {")
-                    .body()
-                    .text(" ;")
-                    .part(Part::Line)
-                    .piece(Binding::Sequence);
+                    .text(")")
+                    .body(BlockOpener::Do)
+                    .then();
                 writes(Production("fork_expression"), Binding::Sequence)
             },
             Former::Hold { grade, .. } => {
@@ -13357,9 +13832,7 @@ impl Walk<'_, '_>
                     .part(Part::Binder(0_usize))
                     .text(" = ")
                     .piece(Binding::Arrow)
-                    .text(" ;")
-                    .part(Part::Line)
-                    .piece(Binding::Sequence);
+                    .then();
                 writes(Production("block"), Binding::Sequence)
             },
             Former::Receive { endpoint, .. } => {
@@ -13368,9 +13841,7 @@ impl Walk<'_, '_>
                     .part(Part::Binder(0_usize))
                     .text(" = recv ")
                     .part(Part::Endpoint(endpoint))
-                    .text(" ;")
-                    .part(Part::Line)
-                    .piece(Binding::Sequence);
+                    .then();
                 writes(Production("recv_expression"), Binding::Sequence)
             },
             Former::Access {
@@ -13387,10 +13858,9 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text(" as ")
                     .part(Part::Binder(0_usize))
-                    .text(" {")
-                    .body();
+                    .body(BlockOpener::Brace);
                 if let AccessMode::Exclusive { .. } = mode {
-                    let _ = parts.text(" unwind {").body();
+                    let _ = parts.text(" unwind").body(BlockOpener::Brace);
                 }
                 writes(Production("access_expression"), Binding::Prefix)
             },
@@ -13462,14 +13932,16 @@ impl Walk<'_, '_>
                     .text(world)
                     .text(" = ")
                     .piece(Binding::Arrow)
-                    .text(" ;")
-                    .part(Part::Line)
-                    .piece(Binding::Sequence);
+                    .then();
                 writes(Production("block"), Binding::Sequence)
             },
             Former::Migrate { world, .. } => {
                 let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
-                let _ = parts.text("migrate [").text(world).text("] {").body();
+                let _ = parts
+                    .text("migrate [")
+                    .text(world)
+                    .text("]")
+                    .body(BlockOpener::Do);
                 writes(Production("migrate_expression"), Binding::Prefix)
             },
             // A sum case, a split or a list case ascribed its answer, `match s
@@ -13661,7 +14133,7 @@ impl Walk<'_, '_>
             if answer == Motive::Written {
                 let _ = parts.text(" -> ").piece(Binding::Prefix);
             }
-            let _ = parts.text(" {").part(Part::Open);
+            let _ = parts.part(Part::Open(BlockOpener::Where));
         };
         if let Former::Case { arity, .. } = *former {
             head(parts);
@@ -13738,8 +14210,11 @@ impl Walk<'_, '_>
     ///   when it is a bind; every list with a break after each comma and before
     ///   the closer; `let x = c ; rest` naming its binder so, the bound
     ///   computation a block when it is itself a bind, a soft line after the
-    ///   semicolon; `fun (x) { c }` and the static lambda `fun (a) { v }`
-    ///   naming their binder so, and `thunk { c }`, each a block.
+    ///   semicolon, and where its block breaks the statement on its own line
+    ///   with no semicolon ([`Self::statement`]); `fun (x) { c }` and the
+    ///   static lambda `fun (a) { v }` naming their binder so, and `thunk { c
+    ///   }`, each a block, the lambda's and the thunk's opened by `do` where it
+    ///   breaks and ends its line ([`Self::opened`]).
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -14057,6 +14532,7 @@ impl Walk<'_, '_>
                             doc: chain,
                             binding: Binding::Arrow,
                             fields: None,
+                            laid: None,
                         },
                         Binding::Atom,
                     )?;
@@ -14238,13 +14714,13 @@ impl Walk<'_, '_>
                 self.fields = fields;
                 spelled
             },
-            Join::StaticLambda { .. } | Join::Lambda => {
+            Join::StaticLambda { quoted } => {
                 let body = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
                 let open = self.leaf(Glyphs("fun ("))?;
                 let close = self.leaf(Glyphs(") {"))?;
                 let head = self.builder.concat_all(&[open, binder, close])?;
-                let body = if matches!(join, Join::StaticLambda { quoted: true }) {
+                let body = if quoted {
                     let quote = self.leaf(Glyphs("type("))?;
                     let shut = self.leaf(Glyphs(")"))?;
                     self.builder.concat_all(&[quote, body.doc, shut])?
@@ -14252,19 +14728,25 @@ impl Walk<'_, '_>
                 else {
                     body.doc
                 };
-                let block = if matches!(join, Join::StaticLambda { .. }) {
-                    let close = self.leaf(Glyphs("}"))?;
-                    self.builder.concat_all(&[head, body, close])?
-                }
-                else {
-                    self.block(head, body)?
-                };
-                (block, Binding::Prefix)
+                let close = self.leaf(Glyphs("}"))?;
+                (
+                    self.builder.concat_all(&[head, body, close])?,
+                    Binding::Prefix,
+                )
+            },
+            Join::Lambda => {
+                let body = self.pop()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let open = self.leaf(Glyphs("fun ("))?;
+                let close = self.leaf(Glyphs(")"))?;
+                let head = self.builder.concat_all(&[open, binder, close])?;
+                let (doc, laid) = self.opened(head, body)?;
+                self.laid = laid;
+                (doc, Binding::Prefix)
             },
             Join::Sequence | Join::DiscardedSequence => {
                 let rest = self.pop()?;
                 let bound = self.pop()?;
-                let bound = self.bare_up_to(bound, Binding::Arrow)?;
                 let binder = if join == Join::DiscardedSequence {
                     self.leaf(Glyphs("_"))?
                 }
@@ -14272,19 +14754,14 @@ impl Walk<'_, '_>
                     self.binder(OpenBinders(0_usize))?
                 };
                 let lead = self.leaf(Glyphs("let "))?;
-                let equals = self.leaf(Glyphs(" = "))?;
-                let semicolon = self.leaf(Glyphs(" ;"))?;
-                let line = Doc::LINE;
-                (
-                    self.builder
-                        .concat_all(&[lead, binder, equals, bound, semicolon, line, rest.doc])?,
-                    Binding::Sequence,
-                )
+                let head = self.builder.concat(lead, binder)?;
+                let (doc, laid) = self.statement(head, bound, rest)?;
+                self.laid = laid;
+                (doc, Binding::Sequence)
             },
             Join::SequenceAll(Arity(count)) => {
                 let rest = self.pop()?;
                 let bound = self.pop()?;
-                let bound = self.bare_up_to(bound, Binding::Arrow)?;
                 let mut items = Vec::from([self.leaf(Glyphs("let ("))?]);
                 for position in 0_usize .. count {
                     if position > 0_usize {
@@ -14294,30 +14771,25 @@ impl Walk<'_, '_>
                     // the first value's binder nearest.
                     items.push(self.binder(OpenBinders(position))?);
                 }
-                items.push(self.leaf(Glyphs(") = "))?);
-                items.push(bound);
-                items.push(self.leaf(Glyphs(" ;"))?);
-                items.push(Doc::LINE);
-                items.push(rest.doc);
-                (self.builder.concat_all(&items)?, Binding::Sequence)
+                items.push(self.leaf(Glyphs(")"))?);
+                let head = self.builder.concat_all(&items)?;
+                let (doc, laid) = self.statement(head, bound, rest)?;
+                self.laid = laid;
+                (doc, Binding::Sequence)
             },
             Join::TypedSequence => {
                 let rest = self.pop()?;
                 let result = self.pop()?;
                 let bound = self.pop()?;
-                let bound = self.bare_up_to(bound, Binding::Arrow)?;
                 let binder = self.binder(OpenBinders(0_usize))?;
                 let lead = self.leaf(Glyphs("let "))?;
                 let colon = self.leaf(Glyphs(" : "))?;
-                let equals = self.leaf(Glyphs(" = "))?;
-                let semicolon = self.leaf(Glyphs(" ;"))?;
-                let line = Doc::LINE;
-                (
-                    self.builder.concat_all(&[
-                        lead, binder, colon, result.doc, equals, bound, semicolon, line, rest.doc,
-                    ])?,
-                    Binding::Sequence,
-                )
+                let head = self
+                    .builder
+                    .concat_all(&[lead, binder, colon, result.doc])?;
+                let (doc, laid) = self.statement(head, bound, rest)?;
+                self.laid = laid;
+                (doc, Binding::Sequence)
             },
             Join::TypedLambda => {
                 let body = self.pop()?;
@@ -14326,16 +14798,20 @@ impl Walk<'_, '_>
                 let binder = self.binder(OpenBinders(0_usize))?;
                 let open = self.leaf(Glyphs("fun ("))?;
                 let colon = self.leaf(Glyphs(" : "))?;
-                let close = self.leaf(Glyphs(") {"))?;
+                let close = self.leaf(Glyphs(")"))?;
                 let head = self
                     .builder
                     .concat_all(&[open, binder, colon, stated, close])?;
-                (self.block(head, body.doc)?, Binding::Prefix)
+                let (doc, laid) = self.opened(head, body)?;
+                self.laid = laid;
+                (doc, Binding::Prefix)
             },
             Join::Thunk => {
                 let body = self.pop()?;
-                let head = self.leaf(Glyphs("thunk {"))?;
-                (self.block(head, body.doc)?, Binding::Prefix)
+                let head = self.leaf(Glyphs("thunk"))?;
+                let (doc, laid) = self.opened(head, body)?;
+                self.laid = laid;
+                (doc, Binding::Prefix)
             },
             Join::Apply(Arity(count)) => {
                 let arguments = self.take(Arity(count))?;
@@ -14430,75 +14906,18 @@ impl Walk<'_, '_>
                 else {
                     binding
                 };
-                let mut current = Vec::new();
-                let mut heads = Vec::new();
-                for part in parts {
-                    match part {
-                        Part::Text(text) => current.push(self.leaf(Glyphs(text.as_ref()))?),
-                        Part::Named(text, constant) => {
-                            current.push(self.builder.named(Glyphs(text.as_ref()), constant)?);
-                        },
-                        Part::Piece(loosest) => {
-                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
-                            current.push(self.bare_up_to(piece, loosest)?);
-                        },
-                        Part::Spliced(content) => {
-                            let _literal = children.pop().ok_or(PresentationError::Unbalanced)?;
-                            if !content.is_empty() {
-                                current.push(self.leaf(Glyphs(content.as_str()))?);
-                            }
-                        },
-                        Part::Last(loosest) => {
-                            let piece = last.pop().ok_or(PresentationError::Unbalanced)?;
-                            current.push(self.bare_up_to(piece, loosest)?);
-                        },
-                        Part::Argument => {
-                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
-                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
-                            current.push(self.space_or_break(head)?);
-                            // After a type a `{` opens a definition's body, so
-                            // a block argument stands in parentheses (#5750).
-                            let argument = self.bare_up_to(piece, Binding::Atom)?;
-                            current.push(if piece.binding == Binding::Sequence {
-                                self.parenthesized(argument)?
-                            }
-                            else {
-                                argument
-                            });
-                        },
-                        Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
-                        Part::Endpoint(index) => {
-                            current.push(self.variable_leaf(Zone::Linear, index)?);
-                        },
-                        Part::Space => {
-                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
-                            current.push(self.space_or_break(head)?);
-                        },
-                        Part::Tight => {
-                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
-                            current.push(self.none_or_break(head)?);
-                        },
-                        Part::Line => current.push(Doc::LINE),
-                        Part::Open => heads.push(core::mem::take(&mut current)),
-                        Part::Close => {
-                            let body = self.builder.concat_all(&core::mem::take(&mut current))?;
-                            let head = heads.pop().ok_or(PresentationError::Unbalanced)?;
-                            let head = self.builder.concat_all(&head)?;
-                            current.push(self.block(head, body)?);
-                        },
-                    }
-                }
-                if !heads.is_empty() || !children.is_empty() {
-                    return Err(PresentationError::Unbalanced);
-                }
-                (self.builder.concat_all(&current)?, binding)
+                let (doc, laid) = self.parted(&parts, children, last)?;
+                self.laid = laid;
+                (doc, binding)
             },
         };
         let fields = self.fields.take();
+        let laid = self.laid.take();
         self.pieces.push(Piece {
             doc,
             binding,
             fields,
+            laid,
         });
         Ok(())
     }
@@ -14675,6 +15094,7 @@ where
         records: BTreeMap::new(),
         unrecorded: BTreeSet::new(),
         fields: None,
+        laid: None,
         forms: Vec::new(),
         form: style.form,
         crossed: false,
@@ -14905,9 +15325,10 @@ where
         return Ok(Passed::Again(walk.binders, unreserved));
     }
     // A body's statements break together: on one line when the whole body
-    // fits, one statement per line otherwise.
+    // fits, one statement per line otherwise, each block that ends its line
+    // opened by its layout word. Nothing follows the body on its last line.
     let doc = match admits {
-        Admits::Computation(_) => walk.builder.group(root.doc)?,
+        Admits::Computation(_) => walk.builder.broken_or_flat(root.laid(), root.doc)?,
         Admits::Type
         | Admits::ValueType
         | Admits::CompType
@@ -15162,6 +15583,7 @@ mod tests
             records: super::BTreeMap::new(),
             unrecorded: super::BTreeSet::new(),
             fields: None,
+            laid: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             crossed: false,
@@ -15261,6 +15683,7 @@ mod tests
             records: super::BTreeMap::new(),
             unrecorded: super::BTreeSet::new(),
             fields: None,
+            laid: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             crossed: false,
@@ -15279,7 +15702,9 @@ mod tests
             walk.pop(),
             Err(super::PresentationError::Unbalanced)
         ));
-        walk.forms.push(super::Vec::from([super::Part::Open]));
+        walk.forms.push(super::Vec::from([super::Part::Open(
+            super::BlockOpener::Do,
+        )]));
         assert_eq!(
             walk.join(super::Join::Form {
                 pieces: super::Arity(0_usize),
