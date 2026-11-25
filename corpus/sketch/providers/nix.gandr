@@ -14,10 +14,10 @@
 import std.provide.nix;
 
 /// `hello`'s attribute at a pinned revision, whose type the provider answers.
-type Hello = ~nix.attribute("hello", revision = "3ec636362e18");
+type Hello = ~nix.attribute[.revision = "3ec636362e18"] "hello";
 
 /// `hello`'s derivation, a provided value.
-def helloDerivation = ~nix.derivation("hello", revision = "3ec636362e18");
+def helloDerivation = ~nix.derivation[.revision = "3ec636362e18"] "hello";
 
 /// The attribute at whatever revision the lock resolved, the pin left to the
 /// lock.

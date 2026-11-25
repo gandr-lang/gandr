@@ -17,7 +17,7 @@ import std.foreign.mlir (Mlir, Op);
 import std.foreign.spec (Spec, Places);
 
 /// A C allocator's ClangIR, from the C file at a pinned Clang.
-def allocModule : Mlir.Module = ~mlir.module(path = "vendor/alloc.c", via = "clangir", clang = "21.1");
+def allocModule : Mlir.Module = ~mlir.module[.path = "vendor/alloc.c", .via = "clangir", .clang = "21.1"];
 
 /// One ClangIR operation folded into the place theory, the dialects this
 /// sketch reads named by their operation names.

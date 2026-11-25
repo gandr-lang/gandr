@@ -49,7 +49,7 @@ extern Process from "bin:z3" {
 
 /// z3 with checked answers: the kernel replays each certificate, or the model
 /// refuses.
-pub def checkedZ3 : Model Smt = Checked(z3, replay = Smt.replay);
+pub def checkedZ3 : Model Smt = Checked[.replay = Smt.replay] z3;
 
 /// Whether a formula is satisfiable, asked of the model in scope, its
 /// answer one of four outcomes.
