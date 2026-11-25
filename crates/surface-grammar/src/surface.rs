@@ -385,13 +385,17 @@ pub const APPLICATION: &str = " ";
 ///
 /// `where` is reserved: it ends a declaration's head, whose last slot is a
 /// type, and opens the block of its members.
+///
+/// `do` is reserved: a `do` that ends its line opens a statement block, and
+/// the layout pass reads it as the block's open. The grammar has no tile for
+/// it, so a `do` anywhere else is a word that no form reads.
 pub const RESERVED_WORDS: &[&str] = &[
     "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
     "match", "if", "else", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
     "fork", "acquire", "release", "migrate", "at", "true", "false", "mu", "end", "data", "codata",
     "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import", "module",
     "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile", "inf",
-    "pub", "flow", "where",
+    "pub", "flow", "where", "do",
 ];
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
