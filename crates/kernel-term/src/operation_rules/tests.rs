@@ -409,6 +409,79 @@ fn a_pattern_below_a_presented_rule_is_decided_against_it()
     );
 }
 
+/// `Low`, `High` and `Pair` of two fields, presented by the symmetry
+/// `Pair(x, y) <=> Pair(y, x)` and the step `Pair(Low, x) ==> Low`, with the
+/// symmetry written first or last.
+///
+/// # Specification
+/// trivial.
+fn unordered_pairs(symmetry_first: bool) -> Scope
+{
+    let side = |nodes: &[RuleNode]| Box::from(nodes);
+    let constructor = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+    let variable = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+    let symmetry = PresentedRule::new(
+        side(&[constructor(2), variable(0), variable(1)]),
+        side(&[constructor(2), variable(1), variable(0)]),
+    );
+    let step = PresentedRule::new(
+        side(&[constructor(2), constructor(0), variable(0)]),
+        side(&[constructor(0)]),
+    );
+    let rules = if symmetry_first {
+        [symmetry, step]
+    }
+    else {
+        [step, symmetry]
+    };
+    Scope {
+        families: SmallVec::<_, 0, Global>::from_iter([(
+            ConstantIndex::from(FAMILY),
+            SmallVec::<_, 0, Global>::from_iter([0, 0, 2]),
+            Presentation::new(SmallVec::<_, 0, Global>::from_iter(rules)),
+        )]),
+        operations: SmallVec::<_, 0, Global>::new(),
+    }
+}
+
+#[test]
+fn a_pair_that_joins_only_under_a_symmetry_is_refused()
+{
+    // `g(Low) ==> Low`, `g(High) ==> High`, `g(Pair(x, y)) ==> Pair(y, x)`:
+    // `g` turns a pair, which the symmetry of `Pair` makes the identity.
+    let turn = || {
+        SmallVec::<_, 0, Global>::from_iter([
+            rule(&[op!(1_usize, 1_usize), ctor!(0_usize)], &[ctor!(0_usize)]),
+            rule(&[op!(1_usize, 1_usize), ctor!(1_usize)], &[ctor!(1_usize)]),
+            rule(
+                &[
+                    op!(1_usize, 1_usize),
+                    ctor!(2_usize),
+                    var!(0_u32),
+                    var!(1_u32),
+                ],
+                &[ctor!(2_usize), var!(1_u32), var!(0_u32)],
+            ),
+        ])
+    };
+    for symmetry_first in [true, false] {
+        let scope = unordered_pairs(symmetry_first);
+        assert_eq!(
+            decide!(turn(), 1_usize, &scope),
+            Err(OperationRuleRefusal {
+                rule: RuleIndex::from(2_usize),
+                fault: OperationRuleFault::Diverges(Overlapped::Presented {
+                    family: ConstantIndex::from(FAMILY),
+                    rule: RuleIndex::from(0_usize),
+                }),
+            }),
+            "`g(Pair(Low, x))` is `Pair(x, Low)` by g's rule and `Low` by the step; the reader \
+             holds no symmetry, so `Pair(x, Low)` is not `Pair(Low, x)` for it, and it counts \
+             the step among the steps alone (symmetry first: {symmetry_first})"
+        );
+    }
+}
+
 #[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {
