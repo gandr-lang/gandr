@@ -592,11 +592,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
         Some((0_usize, Vec::new())),
         "the index the port writes, `Z`"
     );
-    let written = entry(
-        &types,
-        span("skip : (k : Skip Z", "Z"),
-        DescribedRole::Term,
-    );
+    let written = entry(&types, span("skip : (k : Skip Z", "Z"), DescribedRole::Term);
     assert_eq!(ty(written), natural, "the index term at its own family");
     let sort = entry(
         &types,
