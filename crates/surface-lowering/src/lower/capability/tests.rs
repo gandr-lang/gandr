@@ -2300,6 +2300,47 @@ fn a_scope_names_a_model_of_its_theory_2272()
     );
 }
 
+/// A scope written `effect … handle` lowers to the core of the same scope
+/// written `handle … with`: with its clauses, and with a model it names.
+#[test]
+fn an_effect_scope_is_its_handle_scope_8061()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}{put_put}{passing}",
+            "def quit_effect() -> -F Unit {{ effect c : std.process.Exit.Eff {{ c.exit 1 }} handle {{ | pure(x) => pure x | oper exit(code, k) => k *{{}} }} }}\n",
+            "def quit_handle() -> -F Unit {{ handle c : std.process.Exit.Eff {{ c.exit 1 }} with {{ | pure(x) => pure x | oper exit(code, k) => k *{{}} }} }}\n",
+            "def answered_effect() -> Integer -> Integer {{ effect st : StatePutPut with sort S = Integer {{ st.put 4; let a = st.get; pure fun (_s) {{ pure a }} }} handle Passing }}\n",
+            "def answered_handle() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put 4; let a = st.get; pure fun (_s) {{ pure a }} }} with Passing }}\n",
+        ),
+        state = STATE,
+        put_put = PUT_PUT,
+        passing = PASSING,
+    );
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
+    let body = |name: &str| match outcome_of(&module, name.into()) {
+        DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body: {other:?}"),
+    };
+    for (effect, handle) in [
+        ("quit_effect", "quit_handle"),
+        ("answered_effect", "answered_handle"),
+    ] {
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, body(effect), body(handle)),
+            gandr_core_term::CertificateEquality::Equal,
+            "`{effect}` lowers as `{handle}`"
+        );
+    }
+}
+
 /// A cost theory whose costs a scope fixes: a charge, and the cost monoid's
 /// unit and sum as value operations, with decalf's two laws.
 const COST: &str = include_str!("tests/fixtures/cost.gandr");
