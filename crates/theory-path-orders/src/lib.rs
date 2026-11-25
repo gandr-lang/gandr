@@ -19,6 +19,10 @@
 //!
 //! # Items
 //!
+//! - [`decreasing`]: the decreasing shape of a labelled peak and its two
+//!   closing paths, over an order of labels the caller gives;
+//!   [`decreasing::decide`] and [`decreasing::check`] with the evidence
+//!   [`Shape`].
 //! - [`term`]: the term view, [`Term`], [`Valued`], [`Former`], [`Node`].
 //! - [`precedence`]: the precedence as data, [`Precedence`], [`Place`],
 //!   [`Rank`], [`Status`], [`Explicit`].
@@ -37,11 +41,21 @@
 
 extern crate alloc;
 
+pub mod decreasing;
 pub mod evidence;
 pub mod lpo;
 pub mod precedence;
 pub mod term;
 
+pub use crate::decreasing::Break;
+pub use crate::decreasing::Decreasing;
+pub use crate::decreasing::Diagram;
+pub use crate::decreasing::LabelOrder;
+pub use crate::decreasing::Middle;
+pub use crate::decreasing::Parts;
+pub use crate::decreasing::Shape;
+pub use crate::decreasing::Side;
+pub use crate::decreasing::Steps;
 pub use crate::evidence::Argument;
 pub use crate::evidence::Clause;
 pub use crate::evidence::Cover;
