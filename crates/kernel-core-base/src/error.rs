@@ -1231,8 +1231,9 @@ impl core::fmt::Display for KernelError
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes a class-specific description; payloads remain
-    ///   available through the error's typed variants.
+    /// - ensures: writes a class-specific description. The refusal of a
+    ///   presentation's rules also names the rule and its fault. Each other
+    ///   payload remains available through the error's typed variants.
     /// - provides: a readable refusal without depending on the rejected arena.
     /// - fails: propagates the formatter's write failure unchanged.
     /// - panics: none.
@@ -1334,9 +1335,10 @@ impl core::fmt::Display for KernelError
             Self::OperationRulesRefused(_) => {
                 f.write_str("a definition's operation rules did not converge")
             },
-            Self::PresentationRulesRefused(_) => {
-                f.write_str("a presentation's rules did not converge as its value states them")
-            },
+            Self::PresentationRulesRefused(refusal) => write!(
+                f,
+                "a presentation's rules did not converge as its value states them: {refusal}"
+            ),
             Self::OperationBodyUnlinked(_) => {
                 f.write_str("a definition's body is not its operation rules' decision tree")
             },
@@ -1916,5 +1918,15 @@ mod tests
                 Err(core::fmt::Error)
             );
         }
+        let refusal = TheoryRuleRefusal {
+            rule: RuleIndex::from(3_usize),
+            fault: TheoryRuleFault::Diverges(RuleIndex::from(5_usize)),
+        };
+        assert!(
+            KernelError::PresentationRulesRefused(refusal)
+                .to_string()
+                .ends_with(&refusal.to_string()),
+            "the refusal of a presentation's rules names the rule and its fault"
+        );
     }
 }

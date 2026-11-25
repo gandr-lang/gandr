@@ -1040,6 +1040,82 @@ pub struct TheoryRuleRefusal
     pub fault: TheoryRuleFault,
 }
 
+impl core::fmt::Display for TheoryRuleRefusal
+{
+    /// Writes the rule's position and its fault as one clause.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the position of [`Self::rule`], counted from zero in
+    ///   the order the type states, then what [`Self::fault`] says of that
+    ///   rule; a fault that names a second rule writes that rule's position
+    ///   also.
+    /// - provides: the part of a refusal's message that names the rule, so a
+    ///   reader finds the rule with no debugger.
+    /// - fails: propagates the formatter's write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over every fault at one rule: each text holds the
+    ///   rule's position, a fault of a pair holds the second position, and two
+    ///   faults have two texts.
+    /// - witness: `theory_rules::tests::a_refusal_names_its_rule_and_its_fault`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        let rule = usize::from(self.rule);
+        match self.fault {
+            TheoryRuleFault::Unreadable => write!(
+                f,
+                "the rule chain is not readable at the rule at position {rule}"
+            ),
+            TheoryRuleFault::Malformed => {
+                write!(f, "the rule at position {rule} is malformed")
+            },
+            TheoryRuleFault::Unbound => write!(
+                f,
+                "the right side of the rule at position {rule} names a variable that its left \
+                 side does not bind"
+            ),
+            TheoryRuleFault::Unoriented => write!(
+                f,
+                "the stated order does not put the left side of the rule at position {rule} \
+                 above its right side"
+            ),
+            TheoryRuleFault::NoPeak => write!(
+                f,
+                "the derived rule at position {rule} is not the two normal forms of the peak \
+                 that it names"
+            ),
+            TheoryRuleFault::Diverges(inner) => write!(
+                f,
+                "the rule at position {rule}, overlapped by the rule at position {}, rewrites \
+                 one term to two normal forms",
+                usize::from(inner)
+            ),
+            TheoryRuleFault::Overlaps(inner) => write!(
+                f,
+                "the rule at position {rule}, overlapped by the rule at position {}, has an \
+                 overlap that pattern unification does not decide",
+                usize::from(inner)
+            ),
+            TheoryRuleFault::Exhausted => write!(
+                f,
+                "the fuel of the decision ran out at the rule at position {rule}"
+            ),
+            TheoryRuleFault::UndecidedCondition => write!(
+                f,
+                "the rule at position {rule} has a condition on its variables that no step \
+                 decides"
+            ),
+        }
+    }
+}
+
 /// A presentation's rules as the decision reads them.
 ///
 /// The symbol table, the written rules oriented, the derived rules with their

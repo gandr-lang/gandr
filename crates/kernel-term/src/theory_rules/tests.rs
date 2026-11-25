@@ -2670,3 +2670,43 @@ fn a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042()
         "without the identity law on types the law sorts apart, so the laws stand as written"
     );
 }
+
+#[test]
+fn a_refusal_names_its_rule_and_its_fault()
+{
+    use alloc::string::ToString;
+
+    let second = RuleIndex::from(11_usize);
+    let faults = [
+        TheoryRuleFault::Unreadable,
+        TheoryRuleFault::Malformed,
+        TheoryRuleFault::Unbound,
+        TheoryRuleFault::Unoriented,
+        TheoryRuleFault::NoPeak,
+        TheoryRuleFault::Diverges(second),
+        TheoryRuleFault::Overlaps(second),
+        TheoryRuleFault::Exhausted,
+        TheoryRuleFault::UndecidedCondition,
+    ];
+    let texts = faults.map(|fault| {
+        TheoryRuleRefusal {
+            rule: RuleIndex::from(7_usize),
+            fault,
+        }
+        .to_string()
+    });
+    for (position, (fault, text)) in faults.iter().zip(&texts).enumerate() {
+        assert!(text.contains("position 7"), "`{text}` names its rule");
+        assert_eq!(
+            text.contains("position 11"),
+            matches!(
+                *fault,
+                TheoryRuleFault::Diverges(_) | TheoryRuleFault::Overlaps(_)
+            ),
+            "`{text}` names a second rule exactly where its fault is of a pair"
+        );
+        for other in texts.iter().skip(position.saturating_add(1)) {
+            assert_ne!(text, other, "two faults have two texts");
+        }
+    }
+}
