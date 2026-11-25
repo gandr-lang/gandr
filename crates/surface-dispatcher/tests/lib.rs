@@ -42,6 +42,8 @@ mod parity;
 #[cfg(test)]
 mod report;
 #[cfg(test)]
+mod ring;
+#[cfg(test)]
 mod run;
 #[cfg(test)]
 mod script;
