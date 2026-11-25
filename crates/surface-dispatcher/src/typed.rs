@@ -9462,7 +9462,7 @@ mod tests
             "typed/fixtures/a-scoped-capability-answers-at-its-scope.gandr"
         ));
         let table = hosted_table(source);
-        let used = || answer(&table, source, SourceText::from("c;"));
+        let used = || answer(&table, source, SourceText::from("c\n"));
         assert!(
             matches!(used(), Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
             "a capability in the scope's subject names the scope: {:?}",
@@ -9488,12 +9488,12 @@ mod tests
             "typed/fixtures/a-kept-type-answers-at-the-hold-it-is-kept-in.gandr"
         ));
         let table = hosted_table(source);
-        let capability = answer(&table, source, SourceText::from("c;"));
+        let capability = answer(&table, source, SourceText::from("c\n"));
         assert!(
             matches!(capability, Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
             "a capability names its scope past the hold around it: {capability:?}"
         );
-        let kept = answer(&table, source, SourceText::from("k;"));
+        let kept = answer(&table, source, SourceText::from("k\n"));
         assert!(
             matches!(kept, Maybe::Present(Answer { ref ty, .. }) if ty == "Integer at s"),
             "a value kept at a hold names the hold: {kept:?}"
