@@ -927,6 +927,10 @@ impl Band
             | "lambda_expression"
             // A handler binds as an expression of a keyword binds.
             | "handle_expression"
+            // A thunk is a keyword form, which binds loose: an argument of a
+            // type's juxtaposition keeps its parentheses, `args d (thunk { f
+            // })`.
+            | "thunk_expression"
             // A word before a type is a moded type, whose type runs to the
             // arrow's band: `f a` applies `f` by juxtaposition.
             | "moded_type" => Self::Loose,
