@@ -24,7 +24,7 @@
 @[builtin("irPair")]
 pub data Sig(a : Type, b : a -> Type) : Type where
   /// A value of the first type with a value of the type it picks.
-  | MkSig : (x : a, y : b(x)) --> Sig a b
+  | MkSig : (x : a, y : b x) --> Sig a b
 
 /// The codes over a type of decodes `d`, a large type.
 @[builtin("irSignature")]
@@ -49,7 +49,7 @@ pub def rec args(d : Type, c : IR d, x : Type, t : x -> d) -> Type =
 /// The decode of the arguments a code asks for. The code's case refines their
 /// type, since the marked call stages the code.
 @[builtin("irDecode"), form(explicit)]
-pub def rec decodeArgs(d : Type, c : IR d, x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
+pub def rec decodeArgs(d : Type, c : IR d, x : Type, t : x -> d, v : args d c x t) -> d =
   match c where
     | Iota(e) => e
     | SigmaC(a, f) => match v where
