@@ -1,0 +1,23 @@
+def laid(x : Integer) -> Integer =
+  let a =
+    let b = x
+    b
+  a
+
+def braced(x : Integer) -> Integer = {
+  let a = {
+    let b = x;
+    b
+  };
+  a
+};
+
+def laid_one(x : Integer) -> Integer =
+  let a =
+    x
+  a
+
+def braced_one(x : Integer) -> Integer = {
+  let a = { x };
+  a
+};
