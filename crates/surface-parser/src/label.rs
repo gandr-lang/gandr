@@ -2273,7 +2273,9 @@ fn run_end(
 /// Scan a run: the bytes from `pos` to the next whitespace or delimiter.
 ///
 /// A connective's sign, `*`, `+` or `&`, written straight before `{` is one
-/// opener tile with the brace. A run the operator table holds whole is that
+/// opener tile with the brace. The pipe `|>` written straight before a `.`
+/// and a word is one tile with the dot, the pipeline field `|>.`, and the
+/// word is the next run. A run the operator table holds whole is that
 /// operator's tile. Any other run that starts with `!`, `?` or `~` gives that
 /// sigil a tile of its own, and the rest is read as the next run. `type` with
 /// a `(` written straight after it is one tile with the parenthesis, a type
@@ -2285,18 +2287,20 @@ fn run_end(
 /// # Specification
 /// - requires: `pos` starts a run.
 /// - ensures: scanning advances; a connective's opener is punctuation through
-///   the brace; an operator run is punctuation to its end; a sigil run is
-///   punctuation for its sigil alone; `type(` is punctuation through the
-///   parenthesis; a word ends where the run does.
+///   the brace; a pipeline field is punctuation through its dot; an operator
+///   run is punctuation to its end; a sigil run is punctuation for its sigil
+///   alone; `type(` is punctuation through the parenthesis; a word ends where
+///   the run does.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the connectives' openers against a spaced or a glued
-///   sign, operators, an operator written against a name, an operator-led run
-///   the table lacks, sigils, a sigil before an operator, words of either case,
-///   a `_`-led word, the lone wildcard, a primed word, a lone prime, a
-///   non-ASCII word, `type(` against `type (`, and a run before each delimiter
-///   and a comment separate the decisions.
+///   sign, the pipeline field before a word against a pipe before a spaced
+///   word, a digit or a run's end, operators, an operator written against a
+///   name, an operator-led run the table lacks, sigils, a sigil before an
+///   operator, words of either case, a `_`-led word, the lone wildcard, a
+///   primed word, a lone prime, a non-ASCII word, `type(` against `type (`, and
+///   a run before each delimiter and a comment separate the decisions.
 /// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
 #[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && ret.next <= bytes.len() && matches!(ret.lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct | Lexeme::Unknown))]
 fn scan_run(
@@ -2313,6 +2317,17 @@ fn scan_run(
     // A connective's sign written straight before `{` opens it: `*{`, `+{`
     // and `&{` are one tile each.
     if matches!(text.0, b"*" | b"+" | b"&") && bytes.byte(end) == Some(SourceByte::from(b'{')) {
+        return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
+    }
+    // The pipe written straight before a dot and a word is the pipeline
+    // field, `|>.`: its method's name follows it with no space.
+    if text.0 == b"|>"
+        && bytes.byte(end) == Some(SourceByte::from(b'.'))
+        && !bool::from(ends_run(bytes, end.advance(ByteWidth::ONE)))
+        && bytes
+            .byte(end.advance(ByteWidth::ONE))
+            .is_some_and(|byte| !u8::from(byte).is_ascii_digit())
+    {
         return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
     }
     // A word's lead is a letter, so only a run led otherwise, or one ending in
@@ -3116,6 +3131,22 @@ mod tests
             punct(")"),
             punct("Type+"),
             punct(";"),
+        ]);
+        // The pipe before a dot and a word is the pipeline field, one tile;
+        // before a spaced word, a digit or a run's end it is the pipe.
+        assert_eq!(lexed("e |>.map f |>. g |>.0 |>."), vec![
+            lower("e"),
+            punct("|>."),
+            lower("map"),
+            lower("f"),
+            lower("|>"),
+            punct("."),
+            lower("g"),
+            lower("|>"),
+            punct("."),
+            (Lexeme::Number, "0".to_owned()),
+            lower("|>"),
+            punct("."),
         ]);
         // A connective's sign opens it only written straight before the
         // brace, and a glued sign ends the name before it.
