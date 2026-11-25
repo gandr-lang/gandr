@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/boot-alloc",
   "crates/boot-core",
+  "crates/boot-io",
   "crates/core-checker",
   "crates/core-checker-base",
   "crates/core-checker-bridge",
@@ -467,6 +468,13 @@ default-features = false
 # - runtime-emitter
 [workspace.dependencies.gandr-boot-alloc]
 path = "crates/boot-alloc"
+
+# The operations on a range of bytes that allocate nothing, with the range
+# that a function of the layer `boot` reads and the place that it writes.
+# consumers:
+# - boot-io
+[workspace.dependencies.gandr-boot-core]
+path = "crates/boot-core"
 
 # The checking judgement: the name-free declaration input, the verdicts, the
 # obligation ledger and the refusal vocabulary.

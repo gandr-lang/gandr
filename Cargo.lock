@@ -1283,6 +1283,13 @@ name = "gandr-boot-core"
 version = "0.0.0"
 
 [[package]]
+name = "gandr-boot-io"
+version = "0.0.0"
+dependencies = [
+ "gandr-boot-core",
+]
+
+[[package]]
 name = "gandr-core-checker"
 version = "0.0.0"
 dependencies = [

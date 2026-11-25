@@ -1,0 +1,34 @@
+[package]
+name = "gandr-boot-io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The IO core of the bootstrap with no libc: open a file, read it and close it, each by the crate's own system call"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "io", "no-std", "syscall"]
+categories = ["no-std", "os::linux-apis"]
+publish.workspace = true
+autotests = false
+
+# One target for the file operations, each area a module, so a witness path
+# reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The close of descriptor 0 changes the whole process. So its one test runs
+# alone, in a target of its own.
+[[test]]
+name = "descriptor"
+path = "tests/descriptor.rs"
+
+# The one dependency is `boot-core`, for the range of a path and the place of
+# a read. On Linux x86-64 each operation is a system call by the crate's own
+# function in assembly.
+[dependencies]
+gandr-boot-core.workspace = true
+
+[lints]
+workspace = true
