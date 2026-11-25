@@ -43,12 +43,13 @@
 //! does not carry, or one whose peak does not replay, leaves its pair to part
 //! in step 4 or is refused by name in step 3.
 //!
-//! A symmetry, the rule that swaps the two arguments of one symbol, is no step:
-//! no normal form rewrites by it. A normal form reads the other rules under the
-//! symmetries instead. A left side matches in each arrangement of the two
-//! arguments at each of its nodes of a symbol of a symmetry, and two
+//! A symmetry, the rule that swaps the last two arguments of one symbol, is no
+//! step: no normal form rewrites by it. A normal form reads the other rules
+//! under the symmetries instead. A left side matches in each arrangement of
+//! those two arguments at each of its nodes of a symbol of a symmetry, and two
 //! occurrences of one variable bind two subterms that agree under the
-//! symmetries.
+//! symmetries. A symbol as written has its two arguments alone. In the indexed
+//! reading the indices of its sort stand before them, and they stay in place.
 //!
 //! Over an indexed sort the written terms do not carry the indices their
 //! sorting fixes, so two laws' overlap can part where the typing makes its
@@ -876,45 +877,62 @@ impl TheoryRule
         self.holes.at(at)
     }
 
-    /// The symbol whose two arguments the rule swaps, `f x y` to `f y x`; none
-    /// for every other rule.
+    /// The symbol whose last two arguments the rule swaps, `f x y` to `f y x`;
+    /// none for every other rule.
     ///
     /// # Specification
     /// - ensures: the symbol exactly when the rule instantiates no variable, is
     ///   not conditioned and states no row, its left side is that symbol over
-    ///   the variables `0` and `1`, and its right side is that symbol over `1`
-    ///   and `0`.
+    ///   two or more arguments that are the variables `0`, `1`, … in a row, and
+    ///   its right side is that symbol over the same variables with the last
+    ///   two in the other order. A rule as written has the two arguments alone;
+    ///   the arguments before them are the indices that the indexed reading
+    ///   writes first.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a rule that swaps the two arguments of one operation
     ///   is a symmetry of that operation; the same rule over two symbols, or
-    ///   one that keeps the order, is none.
+    ///   one that keeps the order, is none; a symmetry over a sort with two
+    ///   indices is a symmetry in the indexed reading.
     /// - witness: `theory_rules::tests::a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291`
     /// - witness: `theory_rules::tests::a_symbol_of_a_symmetry_compares_its_arguments_as_a_multiset`
+    /// - witness: `theory_rules::tests::a_symmetry_over_an_indexed_sort_is_decided_with_its_indices`
     fn symmetry(&self) -> Option<TheorySymbol>
     {
         if self.instantiates || self.conditioned || self.row != RuleRow::default() {
             return None;
         }
-        let (first, second) = (
-            TheoryNode::Variable(RuleVariable::from(0_u32)),
-            TheoryNode::Variable(RuleVariable::from(1_u32)),
-        );
-        match (&*self.left, &*self.right) {
-            (
-                &[TheoryNode::Symbol(symbol), left_first, left_second],
-                &[head, right_first, right_second],
-            ) if head == TheoryNode::Symbol(symbol)
-                && left_first == first
-                && left_second == second
-                && right_first == second
-                && right_second == first =>
-            {
-                Some(symbol)
-            },
-            _ => None,
-        }
+        let (&TheoryNode::Symbol(symbol), &TheoryNode::Symbol(head)) =
+            (self.left.first()?, self.right.first()?)
+        else {
+            return None;
+        };
+        let (written, turned) = (self.left.get(1 ..)?, self.right.get(1 ..)?);
+        let lead = written.len().checked_sub(ARRANGEMENTS.len())?;
+        let variable = |ordinal: usize| {
+            u32::try_from(ordinal)
+                .ok()
+                .map(|ordinal| TheoryNode::Variable(RuleVariable::from(ordinal)))
+        };
+        let swaps =
+            head == symbol
+                && turned.len() == written.len()
+                && written.iter().zip(turned).enumerate().all(
+                    |(place, (&as_written, &as_turned))| {
+                        // The two places after the indices name each other.
+                        let other = if place < lead {
+                            place
+                        }
+                        else {
+                            lead.saturating_add(lead)
+                                .saturating_add(1)
+                                .saturating_sub(place)
+                        };
+                        Some(as_written) == variable(place) && Some(as_turned) == variable(other)
+                    },
+                );
+        swaps.then_some(symbol)
     }
 
     /// How the rule's critical pairs are decided: second-order when it
@@ -925,8 +943,9 @@ impl TheoryRule
     /// - ensures: [`TheoryRuleReading::SecondOrder`] when the rule instantiates
     ///   a variable, is conditioned or states a row. Otherwise
     ///   [`TheoryRuleReading::Symmetry`] exactly when the left side is one
-    ///   symbol over the variables `0` and `1` and the right side is that
-    ///   symbol over `1` and `0`. Otherwise [`TheoryRuleReading::FirstOrder`].
+    ///   symbol over the variables `0`, `1`, … in a row and the right side is
+    ///   that symbol over the same variables with the last two in the other
+    ///   order. Otherwise [`TheoryRuleReading::FirstOrder`].
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1945,13 +1964,14 @@ impl TheoryRules
         Some(Position(at))
     }
 
-    /// Write to `symmetric` each symbol whose two arguments a symmetry of the
-    /// rules swaps, in ascending order.
+    /// Write to `symmetric` each symbol whose last two arguments a symmetry of
+    /// the rules swaps, in ascending order.
     ///
     /// # Specification
-    /// - ensures: `symmetric` holds the symbol of each rule of [`Self::rules`]
-    ///   that [`TheoryRule::symmetry`] names, sorted, and nothing of a previous
-    ///   call.
+    /// - ensures: `symmetric` holds the symbol of each rule of
+    ///   [`Self::decided`] that [`TheoryRule::symmetry`] names, sorted, and
+    ///   nothing of a previous call. So a pair of the indexed reading reads the
+    ///   symbol that carries its indices.
     /// - panics: none.
     /// - executable: none — the list is the body's own scan of the rules.
     ///
@@ -1961,15 +1981,17 @@ impl TheoryRules
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`matched_under`]: a left side matches in the
-    ///   other order with the symmetry written before the rule and after it.
+    ///   other order with the symmetry written before the rule and after it;
+    ///   over a sort with two indices a rule joins its own other order.
     /// - witness: `theory_rules::tests::a_left_side_matches_in_each_order_under_a_symmetry`
+    /// - witness: `theory_rules::tests::a_symmetry_over_an_indexed_sort_is_decided_with_its_indices`
     fn symmetries(
         &self,
         symmetric: &mut SmallVec<TheorySymbol, 0, Global>,
     )
     {
         symmetric.clear();
-        symmetric.extend(self.rules.iter().filter_map(TheoryRule::symmetry));
+        symmetric.extend(self.decided().iter().filter_map(TheoryRule::symmetry));
         symmetric.sort_unstable();
     }
 
@@ -2827,10 +2849,11 @@ fn orders(sites: &[Position]) -> Selection
 /// - requires: `left` is one term by `arity`, which gives the count of the
 ///   arguments of a node; `sites` are positions of `left`, in ascending order.
 /// - ensures: `order` holds the pre-order of `left` where the node at
-///   `sites[i]` holds its arguments in the arrangement of [`ARRANGEMENTS`] that
-///   digit `i` of `selection` names, when that arrangement has the arity of the
-///   node. Each other node holds its arguments as written, and each variable
-///   keeps its ordinal. `order` has the nodes of `left`, so it has its length.
+///   `sites[i]` holds its last arguments in the arrangement of [`ARRANGEMENTS`]
+///   that digit `i` of `selection` names, when the node has that many arguments
+///   or more. The arguments before them stay in place. Each other node holds
+///   its arguments as written, and each variable keeps its ordinal. `order` has
+///   the nodes of `left`, so it has its length.
 /// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node written
 ///   and per node of each argument that the walk measures.
 /// - panics: none.
@@ -2889,13 +2912,17 @@ where
             .and_then(|digit| selection.checked_div(digit))
             .and_then(|rest| rest.checked_rem(ARRANGEMENTS.len()))
             .and_then(|named| ARRANGEMENTS.get(named))
-            .filter(|arrangement| arrangement.len() == count);
+            .filter(|arrangement| arrangement.len() <= count);
         // The stack gives the subterm pushed last first, so the arguments go
         // on it again from the last place to the first, and the written starts
         // below them leave.
         for place in (0 .. count).rev() {
             let written = arrangement
-                .and_then(|arrangement| arrangement.get(place).copied())
+                .and_then(|arrangement| {
+                    let lead = count.checked_sub(arrangement.len())?;
+                    let turned = arrangement.get(place.checked_sub(lead)?)?;
+                    turned.checked_add(lead)
+                })
                 .unwrap_or(place);
             if let Some(&start) = pending.get(first.saturating_add(written)) {
                 pending.push(start);
@@ -3097,17 +3124,17 @@ fn agree(
     Ok(Verdict::from(first == second))
 }
 
-/// Put the two arguments of each node of `term` of a symbol of `symmetric` in
-/// ascending order, from the last node to the first.
+/// Put the last two arguments of each node of `term` of a symbol of
+/// `symmetric` in ascending order, from the last node to the first.
 ///
 /// # Specification
 /// - requires: `term` is one term; `symmetric` is in ascending order.
 /// - ensures: each node of `term` of a symbol of `symmetric` over two arguments
-///   holds them in ascending order of their pre-order sequences, each argument
-///   itself so arranged. A term is a pre-order sequence with its arities, so
-///   the order of two sequences is a total order of terms, and two terms that
-///   share their variables agree under the symmetries exactly when the two
-///   results are equal.
+///   or more holds its last two in ascending order of their pre-order
+///   sequences, each argument itself so arranged. A term is a pre-order
+///   sequence with its arities, so the order of two sequences is a total order
+///   of terms, and two terms that share their variables agree under the
+///   symmetries exactly when the two results are equal.
 /// - fails: [`Exhausted`] when `fuel` runs out first; one unit per node, and
 ///   one per node of the two arguments of each node turned.
 /// - panics: none.
@@ -3118,8 +3145,10 @@ fn agree(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`agree`].
+/// - hypothesis: L3 — as [`agree`]; over a sort with two indices the two normal
+///   forms of a pair are compared past the indices.
 /// - witness: `theory_rules::tests::a_repeated_variable_binds_two_terms_that_agree_under_a_symmetry`
+/// - witness: `theory_rules::tests::a_symmetry_over_an_indexed_sort_is_decided_with_its_indices`
 fn representative(
     symmetric: &[TheorySymbol],
     term: &mut [Flat],
@@ -3131,12 +3160,23 @@ fn representative(
     }
     for at in (0 .. term.len()).rev() {
         fuel.charge()?;
-        let under = matches!(
-            term.get(at),
-            Some(&Flat::Symbol(symbol, 2)) if symmetric.binary_search(&symbol).is_ok()
-        );
-        let first = Position(at.saturating_add(1));
-        let (true, Some(second)) = (under, flat_end(term, first))
+        let Some(&Flat::Symbol(symbol, count)) = term.get(at)
+        else {
+            continue;
+        };
+        if symmetric.binary_search(&symbol).is_err() {
+            continue;
+        }
+        // The two arguments that the symmetry swaps stand after the indices.
+        let Some(first) = count.checked_sub(ARRANGEMENTS.len()).and_then(|lead| {
+            (0 .. lead).try_fold(Position(at.saturating_add(1)), |start, _index| {
+                flat_end(term, start)
+            })
+        })
+        else {
+            continue;
+        };
+        let Some(second) = flat_end(term, first)
         else {
             continue;
         };

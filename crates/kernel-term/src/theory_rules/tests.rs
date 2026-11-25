@@ -2513,6 +2513,132 @@ fn a_categorys_laws_join_over_their_objects_1510()
     );
 }
 
+/// A symmetry over a sort with two indices is decided with the indices.
+/// `meet : (f : Hom(a, b), g : Hom(a, b)) --> Hom(a, b)` has the symmetry
+/// `meet(f, g) <=> meet(g, f)`. The rule `meet(top(a, b), g) ==> g` overlaps
+/// its own other order at the root. With the indices the peak is
+/// `meet(top(a, b), top(a, b))`, and its two sides are one term. Written as
+/// they are, the two orders part at `meet(top(a, b), top(c, d))`.
+#[test]
+fn a_symmetry_over_an_indexed_sort_is_decided_with_its_indices()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let tag = ConstructorTag::from;
+    let (sort, oper, port, rule_tag) = (
+        tag(super::tag::SORT),
+        tag(super::tag::OPER),
+        tag(super::tag::PORT),
+        tag(super::tag::RULE),
+    );
+    let mut code = Code::new();
+    let [ob, hom, dom, cod, top, meet, unnamed, meet_comm, meet_top] = [
+        "Ob", "Hom", "dom", "cod", "top", "meet", "", "meetComm", "meetTop",
+    ]
+    .map(|name| code.text(literal(name)));
+    let [source, target] = ["a", "b"].map(|name| code.var(literal(name)));
+    let [first, second] = ["f", "g"].map(|name| code.var(literal(name)));
+    let [a_name, b_name, f_name, g_name] =
+        ["a", "b", "f", "g"].map(|name| code.text(literal(name)));
+    let end = code.end();
+    // The signature: `top : (a : Ob, b : Ob) --> Hom(a, b)` and `meet : (f :
+    // Hom(a, b), g : Hom(a, b)) --> Hom(a, b)`, over `Hom` indexed or not.
+    let signature = |code: &mut Code, indexed: bool| {
+        let cod_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([cod, ob, end, end]),
+        );
+        let dom_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([dom, ob, end, cod_port]),
+        );
+        let indices = if indexed { dom_port } else { end };
+        let hom_sort = code.node(
+            sort,
+            SmallVec::<_, 0, Global>::from_iter([hom, indices, end]),
+        );
+        let sorts = code.node(
+            sort,
+            SmallVec::<_, 0, Global>::from_iter([ob, end, hom_sort]),
+        );
+        let objects = chain(code, &[source, target]);
+        let meet_output = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([unnamed, hom, objects, end]),
+        );
+        let g_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([g_name, hom, objects, end]),
+        );
+        let f_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([f_name, hom, objects, g_port]),
+        );
+        let meeting = code.node(
+            oper,
+            SmallVec::<_, 0, Global>::from_iter([meet, f_port, meet_output, end]),
+        );
+        let top_output = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([unnamed, hom, objects, end]),
+        );
+        let b_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([b_name, ob, end, end]),
+        );
+        let a_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([a_name, ob, end, b_port]),
+        );
+        let operations = code.node(
+            oper,
+            SmallVec::<_, 0, Global>::from_iter([top, a_port, top_output, meeting]),
+        );
+        (sorts, operations)
+    };
+    let greatest = code.app(literal("top"), &[source, target]);
+    let as_written = code.app(literal("meet"), &[first, second]);
+    let turned = code.app(literal("meet"), &[second, first]);
+    let with_greatest = code.app(literal("meet"), &[greatest, second]);
+    let members = SmallVec::<_, 0, Global>::from_iter([
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([meet_comm, as_written, turned]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([meet_top, with_greatest, second]),
+        ),
+    ]);
+    let (sorts, operations) = signature(&mut code, true);
+    let meets = code.presenting(sorts, operations, members.clone());
+    let read = TheoryRules::read(&code.arena, meets).expect("the meets read");
+    assert_eq!(
+        read.decided()
+            .first()
+            .map(|rule| (rule.reading(), rule.left().len())),
+        Some((super::TheoryRuleReading::Symmetry, 5)),
+        "the symmetry carries the two objects of its homs, and it is a symmetry so read"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        Ok(()),
+        "over the objects the rule and its other order meet at `meet(top(a, b), top(a, b))`"
+    );
+    let (sorts, operations) = signature(&mut code, false);
+    let written = code.presenting(sorts, operations, members);
+    let read = TheoryRules::read(&code.arena, written).expect("the rules read");
+    assert_eq!(
+        read.decided(),
+        read.rules(),
+        "no sort is indexed, so the rules are decided as written"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        refused!(1, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "written as they are, the rule and its other order part at `meet(top(a, b), top(c, d))`"
+    );
+}
+
 /// #5016: in a category with families no sort is rigid. The laws rewrite
 /// `Sub`, `subTy` takes a `Sub` and `ext` takes a `Ty`, so the context of
 /// a substitution stands at a flexible sort. The reading carries it all the
