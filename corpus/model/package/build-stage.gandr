@@ -3,8 +3,8 @@
 ///
 /// A package's own build stage is to write its manifest, the checker's fixed
 /// rule its default. Before the checker can run a stage, this source shows the
-/// default spelled in gandr: each run is the body of a manifest
-/// the tree commits.
+/// default spelled in gandr: each run is the body of a manifest that
+/// `gandr check` writes.
 ///
 /// `body` reads the name, the version and the module list, and writes the
 /// `[package]` table as the checker does. The checker keeps the header and its
@@ -14,9 +14,10 @@
 /// - see: #2764
 /// - see: #2997
 /// - see: #2998
-/// - see: `corpus/model/projects/hello/package.gandr.toml`
-/// - see: `corpus/model/projects/tools/package.gandr.toml`
-/// - see: `library/std/package.gandr.toml`
+/// - see: `corpus/model/projects/hello/package.gandr` — a model whose
+///   manifest `gandr check` writes beside it
+/// - see: `corpus/model/projects/tools/package.gandr`
+/// - see: `library/std/package.gandr`
 
 // The lists.
 import "../data/data-base.gandr";

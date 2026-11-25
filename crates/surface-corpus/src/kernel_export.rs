@@ -3001,10 +3001,8 @@ mod kernel_presented_readmission
         let root =
             std::env::temp_dir().join(alloc::format!("gandr-{label}-{}", std::process::id()));
         std::fs::create_dir_all(root.join("src")).expect("the package's sources are made");
-        for model in ["package.gandr", "package.gandr.toml"] {
-            let _bytes = std::fs::copy(library.join(model), root.join(model))
-                .expect("the model of `std` is copied");
-        }
+        let _bytes = std::fs::copy(library.join("package.gandr"), root.join("package.gandr"))
+            .expect("the model of `std` is copied");
         let path = root.join("src/holders.gandr");
         std::fs::write(&path, text).expect("the holders write");
         path
