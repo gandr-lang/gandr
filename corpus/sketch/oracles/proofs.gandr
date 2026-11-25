@@ -4,7 +4,7 @@
 /// routine for a solver. The proof stays beside the clause it answers.
 ///
 /// `with ~smt` asks the `Model(Smt)` in scope. `with ~smt(checkedZ3)` names
-/// the model, and `with ~smt(budget = 10 s)` bounds the query. An
+/// the model, and `with ~smt[.budget = 10 s]` bounds the query. An
 /// inconclusive answer leaves the obligation open, and the recipe decides
 /// whether a build takes it.
 ///
@@ -29,13 +29,13 @@ pub def midpoint(lo : u32, hi : u32) -> u32 #spec{
   ensures m {
     | lo <= m
     | m <= hi
-  } with ~smt(checkedZ3, budget = 10 s)
+  } with ~smt[.budget = 10 s] checkedZ3
 } =
   lo + (hi - lo) / 2
 
 /// A schedule's slots never overlap, a fact the solver finds in the slot
 /// arithmetic.
 pub def disjoint(s : Schedule) -> Bool #spec{
-  ensures ok { | ok == noOverlap(s.slots) with ~smt(budget = 2 s) }
+  ensures ok { | ok == noOverlap(s.slots) with ~smt[.budget = 2 s] }
 } =
   all (pairs s.slots) (fun (*{x, y}) { x.end <= y.start || y.end <= x.start })

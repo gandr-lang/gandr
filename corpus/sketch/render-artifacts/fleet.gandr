@@ -46,7 +46,7 @@ pub def offers : Fleet = *{
 };
 
 /// What runs now, as the provider reads it into the same types.
-pub def live : Aws.State = ~aws.state(region = "eu-central-1");
+pub def live : Aws.State = ~aws.state[.region = "eu-central-1"];
 
 /// The changes from the live state to the fleet, each after what it reads.
 pub def plan(now : Aws.State, fleet : Fleet) -> List Change =

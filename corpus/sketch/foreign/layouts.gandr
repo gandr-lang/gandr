@@ -21,7 +21,7 @@ import std.layout (Layout, Realizes);
 type Header = *{size : U32, order : U8, free : Bool};
 
 /// The block header as the C side declares it, read from its IR.
-def cHeader : C.Abi = ~c.abi("struct header", path = "vendor/alloc.h");
+def cHeader : C.Abi = ~c.abi[.path = "vendor/alloc.h"] "struct header";
 
 /// The two agree byte for byte, so a header crosses either way.
 def headerLink : Realizes cHeader Layout.of(Header) =

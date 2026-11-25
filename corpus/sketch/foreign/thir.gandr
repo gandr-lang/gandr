@@ -19,7 +19,7 @@ import std.foreign.spec (Spec, Places);
 
 /// THIR's datatype at the crate's pinned toolchain, which the
 /// provider answers whole.
-type Thir = ~rust.thir(crate = "corten", toolchain = "nightly-2026-10-01");
+type Thir = ~rust.thir[.toolchain = "nightly-2026-10-01"] "corten";
 
 /// The buddy allocator's `pop`, its body a THIR value.
 def popBody : Thir.Body = ~rust.body "corten::buddy::pop";

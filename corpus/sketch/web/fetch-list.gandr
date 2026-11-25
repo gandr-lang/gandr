@@ -28,11 +28,11 @@ import std.list (List);
 module Fetch
 
 // The DOM specification, which the provider reads from its WebIDL.
-@[provide(std.provide.webidl.specification("dom", revision = "2026-10-01"))]
+@[provide(std.provide.webidl.specification[.revision = "2026-10-01"] "dom")]
 module Dom
 
 // The HTML specification, which the provider reads from its WebIDL.
-@[provide(std.provide.webidl.specification("html", revision = "2026-10-01"))]
+@[provide(std.provide.webidl.specification[.revision = "2026-10-01"] "html")]
 module Html
 
 /// One entry the endpoint answers: a name and a count.
