@@ -2492,7 +2492,7 @@ fn an_import_no_lookup_reaches_is_unreached()
         [
             Vec::new(),
             Vec::new(),
-            Vec::from(["import \"./eight.gandr\";"]),
+            Vec::from(["import \"./eight.gandr\""]),
             Vec::new()
         ],
         "the importer reports the import it reads nothing through; the refused one none"

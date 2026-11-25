@@ -1012,7 +1012,7 @@ mod tests
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
         let base = include_str!("../../../corpus/model/include/monoid.gandr");
         let (_, uses) = include_str!("../../../corpus/model/include/reduct.gandr")
-            .split_once("import \"./monoid.gandr\";\n")
+            .split_once("import \"./monoid.gandr\"\n")
             .expect("the exemplar imports its base");
         let written = format!("{base}{uses}");
         let format = |text: &str, form, checker: Option<&dyn gandr_surface_format::Elaborate>| {
@@ -1080,7 +1080,7 @@ mod tests
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
         let base = include_str!("../../../corpus/model/identity/model-counter.gandr");
         let (_, uses) = include_str!("../../../corpus/model/identity/model-counter-manifest.gandr")
-            .split_once("import \"./model-counter.gandr\";\n")
+            .split_once("import \"./model-counter.gandr\"\n")
             .expect("the exemplar imports its base");
         let written = format!("{base}{uses}");
         let format = |text: &str, form, checker: Option<&dyn gandr_surface_format::Elaborate>| {

@@ -140,7 +140,7 @@ const ERROR_CORPUS: [Case; 13] = [
         name: "duplicate-signature",
         identifier: "DuplicateSignature",
         source: include_str!("diag/fixtures/error-corpus-6.gandr"),
-        locus: "def a : Integer;",
+        locus: "def a : Integer",
     },
     Case {
         name: "duplicate-definition",

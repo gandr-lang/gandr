@@ -943,10 +943,11 @@ pub const STATEMENT_LEADS: &[&str] = &[
     "let", "run", "unpack", "hold", "var", "recv", "acquire", "release", "fork",
 ];
 
-/// The reserved words that begin a declaration of a source: each one heads
-/// an item form ([`heads_declaration`]), or stands before one as an item form
-/// of one tile, as `pub` does. The layout pass has no grammar, so it reads
-/// this table.
+/// The reserved words that begin a declaration of a source.
+///
+/// Each one heads an item form ([`heads_declaration`]), or stands before one
+/// as an item form of one tile, as `pub` does. The layout pass has no grammar,
+/// so it reads this table.
 pub const DECLARATION_LEADS: &[&str] = &[
     "codata", "data", "def", "extern", "flow", "import", "module", "oper", "pub", "rec", "rule",
     "theory", "type", "world",

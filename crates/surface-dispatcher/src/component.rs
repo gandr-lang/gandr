@@ -2339,12 +2339,14 @@ impl Component
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each `import` that opens a line, past its indentation, and is
-///   followed by a space or a quote is taken through the first `;` after it, or
+///   followed by a space or a quote is taken through the first `;` after it, up
+///   to the first line after it that a character at column zero opens, or
 ///   through the text's end; the forms taken are parsed together, one per line,
-///   and read as [`paths_written`] reads a whole parse: each import whose
-///   address has no scheme, its address as written with escapes decoded. Forms
-///   that do not parse, or whose root does not read, write none. `parsed` grows
-///   by the bytes of the forms parsed.
+///   each that no `;` ends given one before the comment that ends its line, and
+///   read as [`paths_written`] reads a whole parse: each import whose address
+///   has no scheme, its address as written with escapes decoded. Forms that do
+///   not parse, or whose root does not read, write none. `parsed` grows by the
+///   bytes of the forms parsed.
 /// - provides: the reading [`Reading::ImportForms`] names: for a source whose
 ///   root reads and whose root imports each open a line, it is
 ///   [`paths_written`]'s; any other reading its component's parse refuses to
@@ -2372,7 +2374,22 @@ fn paths_formed(
         .match_indices(IMPORT)
         .filter_map(|(at, _)| import_form(text, ByteOffset::from(at)))
     {
-        forms.push_str(form.as_ref());
+        let form = <&str>::from(form).trim_end();
+        if form.ends_with(END) {
+            forms.push_str(form);
+        }
+        else {
+            // The end of the text ends nothing, so a form the next line's
+            // column zero closed takes the `;` a form beside it would, before
+            // the comment that ends its line.
+            let (code, comment) = form.split_at(commented(form));
+            forms.push_str(code);
+            forms.push_str(END);
+            if !comment.is_empty() {
+                forms.push(' ');
+                forms.push_str(comment);
+            }
+        }
         forms.push('\n');
     }
     parsed.absorb(ParsedBytes::from(forms.len()));
@@ -2381,6 +2398,32 @@ fn paths_formed(
         return Vec::new();
     };
     path_imports(grammar, read.tree())
+}
+
+/// The byte at which the line comment that ends `form`'s last line starts,
+/// outside a string; `form`'s length when that line ends in no comment.
+///
+/// # Specification
+/// trivial.
+fn commented(form: &str) -> usize
+{
+    let line = form.rfind('\n').map_or(0, |at| at.saturating_add(1));
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut slash = None;
+    for (offset, character) in form.get(line ..).unwrap_or_default().char_indices() {
+        match character {
+            _ if escaped => escaped = false,
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            '/' if !quoted && slash == Some(offset.saturating_sub(1)) => {
+                return line.saturating_add(offset).saturating_sub(1);
+            },
+            '/' if !quoted => slash = Some(offset),
+            _ => {},
+        }
+    }
+    form.len()
 }
 
 /// The path and module addresses the imports at `tree`'s root write, in
@@ -2504,8 +2547,9 @@ fn paths_written(
 }
 
 /// The import form the `import` at byte `at` of `source` opens: the text from
-/// it through the first `;` after it, or through the text's end, when it opens
-/// a line past its indentation and a space or a quote follows it.
+/// it through the first `;` after it, or up to the first line after it that a
+/// character at column zero opens, or through the text's end, when it opens a
+/// line past its indentation and a space or a quote follows it.
 ///
 /// # Specification
 /// trivial.
@@ -2527,8 +2571,17 @@ fn import_form(
         return None;
     }
     let end = after
-        .find(END)
-        .map_or(after.len(), |end| end.saturating_add(END.len()));
+        .char_indices()
+        .find_map(|(offset, character)| match character {
+            ';' => Some(offset.saturating_add(END.len())),
+            '\n' => after
+                .get(offset.saturating_add(1) ..)
+                .and_then(|rest| rest.chars().next())
+                .filter(|next| !next.is_whitespace())
+                .map(|_| offset),
+            _ => None,
+        })
+        .unwrap_or(after.len());
     after.get(.. end).map(SourceText::from)
 }
 

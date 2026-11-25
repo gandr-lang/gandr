@@ -158,10 +158,10 @@ fn the_default_grade_is_unwritten_in_either_form_1327()
         (
             Form::Sugared,
             "\
-def step : Integer -> Integer;
-def lazy : +U (-F Integer & -F Integer);
-def noted : +U[/* every use */ ω] (-F Integer);
-def once : +U[1] (Integer -> -F Integer);
+def step : Integer -> Integer
+def lazy : +U (-F Integer & -F Integer)
+def noted : +U[/* every use */ ω] (-F Integer)
+def once : +U[1] (Integer -> -F Integer)
 theory Counting where {
   sort T : Type;
   oper next : T -> T;
@@ -172,10 +172,10 @@ theory Counting where {
         (
             Form::Explicit,
             "\
-def step : +U (Integer -> -F Integer);
+def step : +U (Integer -> -F Integer)
 def lazy : +U &{-F Integer, -F Integer};
-def noted : +U[/* every use */ ω] (-F Integer);
-def once : +U[1] (Integer -> -F Integer);
+def noted : +U[/* every use */ ω] (-F Integer)
+def once : +U[1] (Integer -> -F Integer)
 theory Counting where {
   sort T : Type;
   oper next : +U (T -> -F T);
@@ -252,7 +252,7 @@ fn a_tail_return_is_left_out_where_the_lowering_would_infer_it_1327()
     let sugared = "\
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
-def succeeded(n : Nat) -> Nat = Succ n;
+def succeeded(n : Nat) -> Nat = Succ n
 
 def early(k : Nat) -> Nat = match k {
   | Zero => k
@@ -265,7 +265,7 @@ def early(k : Nat) -> Nat = match k {
   }
 };
 
-def computed(n : Nat) -> Nat = return succeeded n;
+def computed(n : Nat) -> Nat = return succeeded n
 
 def stated(n : Nat) -> Nat = {
   return n;
@@ -278,7 +278,7 @@ def blocked(n : Nat) -> Nat = match n {
   | Succ(p) => p
 };
 
-def noted(n : Nat) -> Nat = return /* the argument */ n;
+def noted(n : Nat) -> Nat = return /* the argument */ n
 
 @[explicit_exits]
 def asked(n : Nat) -> Nat = return n;
@@ -343,9 +343,9 @@ fn a_result_row_is_written_before_its_type_2255()
     let source =
         include_str!("rewrite/unformatted/a-result-row-is-written-before-its-type-2255.gandr");
     let sugared = "\
-import std.process;
+import std.process
 
-def both() -> [Partial, std.process.Exit.Eff] Integer = pure 1;
+def both() -> [Partial, std.process.Exit.Eff] Integer = pure 1
 
 def pair() -> [Partial] (Integer * Integer) = pure *{1, 2};
 
@@ -437,13 +437,13 @@ fn the_path_operations_fold_in_both_forms_5206()
     );
     let folded = |returner: &str| {
         format!(
-            "{CIRCLE}def spin(x : Circle) -> {returner} = x;
+            "{CIRCLE}def spin(x : Circle) -> {returner} = x
 
 def thrice : Path[.A = Path[.A = Circle] Base Base]
   (Path.step loop (Path.step loop loop))
-  (Path.here Base);
+  (Path.here Base)
 
-def undone : Path[.A = Path[.A = Circle] Base Base] (Path.back loop) (Path.back loop);
+def undone : Path[.A = Path[.A = Circle] Base Base] (Path.back loop) (Path.back loop)
 
 def spun : Path[.A = Path[.A = Circle] Base Base] (Path.ap spin loop) (Path.ap spin loop);
 "
@@ -659,7 +659,7 @@ fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
     let once = sugared(source);
     assert_eq!(
         once,
-        "/// One.\ndef one(x : Unit) -> Unit = x;\n\n/// Two.\ndef two(x : Unit) -> Unit = x;\n",
+        "/// One.\ndef one(x : Unit) -> Unit = x\n\n/// Two.\ndef two(x : Unit) -> Unit = x;\n",
         "both blocks go in one pass"
     );
     assert_eq!(sugared(&once), once, "a second pass changes nothing");
@@ -991,7 +991,7 @@ fn a_thunk_type_a_body_returns_takes_the_alias_838()
           | Succ : (n : Nat) --> Nat
         }
 
-        def onType(t : Type) -> Type = return (t -> t);
+        def onType(t : Type) -> Type = return (t -> t)
 
         def flat(a : Nat, b : Nat, q : Path[.A = Nat] a b, v : Nat) -> Nat = become Path.walk
           (Nat -> Nat)
@@ -1177,14 +1177,14 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
         formatted.into_text(),
-        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop) (Path.here Base);\n"
+        "import \"./circle.gandr\"\n\ndef twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop) (Path.here Base);\n"
     );
     let alone = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
         .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
     assert_eq!(alone.withdrawn(), []);
     assert_eq!(
         alone.into_text(),
-        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle] Base Base]\n  (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) loop loop)\n  (Path.here Base);\n"
+        "import \"./circle.gandr\"\n\ndef twice : Path[.A = Path[.A = Circle] Base Base]\n  (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) loop loop)\n  (Path.here Base);\n"
     );
 }
 
@@ -1216,7 +1216,7 @@ fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
         formatted
             .text()
             .as_ref()
-            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat] a a);"),
+            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat] a a)\n"),
         "{}",
         formatted.text()
     );
@@ -1236,7 +1236,7 @@ fn a_selection_runs_only_the_rewrites_it_names()
             Form::Explicit,
             Selection::Only(&[RewriteName::Sum])
         ),
-        "def pair : Integer * String;\ndef choice : +{Integer, String};\n"
+        "def pair : Integer * String\ndef choice : +{Integer, String};\n"
     );
 }
 
@@ -1618,7 +1618,7 @@ fn a_rewrite_keeps_a_matching_refusal_6681()
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
         formatted.into_text(),
-        "def rejected : Integer = selfComposite;\ndef pair : Integer * String;\n"
+        "def rejected : Integer = selfComposite\ndef pair : Integer * String;\n"
     );
 }
 
@@ -1665,13 +1665,13 @@ fn an_obligation_withdraws_only_the_form_that_holds_it_8085()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), [Withdrawal {
         declaration: String::from("second"),
-        span: ByteSpan::new(ByteOffset::from(60_usize), ByteOffset::from(125_usize))
+        span: ByteSpan::new(ByteOffset::from(59_usize), ByteOffset::from(124_usize))
             .expect("a span"),
         reason: Withdrawn::Obligations,
     }]);
     assert_eq!(
         formatted.into_text(),
-        "def first(a : Type, x : a, p : Path[.A = a] x x) -> a = x;\n\ndef second(a : Type, x : a, p : Path[.A = a](x, x @ x)) -> a = x;\n"
+        "def first(a : Type, x : a, p : Path[.A = a] x x) -> a = x\n\ndef second(a : Type, x : a, p : Path[.A = a](x, x @ x)) -> a = x;\n"
     );
 }
 
@@ -1765,9 +1765,9 @@ fn a_rewrite_that_moves_a_refusal_keeps_its_site_6726()
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
         formatted.into_text(),
-        "def refused : Integer;\ndef refused = selfComposite;\ndef pair : +U (Integer -> String \
-         -> -F Integer);\ndef pair = fun (_pair) { 1 };\ndef post : +U (Integer -> -F \
-         Type);\ndef post = fun (_o) { return Unit };\n"
+        "def refused : Integer\ndef refused = selfComposite\ndef pair : +U (Integer -> String \
+         -> -F Integer)\ndef pair = fun (_pair) { 1 };\ndef post : +U (Integer -> -F \
+         Type)\ndef post = fun (_o) { return Unit };\n"
     );
 }
 
@@ -1917,11 +1917,11 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         formatted.into_text()
     };
     expect![[r#"
-        def twice(n : Integer) -> Integer = return (n + n);
+        def twice(n : Integer) -> Integer = return (n + n)
 
         /// Becomes a call.
         @[runs("2")]
-        def becomes() -> Integer = become twice 1;
+        def becomes() -> Integer = become twice 1
 
         def block() -> Integer = { let m = twice 1; m };
 
@@ -1938,26 +1938,26 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        def twice(n : Integer) -> -F Integer = return (n + n);
+        def twice(n : Integer) -> -F Integer = return (n + n)
 
         /// Becomes a call.
         @[runs("2")]
-        def becomes() -> -F Integer = become twice 1;
+        def becomes() -> -F Integer = become twice 1
 
         def block() -> -F Integer = { let m = twice 1; return m };
 
         def pair() -> -F *{Integer, Integer} = return *{1, 2};
 
-        def commented : +U (-F Integer);
+        def commented : +U (-F Integer)
         def commented = thunk {
           // keeper
           become twice 2
         };
 
-        def graded : +U[1] (-F Integer);
+        def graded : +U[1] (-F Integer)
         def graded = thunk[1] { become twice 3 };
 
-        def value : Integer;
+        def value : Integer
         def value = 3;
     "#]]
     .assert_eq(&laid(Form::Explicit));
@@ -1992,38 +1992,38 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
         formatted.into_text()
     };
     expect![[r#"
-        def identity(n : Integer) -> Integer = n;
+        def identity(n : Integer) -> Integer = n
 
-        def add(a : Integer, b : Integer) -> Integer = return (a + b);
+        def add(a : Integer, b : Integer) -> Integer = return (a + b)
 
-        def named(x : Integer) -> Integer = x;
+        def named(x : Integer) -> Integer = x
 
         def stated : Integer -> Integer = thunk { fun (x : Integer) { x } };
 
         def short : (Integer, Integer) -> Integer = thunk { fun (a) { become add a } };
 
-        def renamed(y : Integer) -> Integer = y;
+        def renamed(y : Integer) -> Integer = y
 
         def mistyped : Integer -> Integer = thunk { fun (x : String) { 1 } };
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        def identity(n : Integer) -> -F Integer = return n;
+        def identity(n : Integer) -> -F Integer = return n
 
-        def add(a : Integer, b : Integer) -> -F Integer = return (a + b);
+        def add(a : Integer, b : Integer) -> -F Integer = return (a + b)
 
-        def named(x : Integer) -> -F Integer = return x;
+        def named(x : Integer) -> -F Integer = return x
 
-        def stated : +U (Integer -> -F Integer);
+        def stated : +U (Integer -> -F Integer)
         def stated = thunk { fun (x : Integer) { return x } };
 
-        def short : +U (Integer -> Integer -> -F Integer);
+        def short : +U (Integer -> Integer -> -F Integer)
         def short = thunk { fun (a) { become add a } };
 
-        def renamed : +U ((x : Integer) -> -F Integer);
+        def renamed : +U ((x : Integer) -> -F Integer)
         def renamed = thunk { fun (y) { return y } };
 
-        def mistyped : +U (Integer -> -F Integer);
+        def mistyped : +U (Integer -> -F Integer)
         def mistyped = thunk { fun (x : String) { return 1 } };
     "#]]
     .assert_eq(&laid(Form::Explicit));
@@ -2055,64 +2055,64 @@ fn an_adjacent_pair_joins_into_one_definition_2228()
         formatted.into_text()
     };
     expect![[r#"
-        def three : Integer = 3;
+        def three : Integer = 3
 
-        def four : Integer = 4;
+        def four : Integer = 4
 
-        def five : Integer;
+        def five : Integer
         // parts them
-        def five = 5;
+        def five = 5
 
-        def six : Integer;
+        def six : Integer
         /// Documents the definition.
-        def six = 6;
+        def six = 6
 
-        def seven : Integer;
-        def between : Integer = 0;
-        def seven = 7;
+        def seven : Integer
+        def between : Integer = 0
+        def seven = 7
 
-        def eight : Integer; // on the signature
-        def eight = 8;
+        def eight : Integer // on the signature
+        def eight = 8
 
         def nine : Integer = (
           // inside the value
           9
-        );
+        )
 
-        def ten = 10;
+        def ten = 10
         def ten : Integer;
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        def three : Integer;
-        def three = 3;
+        def three : Integer
+        def three = 3
 
-        def four : Integer;
-        def four = 4;
+        def four : Integer
+        def four = 4
 
-        def five : Integer;
+        def five : Integer
         // parts them
-        def five = 5;
+        def five = 5
 
-        def six : Integer;
+        def six : Integer
         /// Documents the definition.
-        def six = 6;
+        def six = 6
 
-        def seven : Integer;
-        def between : Integer;
-        def between = 0;
-        def seven = 7;
+        def seven : Integer
+        def between : Integer
+        def between = 0
+        def seven = 7
 
-        def eight : Integer; // on the signature
-        def eight = 8;
+        def eight : Integer // on the signature
+        def eight = 8
 
-        def nine : Integer;
+        def nine : Integer
         def nine = (
           // inside the value
           9
-        );
+        )
 
-        def ten = 10;
+        def ten = 10
         def ten : Integer;
     "#]]
     .assert_eq(&laid(Form::Explicit));
@@ -2213,15 +2213,15 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
         formatted.into_text()
     };
     expect![[r#"
-        def inc(x : Integer) -> Integer = x + 1;
+        def inc(x : Integer) -> Integer = x + 1
 
         def pair() -> Integer * Integer = *{1, 2};
 
-        def spin(x : Integer) -> [Partial] Integer = x;
+        def spin(x : Integer) -> [Partial] Integer = x
 
-        def call(f : () -> Integer) -> Integer = force f;
+        def call(f : () -> Integer) -> Integer = force f
 
-        def four() -> Integer = 4;
+        def four() -> Integer = 4
 
         module Kept where {
           def five() -> Integer = 5;
@@ -2229,15 +2229,15 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        def inc(x : Integer) -> -F Integer = x + 1;
+        def inc(x : Integer) -> -F Integer = x + 1
 
         def pair() -> -F *{Integer, Integer} = *{1, 2};
 
-        def spin(x : Integer) -> -F [Partial] Integer = x;
+        def spin(x : Integer) -> -F [Partial] Integer = x
 
-        def call(f : +U (-F Integer)) -> -F Integer = force f;
+        def call(f : +U (-F Integer)) -> -F Integer = force f
 
-        def four() -> -F Integer = 4;
+        def four() -> -F Integer = 4
 
         module Kept where {
           def five() -> -F Integer = 5;
@@ -2281,13 +2281,13 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
         formatted.into_text()
     };
     expect![[r#"
-        def identity(x : Integer) -> Integer = x;
+        def identity(x : Integer) -> Integer = x
 
         def add(a : Integer, b : Integer) -> Integer = a + b;
     "#]]
     .assert_eq(&laid(Form::Sugared, Some(Answer::Alike)));
     expect![[r#"
-        def identity(x : Integer) -> -F Integer = x;
+        def identity(x : Integer) -> -F Integer = x
 
         def add(a : Integer, b : Integer) -> -F Integer = a + b;
     "#]]
@@ -2596,7 +2596,7 @@ fn a_brace_body_moves_after_the_equals_6318()
     expect![[r#"
         data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
-        def twice(n : Nat) -> Nat = Succ (Succ n);
+        def twice(n : Nat) -> Nat = Succ (Succ n)
 
         def block(n : Nat) -> Nat = {
           let m = twice n
@@ -2613,7 +2613,7 @@ fn a_brace_body_moves_after_the_equals_6318()
           | Succ(m) => down[<] m
         };
 
-        def kept(n : Nat) -> Nat = twice n;
+        def kept(n : Nat) -> Nat = twice n
 
         module Inner where {
           def inner(n : Nat) -> Nat = twice n;

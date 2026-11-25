@@ -327,7 +327,7 @@ mod tests
             vec![replace(
                 at(0_u32, 4_u32),
                 at(2_u32, 7_u32),
-                "a = 1;\n// keeper\ndef b"
+                "a = 1\n// keeper\ndef b"
             )],
             "one edit, from the first change to the last"
         );
@@ -356,7 +356,7 @@ mod tests
         };
         assert_eq!(
             edits(SourceText::from(LOOSE), Scope::Within(&[cursor])).expect("the document formats"),
-            vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
+            vec![replace(at(0_u32, 4_u32), at(0_u32, 12_u32), "a = 1")],
             "a cursor formats the form holding it"
         );
         let comment = Range {
@@ -404,7 +404,7 @@ mod tests
         assert_eq!(
             edits(SourceText::from(LOOSE), Scope::Within(&[across])).expect("the document formats"),
             vec![
-                replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a ="),
+                replace(at(0_u32, 4_u32), at(0_u32, 12_u32), "a = 1"),
                 replace(at(2_u32, 6_u32), at(2_u32, 8_u32), ""),
             ],
             "a range across two forms formats both"
@@ -416,7 +416,7 @@ mod tests
         assert_eq!(
             edits(SourceText::from(LOOSE), Scope::Within(&[to_the_next]))
                 .expect("the document formats"),
-            vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
+            vec![replace(at(0_u32, 4_u32), at(0_u32, 12_u32), "a = 1")],
             "a range ending where the next form starts leaves that form"
         );
         let from_the_end = Range {
@@ -456,7 +456,7 @@ mod tests
             edits(SourceText::from(LOOSE), Scope::Within(&[second, first]))
                 .expect("the document formats"),
             vec![
-                replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a ="),
+                replace(at(0_u32, 4_u32), at(0_u32, 12_u32), "a = 1"),
                 replace(at(2_u32, 6_u32), at(2_u32, 8_u32), ""),
             ],
             "two ranges in either order format both forms, in document order"
@@ -484,7 +484,7 @@ mod tests
         assert_eq!(
             edits(SourceText::from(LOOSE), Scope::Closing(at(0_u32, 12_u32)))
                 .expect("the document formats"),
-            vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
+            vec![replace(at(0_u32, 4_u32), at(0_u32, 12_u32), "a = 1")],
             "after the first form's `;`: that form alone"
         );
         assert_eq!(

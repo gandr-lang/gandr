@@ -112,11 +112,11 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
             .collect::<Vec<_>>(),
         [
             (
-                at("= return id n;", "id n"),
+                at("= return id n\n", "id n"),
                 site(RunSpelling::Bare, RunOperand::Tight)
             ),
             (
-                at("= id n + 1;", "id n"),
+                at("= id n + 1\n", "id n"),
                 site(RunSpelling::Bare, RunOperand::Tight)
             ),
             (
@@ -171,7 +171,7 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
             .collect::<Vec<_>>(),
         [
             (at("let h = (plus n) 1", "plus n"), site),
-            (at("= (dependent A) x;", "dependent A"), site),
+            (at("= (dependent A) x\n", "dependent A"), site),
         ],
         "a head call returning a function runs, spelled grouped where a bound statement \
          reads it as at a tail's start; a curried call runs nothing"

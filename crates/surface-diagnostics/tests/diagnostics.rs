@@ -2193,7 +2193,7 @@ fn a_deprecated_use_is_a_finding_naming_its_note()
     );
     let at = |name: &str| {
         let start = text
-            .find(&format!("= {name};"))
+            .find(&format!("= {name}"))
             .expect("the use is written")
             .saturating_add(2);
         Maybe::Present(
@@ -2271,7 +2271,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
                 .expect("an insertion is ordered"),
         )
     };
-    let (returned, before_returned) = tail("= n;");
+    let (returned, before_returned) = tail("= n\n");
     let (called, before_called) = tail("= kept n;");
     let finding = |diagnostic: &Diagnostic| {
         (
@@ -2361,7 +2361,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "@[explicit_exits]\ndef kept(n : Integer) -> -F Integer = return n;\ndef called(n : \
+        "@[explicit_exits]\ndef kept(n : Integer) -> -F Integer = return n\ndef called(n : \
              Integer) -> -F Integer = become kept n;\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
@@ -2396,9 +2396,9 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
                 .expect("an insertion is ordered"),
         )
     };
-    let (inner, before_inner) = call("= id (id n);", 6_usize, 4_usize);
-    let (returned, before_returned) = call("= return id n;", 9_usize, 4_usize);
-    let (leading, before_leading) = call("= id n + 1;", 2_usize, 4_usize);
+    let (inner, before_inner) = call("= id (id n)\n", 6_usize, 4_usize);
+    let (returned, before_returned) = call("= return id n\n", 9_usize, 4_usize);
+    let (leading, before_leading) = call("= id n + 1\n", 2_usize, 4_usize);
     let (grouped, _) = call("= return n + 1;", 9_usize, 5_usize);
     let finding = |diagnostic: &Diagnostic| {
         (
@@ -2473,9 +2473,9 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "def id(n : Integer) -> -F Integer = n;\n@[explicit_runs]\ndef nested(n : Integer) \
-             -> -F Integer = id (run id n);\ndef returned(n : Integer) -> -F Integer = return run \
-             id n;\ndef leading(n : Integer) -> -F Integer = run id n + 1;\ndef grouped(n : \
+        "def id(n : Integer) -> -F Integer = n\n@[explicit_runs]\ndef nested(n : Integer) \
+             -> -F Integer = id (run id n)\ndef returned(n : Integer) -> -F Integer = return run \
+             id n\ndef leading(n : Integer) -> -F Integer = run id n + 1\ndef grouped(n : \
              Integer) -> -F Integer = return run (n + 1);\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
@@ -2560,7 +2560,7 @@ fn a_report_exposes_the_context_it_marks()
         [(
             nth(
                 SourceText::from(duplicate),
-                SourceText::from("def a : Integer;")
+                SourceText::from("def a : Integer")
             )[0],
             String::from("first written here")
         )],

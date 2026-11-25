@@ -9120,10 +9120,13 @@ mod tests
         assert_eq!(text(key(color)).as_deref(), Some("A colour."));
         assert_eq!(text(key(plain)), None, "an undocumented form has none");
         let mut bare_arena = CoreArena::new();
-        let bare = lowered(SourceText::from("def square = 1 ;"), &mut bare_arena);
-        let [undocumented] = *bare.declarations().iter().collect::<Vec<_>>()
+        let bare = lowered(
+            SourceText::from("def square = 1\ndef plain = 0;"),
+            &mut bare_arena,
+        );
+        let [undocumented, _] = *bare.declarations().iter().collect::<Vec<_>>()
         else {
-            panic!("one name is declared");
+            panic!("two names are declared");
         };
         assert_eq!(
             key(undocumented),

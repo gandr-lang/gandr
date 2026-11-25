@@ -3763,7 +3763,7 @@ fn computation_signed_module_member_origin_mirrors_ascription_encoding()
         (origin(&member_lowered, "M.x"), origin(&top_lowered, "x")),
         (
             span_of(member, "def x : -F Integer;", 0_usize),
-            span_of(top, "def x : -F Integer;", 0_usize),
+            span_of(top, "def x : -F Integer", 0_usize),
         ),
         "and both are located at the signature that introduced the name"
     );

@@ -7671,7 +7671,7 @@ mod tests
             "a constructor inside another's argument answers itself"
         );
         assert_eq!(
-            at("Nat;"),
+            at("Nat\ndef two ="),
             named("Nat : Type", "Nat"),
             "a written family, its declaration"
         );
@@ -7996,7 +7996,7 @@ mod tests
             nat,
             "a function's use, at the family its type names"
         );
-        assert_eq!(at("Nat;"), nat, "a written family, at itself");
+        assert_eq!(at("Nat\ndef two ="), nat, "a written family, at itself");
         assert_eq!(
             at(include_str!("typed/unformatted/str-11.gandr")),
             Vec::new(),
@@ -8172,7 +8172,7 @@ mod tests
                     NameKind::Constructor
                 ),
                 (
-                    in_source(sibling, 0, "here : Point;", "here"),
+                    in_source(sibling, 0, "here : Point\ndef here =", "here"),
                     NameKind::Value
                 ),
                 (
@@ -11674,7 +11674,7 @@ mod tests
         ));
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("v;")),
+            answer(&table, source, SourceText::from("v\n")),
             agreed(Subject::Term, SourceText::from("Vec Nat k")),
             "the use answers under its function's binders"
         );

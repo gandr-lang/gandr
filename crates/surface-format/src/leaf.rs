@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_parser::DECLARATION_LEADS;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::MoldId;
@@ -142,9 +143,10 @@ pub enum Offside
     Opens,
     /// The empty separator between two of a block's lines.
     Separates,
-    /// A written `;` that ends a statement of a block: where it ends a line,
-    /// the layout pass places a separator there, so the formatter leaves it
-    /// out.
+    /// A written `;` that ends a statement of a block, or a declaration of
+    /// the source that a declaration's keyword begins: where it ends a line
+    /// before another line of the block or another form of the source, the
+    /// layout pass places a separator there, so the formatter leaves it out.
     Ends,
     /// The empty close of a block.
     Closes,
@@ -403,6 +405,7 @@ pub fn flatten<'source>(
             Some(_) | None => kept.push(leaf),
         }
     }
+    ended_items(tree, &mut kept);
     for obligation in obligations {
         for leaf in &kept {
             if let Owner::Form(form) = leaf.owner
@@ -419,6 +422,124 @@ pub fn flatten<'source>(
         leaves: kept,
         repaired,
     }
+}
+
+/// Mark as [`Offside::Ends`] the written `;` that ends each top-level form
+/// of `tree` that a declaration's keyword begins, after the attributes before
+/// it: the layout pass places that separator before the next form of the
+/// source. The `;` is the form's own last tile, never one of a block inside
+/// it.
+///
+/// # Specification
+/// trivial.
+fn ended_items(
+    tree: &SyntaxTree<'_>,
+    leaves: &mut [Leaf<'_>],
+)
+{
+    let mut start = 0_usize;
+    // Whether the last form before is a declaration that a declaration's
+    // keyword begins.
+    let mut declared = false;
+    while let Some(first) = leaves.get(start) {
+        if first.material == Material::Whitespace {
+            start = start.saturating_add(1);
+            continue;
+        }
+        // The layout between a form's tokens belongs to the root: the form
+        // runs to the next leaf of another owner that is not layout.
+        let owner = first.owner;
+        let end = leaves
+            .get(start ..)
+            .and_then(|rest| {
+                rest.iter()
+                    .position(|leaf| leaf.material != Material::Whitespace && leaf.owner != owner)
+            })
+            .map_or(leaves.len(), |length| start.saturating_add(length));
+        let Some(form) = leaves.get_mut(start .. end)
+        else {
+            break;
+        };
+        start = end;
+        let Owner::Form(at) = owner
+        else {
+            continue;
+        };
+        // A separator of the source that ends the declaration before it.
+        if tree.children(at).next().is_none() {
+            let mut tokens = form
+                .iter_mut()
+                .filter(|leaf| leaf.material == Material::Token);
+            if let (Some(only), None) = (tokens.next(), tokens.next())
+                && <&str>::from(only.text) == ";"
+            {
+                if declared {
+                    only.offside = Offside::Ends;
+                }
+                declared = false;
+                continue;
+            }
+        }
+        declared = declares(form);
+        if declared
+            && let Some(own) = own_end(tree, at)
+            && let Some(last) = form
+                .iter_mut()
+                .rev()
+                .find(|leaf| leaf.material == Material::Token)
+            && <&str>::from(last.text) == ";"
+            && last.span == own
+        {
+            last.offside = Offside::Ends;
+            declared = false;
+        }
+    }
+}
+
+/// Whether the form whose leaves are `leaves` is a declaration: its first
+/// token after its attribute blocks is a declaration's keyword.
+///
+/// # Specification
+/// trivial.
+pub fn declares(leaves: &[Leaf<'_>]) -> bool
+{
+    let mut depth = 0_usize;
+    leaves
+        .iter()
+        .filter(|leaf| leaf.material == Material::Token)
+        .find(|leaf| {
+            let text = <&str>::from(leaf.text);
+            let outside = depth == 0;
+            if text.ends_with(['[', '(', '{']) {
+                depth = depth.saturating_add(1);
+            }
+            else if matches!(text, "]" | ")" | "}") {
+                depth = depth.saturating_sub(1);
+            }
+            outside && !text.starts_with('@')
+        })
+        .is_some_and(|lead| DECLARATION_LEADS.contains(&<&str>::from(lead.text)))
+}
+
+/// The span of the last tile of the form at `at` when it is a child of that
+/// form, not of a block or a form inside it.
+///
+/// # Specification
+/// trivial.
+pub fn own_end(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Option<ByteSpan>
+{
+    tree.children(at)
+        .filter(|&child| {
+            tree.node(child)
+                .is_some_and(|node| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+        })
+        .last()
+        .and_then(|child| tree.node(child))
+        .filter(|node| matches!(node.label(), NodeLabel::Tile(_)))
+        .map(Node::span)
 }
 
 /// Push `children` onto the walk's stack `pending` so it pops them in order,

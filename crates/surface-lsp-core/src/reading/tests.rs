@@ -169,7 +169,7 @@ fn declarations_nest_as_symbols()
     let answered = Reading::of(SourceText::from(source)).symbols();
     assert_eq!(outline(&answered), [
         "twice 12 1:0-3:10 at 2:4-2:9",
-        "answer 12 4:0-4:16 at 4:4-4:10",
+        "answer 12 4:0-4:15 at 4:4-4:10",
         "Color 10 5:0-6:41 at 6:5-6:10",
         "  Red 9 6:28-6:39 at 6:28-6:31",
         "Outer 2 7:0-10:17 at 7:7-7:12",

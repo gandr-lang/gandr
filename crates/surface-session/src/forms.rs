@@ -982,7 +982,7 @@ mod tests
         // whole parse of its text, and parks nothing: the store still holds
         // exactly the latest parsed revision's units afterwards.
         let grammar = built_in().expect("the grammar builds");
-        let edited = SOURCE.replace("def e = 5;", "def e = 50;");
+        let edited = SOURCE.replace("def e = 5\n", "def e = 50\n");
         let edited = SourceText::from(edited.as_str());
         let empty = FormStore::default();
         let (parsed, census) = empty

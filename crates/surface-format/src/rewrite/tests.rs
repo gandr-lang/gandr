@@ -117,7 +117,13 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
             .unwrap_or_else(|| panic!("the source lowers"));
         let verdict = verify_rewritten(
             &grammar,
-            (&parsed, leaves, &respelled, SourceText::from(text.as_str())),
+            (
+                &parsed,
+                leaves,
+                &respelled,
+                &[],
+                SourceText::from(text.as_str()),
+            ),
             (SourceText::from(""), &alone),
             (&mut arena, &lowered),
             None,
@@ -220,7 +226,7 @@ fn a_refusal_moved_into_another_declaration_is_withdrawn_6726()
         .unwrap_or_else(|| panic!("the source lowers"));
     let verdict = verify_rewritten(
         &grammar,
-        (&parsed, &written, &forms, SourceText::from(exchanged)),
+        (&parsed, &written, &forms, &[], SourceText::from(exchanged)),
         (SourceText::from(""), &alone),
         (&mut arena, &lowered),
         None,

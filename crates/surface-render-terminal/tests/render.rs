@@ -591,7 +591,7 @@ fn a_pathless_diagnostic_names_input()
         "a source with no path is named `<input>`: {rendered}"
     );
     assert!(
-        rendered.contains("1 │ def wrong : Integer;\n  │             ───────"),
+        rendered.contains("1 │ def wrong : Integer\n  │             ───────"),
         "the signature the term is checked against stands as context: {rendered}"
     );
 }
@@ -607,11 +607,11 @@ fn a_labeled_context_renders_under_its_bytes()
     );
     let rendered = plain(&diagnostic, Verbosity::User);
     assert!(
-        rendered.contains("1 │ def a : Integer;\n  │ ────────────────"),
+        rendered.contains("1 │ def a : Integer\n  │ ───────────────"),
         "the first signature remains secondary context: {rendered}"
     );
     assert!(
-        rendered.contains("2 │ def a : Integer;\n  │ ━━━━━━━━━━━━━━━━"),
+        rendered.contains("2 │ def a : Integer\n  │ ━━━━━━━━━━━━━━━"),
         "the duplicate retains its primary locus: {rendered}"
     );
 }

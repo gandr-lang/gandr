@@ -99,7 +99,7 @@ struct Written<'text>
     text: SourceText<'text>,
 }
 
-/// One signature `def name : T ;` a source writes.
+/// One signature `def name : T` a source writes.
 #[derive(Clone, Debug)]
 struct Signed
 {
@@ -151,16 +151,18 @@ fn top_level(
         .collect()
 }
 
-/// The tokens of `text`, whitespace and comments left out, and the separator
+/// The tokens of `text`, whitespace and comments left out, the separator
 /// the layout pass places at a statement's line end read as the `;` the
-/// printer writes there.
+/// printer writes there, and the `;` that ends the text left out: the
+/// printer ends a declaration with one, and the formatter leaves it to the
+/// layout pass where another form follows.
 ///
 /// # Specification
 /// trivial.
 fn tokens(fragment: SourceFragment<'_>) -> Vec<String>
 {
     let text = <&str>::from(fragment);
-    label(fragment)
+    let mut read: Vec<String> = label(fragment)
         .into_iter()
         .filter(|token| token.lexeme != Lexeme::Space)
         .filter_map(|token| {
@@ -170,7 +172,11 @@ fn tokens(fragment: SourceFragment<'_>) -> Vec<String>
             text.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)
                 .map(String::from)
         })
-        .collect()
+        .collect();
+    if read.last().is_some_and(|last| last == ";") {
+        drop(read.pop());
+    }
+    read
 }
 
 /// The span of the `=` the top-level form `form` of `tree` writes among its
@@ -193,9 +199,9 @@ fn equals(
     })
 }
 
-/// The signatures `def name : T ;` among `forms`, the top-level forms of
+/// The signatures `def name : T` among `forms`, the top-level forms of
 /// `text`, and the signature half `def name : T` of each joined
-/// `def name : T = e ;`.
+/// `def name : T = e`, each ended by its `;` or by the layout pass.
 ///
 /// # Specification
 /// trivial.
@@ -232,6 +238,13 @@ fn signed(
             let &(start, end) = read.get(index)?;
             written.get(start .. end)
         };
+        // A form's end is its `;`, or the separator the layout pass places,
+        // which spells nothing; a form before another writes none.
+        let ended = read
+            .len()
+            .checked_sub(1)
+            .and_then(at)
+            .is_some_and(|last| last.is_empty() || last == ";");
         // A joined form's type stops before its own `=`; the tokens stand in
         // offset order.
         let stop = equals
@@ -239,14 +252,20 @@ fn signed(
                 let offset = usize::from(equals.start()).checked_sub(usize::from(span.start()))?;
                 read.binary_search_by_key(&offset, |&(start, _)| start).ok()
             })
-            .unwrap_or_else(|| read.len().saturating_sub(1));
-        let (Some("def"), Some(name), Some(":"), Some(&(first, _)), Some(&(_, last)), Some(";")) = (
+            .unwrap_or_else(|| {
+                if ended {
+                    read.len().saturating_sub(1)
+                }
+                else {
+                    read.len()
+                }
+            });
+        let (Some("def"), Some(name), Some(":"), Some(&(first, _)), Some(&(_, last))) = (
             at(0),
             at(1),
             at(2),
             read.get(3),
             stop.checked_sub(1).and_then(|index| read.get(index)),
-            read.len().checked_sub(1).and_then(at),
         )
         else {
             continue;
@@ -1426,8 +1445,9 @@ fn apart(
     parted
 }
 
-/// Each `def name = body ;` among `forms`, the top-level forms of `text`,
-/// and each joined `def name : T = body ;`: the body's tokens, by name.
+/// Each `def name = body` among `forms`, the top-level forms of `text`,
+/// and each joined `def name : T = body`: the body's tokens, by name, the
+/// `;` that ends it left out as [`tokens`] leaves it out.
 ///
 /// # Specification
 /// trivial.
@@ -1452,11 +1472,9 @@ fn defined(
         else {
             continue;
         };
-        if let &[ref body @ .., ref end] = tokens(SourceFragment::from(after)).as_slice()
-            && def == "def"
-            && end == ";"
-        {
-            let _previous = found.insert(name.clone(), body.to_vec());
+        let body = tokens(SourceFragment::from(after));
+        if def == "def" && !body.is_empty() {
+            let _previous = found.insert(name.clone(), body);
         }
     }
     found

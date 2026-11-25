@@ -11,11 +11,12 @@
 //! A site maps by its two ends. An end at the start, the end or an offset of
 //! a copied leaf maps to the same place of the paired leaf. An end at the
 //! start or the end of a respelled form maps to the start of the first leaf
-//! the pass wrote for the form, or to the end of the last one. An end inside
-//! a tile the pass replaces, or inside layout, has no image, so its site
-//! equals no site. The search reads the source span of each copied leaf and
-//! assumes no order of the pairs, since a rewrite can change the order of
-//! its operands.
+//! the pass wrote for the form, or to the end of the last one. The end of a
+//! `;` that the pass leaves to the layout maps to the end of the copied leaf
+//! before it. An end inside a tile the pass replaces, or inside layout, has
+//! no image, so its site equals no site. The search reads the source span of
+//! each copied leaf and assumes no order of the pairs, since a rewrite can
+//! change the order of its operands.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -47,6 +48,10 @@ pub struct Sites
     starts: Vec<(ByteSpan, ByteSpan)>,
     /// The respelled forms again, ordered by the extent's end.
     ends: Vec<(ByteSpan, ByteSpan)>,
+    /// The end of each `;` the pass leaves to the layout, in the text before
+    /// the pass, beside the end of the copied leaf before it in the
+    /// candidate, ordered.
+    dropped: Vec<(ByteOffset, ByteOffset)>,
 }
 
 /// Whether two sites are one site under the map.
@@ -62,13 +67,15 @@ pub enum Placement
 impl Sites
 {
     /// The map of the pass whose written leaves are `written`, read back
-    /// from its candidate as `candidate`.
+    /// from its candidate as `candidate`, where the pass left out the `;` at
+    /// each span of `dropped`, in the text before the pass.
     ///
     /// # Specification
     /// - requires: as [`Sites`].
     /// - ensures: each respelled form's leaves are the run of paired leaves
     ///   around the leaves its rewrite wrote, each copied from inside its
-    ///   extent or written for a form inside it.
+    ///   extent or written for a form inside it; each dropped `;` ends where
+    ///   the copied leaf before it ends.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the map is the pass's leaves, which a predicate
@@ -86,6 +93,7 @@ impl Sites
     pub fn new(
         written: &[Leaf<'_>],
         candidate: &[Leaf<'_>],
+        dropped: &[ByteSpan],
     ) -> Self
     {
         let pairs: Vec<(Origin, ByteSpan, ByteSpan)> = paired(written, candidate)
@@ -139,10 +147,21 @@ impl Sites
         starts.sort_unstable();
         let mut ends = starts.clone();
         ends.sort_unstable_by_key(|&(form, _)| (form.end(), form.start()));
+        let mut dropped: Vec<(ByteOffset, ByteOffset)> = dropped
+            .iter()
+            .filter_map(|&semicolon| {
+                let before =
+                    copied.partition_point(|&(source, _)| source.end() <= semicolon.start());
+                let &(_, read) = copied.get(before.checked_sub(1)?)?;
+                Some((semicolon.end(), read.end()))
+            })
+            .collect();
+        dropped.sort_unstable();
         Self {
             copied,
             starts,
             ends,
+            dropped,
         }
     }
 
@@ -207,7 +226,8 @@ impl Sites
                 .take_while(|&&(form, _)| form.end() == place)
                 .any(|&(_, leaves)| leaves.end() == image)
         };
-        if copied || opened || closed {
+        let dropped = self.dropped.binary_search(&(place, image)).is_ok();
+        if copied || opened || closed || dropped {
             Placement::Same
         }
         else {

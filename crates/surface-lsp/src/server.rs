@@ -12311,13 +12311,13 @@ mod tests
         let difference = item(
             "following.gandr",
             "difference",
-            lines(difference_at, difference_at, 53),
+            lines(difference_at, difference_at, 52),
             span(difference_at, 4, 14),
         );
         let three = item(
             "data-base.gandr",
             "three",
-            span(three_at, 4, 31),
+            span(three_at, 4, 30),
             span(three_at, 8, 13),
         );
         let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
@@ -12399,7 +12399,7 @@ mod tests
                     &item(
                         "following.gandr",
                         "quotient",
-                        lines(quotient_at, quotient_at, 60),
+                        lines(quotient_at, quotient_at, 59),
                         span(quotient_at, 4, 12)
                     ),
                     &[span(quotient_at, 41, 46)]
@@ -12409,7 +12409,7 @@ mod tests
                     &item(
                         "following.gandr",
                         "halvedThree",
-                        lines(halved_three_at, halved_three_at, 45),
+                        lines(halved_three_at, halved_three_at, 44),
                         span(halved_three_at, 4, 15)
                     ),
                     &[span(halved_three_at, 39, 44)]
@@ -12438,7 +12438,7 @@ mod tests
                 &item(
                     "data-base.gandr",
                     "two",
-                    span(two_at, 4, 37),
+                    span(two_at, 4, 36),
                     span(two_at, 8, 11)
                 ),
                 &[span(three_at, 27, 30)]

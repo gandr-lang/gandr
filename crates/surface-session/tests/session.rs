@@ -1140,7 +1140,7 @@ fn a_deprecation_is_kept_by_declaration_identity()
     let _submitted = submit(&mut session, text);
     let key = |form: &str| first_declaration(form.into());
     assert_eq!(
-        session.deprecation(key("def answer = 42 ;")),
+        session.deprecation(key("def answer = 42\ndef next = 0;")),
         Some(&gandr_surface_lowering::Deprecation {
             since: Some(String::from("0.2")),
             note: Some(String::from("use `other`")),
@@ -1148,7 +1148,7 @@ fn a_deprecation_is_kept_by_declaration_identity()
         "a record states both texts"
     );
     assert_eq!(
-        session.deprecation(key("def bare = 2 ;")),
+        session.deprecation(key("def bare = 2\ndef next = 0;")),
         Some(&gandr_surface_lowering::Deprecation::default()),
         "a bare mark states neither"
     );

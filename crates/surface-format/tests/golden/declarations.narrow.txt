@@ -16,6 +16,6 @@ def captured(a : Type, d : Type, u : +U[ω] (a -> -F d), h : +U[ω] (d -> -F d))
   return thunk { become compose a d d u h }
 }
 
-def answer : Integer;
-def answer = 42;
+def answer : Integer
+def answer = 42
 def again = answer;

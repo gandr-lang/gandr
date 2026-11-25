@@ -277,12 +277,12 @@ pub fn separated<'source>(
 /// # Specification
 /// - requires: each slice is one top-level form's leaves, in offset order, and
 ///   the signature holds no definition already.
-/// - ensures: `None` unless the signature is `def x : T ;` behind any
-///   attributes and documentation, holding no comment, and the definition is
-///   `def x = e ;` under the same name with nothing written before its `def`
-///   and no comment before its value or after its `;`; otherwise the
-///   signature's leaves to the last of `T`, then ` = `, then the definition's
-///   leaves after its `=`, its `;` included.
+/// - ensures: `None` unless the signature is `def x : T`, ended by `;` or not,
+///   behind any attributes and documentation, holding no comment, and the
+///   definition is `def x = e`, ended by `;` or not, under the same name with
+///   nothing written before its `def` and no comment before its value or after
+///   its end; otherwise the signature's leaves to the last of `T`, then ` = `,
+///   then the definition's leaves after its `=`, any `;` included.
 /// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
 /// - fails: never.
 /// - panics: none.
@@ -324,8 +324,7 @@ pub fn joined<'leaves, 'source>(
         Token(_, ":"),
         ..,
         Token(LeafIndex(last), _),
-        Token(_, ";"),
-    ] = signed.as_slice()
+    ] = unended(&signed)
     else {
         return None;
     };
@@ -336,8 +335,7 @@ pub fn joined<'leaves, 'source>(
         Token(LeafIndex(equals), "="),
         _,
         ..,
-        Token(_, ";"),
-    ] = defined.as_slice()
+    ] = unended(&defined)
     else {
         return None;
     };
@@ -587,20 +585,21 @@ pub fn members<'source>(
 ///
 /// # Specification
 /// - requires: each slice is one top-level form's leaves, in offset order.
-/// - ensures: `None` unless the signature is `def f : T ;` behind any
-///   attributes and documentation, `T` one of `() -> B`, `+U (-F B)`, `D -> B`
-///   with `D` one domain or a parenthesised list of them, or `+U (D1 -> … -> Dn
-///   -> -F B)`, the definition is written `def f = thunk { … } ;` under the
-///   same name, its thunk ungraded, or `def f = fn …` when `T` has a domain,
-///   holding one `fun (x) { … }` per domain each directly in the last, every
-///   binder bare and the name a dependent domain `(x : A)` gives it, and
-///   neither form holds a comment after its documentation; otherwise the
-///   signature's leaves to the name, then each binder `x : A` in parentheses,
-///   `A` its domain, then `->` and the result: `-F B` with `B` parenthesised
-///   unless it is one token, one bracketed group or a name applied to one, or
-///   `B` alone where `returning` is [`Returning::Bare`] and the signature wrote
-///   `B` as an alias's result; then `=`, the innermost body, in braces unless
-///   [`alone`] finds it one expression alone, and `;`.
+/// - ensures: `None` unless the signature is `def f : T`, ended by `;` or not,
+///   behind any attributes and documentation, `T` one of `() -> B`, `+U (-F
+///   B)`, `D -> B` with `D` one domain or a parenthesised list of them, or `+U
+///   (D1 -> … -> Dn -> -F B)`, the definition is written `def f = thunk { … }`,
+///   ended by `;` or not, under the same name, its thunk ungraded, or `def f =
+///   fn …` when `T` has a domain, holding one `fun (x) { … }` per domain each
+///   directly in the last, every binder bare and the name a dependent domain
+///   `(x : A)` gives it, and neither form holds a comment after its
+///   documentation; otherwise the signature's leaves to the name, then each
+///   binder `x : A` in parentheses, `A` its domain, then `->` and the result:
+///   `-F B` with `B` parenthesised unless it is one token, one bracketed group
+///   or a name applied to one, or `B` alone where `returning` is
+///   [`Returning::Bare`] and the signature wrote `B` as an alias's result; then
+///   `=`, the innermost body, in braces unless [`alone`] finds it one
+///   expression alone, and `;`.
 /// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
 /// - fails: never.
 /// - panics: none.
@@ -643,14 +642,14 @@ pub fn merged<'leaves, 'source>(
         Token(LeafIndex(named), name),
         Token(_, ":"),
         ref ty @ ..,
-        Token(_, ";"),
-    ] = signed.as_slice()
+    ] = unended(&signed)
     else {
         return None;
     };
     let (domains, codomain) = abstracted(declared, ty)?;
     let source = tokens(written);
-    let own = match *source.as_slice() {
+    let source = unended(&source);
+    let own = match *source {
         [
             Token(_, "def"),
             Token(_, own),
@@ -659,15 +658,13 @@ pub fn merged<'leaves, 'source>(
             Token(open, "{"),
             ..,
             Token(close, "}"),
-            Token(_, ";"),
-        ] if closing(&source, open) == Some(close) => own,
+        ] if closing(source, open) == Some(close) => own,
         [
             Token(_, "def"),
             Token(_, own),
             Token(_, "="),
             Token(_, "fun"),
             ..,
-            Token(_, ";"),
         ] if !domains.is_empty() => own,
         _ => return None,
     };
@@ -675,13 +672,18 @@ pub fn merged<'leaves, 'source>(
         return None;
     }
     let defined = tokens(definition);
+    // The body runs to the definition's `;`, or to the empty tile the layout
+    // pass places for it.
+    let ends = match *defined.as_slice() {
+        [.., Token(LeafIndex(ends), ";" | "")] => ends,
+        _ => definition.len(),
+    };
     let &[
         Token(_, "def"),
         Token(_, respelled),
         Token(LeafIndex(equals), "="),
         ref rest @ ..,
-        Token(LeafIndex(ends), ";"),
-    ] = defined.as_slice()
+    ] = unended(&defined)
     else {
         return None;
     };
@@ -1183,6 +1185,19 @@ fn tokens<'leaves>(leaves: &'leaves [Leaf<'_>]) -> Vec<Token<'leaves>>
         .filter(|&(_, leaf)| leaf.material != Material::Whitespace)
         .map(|(index, leaf)| Token(LeafIndex(index), <&str>::from(leaf.text)))
         .collect()
+}
+
+/// `tokens` without the `;` that ends them, or the empty tile the layout pass
+/// places there for a form before another.
+///
+/// # Specification
+/// trivial.
+fn unended<'tokens, 'text>(tokens: &'tokens [Token<'text>]) -> &'tokens [Token<'text>]
+{
+    match *tokens {
+        [ref rest @ .., Token(_, ";" | "")] => rest,
+        _ => tokens,
+    }
 }
 
 /// `leaves` without the whitespace at either end.

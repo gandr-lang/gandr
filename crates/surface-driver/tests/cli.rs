@@ -2169,7 +2169,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     );
     assert_eq!(
         std::fs::read_to_string(&source).expect("the source is readable"),
-        "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer = match t {\n  \
+        "def pair : Integer * String\n\ndef pick(t : Integer + Integer) -> Integer = match t {\n  \
          | +{.1 = x} => x\n  | _ => 0\n};\n",
         "both declarations are sugared"
     );
@@ -2184,7 +2184,7 @@ fn fmt_check_names_a_declaration_out_of_the_sugared_form_7873()
     let scratch = Scratch::new(Path::new("fmt-sugared-check"));
     let explicit = scratch.file(
         Path::new("explicit.gandr"),
-        Text::from("def one = 1;\n\ndef pair : *{Integer, String};\n"),
+        Text::from("def one = 1\n\ndef pair : *{Integer, String};\n"),
     );
     let declared = scratch.file(
         Path::new("declared.gandr"),

@@ -130,7 +130,7 @@ fn joined(
 fn a_respaced_text_keeps_each_site_of_a_copied_leaf()
 {
     let read = leaves(before());
-    let sites = Sites::new(&read, &leaves(respaced()));
+    let sites = Sites::new(&read, &leaves(respaced()), &[]);
     let y = SourceFragment::from("y");
     let (left, right) = (first(before(), y), first(respaced(), y));
     assert_ne!(left, right);
@@ -197,7 +197,7 @@ fn a_respelled_form_maps_its_ends_to_its_leaves()
         tokens[position("String")],
     ]);
     written.extend(tokens.get(close.saturating_add(1) ..).expect("the rest"));
-    let sites = Sites::new(&written, &leaves(sugared()));
+    let sites = Sites::new(&written, &leaves(sugared()), &[]);
     let whole = joined(
         first(sugared(), SourceFragment::from("Integer")),
         first(sugared(), SourceFragment::from("String")),
@@ -232,7 +232,7 @@ fn a_site_at_another_copy_or_in_layout_is_moved()
     };
     let (x, y) = (at("x"), at("y"));
     written.swap(x, y);
-    let sites = Sites::new(&written, &leaves(exchanged()));
+    let sites = Sites::new(&written, &leaves(exchanged()), &[]);
     let (x, y) = (SourceFragment::from("x"), SourceFragment::from("y"));
     let source = before();
     assert_eq!(first(source, x), first(exchanged(), y));
@@ -248,7 +248,7 @@ fn a_site_at_another_copy_or_in_layout_is_moved()
         Placement::Same
     );
     let respaced_leaves = leaves(respaced());
-    let kept = Sites::new(&respaced_leaves, &respaced_leaves);
+    let kept = Sites::new(&respaced_leaves, &respaced_leaves, &[]);
     let equals = span(
         respaced(),
         SourceFragment::from("="),
@@ -262,7 +262,7 @@ fn a_site_at_another_copy_or_in_layout_is_moved()
     assert_eq!(kept.spanned(reaching, reaching), Placement::Moved);
     let named = first(respaced(), y);
     assert_eq!(kept.spanned(named, named), Placement::Same);
-    let kept = Sites::new(&read, &read);
+    let kept = Sites::new(&read, &read, &[]);
     let base = ByteOffset::from(4_usize);
     let def = SourceFragment::from("def");
     let import = first(source, def);

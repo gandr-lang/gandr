@@ -83,9 +83,13 @@
 //! without lowering its word. The declaration wins over the option, so one
 //! command lays out sources of both spellings.
 //!
-//! [`Form::Source`] keeps every token but a statement's line-final `;`: the
-//! layout is the only change, and the tree is its check. Either other form runs
-//! the rewrites of its direction from [`REWRITES`], the table of every pair of
+//! [`Form::Source`] keeps every token but a statement's line-final `;` and the
+//! `;` that ends a declaration before another top-level form, each of which
+//! the layout pass places: the layout is the only change, and the tree is its
+//! check. The last form of a source keeps its `;`, since the end of the source
+//! ends nothing, and so does a declaration whose last word is a `}`. Either
+//! other form runs the rewrites of its direction from [`REWRITES`], the table
+//! of every pair of
 //! spellings the presentation printer (`gandr-surface-pretty`) tells apart —
 //! the eager product, the sum, the lazy product, the tuple, the value function,
 //! the path composite, the path inverse and a map's action on a path — each
@@ -353,6 +357,7 @@ use crate::leaf::Integrity;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::leaf::Offside;
+use crate::leaf::Origin;
 use crate::leaf::Owner;
 use crate::meaning::Agreement;
 pub use crate::meaning::Elaborate;
@@ -372,6 +377,7 @@ pub use crate::rewrite::Selection;
 pub use crate::rewrite::Spelling;
 use crate::site::Placement;
 use crate::site::Sites;
+use crate::space::Context;
 
 /// How a source is formatted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -408,15 +414,17 @@ impl Default for FormatOptions
 
 /// The spelling a source is laid out in.
 ///
-/// [`Form::Source`] keeps every token the source wrote; the other two run
-/// the rewrites of their direction (crate docs, § The form a source is
+/// [`Form::Source`] keeps every token the source wrote but the `;` that the
+/// layout pass places (crate docs); the other two run the rewrites of their
+/// direction (crate docs, § The form a source is
 /// spelled in). A source states its spelling with `@[ form(explicit) ]` or
 /// `@[ form(sugared) ]` in an attribute block of its first form; the
 /// declaration wins over [`FormatOptions::form`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Form
 {
-    /// The source's own spelling, every token kept.
+    /// The source's own spelling, every token kept but a `;` the layout pass
+    /// places.
     #[default]
     Source,
     /// The explicit spelling: every former a sugar stands for written out.
@@ -712,25 +720,26 @@ pub enum Layout
 /// # Specification
 /// - requires: `parsed` was parsed under `grammar`.
 /// - ensures: the form is the one the source's head declares, else
-///   `options.form`. Under [`Form::Source`], the text keeps every token and
-///   comment of the source, in order, each comment with the node it belongs to
-///   and in its role there, and parses under `grammar` to the source's root
-///   digest. Under either other form, each form a selected rewrite of its
-///   direction reads is respelled, every comment kept in order and in its role,
-///   outside the top-level forms of the declarations the lowering refuses in
-///   the source or would lower otherwise once respelled; the text lowers to the
-///   source's lowering, declaration by declaration, and each declaration that
-///   would have lowered otherwise is in [`Formatted::withdrawn`] with its name,
-///   span and reason, none under [`Form::Source`]. Either way, each top-level
-///   form starts on a line of its own, and the source's blank lines between
-///   them are kept, one at most; a comment the source wrote on a top-level
-///   form's last line stays there, as does a separator ending a top-level
-///   statement; the text ends in one line break unless it is empty, and uses
-///   the line ending most of the source's breaks use. A form the parser
-///   repaired, or that an obligation touches, is copied as written. Each other
-///   form is laid out at `options.page` as the crate root describes, and
-///   formatting the text again returns it unchanged. One piece per top-level
-///   form, in order, spans it in the source and in the text.
+///   `options.form`. Under [`Form::Source`], the text keeps every token but a
+///   `;` the layout pass places, and every comment of the source, in order,
+///   each comment with the node it belongs to and in its role there, and parses
+///   under `grammar` to the source's root digest. Under either other form, each
+///   form a selected rewrite of its direction reads is respelled, every comment
+///   kept in order and in its role, outside the top-level forms of the
+///   declarations the lowering refuses in the source or would lower otherwise
+///   once respelled; the text lowers to the source's lowering, declaration by
+///   declaration, and each declaration that would have lowered otherwise is in
+///   [`Formatted::withdrawn`] with its name, span and reason, none under
+///   [`Form::Source`]. Either way, each top-level form starts on a line of its
+///   own, and the source's blank lines between them are kept, one at most; a
+///   comment the source wrote on a top-level form's last line stays there, as
+///   does a separator ending a top-level statement; the text ends in one line
+///   break unless it is empty, and uses the line ending most of the source's
+///   breaks use. A form the parser repaired, or that an obligation touches, is
+///   copied as written. Each other form is laid out at `options.page` as the
+///   crate root describes, and formatting the text again returns it unchanged.
+///   One piece per top-level form, in order, spans it in the source and in the
+///   text.
 /// - provides: the text `gandr fmt` writes and the language server's formatting
 ///   edits.
 /// - fails: as `# Errors` states.
@@ -1085,7 +1094,7 @@ fn format_once(
         }
         let agreement = verify_rewritten(
             grammar,
-            (parsed, &laid.leaves, &laid.respelled, text),
+            (parsed, &laid.leaves, &laid.respelled, &laid.dropped, text),
             (SourceText::from(before), unit),
             (&mut arena, lowered),
             checker.map(|checker| (checker, &mut elaborations)),
@@ -1469,6 +1478,8 @@ struct Written<'source>
     /// The spans of the signatures and definitions joined into one form,
     /// ascending.
     joined: Vec<ByteSpan>,
+    /// The spans of the `;` left to the layout pass, ascending.
+    dropped: Vec<ByteSpan>,
 }
 
 impl Written<'_>
@@ -1840,6 +1851,7 @@ fn write<'source>(
     let mut respelled = Vec::new();
     let mut merged = Vec::new();
     let mut joined = Vec::new();
+    let mut dropped = Vec::new();
     let units = units(&flat.leaves);
     let mut at = 0_usize;
     while let Some(unit) = units.get(at) {
@@ -1848,6 +1860,29 @@ fn write<'source>(
         else {
             continue;
         };
+        // A declaration's `;` before another form of the source is the
+        // layout pass's: the end of the source ends nothing, so the last
+        // declaration keeps its own, and the layout pass reads a `}` at a
+        // line's end as the close of a block, so a declaration whose last
+        // word is a `}` keeps its own too.
+        let followed = || {
+            units.get(at ..).is_some_and(|rest| {
+                rest.iter().any(|next| {
+                    next.leaves
+                        .first()
+                        .is_some_and(|leaf| matches!(leaf.owner, Owner::Form(_)))
+                })
+            })
+        };
+        if let &[only] = unit.leaves
+            && only.offside == Offside::Ends
+            && only.material == Material::Token
+            && followed()
+            && !braced(&written)
+        {
+            dropped.push(only.span);
+            continue;
+        }
         if !text.is_empty() {
             match (unit.joins, unit.gap) {
                 (Joins::Touching, _) => {},
@@ -2002,6 +2037,65 @@ fn write<'source>(
                     if changed.is_some() || membered.is_some() {
                         respelled.push(form);
                     }
+                    // The form's own `;`, as the separator above.
+                    let followed = followed();
+                    let end = leaf::own_end(tree, form);
+                    let ended = own
+                        .iter()
+                        .rposition(|leaf| leaf.material == Material::Token)
+                        .filter(|&last| {
+                            followed
+                                && own.get(last).is_some_and(|leaf| {
+                                    leaf.offside == Offside::Ends && Some(leaf.span) == end
+                                })
+                                && !braced(own.get(.. last).unwrap_or_default())
+                        });
+                    let unended: Option<Vec<Leaf<'source>>> = ended.map(|last| {
+                        dropped.extend(own.get(last).map(|leaf| leaf.span));
+                        own.iter()
+                            .enumerate()
+                            .filter(|&(position, _)| position != last)
+                            .map(|(_, &leaf)| leaf)
+                            .collect()
+                    });
+                    let own = unended.as_deref().unwrap_or(own);
+                    // A rewrite that ends a declaration in a `}` before
+                    // another form writes the `;` that the layout pass
+                    // would otherwise read as the close of a block.
+                    let closed: Vec<Leaf<'source>>;
+                    let own = match own.iter().rev().find(|leaf| {
+                        leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty()
+                    }) {
+                        Some(&last)
+                            if followed
+                                && changed.is_some()
+                                && braced(own)
+                                && !braced(unit.leaves)
+                                && leaf::declares(own) =>
+                        {
+                            let at = ByteSpan::new(last.span.end(), last.span.end())
+                                .unwrap_or(last.span);
+                            let whole = tree
+                                .node(form)
+                                .map_or(span, gandr_surface_syntax::Node::span);
+                            closed = own
+                                .iter()
+                                .copied()
+                                .chain([Leaf {
+                                    span: at,
+                                    text: SourceFragment::from(";"),
+                                    material: Material::Token,
+                                    context: Context::Written,
+                                    offside: Offside::Written,
+                                    branch: None,
+                                    origin: Origin::Rewrite(whole),
+                                    ..last
+                                }])
+                                .collect();
+                            closed.as_slice()
+                        },
+                        _ => own,
+                    };
                     text.push_str(&layout::lay_out(own, layout, ending.spelling())?);
                     written.extend_from_slice(own);
                 }
@@ -2029,6 +2123,7 @@ fn write<'source>(
     }
     merged.sort_unstable();
     joined.sort_unstable();
+    dropped.sort_unstable();
     Ok(Written {
         text,
         pieces,
@@ -2036,7 +2131,22 @@ fn write<'source>(
         respelled,
         merged,
         joined,
+        dropped,
     })
+}
+
+/// Whether the last token of `leaves` that the source writes is a `}`: an
+/// empty tile, as a layout block's virtual separator, is none.
+///
+/// # Specification
+/// trivial.
+fn braced(leaves: &[Leaf<'_>]) -> bool
+{
+    leaves
+        .iter()
+        .rev()
+        .find(|leaf| leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty())
+        .is_some_and(|last| <&str>::from(last.text) == "}")
 }
 
 /// The leaves of the clean top-level form `form` of `tree`, whose leaves
@@ -2342,10 +2452,11 @@ type Elaborations = Option<Elaboration>;
 ///   elaborations, growth within the candidate's leaves
 fn verify_rewritten(
     grammar: &Pbg,
-    (parsed, written, respelled, text): (
+    (parsed, written, respelled, dropped, text): (
         &ParseResult<'_>,
         &[Leaf<'_>],
         &[NodeIndex],
+        &[ByteSpan],
         SourceText<'_>,
     ),
     (before, unit): (SourceText<'_>, &LoweringUnit),
@@ -2366,7 +2477,7 @@ fn verify_rewritten(
         return Err(FormatError::Changed(Change::Attachment));
     }
     let base = ByteOffset::from(<&str>::from(before).len());
-    let sites = Sites::new(written, &again.leaves);
+    let sites = Sites::new(written, &again.leaves, dropped);
     // The parser reads the text alone, so its obligations stand in the text's
     // own offsets. Each obligation of the text before the pass pairs with one
     // of the candidate's at the same site. An obligation that pairs with none
@@ -2736,23 +2847,31 @@ fn material_leaves<'leaves, 'source>(
 /// - witness: `tests::rewrite::a_declared_form_wins_over_the_option`
 fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
 {
-    let tokens: Vec<&str> = leaves
+    let tokens: Vec<(&str, Owner)> = leaves
         .iter()
         .filter(|leaf| matches!(leaf.owner, Owner::Form(_)) && leaf.material == Material::Token)
-        .map(|leaf| <&str>::from(leaf.text))
+        .map(|leaf| (<&str>::from(leaf.text), leaf.owner))
         .collect();
     let mut depth = 0_usize;
-    let mut importing = false;
+    // The import form being read: it ends at its last token, at a `;`, and at
+    // the attribute block or the `rec` of the form after it.
+    let mut importing = None;
     let mut grouped = None;
-    for (at, &token) in tokens.iter().enumerate() {
+    for (at, &(token, owner)) in tokens.iter().enumerate() {
+        if importing.is_some_and(|form| form != owner) || matches!(token, "@[" | "rec") {
+            importing = None;
+            if token == ";" {
+                continue;
+            }
+        }
         match token {
-            ";" if importing => importing = false,
-            _ if importing => {},
-            "import" if depth == 0 && grouped.is_none() => importing = true,
+            ";" if importing.is_some() => importing = None,
+            _ if importing.is_some() => {},
+            "import" if depth == 0 && grouped.is_none() => importing = Some(owner),
             "rec"
                 if depth == 0
                     && grouped.is_none()
-                    && tokens.get(at.saturating_add(1)) == Some(&"{") =>
+                    && tokens.get(at.saturating_add(1)).map(|&(next, _)| next) == Some("{") =>
             {
                 grouped = Some(at.saturating_add(1));
             },
@@ -2762,7 +2881,7 @@ fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
             "]" if depth > 0 => depth = depth.saturating_sub(1),
             _ if depth == 0 => return None,
             "form" if depth == 1 => {
-                if let (Some(&"("), Some(&word), Some(&")")) = (
+                if let (Some(&("(", _)), Some(&(word, _)), Some(&(")", _))) = (
                     tokens.get(at.saturating_add(1)),
                     tokens.get(at.saturating_add(2)),
                     tokens.get(at.saturating_add(3)),

@@ -166,6 +166,7 @@ pub use crate::meld::UnitBase;
 pub use crate::meld::UnitSeam;
 pub use crate::meld::declaration_head;
 pub use crate::mold::CandidateLabel;
+pub use crate::mold::DECLARATION_LEADS;
 pub use crate::mold::DecisionCensus;
 pub use crate::mold::DecisionCount;
 pub use crate::mold::DisagreementCount;

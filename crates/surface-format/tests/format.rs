@@ -252,7 +252,7 @@ fn top_level_forms_and_comments_keep_their_lines()
         include_str!("format/unformatted/top-level-forms-and-comments-keep-their-lines.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "#!/usr/bin/env gandr\n\n// head\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\ndef c = (f a);\ndef d = (g b);\n",
+        "#!/usr/bin/env gandr\n\n// head\ndef a = 1\ndef b = 2 // trailing\n\n/* own */\ndef c = (f a)\ndef d = (g b);\n",
         "forms take a line each, a trailing comment stays, a blank line is kept once, and a declaration keeps its terminator"
     );
     assert_eq!(text(&grammar, "", WIDE), "", "an empty source stays empty");
@@ -383,7 +383,7 @@ fn a_form_written_against_the_one_before_starts_its_own_line()
     let grammar = grammar();
     assert_eq!(
         text(&grammar, "def a = 1 ;def b = 2 ;", WIDE),
-        "def a = 1;\ndef b = 2;\n",
+        "def a = 1\ndef b = 2;\n",
         "only a separator touches the form it ends"
     );
 }
@@ -402,7 +402,7 @@ fn the_printer_decides_every_inner_space()
          def g[r : Row](k : Integer) -> [Partial | r] Unit = pure *{};\n\
          def l = fun (x) { x };\n\
          def c = thunk { fun (x) { x } };\n\
-         def m = r.a[0];\n\
+         def m = r.a[0]\n\
          module M :> *{type T} where { type T = Integer; }\n\
          theory S where {boundary Q {p, q}; face left = {p, q};}\n\
          theory Kit.Shape where {sort T : Type;}\n\
@@ -418,13 +418,14 @@ fn a_terminator_touches_the_form_it_ends()
     let source = include_str!("format/unformatted/a-terminator-touches-the-form-it-ends.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "import \"./base.gandr\" as prelude;\n\
-         world seat;\n\
-         def a = 1;\n\
+        "import \"./base.gandr\" as prelude\n\
+         world seat\n\
+         def a = 1\n\
          def f(a : Type, y : a) -> -F a = {\n  let x : a = same a y\n  loop { break }\n  return x\n};\n\
          def t = *{1, 2};\n",
-        "no space stands before a `;`, whatever ends the form it closes, and a statement's `;` \
-         leaves the end of its line"
+        "no space stands before a `;`, whatever ends the form it closes; a statement's `;` and a \
+         declaration's `;` before another form leave the end of their line, and one after a \
+         closing brace stays"
     );
 }
 
@@ -440,7 +441,7 @@ fn a_separator_written_on_the_next_line_joins_its_statement()
             ),
             WIDE
         ),
-        "def c = (f a);\ndef d = (g b);\n",
+        "def c = (f a)\ndef d = (g b);\n",
         "a terminator after a break or a blank line ends the declaration on its line"
     );
 }
@@ -737,7 +738,7 @@ fn strings_and_holes_are_copied_as_written()
     let source = include_str!("format/unformatted/strings-and-holes-are-copied-as-written.gandr");
     assert_eq!(
         text(&grammar, source, NARROW),
-        "def s = \"a  ${  b }\tc\";\ndef k = (?hole);\n",
+        "def s = \"a  ${  b }\tc\"\ndef k = (?hole);\n",
         "a string's and a hole's bytes are their own"
     );
 }
@@ -750,7 +751,7 @@ fn a_repaired_form_is_copied_as_written()
     let formatted = formatted(&grammar, source, WIDE);
     assert_eq!(
         <&str>::from(formatted.text()),
-        "def z = 0;\ndef   a = (1 ;\ndef b = 2;\n",
+        "def z = 0\ndef   a = (1 ;\ndef b = 2;\n",
         "the repaired form keeps its bytes and its neighbours on either side are laid out"
     );
     let layouts: Vec<Layout> = formatted
@@ -789,7 +790,7 @@ fn a_source_split_evenly_between_endings_keeps_line_feeds()
             ),
             WIDE
         ),
-        "def a = 1;\ndef b = 2;\n",
+        "def a = 1\ndef b = 2;\n",
         "carriage returns win only when most breaks carry them"
     );
 }
@@ -817,7 +818,7 @@ fn pieces_place_each_top_level_form()
     assert_eq!(
         spans,
         [
-            ("def  a = 1 ;  // note", "def a = 1; // note"),
+            ("def  a = 1 ;  // note", "def a = 1 // note"),
             ("def b = 2 ;", "def b = 2;")
         ],
         "a form's piece runs from its first token to its trailing comment"
@@ -843,7 +844,7 @@ fn an_explicit_source_keeps_its_explicit_spelling()
     let kept = "@[form(explicit)]\ndef shown() -> -F Integer = { let n = force one; become read n \
                 };\n";
     let imported = "import \"./base.gandr\" ;\n";
-    let imported_kept = "import \"./base.gandr\";\n";
+    let imported_kept = "import \"./base.gandr\"\n";
     let grouped = include_str!(
         "format/unformatted/an-explicit-source-keeps-its-explicit-spelling-grouped.gandr"
     );

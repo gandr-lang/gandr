@@ -13713,7 +13713,7 @@ mod tests
             .collect();
         assert_eq!(docs, [
             ("/// a".to_owned(), "the root".to_owned()),
-            ("/// b\n/// c".to_owned(), "def x = 1;".to_owned()),
+            ("/// b\n/// c".to_owned(), "def x = 1".to_owned()),
             ("/// d".to_owned(), "def y = 2;".to_owned()),
         ]);
         Ok(())
@@ -13752,7 +13752,7 @@ mod tests
         assert_eq!(docs, [
             ("//! s\n//! t".to_owned(), "the root".to_owned()),
             ("//! u".to_owned(), "the root".to_owned()),
-            ("/// a".to_owned(), "def x = 1;".to_owned()),
+            ("/// a".to_owned(), "def x = 1".to_owned()),
             (
                 "//! inner".to_owned(),
                 "def f(x : Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
