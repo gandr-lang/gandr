@@ -16,9 +16,8 @@
 //! tokens as the molder reads it. The tokens inside its holes are their own
 //! rules' to decide.
 //!
-//! - Choice: the table alone, so the analysis is a function of the grammar and
-//!   `check:syntax-ledger` holds it; a spelling change shows its move in
-//!   review.
+//! - Choice: the table alone, so the analysis is a function of the grammar, and
+//!   the ledger that `ledger syntax` writes for a tree shows it.
 //! - Alternatives: the molder's counters over the corpus, which measure what
 //!   the corpus writes and miss a form it never writes.
 //! - Reversal: a molder that decides an opener or a fork by a rule the table

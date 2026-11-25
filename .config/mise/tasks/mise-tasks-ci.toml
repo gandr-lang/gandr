@@ -2999,11 +2999,11 @@ run = '.config/ledger/stamp.bash "${usage_pr:?}" "${usage_base:?}"'
 # makes `implemented`, the issue its row cites, through gh; it prints one
 # refusal per such rule whose issue is not open or whose body names neither
 # the rule nor its kind, with the row (`.config/ledger/reserved.jq`), and
-# exits 1. The ledger is the lowering's own reading (`check:syntax-ledger`
-# holds it to the exemplars), so a lowering that admits a reserved form moves
-# its row. `pr:land` runs it on the pull request and refuses; `pr:open` runs
-# it and prints each line as a note. The repository read is the caller's
-# (`GIT_DIR` honoured); the reading is this checkout's.
+# exits 1. The tree holds no copy of the ledger: the task writes the ledger of
+# each of the two commits in a detached worktree of that commit, with the
+# target directory of this checkout. `pr:land` runs it on the pull request and
+# refuses; `pr:open` runs it and prints each line as a note. The repository
+# read is the caller's (`GIT_DIR` honoured); the reading is this checkout's.
 ["ledger:reserved"]
 description = "Refuse a landing that lowers a reserved grammar rule its row's open issue does not name"
 usage = '''
@@ -3019,9 +3019,16 @@ source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 root=$LEDGER_READING_ROOT
 tables=$(mktemp -d)
 trap 'rm -rf "$tables"' EXIT
-rows_at() { git show "$1:ledger/syntax.json" 2> /dev/null | jq '[.rules[]? | select(.standing == "committed")]' || echo '[]'; }
-rows_at "${usage_base:?}" > "$tables/base.json"
-rows_at "${usage_head:-HEAD}" > "$tables/head.json"
+rows_at() {
+  local tree=$tables/tree-$2
+  git worktree add --quiet --detach "$tree" "$1"
+  (cd "$tree" && CARGO_TARGET_DIR="$root/target" cargo run --locked --quiet --profile test \
+    --package gandr-workflow-ledger-tasks -- syntax --write "$tables/ledger-$2" --exemplars corpus/ledger > /dev/null)
+  git worktree remove --force "$tree"
+  jq '[.rules[]? | select(.standing == "committed")]' "$tables/ledger-$2/syntax.json"
+}
+rows_at "${usage_base:?}" base > "$tables/base.json"
+rows_at "${usage_head:-HEAD}" head > "$tables/head.json"
 jq -n --slurpfile base "$tables/base.json" --slurpfile head "$tables/head.json" \
   '(INDEX($head[0][]; .name)) as $now
    | [$base[0][] | select(.status == "reserved") | {name, kind, issue, admission, now: $now[.name].status}]' > "$tables/rows.json"

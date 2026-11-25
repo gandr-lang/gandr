@@ -18,8 +18,9 @@
 # open issue that owes it (crates/surface-corpus/README.md § Comments,
 # #4900).
 # The shared sources it was drawn from stay in `corpus`. An old spelling that
-# the grammar still parses, a row of `superseded` in `ledger/syntax.json`,
-# names an open issue that removes it (#6876). Every finding is printed
+# the grammar still parses, a row of `superseded` in the syntax ledger that
+# `ledger syntax` writes, names an open issue that removes it (#6876). Every
+# finding is printed
 # before the gate fails.
 #
 # The issues the rows rest on are read through `gh` in one GraphQL query of
@@ -32,6 +33,14 @@ set -euo pipefail
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 db="$tmp/features.db"
+# The syntax ledger of the worktree's grammar, for its rows of `superseded`.
+# `LEDGER_SYNTAX_JSON` gives a written ledger in its place, as the cases do.
+syntax=${LEDGER_SYNTAX_JSON:-}
+if [[ -z $syntax ]]; then
+  cargo run --locked --quiet --profile test --package gandr-workflow-ledger-tasks -- \
+    syntax --write "$tmp/syntax" --exemplars corpus/ledger > /dev/null
+  syntax=$tmp/syntax/syntax.json
+fi
 sqlite3 -bail "$db" < ledger/features.sql
 sqlite3 "$db" .dump > "$tmp/features.sql"
 failed=0
@@ -174,7 +183,7 @@ numbers=$({
   done < <(sqlite3 -separator '|' "$db" "
     SELECT id, exemplar FROM feature
     WHERE status = 'partial' AND exemplar IS NOT NULL;")
-  jq -r '.superseded[].issue' ledger/syntax.json
+  jq -r '.superseded[].issue' "$syntax"
 } | tr -d ' #' | grep -E '^[0-9]+$' | sort -un | tr '\n' ' ')
 # shellcheck disable=SC2086
 [[ -z $numbers ]] || read_issues $numbers
@@ -241,10 +250,10 @@ done < <(sqlite3 -separator '|' "$db" "
 while IFS=$'\t' read -r rule surface number; do
   read_issue "$number"
   if ! keeps_owing "$number"; then
-    echo "ledger/syntax.json: the old spelling \`$surface\` of \`$rule\` names #$number to remove it, and #$number does not stay open after this change; remove the spelling, or name the open issue that removes it" >&2
+    echo "the syntax ledger: the old spelling \`$surface\` of \`$rule\` names #$number to remove it, and #$number does not stay open after this change; remove the spelling, or name the open issue that removes it" >&2
     failed=1
   fi
-done < <(jq -r '.superseded[] | [.rule, .surface, (.issue | tostring)] | @tsv' ledger/syntax.json)
+done < <(jq -r '.superseded[] | [.rule, .surface, (.issue | tostring)] | @tsv' "$syntax")
 if (( failed )); then
   echo 'ledger check FAILED' >&2
   exit 1

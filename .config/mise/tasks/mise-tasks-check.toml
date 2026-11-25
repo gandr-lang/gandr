@@ -1584,9 +1584,7 @@ run = "typos"
 # documentation. The unit issue template is a form,
 # `.github/ISSUE_TEMPLATE/unit.yml` (#3113). The
 # second holds every tracked markdown file to its budget in `sizelint.toml`;
-# treefmt's sizelint pass leaves markdown to this gate. The syntax ledger is
-# exempt: it is generated, one row per grammar rule, and
-# `check:syntax-ledger` owns its bytes.
+# treefmt's sizelint pass leaves markdown to this gate.
 ["check:markdown"]
 description = "Tracked markdown on the README allowlist and within its budgets"
 run = [
@@ -1599,7 +1597,6 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)contrib/*/README.md' \
   ':(exclude,glob)library/*/README.md' \
   ':(exclude,glob)ledger/README.md' \
-  ':(exclude,glob)ledger/syntax.md' \
   ':(exclude,glob)ledger/census.md' \
   ':(exclude,glob).config/issues/templates/*.md' \
   ':(exclude,glob)corpus/sketch/*/*.gandr.md' \
@@ -1611,7 +1608,7 @@ if [ -n "$outside" ]; then
 fi
 echo 'markdown check OK: every tracked markdown file is on the README allowlist'
 ''',
-  "git ls-files -z -- '*.md' ':(exclude,glob)ledger/syntax.md' | xargs -0 sizelint check",
+  "git ls-files -z -- '*.md' | xargs -0 sizelint check",
 ]
 
 # The root README is the project's vision statement, curated by the owner
@@ -1630,17 +1627,15 @@ fi
 echo 'readme pin OK: README.md is the owner-approved synopsis'
 '''
 
-# The syntax ledger is generated from the grammar, the attribute registry and
+# The syntax ledger is computed from the grammar, the attribute registry and
 # the committed rules' exemplars, which each rule's admission is read off
-# (`gandr-workflow-ledger-tasks`'s `ledger` module): `ledger:syntax` regenerates
-# it into a temporary directory under each case's environment in
-# `.config/ledger/syntax-cases.json`, a toolchain selection no host carries
-# among them, and `.config/ledger/syntax-cases.bash` compares it with the
-# committed `ledger/syntax.md` and `ledger/syntax.json` byte for byte. A
-# difference is printed and fails the gate; `mise run ledger:syntax` rewrites
-# both files with the worktree's own build (#4500).
+# (`gandr-workflow-ledger-tasks`'s `ledger` module). The tree holds no copy of
+# it. `ledger:syntax` writes it into a temporary directory under each case's
+# environment in `.config/ledger/syntax-cases.json`, a toolchain selection no
+# host carries among them, and `.config/ledger/syntax-cases.bash` fails while
+# a case does not write both files (#4500).
 ["check:syntax-ledger"]
-description = "The committed syntax ledger is the one the worktree's grammar generates"
+description = "The worktree's grammar writes its syntax ledger under each toolchain case"
 tools.jq = "1.8.1"
 run = ".config/ledger/syntax-cases.bash"
 

@@ -12,9 +12,9 @@
 //! whose fingerprint is not the built grammar's is stale by definition.
 //! `ledger syntax --write <directory>` writes `syntax.md` and
 //! `syntax.json` there, each committed rule's admission read off its exemplar
-//! under `--exemplars`, `<directory>/exemplars` by default;
-//! `mise run check:syntax-ledger` writes them into a temporary directory and
-//! compares both with the committed files byte for byte. Each committed rule
+//! under `--exemplars`, `<directory>/exemplars` by default. The tree holds no
+//! copy of the ledger: `mise run check:syntax-ledger` writes it into a
+//! temporary directory under each toolchain case. Each committed rule
 //! and each attribute also has an exemplar, a hand-cut source the `exemplars`
 //! module verifies against the ledger: `ledger exemplars <directory>`,
 //! gated by `mise run check:syntax-exemplars`.
@@ -183,9 +183,9 @@ const MARKDOWN: &str = "syntax.md";
 /// The file the machine form is written to.
 const JSON: &str = "syntax.json";
 
-/// The invocation that regenerates the committed ledger, as its header names
-/// it: the task that runs the worktree's own build, never a bare `gandr`, which
-/// runs the host's default toolchain (#4500).
+/// The invocation that writes the ledger, as its header names it: the task
+/// that runs the worktree's own build, never a bare `gandr`, which runs the
+/// host's default toolchain (#4500).
 const REGENERATE: &str = "mise run ledger:syntax";
 
 /// Which ledger a `ledger` invocation writes, verifies or reads, and where.
@@ -861,7 +861,7 @@ impl SyntaxLedger
         out.push_str("# Syntax ledger\n\n");
         writeln!(
             out,
-            "Generated from the built-in grammar by `{REGENERATE}`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.\n"
+            "Generated from the built-in grammar by `{REGENERATE}`; never edited by hand, and not a file of the tree. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.\n"
         )?;
         writeln!(out, "- Grammar fingerprint: `{}`", self.fingerprint)?;
         writeln!(

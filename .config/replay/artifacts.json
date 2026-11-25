@@ -23,13 +23,6 @@
     "record": "UPDATE_EXPECT=1 cargo nextest run --manifest-path crates/surface-grammar/Cargo.toml"
   },
   {
-    "name": "the syntax ledger",
-    "paths": ["ledger/syntax.md", "ledger/syntax.json"],
-    "inputs": ["crates/surface-grammar/", "crates/surface-syntax/"],
-    "check": "mise run check:syntax-ledger",
-    "record": "mise run ledger:syntax"
-  },
-  {
     "name": "the comment ledger",
     "paths": ["corpus/uncommented.ledger"],
     "inputs": [
