@@ -94,6 +94,10 @@ use gandr_core_fork::Fork;
 use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::content_key;
+use gandr_core_publish::Access;
+use gandr_core_publish::Contents;
+use gandr_core_publish::Placement;
+use gandr_core_publish::publish_as;
 use gandr_core_term::CoreArena;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::SettleReport;
@@ -2020,7 +2024,7 @@ where
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             return match held.absent() {
                 Absence::Left => Ok(Reconciled::Unchanged),
-                Absence::Written => std::fs::write(path, held.rendered())
+                Absence::Written => published(path, &held.rendered())
                     .map(|()| Reconciled::Written)
                     .map_err(H::unreadable),
             };
@@ -2037,10 +2041,42 @@ where
     }
     match held.differing(Body(split.body))? {
         Differing::Kept => Ok(Reconciled::Unchanged),
-        Differing::Rewritten => std::fs::write(path, rendered)
+        Differing::Rewritten => published(path, &rendered)
             .map(|()| Reconciled::Rewritten)
             .map_err(H::unreadable),
     }
+}
+
+/// Publish `text` as the file at `path`: a temporary beside it, then one
+/// rename. A reader of the file meets the bytes before or the bytes after,
+/// never a part of them, as when two processes check one package at once.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the file at `path` holds `text`.
+/// - fails: the publication's step that the file system refuses, as its
+///   `io::ErrorKind`.
+/// - panics: none.
+/// - executable: none — the outcome is the file system's.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as `gandr_core_publish::publish_as`.
+/// - witness: `tests::package::a_manifest_is_written_rewritten_and_refused_as_drift_2687`
+fn published(
+    path: &Path,
+    text: &str,
+) -> io::Result<()>
+{
+    publish_as(
+        path,
+        Contents(text.as_bytes()),
+        Placement::Replace,
+        &Access::Default,
+    )
+    .map_err(|refused| io::Error::from(refused.kind))
 }
 
 /// The manifest: a file the checker writes from the `Package` model, which a

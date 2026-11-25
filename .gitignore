@@ -22,3 +22,11 @@ rustc-ice-*.txt
 # `wt:warm`'s clone probe, written outside the tree since #3222; a branch
 # forked before it still writes it at the root while the copy runs.
 /.wt-warm-probe*
+# `gandr check` writes the manifest of each package and workspace from its
+# model, so the tree holds the models alone.
+package.gandr.toml
+workspace.gandr.toml
+# The one exception is a first input: the walk that finds the standard
+# library reads the members of the root workspace's manifest, and it never
+# runs `std` to find `std`.
+!/workspace.gandr.toml

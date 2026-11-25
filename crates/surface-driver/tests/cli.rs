@@ -3892,12 +3892,12 @@ fn a_workspace_checks_each_member_it_names_2687()
     );
 }
 
-/// #2687, #3072, #4921: the tree commits the manifests and the lock of the
-/// witness workspace. Its models and the coordinates of its members give the
-/// same files in each checkout. A check of the workspace keeps each file. A
-/// check of a copy of its sources writes each file again, byte for byte. The
-/// lock is the one `workspace.gandr.lock` that the members share, and it holds
-/// the table of `tools`.
+/// #2687, #3072, #4921: the manifests of the witness workspace are a function
+/// of its models and of the coordinates of its members. A check of the
+/// workspace writes or keeps each manifest, and keeps the lock that the tree
+/// holds. A check of a copy of its sources writes each file again, byte for
+/// byte. The lock is the one `workspace.gandr.lock` that the members share,
+/// and it holds the table of `tools`.
 #[test]
 fn the_witness_workspace_s_manifests_are_its_models_2687()
 {
@@ -3919,12 +3919,18 @@ fn the_witness_workspace_s_manifests_are_its_models_2687()
     let mut wanted = String::new();
     for file in written {
         wanted.clear();
-        let _formatted = write!(wanted, "projects/{file}: unchanged");
+        let _formatted = write!(wanted, "projects/{file}: ");
         assert!(
             reconciled.iter().any(|line| line.contains(&wanted)),
-            "`{file}` is unchanged: {printed}"
+            "`{file}` is reconciled: {printed}"
         );
     }
+    assert!(
+        reconciled
+            .iter()
+            .any(|line| line.contains("projects/workspace.gandr.lock: unchanged")),
+        "the lock that the tree holds is kept: {printed}"
+    );
     let scratch = Scratch::new(Path::new("witness"));
     let mut pending = Vec::from([PathBuf::new()]);
     while let Some(directory) = pending.pop() {
@@ -3946,10 +3952,12 @@ fn the_witness_workspace_s_manifests_are_its_models_2687()
     let copied = ran(gandr(&[Path::new("check"), &scratch.0]));
     assert_eq!(code(&copied), Code(0_i32), "{}", stderr(&copied));
     for file in written {
+        let tree = std::fs::read_to_string(workspace.join(file))
+            .expect("the check of the workspace writes each file");
         assert_eq!(
             std::fs::read_to_string(scratch.0.join(file)).ok(),
-            std::fs::read_to_string(workspace.join(file)).ok(),
-            "the copy writes `{file}` as the tree commits it"
+            Some(tree),
+            "the copy writes `{file}` as the check of the workspace writes it"
         );
     }
 }
