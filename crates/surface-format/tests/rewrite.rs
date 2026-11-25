@@ -1614,7 +1614,7 @@ fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), [Withdrawal {
         declaration: String::from("Expr"),
-        span: ByteSpan::new(ByteOffset::from(28_usize), ByteOffset::from(188_usize))
+        span: ByteSpan::new(ByteOffset::from(28_usize), ByteOffset::from(161_usize))
             .expect("a span"),
         reason: Withdrawn::Obligations,
     }]);
@@ -1639,13 +1639,13 @@ fn an_obligation_withdraws_only_the_form_that_holds_it_8085()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), [Withdrawal {
         declaration: String::from("second"),
-        span: ByteSpan::new(ByteOffset::from(60_usize), ByteOffset::from(141_usize))
+        span: ByteSpan::new(ByteOffset::from(60_usize), ByteOffset::from(125_usize))
             .expect("a span"),
         reason: Withdrawn::Obligations,
     }]);
     assert_eq!(
         formatted.into_text(),
-        "def first(a : Type, x : a, p : Path[.A = a] x x) -> a = x;\n\ndef second(a : Type, x : a, p : Path[.A = Type](Path[.A = a](x, x), _)) -> a = x;\n"
+        "def first(a : Type, x : a, p : Path[.A = a] x x) -> a = x;\n\ndef second(a : Type, x : a, p : Path[.A = a](x, x @ x)) -> a = x;\n"
     );
 }
 
