@@ -11944,6 +11944,23 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     self.shared().refuse_applied(target, &mut chain)?;
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 },
+                // `(F A).T` selects out of the application the parentheses
+                // hold.
+                Shape::Form {
+                    former: Former::ParenthesizedType,
+                    ..
+                } => {
+                    let mut grouped = Pieces::new();
+                    read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut grouped)?;
+                    let mut cursor = Cursor::new(&grouped.pieces, target.span);
+                    let _open = cursor.tile(TileName::PAREN_OPEN);
+                    if let Run::One(inner) = cursor.operands()
+                        && let Some((_, Former::TypeApplication)) = self.cx().form_at(inner)?
+                    {
+                        self.shared().refuse_applied(inner, &mut chain)?;
+                    }
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
+                },
                 Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 },
