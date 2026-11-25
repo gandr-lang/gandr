@@ -146,14 +146,14 @@ const CLOSERS: &[&str] = &[")", "]", "}"];
 /// compound bridge tiles and the binders' tiles included.
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "bind", "boundary", "break",
-    "close", "codata", "continue", "data", "def", "drop", "dup", "else", "end", "ext", "extern",
-    "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob", "handle", "hold", "if",
-    "import", "in", "include", "infix", "infixl", "infixr", "into", "is", "law", "let", "loop",
-    "match", "migrate", "mobile", "module", "node", "obs", "offer", "offers", "on", "op", "oper",
-    "pack", "path", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release",
-    "renaming", "requires", "resume", "return", "rule", "run", "select", "send", "shape", "sort",
-    "tail", "theory", "thunk", "type", "type(", "under", "unwind", "var", "via", "where", "while",
-    "with", "world",
+    "close", "codata", "continue", "data", "def", "drop", "dup", "effect", "else", "end", "ext",
+    "extern", "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob", "handle",
+    "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "into", "is", "law",
+    "let", "loop", "match", "migrate", "mobile", "module", "node", "obs", "offer", "offers", "on",
+    "op", "oper", "pack", "path", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv",
+    "release", "renaming", "requires", "resume", "return", "rule", "run", "select", "send",
+    "shape", "sort", "tail", "theory", "thunk", "type", "type(", "under", "unwind", "var", "via",
+    "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions and circuits.
@@ -177,7 +177,7 @@ const DEFINERS: &[&str] = &[
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[
-    "as", "feed", "for", "handle", "hold", "module", "node", "var",
+    "as", "effect", "feed", "for", "handle", "hold", "module", "node", "var",
 ];
 
 /// The bracket a tile occurrence stands inside within its own form.
