@@ -27,6 +27,7 @@
 //! | a literal as `v` | `llvm.mlir.constant` |
 //! | the unit `()` as `v`, the tuple of no fields | none: the unit has no word |
 //! | `⟨w.wrapping_add(v, u) \|+ k⟩` | `gandr.wrapping_add`, then `k`; so for each native row, such as `gandr.not` for `w.not(v)` |
+//! | `⟨f \|+ force(apply(v; apply(u; k)))⟩`, `f` the function of a native row | the operation of the row over `v` and `u`, then `k` |
 //! | `⟨c \|+ force(apply(v; β))⟩` | `gandr.jump @c` |
 //! | `⟨c \|+ force(apply(v; μ̃x. s))⟩` | `gandr.call @c`, `x` its result, then `s` |
 //! | `⟨μα. s \|− k⟩`, a naming cut | none: `α` names `k`, then `s`; a cut against `α` is a cut against `k` |
@@ -46,6 +47,12 @@
 //! that is not the producer of a cut, gives [`Form::Closure`]. A negative cut
 //! of a capture against a binder `μ̃` binds the capture by name, so it is a
 //! closure too, and gives [`Form::Closure`].
+//!
+//! The elaboration gives a native row in a body as the row's own function, a
+//! thunk `thunk(cocase{apply(x; β) ⇒ … ⟨row(x, …) |+ β⟩})`, which `force` and
+//! the `apply` frames of the arguments open. Such a thunk against `force` is
+//! the operation of the row, with no closure. A thunk of another shape against
+//! `force` gives [`Form::Closure`].
 //!
 //! A case of an injection takes its arm with no step. A case of a sum switches
 //! on its tag to one block for each arm. A branch that delivers to a consumer
@@ -1904,12 +1911,9 @@ impl Lowering<'_, '_>
     /// operation over its words, or the sum of a `checked_` row.
     ///
     /// # Specification
-    /// - ensures: the value of an operand, the result of a new native operation
-    ///   of the width of its row, or a sum of that width and `Unit` for a
-    ///   `checked_` row.
-    /// - fails: as [`Self::operand`], and [`Form::Native`] for a row with no
-    ///   operation of the dialect, for a result of another kind than its row,
-    ///   or for a count of operands other than its arity.
+    /// - ensures: the value of an operand, or what [`Self::row`] gives for a
+    ///   native row with its arguments.
+    /// - fails: as [`Self::operand`] and [`Self::row`].
     /// - panics: none.
     ///
     /// # Errors
@@ -1943,6 +1947,45 @@ impl Lowering<'_, '_>
         else {
             return self.operand(producer);
         };
+        self.row(primitive, arguments)
+    }
+
+    /// The native operation of `primitive` over the words of `arguments`.
+    ///
+    /// # Specification
+    /// - ensures: the result of a new native operation of the width of its row,
+    ///   or a sum of that width and `Unit` for a `checked_` row.
+    /// - fails: as [`Self::word`] for an argument, and [`Form::Native`] for a
+    ///   row with no operation of the dialect, for a result of another kind
+    ///   than its row, or for a count of arguments other than its arity.
+    /// - panics: none.
+    ///
+    /// # Errors
+    ///
+    /// As the failure clause states.
+    ///
+    /// # Cost
+    /// - allocation: the steps and the types of the operation, growth within
+    ///   the function
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the operation of `inc`, of `wrapped` and of a forced
+    ///   native row is lowered, each bit row of each width is lowered, each
+    ///   branch of a `checked_` row runs, and the text compiles.
+    /// - witness: `lower::tests::wrapped_gives_the_pattern_of_the_greatest_byte`
+    /// - witness: `lower::tests::each_bit_row_of_each_width_becomes_its_operation`
+    /// - witness: `lower::tests::each_branch_of_a_checked_row_runs`
+    /// - witness: `lower::tests::a_forced_native_row_in_a_body_is_its_operation`
+    #[spec(
+        captures: [before = self.function.steps.len()],
+        ensures: |ref ret| ret.is_err() || self.function.steps.len() <= before.saturating_add(3),
+    )]
+    fn row(
+        &mut self,
+        primitive: Primitive,
+        arguments: Arguments<ProducerId>,
+    ) -> Result<Operand, Form>
+    {
         let native = native(primitive)?;
         if arguments.len() != primitive.arguments().len() {
             return Err(Form::Native);
@@ -1989,6 +2032,163 @@ impl Lowering<'_, '_>
                 _,
             ) => Err(Form::Native),
         }
+    }
+
+    /// The native row that the thunk `producer` stands for, when it is the
+    /// row's own function: `thunk(cocase{apply(x₁; β₁) ⇒ … cocase{apply(xₙ;
+    /// βₙ) ⇒ ⟨row(x₁, …, xₙ) |+ βₙ⟩}})`, each object cut against the
+    /// covariable that its binder opens.
+    ///
+    /// # Specification
+    /// - ensures: the row when the thunk opens one `apply` arm for each
+    ///   argument of the row, each object or the row is cut against the
+    ///   innermost covariable, and the arguments of the row are the parameters
+    ///   of the arms in order; `None` for each other producer.
+    /// - panics: none.
+    /// - intension: one turn of the loop for each arm, with no recursion and no
+    ///   allocation.
+    /// - executable: none — the shape is the statement, and the witness lowers
+    ///   the shape that the elaboration gives to a native row in a body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a forced native row of one and of two arguments is
+    ///   its row; a thunk of a row whose arguments are swapped is a closure.
+    /// - witness: `lower::tests::a_forced_native_row_in_a_body_is_its_operation`
+    fn forced_row(
+        &self,
+        producer: ProducerId,
+    ) -> Option<Primitive>
+    {
+        let &ProducerNode::Thunk { body } = self.arena.producer(producer)?
+        else {
+            return None;
+        };
+        let innermost = |consumer: ConsumerId| {
+            matches!(
+                self.arena.consumer(consumer),
+                Some(&ConsumerNode::Covariable(index)) if u32::from(index) == 0
+            )
+        };
+        let mut command = body;
+        let mut arity = 0_u32;
+        loop {
+            let &CommandNode::Cut {
+                producer, consumer, ..
+            } = self.arena.command(command)?
+            else {
+                return None;
+            };
+            if !innermost(consumer) {
+                return None;
+            }
+            match *self.arena.producer(producer)? {
+                ProducerNode::Cocase { ref arms } => {
+                    let &[
+                        CopatternArm {
+                            destructor: DestructorTag::Apply,
+                            body,
+                        },
+                    ] = &**arms
+                    else {
+                        return None;
+                    };
+                    arity = arity.checked_add(1)?;
+                    command = body;
+                },
+                ProducerNode::Primitive {
+                    primitive,
+                    arguments,
+                } => {
+                    let parameters = match arguments {
+                        Arguments::Unary(only) => [Some(only), None],
+                        Arguments::Binary([left, right]) => [Some(left), Some(right)],
+                    };
+                    let named = parameters.iter().flatten().enumerate().all(|(place, &argument)| {
+                        let place = u32::try_from(place).unwrap_or(u32::MAX);
+                        matches!(
+                            self.arena.producer(argument),
+                            Some(&ProducerNode::Variable { zone: Zone::Intuitionistic, index })
+                                if arity.checked_sub(1).and_then(|last| last.checked_sub(place)) == Some(u32::from(index))
+                        )
+                    });
+                    let count = u32::try_from(arguments.len()).ok()?;
+                    return (named && count == arity).then_some(primitive);
+                },
+                ProducerNode::Reify(_)
+                | ProducerNode::Decompose(_)
+                | ProducerNode::Variable { .. }
+                | ProducerNode::Constant(_)
+                | ProducerNode::Literal(_)
+                | ProducerNode::Code(_)
+                | ProducerNode::Constructor { .. }
+                | ProducerNode::Thunk { .. }
+                | ProducerNode::Fixpoint { .. }
+                | ProducerNode::Closure { .. }
+                | ProducerNode::Mu { .. } => return None,
+            }
+        }
+    }
+
+    /// Lower the native row `primitive` against the frame `force(f)` of its
+    /// own function, and give the command after it.
+    ///
+    /// # Specification
+    /// - ensures: the operation of [`Self::row`] over the argument of each
+    ///   `apply` frame of `f`, one frame for each argument of the row, then its
+    ///   result goes to the consumer after the frames.
+    /// - fails: [`Form::Delivery`] for fewer `apply` frames than the arguments
+    ///   of the row, or a frame of `force` among them; [`Form::Destructor`] for
+    ///   an `apply` frame with other children; and as [`Self::row`] and
+    ///   [`Self::deliver`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    ///
+    /// As the failure clause states.
+    ///
+    /// # Cost
+    /// - allocation: the steps and the types of the operation, growth within
+    ///   the function
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `u8.wrapping_add 255u8 3u8` in a body gives
+    ///   `gandr.wrapping_add` and runs to 2, and a checked row in a body gives
+    ///   its sum to a case.
+    /// - witness: `lower::tests::a_forced_native_row_in_a_body_is_its_operation`
+    fn forced(
+        &mut self,
+        primitive: Primitive,
+        frame: ConsumerId,
+    ) -> Result<Option<CommandId>, Form>
+    {
+        let mut taken: [Option<ProducerId>; 2] = [None, None];
+        let mut frame = frame;
+        for slot in taken.iter_mut().take(primitive.arguments().len()) {
+            let &ConsumerNode::Destructor {
+                tag,
+                ref producers,
+                ref consumers,
+            } = self.arena.consumer(frame).ok_or(Form::Dangling)?
+            else {
+                return Err(Form::Delivery);
+            };
+            if tag != DestructorTag::Apply {
+                return Err(Form::Delivery);
+            }
+            let (&[argument], &[next]) = (&**producers, &**consumers)
+            else {
+                return Err(Form::Destructor);
+            };
+            *slot = Some(argument);
+            frame = next;
+        }
+        let arguments = match taken {
+            [Some(only), None] => Arguments::Unary(only),
+            [Some(left), Some(right)] => Arguments::Binary([left, right]),
+            [None, _] => return Err(Form::Native),
+        };
+        let operand = self.row(primitive, arguments)?;
+        self.deliver(operand, frame)
     }
 
     /// Lower the call of the constant `callee` against the frame `force(f)`,
@@ -2147,19 +2347,22 @@ impl Lowering<'_, '_>
     /// - ensures: one step for each operation of the table of the module, in
     ///   the order of the run. The last step is a return, a jump or an
     ///   `llvm.unreachable` after a call of `Void`. A naming cut `⟨μα. s | k⟩`
-    ///   gives no step: `α` names `k`, and `s` follows. A case over a sum in a
-    ///   word ends its block with a switch, and each of its branches follows in
-    ///   a block of its own, the first branch first.
+    ///   gives no step: `α` names `k`, and `s` follows. The function of a
+    ///   native row against a frame of `force` is the operation of the row, as
+    ///   [`Self::forced`] states. A case over a sum in a word ends its block
+    ///   with a switch, and each of its branches follows in a block of its own,
+    ///   the first branch first.
     /// - fails: [`Form::Dangling`] for a node the arena does not hold;
     ///   [`Form::Unbound`] for a covariable that names nothing;
     ///   [`Form::Destructor`] for a frame of `force` with other children;
-    ///   [`Form::Closure`] for an `apply` frame against an object, and for a
-    ///   negative cut of a capture against a binder `μ̃`; [`Form::Delivery`] for
-    ///   an `apply` frame against another producer or a frame of `force`
-    ///   against a producer that is not a constant or the self binder of the
-    ///   function; [`Form::Fixpoint`] for a recursive thunk inside the body;
-    ///   and as [`Self::value`], [`Self::call`], [`Self::deliver`] and
-    ///   [`Self::resume`].
+    ///   [`Form::Closure`] for an `apply` frame against an object, for a frame
+    ///   of `force` against a thunk that is not the function of a native row,
+    ///   and for a negative cut of a capture against a binder `μ̃`;
+    ///   [`Form::Delivery`] for an `apply` frame against another producer or a
+    ///   frame of `force` against a producer that is not a constant, the self
+    ///   binder of the function or a thunk; [`Form::Fixpoint`] for a recursive
+    ///   thunk inside the body; and as [`Self::value`], [`Self::call`],
+    ///   [`Self::forced`], [`Self::deliver`] and [`Self::resume`].
     /// - panics: none.
     /// - intension: one turn of the loop for each command of the body, with no
     ///   recursion. The stack of the continuations holds one name for each
@@ -2180,7 +2383,8 @@ impl Lowering<'_, '_>
     ///   native operation with a call as its operand runs, each branch of a
     ///   case runs, and the self binder of a recursive definition is its
     ///   function. A negative cut of a capture against a binder is refused, and
-    ///   a positive one runs the capture.
+    ///   a positive one runs the capture. A native row in a body runs as its
+    ///   operation.
     /// - witness: `lower::tests::each_definition_of_the_fixture_becomes_an_object`
     /// - witness: `lower::tests::a_thunk_inside_a_body_is_a_closure`
     /// - witness: `lower::tests::a_let_of_a_call_with_a_call_as_its_argument_runs`
@@ -2188,6 +2392,7 @@ impl Lowering<'_, '_>
     /// - witness: `lower::tests::a_fixpoint_at_the_head_of_a_definition_is_its_function`
     /// - witness: `lower::tests::a_fixpoint_inside_a_body_is_refused_by_name`
     /// - witness: `lower::tests::a_capture_bound_by_name_is_refused_as_a_closure`
+    /// - witness: `lower::tests::a_forced_native_row_in_a_body_is_its_operation`
     #[spec(ensures: |ref ret| ret.is_err() || matches!(self.function.steps.last(), Some(&(Step::Return(_) | Step::Jump { .. } | Step::Unreachable))))]
     fn body(
         &mut self,
@@ -2248,35 +2453,40 @@ impl Lowering<'_, '_>
                     else {
                         return Err(Form::Destructor);
                     };
-                    let callee_node = self.arena.producer(producer).ok_or(Form::Dangling)?;
-                    let callee = match *callee_node {
-                        ProducerNode::Constant(callee) => callee,
-                        ProducerNode::Variable {
-                            zone: Zone::Intuitionistic,
-                            index,
-                        } => self.itself(index).ok_or(Form::Delivery)?,
-                        ProducerNode::Thunk { .. }
-                        | ProducerNode::Cocase { .. }
-                        | ProducerNode::Mu { .. } => {
-                            return Err(Form::Closure);
-                        },
-                        ProducerNode::Fixpoint { .. } => return Err(Form::Fixpoint),
-                        ProducerNode::Variable {
-                            zone: Zone::Linear, ..
-                        }
-                        | ProducerNode::Literal(_)
-                        | ProducerNode::Constructor { .. }
-                        | ProducerNode::Primitive { .. } => {
-                            return Err(Form::Delivery);
-                        },
-                        ProducerNode::Reify(_)
-                        | ProducerNode::Decompose(_)
-                        | ProducerNode::Code(_)
-                        | ProducerNode::Closure { .. } => {
-                            return Err(Form::Outside(producer_name(callee_node)));
-                        },
-                    };
-                    self.call(callee, frame)?
+                    if let Some(primitive) = self.forced_row(producer) {
+                        self.forced(primitive, frame)?
+                    }
+                    else {
+                        let callee_node = self.arena.producer(producer).ok_or(Form::Dangling)?;
+                        let callee = match *callee_node {
+                            ProducerNode::Constant(callee) => callee,
+                            ProducerNode::Variable {
+                                zone: Zone::Intuitionistic,
+                                index,
+                            } => self.itself(index).ok_or(Form::Delivery)?,
+                            ProducerNode::Thunk { .. }
+                            | ProducerNode::Cocase { .. }
+                            | ProducerNode::Mu { .. } => {
+                                return Err(Form::Closure);
+                            },
+                            ProducerNode::Fixpoint { .. } => return Err(Form::Fixpoint),
+                            ProducerNode::Variable {
+                                zone: Zone::Linear, ..
+                            }
+                            | ProducerNode::Literal(_)
+                            | ProducerNode::Constructor { .. }
+                            | ProducerNode::Primitive { .. } => {
+                                return Err(Form::Delivery);
+                            },
+                            ProducerNode::Reify(_)
+                            | ProducerNode::Decompose(_)
+                            | ProducerNode::Code(_)
+                            | ProducerNode::Closure { .. } => {
+                                return Err(Form::Outside(producer_name(callee_node)));
+                            },
+                        };
+                        self.call(callee, frame)?
+                    }
                 },
                 ConsumerNode::Destructor {
                     tag: DestructorTag::Apply,

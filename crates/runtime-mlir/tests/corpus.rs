@@ -258,11 +258,18 @@ mod tests
         assert_eq!(
             agreed,
             [
+                "exit-code.wrapped_byte",
+                "exit-code.answer",
+                "exit-code.exit_code",
                 "left.missing",
                 "left.left_word",
                 "pick.taken",
                 "pick.skipped",
-                "pick.picked"
+                "pick.picked",
+                "saturate.small",
+                "saturate.large",
+                "saturate.direct",
+                "saturate.saturated"
             ],
             "the items whose compiled code gives the answer of the executor"
         );
@@ -274,8 +281,7 @@ mod tests
             counts,
             [
                 ("alone: refuses ImportUnresolved", 1),
-                ("entry: Signature", 2),
-                ("lower: Closure", 9),
+                ("entry: Signature", 4)
             ],
             "the refused items, counted by the name of the refusal: {refused:#?}"
         );

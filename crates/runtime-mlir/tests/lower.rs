@@ -641,6 +641,123 @@ mod tests
         assert_eq!(refusal, Err(Form::Closure), "the slice has no closure");
     }
 
+    /// The row `name` of the native table.
+    ///
+    /// # Specification
+    /// trivial.
+    fn row(name: &str) -> Primitive
+    {
+        PRELUDE
+            .iter()
+            .copied()
+            .find(|row| row.name().as_ref() == name)
+            .unwrap_or_else(|| panic!("{name} is a row of the native table"))
+    }
+
+    /// `force function a₁ … aₙ`: the elaboration of a native row in a body,
+    /// whose head is the row's own function.
+    ///
+    /// # Specification
+    /// trivial.
+    fn applied(
+        core: &mut CoreArena,
+        function: ValueId,
+        arguments: &[FixedInteger],
+    ) -> ComputationId
+    {
+        let mut call = core.computation_force(function);
+        for &argument in arguments {
+            let argument = core.value_literal(Literal::Fixed(argument));
+            call = core.computation_application(call, argument);
+        }
+        call
+    }
+
+    #[test]
+    fn a_forced_native_row_in_a_body_is_its_operation()
+    {
+        let mut core = CoreArena::new();
+        let (_, gives_word) = types(&mut core);
+        // def wrapped() -> u8 = u8.wrapping_add 255u8 3u8; and
+        // def flipped() -> u8 = u8.not 0u8; each row in its body.
+        let (add, _) = native_definition(&mut core, wrapping_add());
+        let call = applied(&mut core, add, &[
+            FixedInteger::U8(255),
+            FixedInteger::U8(3),
+        ]);
+        let wrapped = core.value_thunk(call);
+        let (not, _) = native_definition(&mut core, row("u8.not"));
+        let call = applied(&mut core, not, &[FixedInteger::U8(0)]);
+        let flipped = core.value_thunk(call);
+        let exits = [("wrapped", wrapped), ("flipped", flipped)].map(|(name, value)| {
+            let module = lowered(&core, &[(value, gives_word)], &[Symbol::from(name)])
+                .unwrap_or_else(|form| panic!("{name}: the forced row lowers: {form}"));
+            let text = module.to_string();
+            assert!(
+                !text.contains("gandr.call") && !text.contains("gandr.jump"),
+                "{name}: the row is its operation, with no call:\n{text}"
+            );
+            exit_code(&module, ConstantIndex::from(0_usize), Symbol::from(name)).code()
+        });
+        assert_eq!(
+            exits,
+            [Some(2_i32), Some(255_i32)],
+            "255 + 3 wraps to 2, and not 0 is 255"
+        );
+
+        // def direct() -> u8 = match u8.checked_add a b { | s => s | _ => 7u8
+        // };
+        let (checked, _) = native_definition(&mut core, row("u8.checked_add"));
+        let answers = [[200_u8, 55], [200, 100]].map(|[left, right]| {
+            let call = applied(&mut core, checked, &[
+                FixedInteger::U8(left),
+                FixedInteger::U8(right),
+            ]);
+            let field = variable(&mut core, DeBruijnIndex::from(0));
+            let first = core.computation_return(field);
+            let seven = byte(&mut core, FixedInteger::U8(7));
+            let second = core.computation_return(seven);
+            let scrutinee = variable(&mut core, DeBruijnIndex::from(0));
+            let case = core.computation_case(scrutinee, &[first, second]);
+            let body = core.computation_bind(call, case);
+            let direct = core.value_thunk(body);
+            let module = lowered(&core, &[(direct, gives_word)], &[Symbol::from("direct")])
+                .unwrap_or_else(|form| panic!("the forced checked row lowers: {form}"));
+            exit_code(
+                &module,
+                ConstantIndex::from(0_usize),
+                Symbol::from("direct"),
+            )
+            .code()
+        });
+        assert_eq!(
+            answers,
+            [Some(255_i32), Some(7_i32)],
+            "the sum of the forced checked row goes to its case"
+        );
+
+        // A thunk of the row with its arguments swapped is no row: a closure.
+        let x = variable(&mut core, DeBruijnIndex::from(1));
+        let y = variable(&mut core, DeBruijnIndex::from(0));
+        let swapped = core.computation_primitive(wrapping_sub(), Arguments::Binary([y, x]));
+        let inner = core.computation_lambda(swapped);
+        let outer = core.computation_lambda(inner);
+        let function = core.value_thunk(outer);
+        let call = applied(&mut core, function, &[
+            FixedInteger::U8(5),
+            FixedInteger::U8(1),
+        ]);
+        let reversed = core.value_thunk(call);
+        assert_eq!(
+            lowered(&core, &[(reversed, gives_word)], &[Symbol::from(
+                "reversed"
+            )])
+            .map(|_| ()),
+            Err(Form::Closure),
+            "a thunk whose row takes its parameters in another order is a closure"
+        );
+    }
+
     /// The row `u8.wrapping_sub` of the native table.
     ///
     /// # Specification
