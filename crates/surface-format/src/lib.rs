@@ -2219,7 +2219,7 @@ fn verify(
         return Err(FormatError::Changed(Change::Meaning));
     }
     let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
-    if paired(leaves, &again.leaves).is_none() {
+    if !spells_alike(leaves, &again.leaves, |_, _| {}) {
         return Err(FormatError::Changed(Change::Material));
     }
     let before = comment_runs(parsed.tree().source(), &comments(parsed.tree()));
@@ -2353,7 +2353,7 @@ fn verify_rewritten(
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
     let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
-    if paired(written, &again.leaves).is_none() {
+    if !spells_alike(written, &again.leaves, |_, _| {}) {
         return Err(FormatError::Changed(Change::Material));
     }
     let before_comments = comments(parsed.tree());
@@ -2645,11 +2645,36 @@ fn kept_runs<'source>(
         .collect()
 }
 
+/// Whether `written` and `candidate` spell the same material, each pair of
+/// leaves that spell one material given to `each` in order. A statement's `;`
+/// of `written` that `candidate` leaves out is passed over: the layout pass
+/// places it where it ends a line, and the tree or the lowering keeps the
+/// structure it marks.
+///
+/// # Specification
+/// trivial.
+fn spells_alike<'written, 'candidate, 'source, 'read>(
+    written: &'written [Leaf<'source>],
+    candidate: &'candidate [Leaf<'read>],
+    mut each: impl FnMut(&'written Leaf<'source>, &'candidate Leaf<'read>),
+) -> bool
+{
+    let mut read = material_leaves(candidate).peekable();
+    for wrote in material_leaves(written) {
+        match read.next_if(|next| {
+            next.material == wrote.material && <&str>::from(next.text) == <&str>::from(wrote.text)
+        }) {
+            Some(next) => each(wrote, next),
+            None if wrote.offside == Offside::Ends => {},
+            None => return false,
+        }
+    }
+    read.next().is_none()
+}
+
 /// The material leaves of `written` each beside the leaf of `candidate`
-/// that spells it, in order; none when the two do not spell the same
-/// material. A statement's `;` of `written` that `candidate` leaves out is
-/// passed over: the layout pass places it where it ends a line, and the tree
-/// or the lowering keeps the structure it marks.
+/// that spells it, in order, as [`spells_alike`] pairs them; none when the
+/// two do not spell the same material.
 ///
 /// # Specification
 /// trivial.
@@ -2661,18 +2686,8 @@ fn paired<'written, 'candidate, 'source, 'read>(
     candidate: &'candidate [Leaf<'read>],
 ) -> Option<Vec<(&'written Leaf<'source>, &'candidate Leaf<'read>)>>
 {
-    let mut read = material_leaves(candidate).peekable();
     let mut pairs = Vec::new();
-    for wrote in material_leaves(written) {
-        match read.next_if(|next| {
-            next.material == wrote.material && <&str>::from(next.text) == <&str>::from(wrote.text)
-        }) {
-            Some(next) => pairs.push((wrote, next)),
-            None if wrote.offside == Offside::Ends => {},
-            None => return None,
-        }
-    }
-    read.next().is_none().then_some(pairs)
+    spells_alike(written, candidate, |wrote, read| pairs.push((wrote, read))).then_some(pairs)
 }
 
 /// The tokens and block comments of `leaves`, in order. An empty tile, as the
