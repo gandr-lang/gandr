@@ -98,6 +98,85 @@ pub struct Values
     pub parts: Vec<Part>,
 }
 
+/// The values of a tree that the store holds, before a run computes the
+/// rest.
+#[derive(Debug)]
+pub struct Held
+{
+    /// Each source of the tree, in name order.
+    pub sources: Vec<Source>,
+    /// The key of each source.
+    pub keys: Vec<Digest>,
+    /// The value of each source that the store holds.
+    pub values: Vec<Option<Vec<u8>>>,
+    /// The parts of the lookup, in their order.
+    pub parts: Vec<Part>,
+}
+
+impl Held
+{
+    /// How many sources have no value in the store.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn missing(&self) -> usize
+    {
+        self.values.iter().filter(|value| value.is_none()).count()
+    }
+}
+
+/// The recovery records of `tree` under the tool `tool` that `store` holds.
+///
+/// # Specification
+/// - ensures: one key and one place for a value for each source.
+///
+/// # Errors
+/// [`ComputeError`] when the tree or the store refuses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a second run holds each value that a first run computed,
+///   and another tool holds none.
+/// - witness: `compute::tests::the_values_of_a_tree_are_its_records`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |held| held.keys.len() == held.sources.len() && held.values.len() == held.sources.len()))]
+#[inline]
+pub fn held(
+    store: &Store,
+    tree: &Tree,
+    tool: &Digest,
+) -> Result<Held, ComputeError>
+{
+    let mut parts = Vec::new();
+    let started = Instant::now();
+    let sources = tree.sources().map_err(ComputeError::Tree)?;
+    parts.push(Part {
+        name: "list the sources",
+        count: sources.len(),
+        time: started.elapsed(),
+    });
+    let started = Instant::now();
+    let keys: Vec<Digest> = sources
+        .iter()
+        .map(|source| Digest::of_parts([tool.0.as_slice(), source.object.as_bytes()]))
+        .collect();
+    let mut values: Vec<Option<Vec<u8>>> = Vec::with_capacity(sources.len());
+    for key in &keys {
+        values.push(store.get(RECOVERY, key).map_err(ComputeError::Store)?);
+    }
+    parts.push(Part {
+        name: "read the store",
+        count: keys.len(),
+        time: started.elapsed(),
+    });
+    Ok(Held {
+        sources,
+        keys,
+        values,
+        parts,
+    })
+}
+
 /// The recovery records of `tree` under the tool `tool`.
 ///
 /// Each source's value is read from `store`, or computed by `recorder` and
@@ -123,28 +202,12 @@ pub fn recovery(
     recorder: &Recorder<'_>,
 ) -> Result<Values, ComputeError>
 {
-    let mut parts = Vec::new();
-    let started = Instant::now();
-    let sources = tree.sources().map_err(ComputeError::Tree)?;
-    parts.push(Part {
-        name: "list the sources",
-        count: sources.len(),
-        time: started.elapsed(),
-    });
-    let started = Instant::now();
-    let keys: Vec<Digest> = sources
-        .iter()
-        .map(|source| Digest::of_parts([tool.0.as_slice(), source.object.as_bytes()]))
-        .collect();
-    let mut held: Vec<Option<Vec<u8>>> = Vec::with_capacity(sources.len());
-    for key in &keys {
-        held.push(store.get(RECOVERY, key).map_err(ComputeError::Store)?);
-    }
-    parts.push(Part {
-        name: "read the store",
-        count: keys.len(),
-        time: started.elapsed(),
-    });
+    let Held {
+        sources,
+        keys,
+        values: mut held,
+        mut parts,
+    } = self::held(store, tree, tool)?;
     let missing: Vec<usize> = held
         .iter()
         .enumerate()
@@ -268,6 +331,7 @@ mod tests
 {
     use gandr_surface_grammar::built_in;
 
+    use super::held;
     use super::recovery;
     use crate::recovery::Recorder;
     use crate::store::Digest;
@@ -304,6 +368,18 @@ mod tests
         let second = recovery(&store, &tree, &tool, &recorder).expect("the values are given");
         assert_eq!(second.computed, 0);
         let other = Digest::of_parts([b"other tool".as_slice()]);
+        assert_eq!(
+            held(&store, &tree, &tool)
+                .expect("the store reads")
+                .missing(),
+            0
+        );
+        assert_eq!(
+            held(&store, &tree, &other)
+                .expect("the store reads")
+                .missing(),
+            2
+        );
         assert_eq!(
             recovery(&store, &tree, &other, &recorder)
                 .expect("the values are given")

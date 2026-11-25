@@ -26,11 +26,14 @@ The key of a value is the BLAKE3 digest of the tool and the input. The tool is t
 - `Store` reads and writes a value by its kind and its key; `Digest` is a key or a tool.
 - `Tree` reads a commit or the work tree from git: its corpus sources, their contents in one batch, and the tool of a kind.
 - `workspace::closure` gives the packages that build a package, from `cargo metadata`.
-- `compute::recovery` gives the recovery records of a tree: each from the store, or computed on each core and written to the store.
+- `compute::recovery` gives the recovery records of a tree: each from the store, or computed on each core and written to the store. `compute::held` gives the values that the store holds.
+- `checkout::recovery` computes the records of a commit whose tool is not the tool of the run: the `outputs` binary of that commit runs in a detached work tree below `target/`, on the same store.
+- `difference::changes` gives the sources whose values differ between two trees: added, removed or changed.
+- `gauge` reads the size of the store and the count of the values of the base that a run computes again. A gauge past its bound writes one line with the priority `err` and runs the command that `GANDR_OUTPUT_EVENT` names.
 
 ## Expected features
 
-`git` on the path. The store is the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs` below the workspace root.
+`git` on the path. The store is the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs` below the workspace root. `GANDR_OUTPUT_STORE_BOUND` sets the bound of the size of the store in bytes, and `GANDR_OUTPUT_RECOMPUTED_BOUND` the bound of the values of the base that one run computes again. `GANDR_OUTPUT_EVENT` names a command that takes the name of a gauge, its value and its bound.
 
 ## Examples
 
@@ -38,6 +41,7 @@ The key of a value is the BLAKE3 digest of the tool and the input. The tool is t
 cargo nextest run -p gandr-workflow-outputs
 cargo run -p gandr-workflow-outputs --bin outputs -- compute recovery --cost          # the work tree
 cargo run -p gandr-workflow-outputs --bin outputs -- compute recovery --revision HEAD --print
+cargo run -p gandr-workflow-outputs --bin outputs -- difference recovery --base origin/main --cost
 ```
 
 ## Dependencies

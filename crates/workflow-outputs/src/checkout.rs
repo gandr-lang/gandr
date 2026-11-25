@@ -1,0 +1,113 @@
+//! The values of a commit whose tool is not the tool of this run.
+//!
+//! A value is a function of its tool, so the tool of the commit must compute
+//! it. The run checks the commit out in a detached work tree below the
+//! target directory, builds the `outputs` binary of the commit there, and
+//! runs it on the same store. The work tree and its target directory stay
+//! for the next run, so a second commit with the same packages builds no
+//! more than cargo needs.
+
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Command;
+use std::process::Stdio;
+
+use crate::store::Store;
+
+/// The detached work tree of the other commit, below the target directory of
+/// the workspace `root`.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn place(root: &Path) -> PathBuf
+{
+    root.join("target/outputs-checkout")
+}
+
+/// Computes the recovery records of the commit `revision` of the repository
+/// `root` into `store`, by the `outputs` binary of that commit.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// One line that names the step that failed: the checkout of the commit, or
+/// the build or the run of its binary, with the last line that the step
+/// wrote. A commit with no `gandr-workflow-outputs` fails in its build.
+#[inline]
+pub fn recovery(
+    root: &Path,
+    store: &Store,
+    revision: &str,
+) -> Result<(), String>
+{
+    let commit = run(Command::new("git").arg("-C").arg(root).args([
+        "rev-parse",
+        "--verify",
+        &format!("{revision}^{{commit}}"),
+    ]))
+    .map_err(|error| format!("{revision} names no commit: {error}"))?;
+    let commit = commit.trim();
+    let work = place(root);
+    let checked_out = if work.join(".git").exists() {
+        run(Command::new("git")
+            .arg("-C")
+            .arg(&work)
+            .args(["checkout", "--quiet", "--detach", "--force", commit]))
+    }
+    else {
+        run(Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["worktree", "add", "--quiet", "--detach", "--force"])
+            .arg(&work)
+            .arg(commit))
+    };
+    let _checked_out = checked_out.map_err(|error| format!("the checkout of {commit}: {error}"))?;
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let _ran = run(Command::new(cargo)
+        .current_dir(&work)
+        .env("CARGO_TARGET_DIR", root.join("target/outputs-target"))
+        .env("GANDR_OUTPUT_STORE", store.root())
+        .args([
+            "run",
+            "--locked",
+            "--quiet",
+            "--package",
+            "gandr-workflow-outputs",
+            "--bin",
+            "outputs",
+            "--",
+        ])
+        .args(["compute", "recovery", "--revision", commit]))
+    .map_err(|error| format!("the tool of {commit}: {error}"))?;
+    Ok(())
+}
+
+/// The standard output of `command`, or the last line of its standard error
+/// when it fails.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The refusal to start, or the last line of standard error.
+fn run(command: &mut Command) -> Result<String, String>
+{
+    let output = command
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(stderr
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("no message")
+        .to_owned())
+}

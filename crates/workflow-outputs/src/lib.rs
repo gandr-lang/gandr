@@ -8,6 +8,11 @@
 //!   of a kind.
 //! - [`workspace`] gives the packages that build a package.
 //! - [`compute`] gives the values of a tree, from the store or computed.
+//! - [`checkout`] computes the values of a commit by the binary of that commit,
+//!   when its tool is not the tool of the run.
+//! - [`difference`] gives the changes of the values between two trees.
+//! - [`gauge`] watches the size of the store and the values that a run computes
+//!   again, each with its bound and its event.
 //!
 //! The recovery sweep of `gandr-surface-parser` compares the record of each
 //! source with this writer's record, so the sweep and the store cannot hold
@@ -15,7 +20,10 @@
 
 extern crate alloc;
 
+pub mod checkout;
 pub mod compute;
+pub mod difference;
+pub mod gauge;
 pub mod recovery;
 pub mod store;
 pub mod tree;
