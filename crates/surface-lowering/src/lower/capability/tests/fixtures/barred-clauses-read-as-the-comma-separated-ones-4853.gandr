@@ -1,7 +1,7 @@
-def commas() -> -F Unit = handle c : std.process.Exit.Eff {
+def commas() -> -F Unit = effect c : std.process.Exit.Eff {
   c.exit 1
-} with { | pure(x) => pure x | oper exit(code, k) => k *{} };
-def bars() -> -F Unit = handle c : std.process.Exit.Eff { c.exit 1 } with {
+} handle { | pure(x) => pure x | oper exit(code, k) => k *{} };
+def bars() -> -F Unit = effect c : std.process.Exit.Eff { c.exit 1 } handle {
   | pure(x) => pure x
   | oper exit(code, k) => k *{}
 };
