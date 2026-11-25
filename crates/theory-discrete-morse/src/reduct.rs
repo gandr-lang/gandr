@@ -31,13 +31,13 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_theory_graded_posets::Rank;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::Count;
+use gandr_theory_reductions::MorseError;
 
-use crate::collapse::Budget;
 use crate::collapse::Class;
-use crate::collapse::Count;
 use crate::collapse::Scheme;
 use crate::complex::Incidence;
-use crate::error::MorseError;
 use crate::gradient::Mark;
 use crate::gradient::Place;
 

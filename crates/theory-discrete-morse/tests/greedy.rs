@@ -1,11 +1,11 @@
 //! The greedy matching on the triangle: the pairs it keeps, the pairs it
 //! refuses because they close a cycle, and the faces it cannot pair.
 
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::collapse;
 use gandr_theory_discrete_morse::greedy;
+use gandr_theory_reductions::Budget;
 
 use crate::simplices::A;
 use crate::simplices::AB;

@@ -15,17 +15,18 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use gandr_theory_reductions::Closure;
+use gandr_theory_reductions::MorseError;
+
 use crate::collapse::Class;
 use crate::collapse::Scheme;
 use crate::complex::Complex;
 use crate::complex::Incidence;
 use crate::complex::Invertibility;
 use crate::complex::Standing;
-use crate::equivalence::Closure;
 use crate::equivalence::Composites;
 use crate::equivalence::Definition;
 use crate::equivalence::Images;
-use crate::error::MorseError;
 
 /// An integer chain: each cell with its coefficient, in cell order, with no
 /// coefficient zero.

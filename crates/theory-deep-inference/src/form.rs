@@ -26,7 +26,7 @@
 
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_coherent_resolutions::Tracelet;
-use gandr_theory_discrete_morse::Closure;
+use gandr_theory_reductions::Closure;
 
 use crate::template::GuardedTemplate;
 use crate::template::TemplateObstruction;

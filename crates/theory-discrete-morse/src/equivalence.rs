@@ -40,29 +40,21 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_reductions::Answer;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::Closure;
+use gandr_theory_reductions::Count;
+use gandr_theory_reductions::MorseError;
+use gandr_theory_reductions::Reduction;
+use gandr_theory_reductions::Refusal;
+use gandr_theory_reductions::matched;
 
-use crate::collapse::Budget;
-use crate::collapse::Count;
 use crate::collapse::Faults;
 use crate::collapse::Scheme;
 use crate::collapse::collapse;
 use crate::complex::Complex;
-use crate::error::MorseError;
 use crate::gradient::Mark;
 use crate::gradient::Place;
-use crate::reduction::Answer;
-use crate::reduction::Reduction;
-
-/// Whether a witness closes: its boundary runs from the one composite to the
-/// other.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Closure
-{
-    /// The witness runs from the source to the target.
-    Closes,
-    /// The witness runs elsewhere.
-    Open,
-}
 
 /// The definition of a redundant cell by its partner: the composite that
 /// takes the cell's place, and the witness from the cell to it.
@@ -840,35 +832,6 @@ where
     }
 }
 
-/// Nothing when two lists of cells are equal, or [`Refusal::Unmatched`] at
-/// the cell of the first place where they differ.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// - [`Refusal::Unmatched`]: the lists differ, at the cell named, or in their
-///   length alone.
-pub fn matched<Cell, Fault>(
-    found: &[Cell],
-    held: &[Cell],
-) -> Result<(), Refusal<Cell, Fault>>
-where
-    Cell: Clone + Eq,
-{
-    if found == held {
-        return Ok(());
-    }
-    let at = found
-        .iter()
-        .zip(held)
-        .position(|(found, held)| found != held)
-        .unwrap_or_else(|| found.len().min(held.len()));
-    Err(Refusal::Unmatched(
-        found.get(at).or_else(|| held.get(at)).cloned(),
-    ))
-}
-
 /// An equivalence read on the complex it was built on: a [`Reduction`] from
 /// the complex of its cells to its critical cells.
 #[derive(Debug)]
@@ -1086,47 +1049,6 @@ where
     }
 }
 
-/// Why a scheme gives no equivalence, or a reduction does not replay.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Refusal<Cell, Fault>
-{
-    /// The gradient of the matching closes this many cycles.
-    Cycle(Count),
-    /// This many cells whose partner does not name them back.
-    Unpaired(Count),
-    /// This many partners that do not lie in the complex.
-    Outside(Count),
-    /// This many pairs that the complex's pairing condition refuses.
-    Unpairable(Count),
-    /// The equivalence and the matching, or two composed reductions, differ
-    /// at this cell, or in their count alone.
-    Unmatched(Option<Cell>),
-    /// The witness at this cell does not close.
-    Forged(Cell),
-    /// The replacement of this redundant cell holds itself or a later removed
-    /// cell, so the definitions run in a cycle.
-    Circular(Cell),
-    /// The image of this redundant cell still holds a removed cell.
-    Unclosed(Cell),
-    /// `φ` after `ι` moves this critical cell.
-    Unretracted(Cell),
-    /// The complex's own fault, or a walk past its budget.
-    Morse(MorseError<Fault>),
-}
-
-impl<Cell, Fault> From<MorseError<Fault>> for Refusal<Cell, Fault>
-{
-    /// Wraps the collapse's refusal.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(error: MorseError<Fault>) -> Self
-    {
-        Self::Morse(error)
-    }
-}
-
 /// The faults of a check as the refusal of the first that is not zero, or
 /// nothing for an acyclic matching.
 ///
@@ -1340,7 +1262,7 @@ where
                         .get(usize::from(target))
                         .and_then(Option::as_ref)
                         .map(|removal| removal.redundant.clone());
-                    return Err(Refusal::Unmatched(None).or_circular(cell));
+                    return Err(cell.map_or(Refusal::Unmatched(None), Refusal::Circular));
                 },
                 Some(Mark::Unseen) => {
                     if let Some(mark) = marks.get_mut(usize::from(target)) {
@@ -1353,19 +1275,4 @@ where
         }
     }
     Ok(order)
-}
-
-impl<Cell, Fault> Refusal<Cell, Fault>
-{
-    /// [`Refusal::Circular`] at `cell`, or this refusal where there is no cell.
-    ///
-    /// # Specification
-    /// trivial.
-    fn or_circular(
-        self,
-        cell: Option<Cell>,
-    ) -> Self
-    {
-        cell.map_or(self, Refusal::Circular)
-    }
 }

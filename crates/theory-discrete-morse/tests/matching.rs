@@ -1,11 +1,11 @@
 //! A matching that a caller states pair by pair, read over the triangle.
 
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
-use gandr_theory_discrete_morse::Count;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::collapse;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::Count;
 
 use crate::simplices::A;
 use crate::simplices::AB;

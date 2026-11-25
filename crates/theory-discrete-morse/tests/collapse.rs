@@ -3,13 +3,13 @@
 
 use alloc::collections::BTreeMap;
 
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
-use gandr_theory_discrete_morse::Count;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Matching;
-use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::collapse;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::Count;
+use gandr_theory_reductions::MorseError;
 
 use crate::simplices::A;
 use crate::simplices::AB;

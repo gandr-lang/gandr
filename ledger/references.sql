@@ -293,8 +293,8 @@ INSERT INTO reading VALUES('Courant-2026-lazy_concurrent_convertibility_checker'
 INSERT INTO reading VALUES('Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology','theory-cellular-sheaves','reduce','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cefb8f38f0d424c785ee151c639ea3772dacb53d');
 INSERT INTO reading VALUES('Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology','theory-discrete-morse','reduct','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','e2806ee9859d5431b49caf4b760e4fe27ba94efa');
 INSERT INTO reading VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
-INSERT INTO reading VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','reduction','0f814f68e01c3855f0c5eaa765f41bc132a766e0','2026-11-07','a7c2a7c21843b7c98df5d3d4a542292e77e11ae0');
 INSERT INTO reading VALUES('Doré-2023-computing_spaces_type_theory','theory-exact-reals','graph','6099d43c994e63da017541bf4588861828115dc1','2026-11-07','e18d0d9572b33421d9960d9d8bf1df8b5df19439');
+INSERT INTO reading VALUES('Doré-2023-computing_spaces_type_theory','theory-reductions','reduction','0f814f68e01c3855f0c5eaa765f41bc132a766e0','2026-11-07','a7c2a7c21843b7c98df5d3d4a542292e77e11ae0');
 INSERT INTO reading VALUES('Doré-2023-computing_spaces_type_theory','theory-shapes','formula','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','36f894989d773771961311177868caf3f968d516');
 INSERT INTO reading VALUES('Doré-2026-dependent_multiplicities_dependent_linear_type_theory','core-term','','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
 INSERT INTO reading VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
@@ -398,8 +398,8 @@ INSERT INTO reading VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','kernel-
 INSERT INTO reading VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-cellular-sheaves','','587e03d49c1c2243e10197c7debc99b281773a42','2026-11-14','f5c99f4282c43c9fa9583cccc76285890167e21c');
 INSERT INTO reading VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-deep-inference','reduction','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
 INSERT INTO reading VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
-INSERT INTO reading VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','sum','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','d0cdb8d1085104a2bb11fc971d543c12d4765c7e');
 INSERT INTO reading VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-probability','','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','234f19cce3f96fa69a4cea4c6ff5b3cbaadb754d');
+INSERT INTO reading VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-reductions','sum','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','d0cdb8d1085104a2bb11fc971d543c12d4765c7e');
 INSERT INTO reading VALUES('vault:01a1b278-4fbc-7c31-a4f3-2a171b335796','theory-exact-reals','minimal','b2f9eac7d4078d3e8ed85141317c9a171de7b4e7','2026-11-07','5348640e9c4186d136c37c2c3e79eb9872aa1cfb');
 INSERT INTO reading VALUES('vault:01a1b278-54ca-7062-94f4-4c94748c971e','theory-exact-reals','minimal','b2f9eac7d4078d3e8ed85141317c9a171de7b4e7','2026-11-07','5348640e9c4186d136c37c2c3e79eb9872aa1cfb');
 INSERT INTO reading VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theory-exact-reals','ackermann','578de397edfc0e1cf510674eb9325ce9f7418ab6','2026-11-07','b94955e326d1fedb2039fe89e7736d72a76a471e');

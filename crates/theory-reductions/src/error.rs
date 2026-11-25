@@ -1,8 +1,34 @@
-//! The typed refusals of the collapse.
+//! The typed refusals of a complex and of a walk, and the units they count
+//! in.
 
 use core::fmt;
 
-use crate::collapse::Budget;
+wrapper! {
+    /// The most redundant cells that the walk of a gradient reaches before
+    /// the check refuses.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Budget(usize);
+}
+
+wrapper! {
+    /// A number of cells, of pairs or of edges.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Count(usize);
+}
+
+impl Count
+{
+    /// The count one more than this, or this count at the largest count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn one_more(self) -> Self
+    {
+        Self(self.0.saturating_add(1))
+    }
+}
 
 /// Why a collapse or a reduct gives no answer: the caller's complex refuses,
 /// the walk of the gradient goes past its budget, or a sum passes the

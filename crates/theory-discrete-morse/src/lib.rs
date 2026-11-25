@@ -15,11 +15,13 @@
 //! complex, and [`Matching::stated`] takes the pairs that a caller states, as
 //! a Tietze move states one pair. [`Matched`] reads either matching as a
 //! scheme over any complex. [`equivalence()`] gives the equivalence on the
-//! complex's own
-//! [`Composites`], with a witness for each inverse law, and on its complex it
-//! is a [`Reduction`] that composes in sequence. A [`Sum`] sets reductions of
-//! one type side by side. [`reduct()`] gives its abelianisation: the critical
-//! cells with their boundary over the integers.
+//! complex's own [`Composites`], with a witness for each inverse law, and on
+//! its complex it is a [`Reduction`] that composes in sequence. [`reduct()`]
+//! gives its abelianisation: the critical cells with their boundary over the
+//! integers.
+//!
+//! The trait of a reduction, its sequence and its sum, its refusals, and the
+//! units that a walk counts in are in `gandr-theory-reductions`.
 //!
 //! The equivalence holds at the general level, on the complex's own
 //! composites (Doré's thesis, § 3.5). The reduct is its shadow, the homology.
@@ -30,15 +32,12 @@
 //! | ---- | ------------- |
 //! | [`Complex`], [`Incidence`], [`Standing`], [`Invertibility`] | the caller's complex, the incidence of a face, and whether a cell lies in the complex |
 //! | [`Scheme`], [`Class`] | a matching that gives the class of each cell, and the class: critical, or paired up or down |
-//! | [`Composites`], [`Definition`], [`Closure`], [`Images`] | a complex whose cells compose in the free (n,1)-category, the definition of a redundant cell by its partner, whether a witness closes, and the images that a substitution reads |
-//! | [`collapse()`], [`Collapse`], [`Faults`], [`Budget`], [`Count`] | the check of a scheme on a set of cells, its critical cells and its faults |
+//! | [`Composites`], [`Definition`], [`Images`] | a complex whose cells compose in the free (n,1)-category, the definition of a redundant cell by its partner, and the images that a substitution reads |
+//! | [`collapse()`], [`Collapse`], [`Faults`] | the check of a scheme on a set of cells, its critical cells and its faults |
 //! | [`greedy()`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, a matching that a caller states pair by pair, and a matching read as a scheme over any complex |
 //! | [`reduct()`], [`Reduct`], [`Place`] | the reduct along an acyclic matching: the critical cells, the Morse boundary of each and the walk of its gradient |
-//! | [`equivalence()`], [`Equivalence`], [`EquivalenceOf`], [`Removal`], [`Bound`], [`Refusal`] | the equivalence along an acyclic matching, its removals, the equivalence read on its complex, and each refusal of its replay by name |
-//! | [`Reduction`], [`Then`], [`Answer`] | a reduction: the collapse, the inclusion, both inverse witnesses and the replay, two reductions in sequence, and what a step gives |
-//! | [`Sum`], [`Summand`], [`PartIndex`], [`SumFault`] | reductions of one type side by side as one reduction, a value of one part with its part, the place of a part, and why a sum cannot answer |
+//! | [`equivalence()`], [`Equivalence`], [`EquivalenceOf`], [`Removal`], [`Bound`] | the equivalence along an acyclic matching, its removals, and the equivalence read on its complex |
 //! | [`Abelian`], [`Chain`] | the abelianisation of a complex: its composites as integer chains |
-//! | [`MorseError`] | every refusal: the caller's own fault, a walk past its budget, or a sum past the integers |
 //!
 //! A [`GradedPoset`] is a [`Complex`]: the faces of a cell are the cells of
 //! its boundary one rank down, each with the incidence one.
@@ -64,6 +63,7 @@
 //!   of the cells that cancel.
 //!
 //! [`GradedPoset`]: gandr_theory_graded_posets::GradedPoset
+//! [`Reduction`]: gandr_theory_reductions::Reduction
 
 #![no_std]
 
@@ -109,21 +109,16 @@ mod abelian;
 mod collapse;
 mod complex;
 mod equivalence;
-mod error;
 mod gradient;
 mod greedy;
 mod matching;
 mod poset;
 mod reduct;
-mod reduction;
-mod sum;
 
 pub use abelian::Abelian;
 pub use abelian::Chain;
-pub use collapse::Budget;
 pub use collapse::Class;
 pub use collapse::Collapse;
-pub use collapse::Count;
 pub use collapse::Faults;
 pub use collapse::Scheme;
 pub use collapse::collapse;
@@ -132,26 +127,16 @@ pub use complex::Incidence;
 pub use complex::Invertibility;
 pub use complex::Standing;
 pub use equivalence::Bound;
-pub use equivalence::Closure;
 pub use equivalence::Composites;
 pub use equivalence::Definition;
 pub use equivalence::Equivalence;
 pub use equivalence::EquivalenceOf;
 pub use equivalence::Images;
-pub use equivalence::Refusal;
 pub use equivalence::Removal;
 pub use equivalence::equivalence;
-pub use error::MorseError;
 pub use gradient::Place;
 pub use greedy::greedy;
 pub use matching::Matched;
 pub use matching::Matching;
 pub use reduct::Reduct;
 pub use reduct::reduct;
-pub use reduction::Answer;
-pub use reduction::Reduction;
-pub use reduction::Then;
-pub use sum::PartIndex;
-pub use sum::Sum;
-pub use sum::SumFault;
-pub use sum::Summand;

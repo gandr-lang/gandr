@@ -74,6 +74,7 @@ gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
 gandr-surface-parser.workspace = true
 gandr-theory-discrete-morse.workspace = true
 gandr-theory-e-graphs.workspace = true
+gandr-theory-reductions.workspace = true
 gandr-theory-sites.workspace = true
 gandr-theory-stone-duality.workspace = true
 gandr-workflow-sweep.workspace = true

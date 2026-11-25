@@ -676,6 +676,14 @@ default-features = false
 path = "crates/theory-probability"
 default-features = false
 
+# Reductions of one complex onto another: the collapse, the inclusion, both
+# inverse witnesses and their replay, their sequence and their sum.
+# features:
+# - none: alloc-only reductions and their refusals.
+[workspace.dependencies.gandr-theory-reductions]
+path = "crates/theory-reductions"
+default-features = false
+
 # Finite shapes: decidable subshapes, the outer pushout, face entailment,
 # and a boundary of names read as `Fin(m)`.
 # features:

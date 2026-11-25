@@ -24,22 +24,22 @@ use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::TripleIndex;
 use gandr_theory_coherent_resolutions::Witness;
 use gandr_theory_coherent_resolutions::join_critical_pairs;
-use gandr_theory_discrete_morse::Budget;
-use gandr_theory_discrete_morse::Closure;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Composites;
-use gandr_theory_discrete_morse::Count;
 use gandr_theory_discrete_morse::Definition;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Images;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Invertibility;
 use gandr_theory_discrete_morse::Matching;
-use gandr_theory_discrete_morse::Reduction as _;
-use gandr_theory_discrete_morse::Refusal;
 use gandr_theory_discrete_morse::Standing;
 use gandr_theory_discrete_morse::collapse;
 use gandr_theory_discrete_morse::equivalence;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::Closure;
+use gandr_theory_reductions::Count;
+use gandr_theory_reductions::Reduction as _;
+use gandr_theory_reductions::Refusal;
 
 /// A letter of the braid monoid.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -28,22 +28,20 @@ The equivalence holds at the general level, on the complex's own composites, aft
 - `Doré-2023-computing_spaces_type_theory` — exemplar: Maximilian Doré, "Computing Spaces in Type Theory", DPhil thesis, University of Oxford, 2023 — § 3.4, a matching as a function whose fixed points are the critical cells, and acyclicity as a gradient path to a critical cell; §§ 3.5–3.6, the collapse and the inclusion on paths with both inverse proofs, and the graph `two` equal to the circle.
 - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras` — background: Yves Guiraud, Eric Hoffbeck and Philippe Malbos, "Convergent Presentations and Polygraphic Resolutions of Associative Algebras", _Mathematische Zeitschrift_ 293, 2019, `doi:10.1007/s00209-018-2185-z` — a collapsing scheme that contracts the standard resolution onto the rules and the critical pairs.
 - `Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology` — exemplar: Justin Curry, Robert Ghrist and Vidit Nanda, "Discrete Morse Theory for Computing Cellular Sheaf Cohomology", _Foundations of Computational Mathematics_ 16, 2016, `arXiv:1312.6454` — Definition 2.4 and Theorem 2.6, the reduction along a matching whose pairs are invertible, which keeps the cohomology.
-- `Waas-2025-stratified_homotopy_theory_generalized_simple_homotopy_theory_foundations_applications_intersections` — newest: Lukas Waas, "Stratified Homotopy Theory and Generalized Simple Homotopy Theory: Foundations, Applications and Intersections", doctoral dissertation, Heidelberg University, 2025 — § 2.1, simple homotopy equivalence and Whitehead torsion as its complete obstruction; Example 2.3.2.2, the obstruction group of based chains over a ring, trivial over the integers.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: the collapse of the presented-spaces frame.
 
 ## Provided features
 
 - `Complex`, `Incidence`, `Standing`, `Invertibility`: the caller's complex and the incidence of each face.
 - `Scheme`, `Class`: a matching that gives the class of each cell.
-- `Composites`, `Definition`, `Closure`, `Images`: a complex whose cells compose, the definition of a redundant cell by its partner, whether a witness closes, and the images that a substitution reads.
-- `collapse`, `Collapse`, `Faults`, `Budget`, `Count`: the check of a scheme on a set of cells, its critical cells, the pairs its walk reaches and its faults.
+- `Composites`, `Definition`, `Images`: a complex whose cells compose, the definition of a redundant cell by its partner, and the images that a substitution reads.
+- `collapse`, `Collapse`, `Faults`: the check of a scheme on a set of cells, its critical cells, the pairs its walk reaches and its faults.
 - `greedy`, `Matching`, `Matched`: the greedy acyclic matching on a finite complex, a matching that a caller states pair by pair, and a matching read as a scheme over any complex.
 - `reduct`, `Reduct`, `Place`: the reduct along an acyclic matching, its critical cells, the Morse boundary of each and the walk of its gradient.
-- `equivalence`, `Equivalence`, `EquivalenceOf`, `Removal`, `Bound`, `Refusal`: the equivalence along an acyclic matching, its removals, the equivalence read on its complex, and each refusal of its replay by name.
-- `Reduction`, `Then`, `Answer`: a reduction with its collapse, its inclusion, both inverse witnesses and its replay, two reductions in sequence, and what a step gives.
-- `Sum`, `Summand`, `PartIndex`, `SumFault`: reductions of one type side by side as one reduction, a value of one part with its part, the place of a part, and why a sum cannot answer.
+- `equivalence`, `Equivalence`, `EquivalenceOf`, `Removal`, `Bound`: the equivalence along an acyclic matching, its removals, and the equivalence read on its complex as a reduction of `gandr-theory-reductions`.
 - `Abelian`, `Chain`: the abelianisation of a complex, its composites as integer chains.
-- `MorseError`: every refusal, the caller's own fault, a walk past its budget, or a sum past the integers.
+
+The trait of a reduction, its sequence and its sum, the refusals `Refusal` and `MorseError`, the `Closure` of a witness, and the units `Budget` and `Count` are in `gandr-theory-reductions`.
 
 ## Expected features
 
@@ -52,7 +50,8 @@ The equivalence holds at the general level, on the complex's own composites, aft
 ## Examples
 
 ```rust
-use gandr_theory_discrete_morse::{Budget, Faults, collapse, greedy, reduct};
+use gandr_theory_discrete_morse::{Faults, collapse, greedy, reduct};
+use gandr_theory_reductions::Budget;
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_stone_duality::{Comparison, Element, ElementCount};
 
@@ -78,7 +77,7 @@ mise exec -- cargo nextest run -p gandr-theory-discrete-morse
 
 ## Where the detail lives
 
-The complex and the incidence are in `src/complex.rs`, the scheme and its check in `src/collapse.rs`, and the cycle search of a gradient in `src/gradient.rs`. The greedy matching is in `src/greedy.rs`, a matching and its reading as a scheme in `src/matching.rs`, the graded poset as a complex in `src/poset.rs`, and the reduct with the order of its walks in `src/reduct.rs`. `src/equivalence.rs` holds the equivalence, the check that replays it and the trait `Composites`. The trait of a reduction and the sequence of two reductions are in `src/reduction.rs`, and the sum of reductions is in `src/sum.rs`. The abelianisation is in `src/abelian.rs`.
+The complex and the incidence are in `src/complex.rs`, the scheme and its check in `src/collapse.rs`, and the cycle search of a gradient in `src/gradient.rs`. The greedy matching is in `src/greedy.rs`, a matching and its reading as a scheme in `src/matching.rs`, the graded poset as a complex in `src/poset.rs`, and the reduct with the order of its walks in `src/reduct.rs`. `src/equivalence.rs` holds the equivalence, the check that replays it and the trait `Composites`. The abelianisation is in `src/abelian.rs`.
 
 ## License
 

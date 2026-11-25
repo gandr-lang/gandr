@@ -112,6 +112,7 @@
       "crates/theory-ordered-algebras/",
       "crates/theory-path-orders/",
       "crates/theory-probability/",
+      "crates/theory-reductions/",
       "crates/theory-shapes/",
       "crates/theory-spec-combinators/",
       "crates/theory-stone-duality/",

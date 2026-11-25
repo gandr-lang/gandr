@@ -19,11 +19,11 @@ use gandr_theory_coherent_resolutions::TermSize;
 use gandr_theory_coherent_resolutions::TermTable;
 use gandr_theory_coherent_resolutions::Variable;
 use gandr_theory_coherent_resolutions::overlapped;
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Faults;
-use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::Scheme as _;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::MorseError;
 use quenchant_shape::shape::Maybe;
 
 /// The terms of `NatUnits` that the witnesses name.

@@ -37,15 +37,15 @@ use core::fmt;
 use core::hash::BuildHasher as _;
 
 use foldhash::fast::FixedState;
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Incidence;
-use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::Scheme;
 use gandr_theory_discrete_morse::Standing;
 use gandr_theory_discrete_morse::collapse;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::MorseError;
 use hashbrown::HashTable;
 
 use crate::codec::Entry;

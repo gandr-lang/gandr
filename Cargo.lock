@@ -1938,6 +1938,7 @@ dependencies = [
  "gandr-theory-discrete-morse",
  "gandr-theory-e-graphs",
  "gandr-theory-levitation",
+ "gandr-theory-reductions",
  "gandr-theory-shapes",
  "gandr-theory-sites",
  "gandr-theory-stone-duality",
@@ -2404,6 +2405,7 @@ dependencies = [
  "gandr-theory-discrete-morse",
  "gandr-theory-graded-posets",
  "gandr-theory-ordered-algebras",
+ "gandr-theory-reductions",
  "gandr-theory-stone-duality",
  "quenchant-anodized",
 ]
@@ -2429,6 +2431,7 @@ dependencies = [
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-discrete-morse",
+ "gandr-theory-reductions",
  "gandr-theory-spec-combinators",
  "hotpath",
  "proptest",
@@ -2475,6 +2478,7 @@ dependencies = [
  "gandr-theory-coherent-resolutions",
  "gandr-theory-decomposition-spaces",
  "gandr-theory-discrete-morse",
+ "gandr-theory-reductions",
  "hashbrown 0.17.1",
  "proptest",
  "quenchant-anodized",
@@ -2486,6 +2490,7 @@ name = "gandr-theory-discrete-morse"
 version = "0.0.0"
 dependencies = [
  "gandr-theory-graded-posets",
+ "gandr-theory-reductions",
  "gandr-theory-stone-duality",
  "quenchant-anodized",
 ]
@@ -2518,6 +2523,7 @@ dependencies = [
  "blake3",
  "foldhash 0.2.0",
  "gandr-theory-discrete-morse",
+ "gandr-theory-reductions",
  "hashbrown 0.17.1",
  "num-bigint",
  "proptest",
@@ -2598,6 +2604,13 @@ dependencies = [
  "gandr-theory-cellular-sheaves",
  "gandr-theory-ordered-algebras",
  "proptest",
+ "quenchant-anodized",
+]
+
+[[package]]
+name = "gandr-theory-reductions"
+version = "0.0.0"
+dependencies = [
  "quenchant-anodized",
 ]
 
