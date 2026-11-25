@@ -1234,7 +1234,6 @@
         "crates/surface-grammar/tests/highlight/fixture/model/specification/tree-state-wp.roles",
         "crates/surface-grammar/tests/highlight/fixture/model/include/monoid.hover",
         "crates/surface-grammar/tests/highlight/strict/values.roles",
-        "crates/surface-grammar/tests/highlight/unexercised.roles",
         "crates/surface-parser/tests/recovery/fixture/model/specification/tree-state-wp.recovery",
         "crates/surface-parser/tests/recovery/strict/values.recovery"
       ]

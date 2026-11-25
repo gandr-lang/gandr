@@ -88,13 +88,12 @@
 //!
 //! The role golden under `tests/highlight/` mirrors the corpus: one `.roles`
 //! file per source, both roots and the pending set, with a line per span —
-//! `start..end Role "text"` — and `unexercised.roles`, which names every mold
-//! no corpus tile exercises with its role, rule and neighbours, so every mold's
-//! role stands in a reviewed line. A source added to the corpus, moved between
-//! roots or removed moves its golden with it: `UPDATE_EXPECT=1 cargo nextest
-//! run -p gandr-surface-grammar` rewrites the goldens and deletes those whose
-//! source is gone, and without it a missing, stale or orphaned golden fails the
-//! suite.
+//! `start..end Role "text"`. The test writes the count of the molds that no
+//! corpus tile exercises to standard error. A source added to the corpus,
+//! moved between roots or removed moves its golden with it:
+//! `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-grammar` rewrites the
+//! goldens and deletes those whose source is gone, and without it a missing,
+//! stale or orphaned golden fails the suite.
 //!
 //! - Choice: `expect-test` compares and rewrites the goldens, a file compared
 //!   whole with a diff on mismatch.

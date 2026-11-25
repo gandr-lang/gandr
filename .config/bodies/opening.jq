@@ -401,10 +401,10 @@ def subsection($name):
     | $rest[:$end]
     end;
 
-# A golden `corpus:goldens` records for the corpus: a source's role golden,
-# a headline source's hover golden and the `unexercised.roles` list under
-# `crates/surface-grammar/`, and its recovery record under
-# `crates/surface-parser/`. It follows the corpus, not the parser.
+# A golden `corpus:goldens` records for the corpus: a source's role golden
+# and a headline source's hover golden under `crates/surface-grammar/`, and
+# its recovery record under `crates/surface-parser/`. It follows the corpus,
+# not the parser.
 def golden:
   test("^crates/surface-grammar/tests/highlight/.+\\.(?:roles|hover)$")
   or test("^crates/surface-parser/tests/recovery/.+\\.recovery$");

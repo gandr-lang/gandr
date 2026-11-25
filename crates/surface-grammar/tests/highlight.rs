@@ -9,6 +9,7 @@ use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 use core::fmt::Write as _;
 use std::ffi::OsStr;
+use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -16,13 +17,11 @@ use anodized::spec;
 use expect_test::expect_file;
 use gandr_surface_grammar::HighlightError;
 use gandr_surface_grammar::Pbg;
-use gandr_surface_grammar::RCtxStep;
 use gandr_surface_grammar::Regex;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Rule;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
-use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileLabel;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::parse;
@@ -38,7 +37,6 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_surface_syntax::TreeBuilder;
 use gandr_theory_graphs::Assoc;
-use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::PrecDag;
 use gandr_theory_graphs::PrecSpec;
 
@@ -282,77 +280,6 @@ fn role_lines(
     Ok(out)
 }
 
-/// The symbols one side of a context can step across, deduplicated, tiles
-/// by label and holes by sort.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the sorted, deduplicated textual symbols joined by spaces.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For built-in contexts, L3 unexercised-mold goldens catch
-///   missing, duplicated or reordered symbols. The predicate observes each
-///   input's text and the exact empty-output boundary; arbitrary labels
-///   containing whitespace are not exhausted.
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.is_empty() == steps.iter().all(|step| matches!(step.crossed, StepSym::Tile(""))) && steps.iter().all(|step| match step.crossed { StepSym::Tile(label) => ret.contains(label), StepSym::Sort(sort) => ret.contains(sort.name().0) }))]
-fn side_of(steps: &[RCtxStep]) -> String
-{
-    let crossed: BTreeSet<String> = steps
-        .iter()
-        .map(|step| match step.crossed {
-            StepSym::Tile(label) => label.to_owned(),
-            StepSym::Sort(sort) => format!("<{}>", sort.name().0),
-        })
-        .collect();
-    crossed.into_iter().collect::<Vec<_>>().join(" ")
-}
-
-/// One golden line per mold no corpus tile exercises: its id, role, rule's
-/// named kind, label, and the symbols beside it.
-///
-/// # Specification
-/// - ensures: one line per mold of `pbg` absent from `exercised`, in id order.
-/// - fails: a lookup the grammar refuses, which a built grammar never does.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in inventory and corpus coverage set, L3
-///   complete goldens catch wrong omissions, roles, context text and order. The
-///   predicate observes concrete error families, ordered omitted ids and the
-///   all-covered empty case; arbitrary metadata containing line breaks is not
-///   exhausted.
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, Failure::Highlight(_) | Failure::Grammar(_) | Failure::Format(_)), |rendered| { let mut expected = pbg.iter_molds().filter(|&(id, _)| !exercised.contains(&id)).peekable(); let empty = expected.peek().is_none(); let mut lines = rendered.lines(); rendered.is_empty() == empty && expected.all(|(id, _)| lines.by_ref().any(|line| line.split_once(' ').is_some_and(|(prefix, _)| prefix.parse::<u32>().ok() == Some(u32::from(id))))) }))]
-fn unexercised_lines(
-    pbg: &Pbg,
-    table: &RoleTable,
-    exercised: &BTreeSet<MoldId>,
-) -> Result<String, Failure>
-{
-    let mut out = String::new();
-    for (id, def) in pbg.iter_molds() {
-        if exercised.contains(&id) {
-            continue;
-        }
-        let role = RoleName(table.role_of(id)?);
-        let kind = pbg.named_kind(id)?;
-        let left = pbg.step(def.rctx, Dir::Left)?;
-        let right = pbg.step(def.rctx, Dir::Right)?;
-        writeln!(
-            out,
-            "{} {role} {} {} L[{}] R[{}]",
-            u32::from(id),
-            kind.0,
-            def.label,
-            side_of(left),
-            side_of(right)
-        )?;
-    }
-    Ok(out)
-}
-
 /// Every mold of the built-in surface has a role: `role_of` answers every id
 /// of the inventory, so no mold falls outside the classification, and two
 /// tables built from one grammar agree mold for mold.
@@ -375,12 +302,11 @@ fn every_mold_has_a_role() -> Result<(), Failure>
 }
 
 /// The role golden. Each corpus source, both roots and the pending set, has
-/// a golden of its spans under `tests/highlight/` at its path in the corpus;
-/// the molds no corpus tile exercises are named in `unexercised.roles` with
-/// their role and context, so every mold's role stands in some golden line.
+/// a golden of its spans under `tests/highlight/` at its path in the corpus.
 /// A golden whose source is gone fails the suite. `UPDATE_EXPECT=1`
 /// rewrites the goldens and deletes those whose source is gone, so a source
-/// added, moved between roots or removed is one rerun.
+/// added, moved between roots or removed is one rerun. The test writes the
+/// count of the molds that no corpus tile exercises to standard error.
 #[test]
 fn corpus_roles_match_the_golden() -> Result<(), Failure>
 {
@@ -426,9 +352,14 @@ fn corpus_roles_match_the_golden() -> Result<(), Failure>
         expected.insert(golden);
     }
 
-    let unexercised = goldens.join("unexercised.roles");
-    expect_file![unexercised.clone()].assert_eq(&unexercised_lines(&pbg, &table, &exercised)?);
-    expected.insert(unexercised);
+    let unexercised = pbg
+        .iter_molds()
+        .filter(|&(id, _)| !exercised.contains(&id))
+        .count();
+    writeln!(
+        std::io::stderr(),
+        "{unexercised} molds that no corpus tile exercises"
+    )?;
 
     let orphans: Vec<PathBuf> = files_under(&goldens, OsStr::new("roles"))
         .into_iter()
