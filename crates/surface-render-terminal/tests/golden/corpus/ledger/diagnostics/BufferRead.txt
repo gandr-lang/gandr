@@ -3,9 +3,9 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
    │
 12 │ ┌  def readWhileHeld() -> Unit =
 13 │ │┌   handle r : std.io.Ring.Eff {
-14 │ ││     let b = r.alloc 4096;
+14 │ ││     let b = r.alloc 4096
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
-15 │ ││     let copied : Buf = b;
+15 │ ││     let copied : Buf = b
    │ ││     ┬──                ━ a buffer read other than by its return
    │ ││     │
    │ ││     checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while finishing the type of this

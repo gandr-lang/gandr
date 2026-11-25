@@ -5,9 +5,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 19 │ │    var s = 4
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
 20 │ │┌   handle c : std.process.Exit.Eff {
-21 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
+21 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } }
    │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at c
-22 │ ││     let back : () -> Integer = pass k;
+22 │ ││     let back : () -> Integer = pass k
    │ ││     ┬──        ┬────────────   ━━━━━━ its type does not convert: expected `-F Integer`, found `-F ((() -> Integer) at c)`
    │ ││     │          │
    │ ││     │          the type it is checked against

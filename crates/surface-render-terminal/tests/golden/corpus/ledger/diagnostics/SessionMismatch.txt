@@ -2,7 +2,7 @@ error[SessionMismatch]: the endpoint's protocol expects a send here, not a recei
   ╭▸ corpus/ledger/diagnostics/SessionMismatch.gandr:5:3
   │
 3 │ ┌ def desk_receives_first() -> Unit =
-4 │ │   let desk = fork (seat : String >? end) { let task = recv seat; close seat };
+4 │ │   let desk = fork (seat : String >? end) { let task = recv seat; close seat }
   │ │   ┬──
   │ │   │
   │ │   the endpoint was opened by this fork

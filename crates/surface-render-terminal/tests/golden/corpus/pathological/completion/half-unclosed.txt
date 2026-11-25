@@ -7,7 +7,7 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    │ │   │
    │ │   an endpoint left unconsumed: found `end`
    │ │   the endpoint was opened by this fork
-14 │ │     let sqe = recv target;
+14 │ │     let sqe = recv target
 15 │ │     send target Ring.done;
    ┆ ┆
 26 │ │   close pending

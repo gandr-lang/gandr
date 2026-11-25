@@ -3,7 +3,7 @@ error[NotOpen.Capture]: a thunk crossing to another world captures this, but its
    │
 26 │ ┌  def heldThunk() -> -F ((() -> Seat.Dispatch) at seat) =
 27 │ │┌   migrate [seat] {
-28 │ ││     let task = Seat.task;
+28 │ ││     let task = Seat.task
 29 │ ││     (hold thunk { pure task })
    │ ││                        ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
 30 │ ││   }
@@ -20,7 +20,7 @@ error[NotOpen.Capture]: a thunk crossing to another world captures this, but its
    │
 36 │ ┌  def heldRecord() -> -F (*{done : Integer, later : () -> Seat.Dispatch} at seat) =
 37 │ │┌   migrate [seat] {
-38 │ ││     let task = Seat.task;
+38 │ ││     let task = Seat.task
 39 │ ││     (hold *{.done = 3, .later = thunk { pure task }})
    │ ││                                              ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
 40 │ ││   }
@@ -37,7 +37,7 @@ error[Immobile.Capture]: a thunk crossing to another world captures this, but it
    │
 46 │ ┌  def bareRecord() -> *{done : Integer, later : () -> Seat.Dispatch} =
 47 │ │┌   migrate [seat] {
-48 │ ││     let task = Seat.task;
+48 │ ││     let task = Seat.task
 49 │ ││     pure *{.done = 3, .later = thunk { pure task }}
    │ ││                                             ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
 50 │ ││   }

@@ -2,7 +2,7 @@ error[SessionMismatch]: the endpoint's protocol expects a send here, not a recei
   ╭▸ corpus/pathological/sessions/protocol.gandr:4:3
   │
 2 │ ┌ def desk_receives_first() -> Unit =
-3 │ │   let desk = fork (seat : String >? end) { let task = recv seat; close seat };
+3 │ │   let desk = fork (seat : String >? end) { let task = recv seat; close seat }
   │ │   ┬──
   │ │   │
   │ │   the endpoint was opened by this fork
@@ -19,7 +19,7 @@ error[UnofferedLabel]: the endpoint's protocol offers no such label here
    ╭▸ corpus/pathological/sessions/protocol.gandr:10:3
    │
  8 │ ┌ def desk_selects_no_offered_label() -> Unit =
- 9 │ │   let desk = fork (seat : &{next : end}) { offer seat { | next => close seat } };
+ 9 │ │   let desk = fork (seat : &{next : end}) { offer seat { | next => close seat } }
    │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
@@ -36,7 +36,7 @@ error[OfferArms]: `offer` must handle every label of its protocol exactly once
    ╭▸ corpus/pathological/sessions/protocol.gandr:15:58
    │
 14 │ ┌ def seat_arms_one_label_of_two() -> Unit =
-15 │ │   let desk = fork (seat : &{next : end, retire : end}) { offer seat { | next => close seat } };
+15 │ │   let desk = fork (seat : &{next : end, retire : end}) { offer seat { | next => close seat } }
    │ │   ┬──                                                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
    │ │   │
    │ │   the endpoint was opened by this fork
@@ -52,7 +52,7 @@ error[SessionMismatch]: the endpoint's protocol expects an offer here, not a clo
    ╭▸ corpus/pathological/sessions/protocol.gandr:24:3
    │
 22 │ ┌ def desk_drops_a_live_endpoint() -> Unit =
-23 │ │   let desk = fork (seat : +{done : end}) { select seat done; drop seat };
+23 │ │   let desk = fork (seat : +{done : end}) { select seat done; drop seat }
    │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork

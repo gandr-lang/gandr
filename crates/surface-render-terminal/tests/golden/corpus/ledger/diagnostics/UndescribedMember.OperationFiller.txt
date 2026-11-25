@@ -2,7 +2,7 @@ error[UndescribedMember.OperationFiller]: this member is an operation with a cir
   ╭▸ corpus/ledger/diagnostics/UndescribedMember.OperationFiller.gandr:4:1
   │
 4 │ ┏ oper accumulate : (stream : Stream Nat) --> (out2 : Stream Nat) {
-5 │ ┃   node : zip(stream, state) --> (next, out2);
+5 │ ┃   node : zip(stream, state) --> (next, out2)
 6 │ ┃   feed : (next) --> (state);
 7 │ ┃ }
   │ ┗━┛ a member the description does not read

@@ -9,10 +9,10 @@ error[HeldCaptured]: the held value is used inside a fixpoint, which may run it 
 12 │ │┌    while i > 0 {
 13 │ ││┏     while n < 3 {
 14 │ ││┃       access n as v { resume v (v + 1) }
-15 │ ││┃     };
+15 │ ││┃     }
    │ ││┗━━━━━┛ a held value that may be held other than once
 16 │ ││      access i as u { resume u (u - 1) }
-17 │ ││    };
+17 │ ││    }
    │ │└────┘ checked against `Integer * Integer -> -F [Partial] Integer`; while checking the body of this function; binds _ : +U (Integer * Integer -> -F [Partial] Integer), _ : Integer * Integer, _ : Integer, _ : Integer, _ : Bool, _ : Unit
 18 │ │     pure n
    │ └──────────┘ checked against `+U (-F [Partial] Integer)`; while checking the body of this thunk

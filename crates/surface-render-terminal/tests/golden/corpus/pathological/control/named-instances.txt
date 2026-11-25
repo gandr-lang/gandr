@@ -1,7 +1,7 @@
 error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an instance of `std.io.Console.Eff` handled where this call stands: name the one it means, `say[out = b](…)`
    ╭▸ corpus/pathological/control/named-instances.gandr:23:7
    │
-23 │       say ();
+23 │       say ()
    │       ━━━ an instance with several in scope
    │
    ├ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states
@@ -44,7 +44,7 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
    │
 54 │ ┌  def misplaced() -> Integer =
 55 │ │┌   handle p : std.process.Exit.Eff {
-56 │ ││     say[.out = p] ();
+56 │ ││     say[.out = p] ()
    │ ││     ┬──────────┯────
    │ ││     │          │
    │ ││     │          a capability granting less: expected `Cap {print} at p`, found `Cap {exit} at p`

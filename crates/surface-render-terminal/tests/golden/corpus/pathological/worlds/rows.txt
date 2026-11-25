@@ -16,7 +16,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╭▸ corpus/pathological/worlds/rows.gandr:36:34
    │
 35 │ ┌ def bound() -> [std.io.Console.Eff] Unit = {
-36 │ │   let printed = migrate [bare] { std.io.Console.print "bare" };
+36 │ │   let printed = migrate [bare] { std.io.Console.print "bare" }
    │ │   ┬──           ┬────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━──
    │ │   │             │                │
    │ │   │             │                its type does not convert: expected `-F Unit`, found `-F [std.io.Console.Eff] Unit`

@@ -3,7 +3,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
  9 │ ┌  def neverFreed() -> Unit =
 10 │ │┌   handle r : std.io.Ring.Eff {
-11 │ ││     let b = r.alloc 4096;
+11 │ ││     let b = r.alloc 4096
    │ ││     ━━━ a buffer never handed back
 12 │ ││     pure *{}
 13 │ ││   } with {

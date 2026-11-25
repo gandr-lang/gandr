@@ -40,10 +40,10 @@ error[DependentBind]: the result type of this `let` depends on the value it bind
 43 │ ┌ def escaped() -> Integer =
 44 │ │   let y = {
    │ │   ─── checked against `-F Integer`; while synthesising the computation this binds
-45 │ │     module m = ints;
+45 │ │     module m = ints
    │ │     ━━━━━━ its type mentions the bound value: found `-F m.0`
 46 │ │     m.seed
-47 │ │   };
+47 │ │   }
 48 │ │   7
    │ └───┘ checked against `() -> Integer`; while checking the body of this thunk
    │

@@ -29,7 +29,7 @@ error[Immobile.Capture]: a thunk crossing to another world captures this, but it
    │
 29 │ ┌  def suspendedBack() -> () -> Seat.Dispatch =
 30 │ │┌   migrate [seat] {
-31 │ ││     let task = Seat.task;
+31 │ ││     let task = Seat.task
 32 │ ││     pure thunk { pure task }
    │ ││                       ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
 33 │ ││   }

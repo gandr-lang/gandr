@@ -3,7 +3,7 @@ error[NotOpen]: this handle crosses to another world, but the value it holds is 
    │
  9 │ ┌  def heldThunk() -> -F ((() -> Integer) at seat) =
 10 │ │┏   migrate [seat] {
-11 │ │┃     let later : () -> Integer = thunk { pure 3 };
+11 │ │┃     let later : () -> Integer = thunk { pure 3 }
 12 │ │┃     (hold later)
 13 │ │┃   }
    │ │┃   ╿

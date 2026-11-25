@@ -21,7 +21,7 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
 23 │ ┌ def readInThunk() -> Integer =
 24 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-25 │ │   let k : () -> Integer = thunk { s.len () };
+25 │ │   let k : () -> Integer = thunk { s.len () }
    │ │   ┬──                     ━━━━━━━━━━━━━━━━━━ a held value that may be held other than once
    │ │   │
    │ │   checked against `-F Integer`; while finishing the type of this

@@ -2,7 +2,7 @@ error[UsedAfterClose]: the endpoint is used after `close`
   ╭▸ corpus/ledger/diagnostics/UsedAfterClose.gandr:4:46
   │
 3 │ ┌ def seat_closed_twice() -> Unit =
-4 │ │   let desk = fork (seat : end) { close seat; close seat };
+4 │ │   let desk = fork (seat : end) { close seat; close seat }
   │ │   ┬──                            ┬─────────  ━━━━━━━━━━ an endpoint already closed
   │ │   │                              │
   │ │   │                              checked against `-F Unit`; while checking the body of this split; binds _ : Unit

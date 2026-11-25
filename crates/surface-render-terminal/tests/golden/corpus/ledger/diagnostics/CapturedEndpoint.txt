@@ -2,7 +2,7 @@ error[CapturedEndpoint]: the endpoint is used inside a thunk, which may run it o
   ╭▸ corpus/ledger/diagnostics/CapturedEndpoint.gandr:4:40
   │
 3 │ ┌ def seat_closed_in_a_thunk() -> Unit =
-4 │ │   let desk = fork (seat : end) { force thunk { close seat } };
+4 │ │   let desk = fork (seat : end) { force thunk { close seat } }
   │ │   ┬──                            ┬─────┯━━━━━━━━━━━━━━━━━━━
   │ │   │                              │     │
   │ │   │                              │     an endpoint that may be used other than once

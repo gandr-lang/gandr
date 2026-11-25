@@ -17,7 +17,7 @@ error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:34:47
    │
 33 │ ┌ def reused() -> Unit =
-34 │ │   let desk = fork (seat : end) { finish seat; close seat };
+34 │ │   let desk = fork (seat : end) { finish seat; close seat }
    │ │   ┬──                            ┬──────────  ━━━━━━━━━━ an endpoint already closed
    │ │   │                              │
    │ │   │                              checked against `-F Unit`; while checking the body of this split; binds _ : Unit
@@ -33,7 +33,7 @@ error[EndpointAsValue]: an endpoint can be used only by a session action
    ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:40:54
    │
 39 │ ┌ def miscounted() -> Unit =
-40 │ │   let desk = fork (seat : end) { let total = counted seat; close seat };
+40 │ │   let desk = fork (seat : end) { let total = counted seat; close seat }
    │ │   ┬──                            ┬──         ┬───────┯━━━
    │ │   │                              │           │       │
    │ │   │                              │           │       an endpoint read as a value

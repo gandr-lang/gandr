@@ -10,7 +10,7 @@ error[OutOfFragment.Unannotated]: the call expression needs a type annotation
 error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not supported yet
    ╭▸ corpus/pathological/desc/stlc.gandr:33:18
    │
-33 │         let f2 = renNe[<] h (Arr b c) f d r;
+33 │         let f2 = renNe[<] h (Arr b c) f d r
    │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `renNe` is refused with OutOfFragment.mutual_block.staged_after_first, as its expectation states
@@ -19,7 +19,7 @@ error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not
 error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not supported yet
    ╭▸ corpus/pathological/desc/stlc.gandr:43:21
    │
-43 │         let body2 = renNf[<] (Extend h b) c (body (Extend d b)) (lift d h b r);
+43 │         let body2 = renNf[<] (Extend h b) c (body (Extend d b)) (lift d h b r)
    │                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `renNf` is refused with OutOfFragment.mutual_block.staged_after_first, as its expectation states

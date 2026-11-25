@@ -3,9 +3,9 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
    │
 26 │ ┌  def halted() -> Integer =
 27 │ │┌   handle h : Halt.Eff with sort R = Integer {
-28 │ ││     var n = 0;
+28 │ ││     var n = 0
    │ ││     ─── checked against `-F [Halt.Eff, h : Halt.Eff] Integer`; while checking the scope of this hold
-29 │ ││     access n as v { abort v } unwind { h.halt 1 };
+29 │ ││     access n as v { abort v } unwind { h.halt 1 }
    │ ││     ┬──────────────────────────────────┯━━━━━━━──
    │ ││     │                                  │
    │ ││     │                                  an effect in an unwind
@@ -27,13 +27,13 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
    │
 38 │ ┌  def abandoned() -> Integer =
 39 │ │┌   handle c : std.process.Exit.Eff {
-40 │ ││     let _ = c.exit 1;
+40 │ ││     let _ = c.exit 1
 41 │ ││     pure 0
 42 │ ││   } with {
    ┆ ┆┆
-45 │ ││       var n = 0;
+45 │ ││       var n = 0
    │ ││       ─── checked against `-F Integer`; while checking the scope of this hold
-46 │ ││       access n as v { abort v } unwind { abandon k };
+46 │ ││       access n as v { abort v } unwind { abandon k }
    │ ││       ┬──────────────────────────────────┯━━━━━━━━──
    │ ││       │                                  │
    │ ││       │                                  an effect in an unwind

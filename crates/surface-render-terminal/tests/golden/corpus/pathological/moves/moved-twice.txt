@@ -2,14 +2,14 @@ error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/moves/moved-twice.gandr:29:12
    │
 16 │ ┌ def movedTwice() -> Unit =
-17 │ │   let file = fork (owner : File.Handle) { close owner };
+17 │ │   let file = fork (owner : File.Handle) { close owner }
    │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the rest of this fork's parent
 18 │ │   let one = fork (first : File.Closer) {
    │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent
-19 │ │     let held = recv first;
+19 │ │     let held = recv first
    ┆ ┆
 23 │ │   let two = fork (second : File.Closer) {
    │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent

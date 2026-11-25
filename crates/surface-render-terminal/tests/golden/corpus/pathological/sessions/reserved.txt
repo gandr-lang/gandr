@@ -1,7 +1,7 @@
 error[OutOfFragment.fork_expression.shared]: the fork expression is reserved, and not available yet
   ╭▸ corpus/pathological/sessions/reserved.gandr:3:3
   │
-3 │   fork !(seat : end) { close seat };
+3 │   fork !(seat : end) { close seat }
   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a reserved form
   │
   ├ note: `shared_fork` is refused with OutOfFragment.fork_expression.shared, as its expectation states

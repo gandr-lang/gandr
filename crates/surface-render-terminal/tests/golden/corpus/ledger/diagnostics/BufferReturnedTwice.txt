@@ -3,9 +3,9 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
    │
  8 │ ┌  def freedTwice() -> Unit =
  9 │ │┌   handle r : std.io.Ring.Eff {
-10 │ ││     let b = r.alloc 4096;
+10 │ ││     let b = r.alloc 4096
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
-11 │ ││     let first = r.free b;
+11 │ ││     let first = r.free b
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the body under this binding; binds first : Unit
 12 │ ││     r.free b
    │ ││     ┬──────┯

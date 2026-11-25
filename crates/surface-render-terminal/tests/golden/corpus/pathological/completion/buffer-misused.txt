@@ -3,7 +3,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
 21 │ ┌  def neverFreed() -> Unit =
 22 │ │┌   handle r : std.io.Ring.Eff {
-23 │ ││     let b = r.alloc 4096;
+23 │ ││     let b = r.alloc 4096
    │ ││     ━━━ a buffer never handed back
 24 │ ││     pure *{}
 25 │ ││   } with {
@@ -23,9 +23,9 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
    │
 33 │ ┌  def freedTwice() -> Unit =
 34 │ │┌   handle r : std.io.Ring.Eff {
-35 │ ││     let b = r.alloc 4096;
+35 │ ││     let b = r.alloc 4096
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
-36 │ ││     let first = r.free b;
+36 │ ││     let first = r.free b
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the body under this binding; binds first : Unit
 37 │ ││     r.free b
    │ ││     ┬──────┯
@@ -48,9 +48,9 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
    │
 46 │ ┌  def readWhileHeld() -> Unit =
 47 │ │┌   handle r : std.io.Ring.Eff {
-48 │ ││     let b = r.alloc 4096;
+48 │ ││     let b = r.alloc 4096
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
-49 │ ││     let copied : Buf = b;
+49 │ ││     let copied : Buf = b
    │ ││     ┬──                ━ a buffer read other than by its return
    │ ││     │
    │ ││     checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while finishing the type of this
@@ -71,7 +71,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
 60 │ ┌  def mintDropped() -> Unit =
 61 │ │┏   handle r : std.io.Ring.Eff {
-62 │ │┃     let b = r.alloc 4096;
+62 │ │┃     let b = r.alloc 4096
 63 │ │┃     r.free b
 64 │ │┃   } with {
    ┆ ┆┇
@@ -90,13 +90,13 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
 73 │ ┌  def receivedKept() -> Unit =
 74 │ │┌   handle r : std.io.Ring.Eff {
-75 │ ││     let b = r.alloc 4096;
+75 │ ││     let b = r.alloc 4096
 76 │ ││     r.free b
 77 │ ││   } with {
    ┆ ┆┆
 80 │ ││       let ring = fork (kernel : Buf >? end) {
    │ ││       ─── checked against `-F Unit`; while checking the child this forks
-81 │ ││         let held = recv kernel;
+81 │ ││         let held = recv kernel
    │ ││         ━━━ a buffer never handed back
    ┆ ┆┆
 87 │ ││     | oper free(b, k) => k *{}
@@ -114,17 +114,17 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
     │
  92 │ ┌  def receivedReturnedTwice() -> Unit =
  93 │ │┌   handle r : std.io.Ring.Eff {
- 94 │ ││     let b = r.alloc 4096;
+ 94 │ ││     let b = r.alloc 4096
  95 │ ││     r.free b
  96 │ ││   } with {
     ┆ ┆┆
  99 │ ││       let ring = fork (kernel : Buf >? Buf >! Buf >! end) {
     │ ││       ─── checked against `-F Unit`; while checking the child this forks
-100 │ ││         let held = recv kernel;
+100 │ ││         let held = recv kernel
     │ ││         ─── checked against `-F Unit`; while checking the rest of this receive's block
-101 │ ││         send kernel held;
+101 │ ││         send kernel held
     │ ││         ──────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
-102 │ ││         send kernel held;
+102 │ ││         send kernel held
     │ ││         ┬───────────┯━━━
     │ ││         │           │
     │ ││         │           a buffer already handed back
@@ -148,7 +148,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
     │ ┌───┘
     │ │
 118 │ │┌    handle r : std.io.Ring.Eff {
-119 │ ││      let b = r.alloc 4096;
+119 │ ││      let b = r.alloc 4096
     │ ││      ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
 120 │ ││┌     match flag where
 121 │ │││       | true => r.free b
