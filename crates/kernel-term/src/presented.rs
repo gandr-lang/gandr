@@ -3845,6 +3845,7 @@ mod tests
 
     use super::Apartness;
     use super::CellFault;
+    use super::Compared;
     use super::Convergence;
     use super::Exhausted;
     use super::FieldClass;
@@ -3854,6 +3855,8 @@ mod tests
     use super::FreeCells;
     use super::IndexClass;
     use super::Normalized;
+    use super::Overlap;
+    use super::PairTerm;
     use super::Presentation;
     use super::PresentedRule;
     use super::Reflexivities;
@@ -3866,7 +3869,14 @@ mod tests
     use super::RuleSlot;
     use super::RuleTerm;
     use super::RuleVariable;
+    use super::Swaps;
+    use super::TermPosition;
     use super::TermReading;
+    use super::compared_under;
+    use super::orders;
+    use super::overlap;
+    use super::reordered;
+    use super::symmetric_sites;
     use crate::term::ConstructorTag;
 
     /// The classifier of `mark`'s field, another type than the circle.
@@ -5268,6 +5278,160 @@ mod tests
                 inner: RuleIndex::from(0_usize),
             },
             "no two terms are apart by a table that tears"
+        );
+    }
+
+    /// The critical pairs that [`Presentation::converges`] forms, in each
+    /// order of the arguments of the symmetries, and their orbits under the
+    /// symmetries.
+    ///
+    /// The peak of a pair is the overlap of the two left sides: the overlap
+    /// rewritten by the left side of the overlapping rule, which is that left
+    /// side under its unifier, since a left side is linear. Two pairs are in
+    /// one orbit when they have the same two rules, in either role, and their
+    /// peaks agree under the symmetries.
+    ///
+    /// # Specification
+    /// - requires: `presentation` passed [`Presentation::validate`] against the
+    ///   table `arities` counts.
+    /// - ensures: the count of pairs and the count of orbits, in the loop order
+    ///   of [`Presentation::converges`].
+    /// - fails: [`Exhausted`] when the fuel runs out.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: `for` loops over the finite rules, positions, orders and
+    ///   pairs.
+    /// - measure: the triples and pairs left; the fuel.
+    fn pairs_and_orbits(
+        presentation: &Presentation,
+        arities: &[FieldCount],
+    ) -> Result<(usize, usize), Exhausted>
+    {
+        let mut fuel = RewriteFuel::from(100_000_u64);
+        let symmetric = presentation.symmetries();
+        let steps = || {
+            presentation
+                .rules()
+                .iter()
+                .enumerate()
+                .filter(|&(_, rule)| rule.reading() == RuleReading::Step)
+        };
+        let mut pairs: SmallVec<((usize, usize), PairTerm), 0, Global> = SmallVec::new();
+        for (outer_index, outer) in steps() {
+            for (position, &node) in outer.left().iter().enumerate() {
+                if !matches!(node, RuleNode::Constructor(_)) {
+                    continue;
+                }
+                for (inner_index, inner) in steps() {
+                    let sites = symmetric_sites(inner.left(), &symmetric);
+                    let Swaps(count) = orders(&sites);
+                    for swaps in 0 .. count {
+                        if swaps == 0 && position == 0 && inner_index == outer_index {
+                            continue;
+                        }
+                        let order =
+                            reordered(inner.left(), &sites, Swaps(swaps), arities, &mut fuel)?;
+                        if let Overlap::Pair { inner: peak, .. } = overlap(
+                            (outer, TermPosition(position)),
+                            (&order, &order),
+                            arities,
+                            &mut fuel,
+                        )? {
+                            let rules =
+                                (outer_index.min(inner_index), outer_index.max(inner_index));
+                            pairs.push((rules, peak));
+                        }
+                    }
+                }
+            }
+        }
+        let mut orbits: SmallVec<&((usize, usize), PairTerm), 0, Global> = SmallVec::new();
+        for pair in &pairs {
+            let mut known = false;
+            for &&(rules, ref peak) in &orbits {
+                if rules == pair.0
+                    && compared_under(&symmetric, &pair.1, peak, &mut fuel)? == Compared::Agree
+                {
+                    known = true;
+                    break;
+                }
+            }
+            if !known {
+                orbits.push(pair);
+            }
+        }
+        Ok((pairs.len(), orbits.len()))
+    }
+
+    #[test]
+    fn the_pairs_of_each_order_fall_into_fewer_orbits_under_the_symmetry()
+    {
+        let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
+        let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
+        let rule =
+            |left: &[RuleNode], right: &[RuleNode]| PresentedRule::new(left.into(), right.into());
+        let presented =
+            |rules: &[PresentedRule]| Presentation::new(rules.iter().cloned().collect());
+        let arities = |counts: &[usize]| -> SmallVec<FieldCount, 0, Global> {
+            counts.iter().copied().map(FieldCount::from).collect()
+        };
+        // Each presented type with a symmetry that the corpus and the
+        // fixtures of the surface admit, with the tags in written order.
+        let pick = presented(&[rule(&[c(2), v(0), v(1)], &[c(2), v(1), v(0)])]);
+        let tally = presented(&[
+            rule(&[c(2), c(0), v(0)], &[c(0)]),
+            rule(&[c(2), c(1), v(0)], &[v(0)]),
+            rule(&[c(2), v(0), v(1)], &[c(2), v(1), v(0)]),
+        ]);
+        let other_order = presented(&[
+            rule(&[c(2), v(0), v(1)], &[c(2), v(1), v(0)]),
+            rule(&[c(2), c(0), v(0)], &[c(0)]),
+        ]);
+        let wrapped = presented(&[
+            rule(&[c(2), v(0), v(1)], &[c(2), v(1), v(0)]),
+            rule(&[c(2), c(3), v(0), c(3), v(1)], &[c(2), v(0), v(1)]),
+        ]);
+        let backwards = presented(&[
+            rule(&[c(3), v(0), v(1)], &[c(3), v(1), v(0)]),
+            rule(&[c(3), c(0), c(1)], &[c(0)]),
+        ]);
+        let between = presented(&[
+            rule(&[c(3), c(0), v(0)], &[c(0)]),
+            rule(&[c(3), v(0), v(1)], &[c(3), v(1), v(0)]),
+            rule(&[c(3), c(2), v(0)], &[v(0)]),
+        ]);
+        let blocks = [
+            ("pick", &pick, arities(&[0, 0, 2])),
+            ("tally", &tally, arities(&[0, 0, 2])),
+            ("other-order", &other_order, arities(&[0, 0, 2])),
+            ("wrapped", &wrapped, arities(&[0, 0, 2, 1])),
+            ("backwards", &backwards, arities(&[0, 0, 0, 2])),
+            ("between", &between, arities(&[0, 0, 0, 2])),
+        ];
+        let found: SmallVec<_, 0, Global> = blocks
+            .iter()
+            .map(|&(name, presentation, ref counts)| {
+                let mut fuel = RewriteFuel::from(100_000_u64);
+                assert_eq!(
+                    presentation.converges(counts, &mut fuel),
+                    Ok(Convergence::Converges),
+                    "{name} is admitted"
+                );
+                (name, pairs_and_orbits(presentation, counts))
+            })
+            .collect();
+        assert_eq!(
+            found.as_slice(),
+            [
+                ("pick", Ok((0, 0))),
+                ("tally", Ok((4, 3))),
+                ("other-order", Ok((1, 1))),
+                ("wrapped", Ok((1, 1))),
+                ("backwards", Ok((0, 0))),
+                ("between", Ok((4, 3))),
+            ],
+            "the pairs in each order, then their orbits"
         );
     }
 
