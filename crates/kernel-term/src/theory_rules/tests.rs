@@ -2674,7 +2674,7 @@ fn a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042()
 #[test]
 fn a_refusal_names_its_rule_and_its_fault()
 {
-    use alloc::string::ToString;
+    use alloc::string::ToString as _;
 
     let second = RuleIndex::from(11_usize);
     let faults = [
