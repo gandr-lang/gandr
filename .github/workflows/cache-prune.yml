@@ -1,0 +1,58 @@
+# The prune of the OCI repository of kache, `ghcr.io/<this repository>/kache`.
+# The gates of `main` write it (`gates.yml`).
+#
+# Each day, the job removes each version of the package that no run wrote in
+# the last 14 days. The newest version stays, because GitHub does not remove
+# the last version of a package. A run of `main` writes an entry again when
+# a gate needs a unit that the repository lacks.
+#
+# One run removes at most 500 versions, under the hourly limit of requests of
+# the token of a job. The rest goes in the next run.
+name: cache prune
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cache-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: cache prune
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      packages: write
+    steps:
+      - name: remove the old versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAYS: "14"
+          BOUND: "500"
+        run: |
+          set -euo pipefail
+          package="/orgs/$GITHUB_REPOSITORY_OWNER/packages/container/${GITHUB_REPOSITORY#*/}%2Fkache"
+          if ! answer="$(gh api "$package" --silent 2>&1)"; then
+            if [[ "$answer" == *"HTTP 404"* ]]; then
+              echo "the package is not there, so nothing to remove"
+              exit 0
+            fi
+            echo "$answer" >&2
+            exit 1
+          fi
+          cutoff="$(date -u -d "$DAYS days ago" +%Y-%m-%dT%H:%M:%SZ)"
+          list="$RUNNER_TEMP/versions"
+          gh api --paginate "$package/versions?per_page=100" --jq '.[] | "\(.updated_at) \(.id)"' | sort -r > "$list"
+          removed=0
+          while read -r updated id; do
+            if [[ "$updated" < "$cutoff" && "$removed" -lt "$BOUND" ]]; then
+              gh api --method DELETE "$package/versions/$id" --silent
+              removed=$((removed + 1))
+            fi
+          done < <(tail -n +2 "$list")
+          echo "versions: $(wc -l < "$list"); written before $cutoff and removed: $removed"
