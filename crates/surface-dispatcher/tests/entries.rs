@@ -135,6 +135,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression constructor", Standing::Owed(0)),
     ("Expression continue", Standing::Owed(0)),
     ("Expression drop", Standing::Owed(0)),
+    ("Expression effect", Standing::Owed(0)),
     ("Expression false", Standing::Owed(0)),
     ("Expression for", Standing::Owed(0)),
     ("Expression force", Standing::Owed(0)),
@@ -146,7 +147,6 @@ const KINDS: &[(&str, Standing)] = &[
         ),
     ),
     ("Expression fun", Standing::Owed(0)),
-    ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
     // The first label of each level of the iterated pair's `let` spine,
     // `*{.l = s19, .r = s19}`: a record whose fields hold one value gives its
