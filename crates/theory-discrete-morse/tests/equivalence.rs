@@ -1,9 +1,9 @@
 //! The equivalence of a complex with its reduct on the complex's own
 //! composites: Doré's graph `two` with paths and squares, two collapses of a
 //! triangle in sequence, a square whose faces occur under a context, the
-//! cover of a match over two columns as a sum of reductions in sequence, and
-//! the abelianisation of the test complexes against the reduct's Morse
-//! boundary.
+//! cover of a match over two columns as a sum of reductions in sequence, the
+//! step of a unifier that solves a variable as one matched pair, and the
+//! abelianisation of the test complexes against the reduct's Morse boundary.
 
 use alloc::vec::Vec;
 use core::fmt::Debug;
@@ -1053,6 +1053,91 @@ fn a_part_with_no_cell_replays_with_no_witness_of_its_conflict()
         Summand::new(succ, SS)
     ]);
     assert_eq!(cover.replay(), Ok(()));
+}
+
+/// The variable `x` of a telescope.
+const X: Name = Name("x");
+/// The variable `y` of a telescope.
+const Y: Name = Name("y");
+/// The term `s` that an equation gives `x`.
+const S: Name = Name("s");
+/// The equation `e : x = s`.
+const E: Name = Name("e");
+/// The equation `x = x`.
+const SAME: Name = Name("x = x");
+
+/// The telescope `x, e : x = s, y` as a graph: each variable and the term `s`
+/// a vertex, and the equation an edge from `x` to `s`.
+///
+/// # Specification
+/// trivial.
+fn solved() -> Graph
+{
+    Graph {
+        vertices: [X, S, Y].to_vec(),
+        edges: [(E, X, S)].to_vec(),
+        search: Search::Honest,
+    }
+}
+
+/// The rule "solution" of a unifier removes a variable with the equation that
+/// defines it: the pair of `x` and `e` is one matched pair. The collapse is
+/// the telescope with neither of the two. It sends `x` to `s`, its witness is
+/// the equation, and the equivalence replays.
+#[test]
+fn a_solved_variable_and_its_equation_are_one_matched_pair()
+{
+    let room = Budget::from(ROOM);
+    let solution = Matching::stated([(X, E)]);
+    let mut telescope = solved();
+    let cells = telescope.cells();
+    let mut scheme = solution.on(&mut telescope);
+    let built = equivalence(&mut scheme, &cells, room).expect("an acyclic matching");
+    assert_eq!(
+        built.critical(),
+        [S, Y],
+        "the telescope without `x` and `e`"
+    );
+    let mut bound = built
+        .on(&mut scheme, &cells, room)
+        .expect("the equivalence reads");
+    assert_eq!(collapsed(&mut bound, X), Ok(stay(S)));
+    assert_eq!(collapsed(&mut bound, E), Ok(stay(S)));
+    assert_eq!(collapsed(&mut bound, Y), Ok(stay(Y)));
+    assert_eq!(
+        bound.section(&stay(X)),
+        Ok(Some(square(path(X, S, &[(E, Way::Forward)])))),
+        "the witness from `x` to `s` is the equation"
+    );
+    assert_eq!(bound.replay(), Ok(()));
+}
+
+/// The rule "deletion" removes an equation `x = x`. That equation is a loop at
+/// `x`, so it cannot be the partner of `x`: the definition of `x` through the
+/// loop holds `x` itself, and the equivalence refuses the pair as circular.
+/// With no pair the loop stays critical.
+#[test]
+fn an_equation_of_a_variable_with_itself_has_no_partner()
+{
+    let room = Budget::from(ROOM);
+    let looped = || Graph {
+        vertices: [X, Y].to_vec(),
+        edges: [(SAME, X, X)].to_vec(),
+        search: Search::Honest,
+    };
+    let mut deleted = looped();
+    let cells = deleted.cells();
+    let deletion = Matching::stated([(X, SAME)]);
+    let mut scheme = deletion.on(&mut deleted);
+    assert_eq!(
+        equivalence(&mut scheme, &cells, room).map(|built| built.critical().to_vec()),
+        Err(Refusal::Circular(X))
+    );
+    let none = Matching::<Name>::stated([]);
+    let mut kept = looped();
+    let mut bare = none.on(&mut kept);
+    let built = equivalence(&mut bare, &cells, room).expect("no pair");
+    assert_eq!(built.critical(), [X, Y, SAME], "the loop stays critical");
 }
 
 /// A cell of a square `D` from the edge `γ : x → z` to the composite of
