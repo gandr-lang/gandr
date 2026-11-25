@@ -1,0 +1,32 @@
+[package]
+name = "gandr-workflow-ledger-split"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Splits the `sqlite3` dump of a ledger into the files of the tree, the schema and the rows of each name, by the `ledger-split` binary"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "ledger", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "ledger-split"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The binary reads its flags through clap. The pinned anodized facade
+# supplies the executable specifications.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true
