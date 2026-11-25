@@ -1,7 +1,7 @@
 //! `left` gives a sum of a word and the unit, and a case reads it.
 //!
 //! A sum of a word and the unit is two words: the tag and the word.
-//! A program whose entry is `code` exits 9.
+//! A program whose entry is `left_word` exits 9.
 
 /// The left injection of 9.
 @[runs("+{.0 = 9u8}")]
@@ -14,6 +14,6 @@ def word(sum : u8 + Unit) -> u8 = match sum { | +{.0 = w} => w | +{.1 = u} => 25
 @[runs("255u8")]
 def missing() -> u8 = word +{.1 = *{}};
 
-/// `code` gives the word of `left`: the exit code of its compiled program.
+/// `left_word` gives the word of `left`: the exit code of its compiled program.
 @[runs("9u8")]
-def code() -> u8 = { let sum = left; word sum };
+def left_word() -> u8 = { let sum = left; word sum };
