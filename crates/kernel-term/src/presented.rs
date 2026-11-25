@@ -2969,6 +2969,83 @@ pub struct RuleRefusal
     pub fault: RuleFault,
 }
 
+impl core::fmt::Display for RuleRefusal
+{
+    /// Writes the rule's position and its fault as one clause.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the position of [`Self::rule`], counted from zero,
+    ///   then what [`Self::fault`] says of that rule.
+    /// - provides: the part of a refusal's message that names the rule, so a
+    ///   reader finds the rule with no debugger.
+    /// - fails: propagates the formatter's write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over every fault at one rule: each text holds the
+    ///   rule's position, and two faults have two texts.
+    /// - witness: `presented::tests::a_refusal_names_its_rule_and_its_fault`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        let rule = usize::from(self.rule);
+        match self.fault {
+            RuleFault::VariableHeaded => write!(
+                f,
+                "the left side of the rule at position {rule} is a variable"
+            ),
+            RuleFault::UnknownConstructor => write!(
+                f,
+                "a side of the rule at position {rule} names a constructor past the table"
+            ),
+            RuleFault::Arity => write!(
+                f,
+                "a side of the rule at position {rule} is not one term by the arities of the \
+                 table"
+            ),
+            RuleFault::NotOwnPosition => write!(
+                f,
+                "a constructor of the rule at position {rule} stands at a field of a type that \
+                 is not the declaration's own"
+            ),
+            RuleFault::NonLinear => write!(
+                f,
+                "the left side of the rule at position {rule} repeats a variable or skips one"
+            ),
+            RuleFault::Unbound => write!(
+                f,
+                "the right side of the rule at position {rule} names a variable that its left \
+                 side does not bind"
+            ),
+            RuleFault::Duplicated => write!(
+                f,
+                "the right side of the rule at position {rule} names one variable two times"
+            ),
+            RuleFault::SlotMismatch => write!(
+                f,
+                "the right side of the rule at position {rule} puts a variable at a field of a \
+                 different type than its field on the left side"
+            ),
+            RuleFault::NotDecreasing => write!(
+                f,
+                "the rule at position {rule} is not seen to terminate: its right side holds \
+                 more constructors than its left side, or as many with a constructor above \
+                 itself"
+            ),
+            RuleFault::DependentSlot => write!(
+                f,
+                "a variable of the rule at position {rule} stands at a field whose classifier \
+                 is read only in the telescope of its constructor"
+            ),
+        }
+    }
+}
+
 /// One node of a constructor term flattened in pre-order for rewriting.
 ///
 /// # Specification
@@ -3815,6 +3892,38 @@ mod tests
             }),
             "the second rule's right side is two terms, and it is named by position"
         );
+    }
+
+    #[test]
+    fn a_refusal_names_its_rule_and_its_fault()
+    {
+        use alloc::string::ToString as _;
+
+        let faults = [
+            RuleFault::VariableHeaded,
+            RuleFault::UnknownConstructor,
+            RuleFault::Arity,
+            RuleFault::NotOwnPosition,
+            RuleFault::NonLinear,
+            RuleFault::Unbound,
+            RuleFault::Duplicated,
+            RuleFault::SlotMismatch,
+            RuleFault::NotDecreasing,
+            RuleFault::DependentSlot,
+        ];
+        let texts = faults.map(|fault| {
+            RuleRefusal {
+                rule: RuleIndex::from(7_usize),
+                fault,
+            }
+            .to_string()
+        });
+        for (position, text) in texts.iter().enumerate() {
+            assert!(text.contains("position 7"), "`{text}` names its rule");
+            for other in texts.iter().skip(position.saturating_add(1)) {
+                assert_ne!(text, other, "two faults have two texts");
+            }
+        }
     }
 
     /// - see: #8338

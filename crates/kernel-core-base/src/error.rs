@@ -1329,12 +1329,14 @@ impl core::fmt::Display for KernelError
             Self::CrossBlockReference { .. } => {
                 f.write_str("a data declaration named a declaration after its own block")
             },
-            Self::RuleNotPresentable(_) => {
-                f.write_str("a data declaration's rule did not present its type")
-            },
-            Self::OperationRulesRefused(_) => {
-                f.write_str("a definition's operation rules did not converge")
-            },
+            Self::RuleNotPresentable(refusal) => write!(
+                f,
+                "a data declaration's rule did not present its type: {refusal}"
+            ),
+            Self::OperationRulesRefused(refusal) => write!(
+                f,
+                "a definition's operation rules did not converge: {refusal}"
+            ),
             Self::PresentationRulesRefused(refusal) => write!(
                 f,
                 "a presentation's rules did not converge as its value states them: {refusal}"
@@ -1918,15 +1920,35 @@ mod tests
                 Err(core::fmt::Error)
             );
         }
-        let refusal = TheoryRuleRefusal {
+        let presentation = TheoryRuleRefusal {
             rule: RuleIndex::from(3_usize),
             fault: TheoryRuleFault::Diverges(RuleIndex::from(5_usize)),
         };
         assert!(
-            KernelError::PresentationRulesRefused(refusal)
+            KernelError::PresentationRulesRefused(presentation)
                 .to_string()
-                .ends_with(&refusal.to_string()),
+                .ends_with(&presentation.to_string()),
             "the refusal of a presentation's rules names the rule and its fault"
+        );
+        let operation = OperationRuleRefusal {
+            rule: RuleIndex::from(3_usize),
+            fault: OperationRuleFault::Unoriented,
+        };
+        assert!(
+            KernelError::OperationRulesRefused(operation)
+                .to_string()
+                .ends_with(&operation.to_string()),
+            "the refusal of an operation's rules names the rule and its fault"
+        );
+        let presented = RuleRefusal {
+            rule: RuleIndex::from(3_usize),
+            fault: RuleFault::NotDecreasing,
+        };
+        assert!(
+            KernelError::RuleNotPresentable(presented)
+                .to_string()
+                .ends_with(&presented.to_string()),
+            "the refusal of a rule of a presented type names the rule and its fault"
         );
     }
 }

@@ -598,3 +598,73 @@ fn a_law_over_an_earlier_call_is_decided_against_its_rules_1510()
         "`double(add(Zero, n))` is `Zero` by the law and `double(n)` by add's rule"
     );
 }
+
+#[test]
+fn a_refusal_names_its_rule_and_its_fault()
+{
+    use alloc::string::ToString as _;
+
+    let second = RuleIndex::from(11_usize);
+    let owner = ConstantIndex::from(13_usize);
+    let others = [
+        Overlapped::Operation(second),
+        Overlapped::Presented {
+            family: owner,
+            rule: second,
+        },
+        Overlapped::Called {
+            constant: owner,
+            rule: second,
+        },
+    ];
+    let other_texts = others.map(|other| other.to_string());
+    for (position, (other, text)) in others.iter().zip(&other_texts).enumerate() {
+        assert!(text.contains("position 11"), "`{text}` names its rule");
+        assert_eq!(
+            text.contains("position 13"),
+            !matches!(*other, Overlapped::Operation(_)),
+            "`{text}` names a declaration exactly where the rule is of a different one"
+        );
+        for different in other_texts.iter().skip(position.saturating_add(1)) {
+            assert_ne!(text, different, "two owners have two texts");
+        }
+    }
+    let pair = Overlapped::Presented {
+        family: owner,
+        rule: second,
+    };
+    let faults = [
+        OperationRuleFault::Head,
+        OperationRuleFault::NotAPattern,
+        OperationRuleFault::Results,
+        OperationRuleFault::UnknownConstructor,
+        OperationRuleFault::UnknownOperation,
+        OperationRuleFault::Arity,
+        OperationRuleFault::NonLinear,
+        OperationRuleFault::Unbound,
+        OperationRuleFault::Unoriented,
+        OperationRuleFault::Diverges(pair),
+        OperationRuleFault::Undecided(pair),
+    ];
+    let texts = faults.map(|fault| {
+        OperationRuleRefusal {
+            rule: RuleIndex::from(7_usize),
+            fault,
+        }
+        .to_string()
+    });
+    for (position, (fault, text)) in faults.iter().zip(&texts).enumerate() {
+        assert!(text.contains("position 7"), "`{text}` names its rule");
+        assert_eq!(
+            text.contains(&pair.to_string()),
+            matches!(
+                *fault,
+                OperationRuleFault::Diverges(_) | OperationRuleFault::Undecided(_)
+            ),
+            "`{text}` names a second rule exactly where its fault is of a pair"
+        );
+        for other in texts.iter().skip(position.saturating_add(1)) {
+            assert_ne!(text, other, "two faults have two texts");
+        }
+    }
+}

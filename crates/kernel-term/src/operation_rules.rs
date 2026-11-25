@@ -262,6 +262,54 @@ pub enum Overlapped
     },
 }
 
+impl core::fmt::Display for Overlapped
+{
+    /// Writes the other rule of a pair by its position and its owner.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the position of the rule, counted from zero, then the
+    ///   owner of the rule: the same operation, the presented type at its
+    ///   position, or the called definition at its position.
+    /// - provides: the part of a refusal's message that names the second rule
+    ///   of a critical pair.
+    /// - fails: propagates the formatter's write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over the three owners: each text holds the position of
+    ///   the rule, and a text of a different declaration holds the position of
+    ///   that declaration.
+    /// - witness: `operation_rules::tests::a_refusal_names_its_rule_and_its_fault`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Operation(rule) => write!(
+                f,
+                "the rule at position {} of the same operation",
+                usize::from(rule)
+            ),
+            Self::Presented { family, rule } => write!(
+                f,
+                "the rule at position {} of the presented type at position {}",
+                usize::from(rule),
+                usize::from(family)
+            ),
+            Self::Called { constant, rule } => write!(
+                f,
+                "the rule at position {} of the definition at position {}",
+                usize::from(rule),
+                usize::from(constant)
+            ),
+        }
+    }
+}
+
 /// The first rule an operation's rules are refused at, and why.
 ///
 /// # Specification
@@ -273,6 +321,89 @@ pub struct OperationRuleRefusal
     pub rule: RuleIndex,
     /// Its first fault.
     pub fault: OperationRuleFault,
+}
+
+impl core::fmt::Display for OperationRuleRefusal
+{
+    /// Writes the rule's position and its fault as one clause.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the position of [`Self::rule`], counted from zero,
+    ///   then what [`Self::fault`] says of that rule; a fault of a pair writes
+    ///   its [`Overlapped`] rule also.
+    /// - provides: the part of a refusal's message that names the rule, so a
+    ///   reader finds the rule with no debugger.
+    /// - fails: propagates the formatter's write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over every fault at one rule: each text holds the
+    ///   rule's position, a fault of a pair holds the text of its second rule,
+    ///   and two faults have two texts.
+    /// - witness: `operation_rules::tests::a_refusal_names_its_rule_and_its_fault`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        let rule = usize::from(self.rule);
+        match self.fault {
+            OperationRuleFault::Head => write!(
+                f,
+                "the left side of the rule at position {rule} is not the call of its operation \
+                 at the arity of the first rule"
+            ),
+            OperationRuleFault::NotAPattern => write!(
+                f,
+                "the arguments of the left side of the rule at position {rule} hold a results \
+                 tuple"
+            ),
+            OperationRuleFault::Results => write!(
+                f,
+                "the right side of the rule at position {rule} holds a results tuple below its \
+                 root"
+            ),
+            OperationRuleFault::UnknownConstructor => write!(
+                f,
+                "the rule at position {rule} names a constructor of no admitted data declaration"
+            ),
+            OperationRuleFault::UnknownOperation => write!(
+                f,
+                "the rule at position {rule} names an operation that is not its own definition \
+                 and not one admitted before it, or calls one at a different arity"
+            ),
+            OperationRuleFault::Arity => {
+                write!(f, "a side of the rule at position {rule} is not one term")
+            },
+            OperationRuleFault::NonLinear => write!(
+                f,
+                "the left side of the rule at position {rule} repeats a variable or skips one"
+            ),
+            OperationRuleFault::Unbound => write!(
+                f,
+                "the right side of the rule at position {rule} names a variable that its left \
+                 side does not bind"
+            ),
+            OperationRuleFault::Unoriented => write!(
+                f,
+                "the path order does not put the left side of the rule at position {rule} above \
+                 its right side"
+            ),
+            OperationRuleFault::Diverges(other) => write!(
+                f,
+                "the rule at position {rule}, overlapped by {other}, rewrites one term to two \
+                 normal forms"
+            ),
+            OperationRuleFault::Undecided(other) => write!(
+                f,
+                "a reduct of the pair of the rule at position {rule}, overlapped by {other}, \
+                 reaches no normal form within the fuel"
+            ),
+        }
+    }
 }
 
 /// What a convergence decision reads of the declarations admitted before the
