@@ -184,7 +184,6 @@ impl RewriteName
     /// trivial.
     #[inline]
     #[must_use]
-    #[inline]
     pub const fn label(self) -> &'static str
     {
         match self {
@@ -230,7 +229,6 @@ impl RewriteName
     /// - allocation: none.
     #[inline]
     #[must_use]
-    #[inline]
     pub fn named(text: &str) -> Option<&'static [Self]>
     {
         let index = Self::EVERY.iter().position(|name| name.label() == text)?;
