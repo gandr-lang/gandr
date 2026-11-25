@@ -2291,9 +2291,7 @@ impl<'source> Respelling<'_, 'source>
         child: Child<'source>,
     ) -> Operand<'source>
     {
-        let quoted = |child: Child<'source>| {
-            matches!(child, Child::Node(at) if self.rule(at) == Some(MoldName("type_quote_expression")))
-        };
+        let quoted = |child: Child<'source>| matches!(child, Child::Node(at) if self.rule(at) == Some(MoldName("type_quote_expression")));
         let mut operand = self.operand(child);
         if quoted(child) {
             operand.band = Band::Loose;
