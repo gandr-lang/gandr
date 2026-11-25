@@ -19,8 +19,8 @@
 //! [`CompileError`] and the facts of a body, and the build compiles no C++.
 //!
 //! The `gandr` dialect has one operation for each transition of the machine
-//! that the first slice uses. The shim lowers each one to the `llvm` dialect,
-//! by the one lowering of `cxx/src/dialect.cpp`.
+//! that the lowering uses. The shim lowers each one to the `llvm` dialect, by
+//! the one lowering of `cxx/src/dialect.cpp`.
 //!
 //! The shim is one shared library with the MLIR and LLVM of the pin inside
 //! it. Its C interface is `cxx/include/gandr_mlir_shim.h`, and the module
