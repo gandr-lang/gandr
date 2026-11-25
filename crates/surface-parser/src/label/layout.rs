@@ -77,13 +77,14 @@
 //! `def f() -> T = { … }` takes its `;` as `def f() -> T = e` does. A
 //! declaration body ends only an item a word begins that holds more than that
 //! word, so a stray token stays in its own item. The top level ends an item
-//! that a reserved word begins and that holds more than that word: a `def`,
-//! an `import`, a `type`. So a word at column zero ends the declaration before
-//! it, and an `import` takes no `;`. A form at the top level that no reserved
-//! word begins is a stray, and the top level ends no stray, so the lowering
-//! refuses the stray alone. A `pub` alone on its line marks the declaration
-//! after it, as an attribute does, and takes no separator. The end of the
-//! source ends nothing, so a source cut short stays open where it stops.
+//! that a declaration's keyword begins and that holds more than that word: a
+//! `def`, an `import`, a `type`. So a word at column zero ends the
+//! declaration before it, and an `import` takes no `;`. A form at the top
+//! level that no such keyword begins is a stray, and the top level ends no
+//! stray, so the lowering refuses the stray alone. A `pub` alone on its line
+//! marks the declaration after it, as an attribute does, and takes no
+//! separator. The end of the source ends nothing, so a source cut short stays
+//! open where it stops.
 //! No separator is written before a closer or a line-leading `|`, or after an
 //! attribute.
 //!
@@ -99,7 +100,6 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_surface_grammar::RESERVED_WORDS;
 
 use super::Bracket;
 use super::Lexeme;
@@ -107,6 +107,7 @@ use super::SourceBytes;
 use super::Token;
 use super::bracket;
 use crate::meld::primitive_copy_wrapper;
+use crate::mold::DECLARATION_LEADS;
 
 /// What ends the items of a block.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,7 +170,7 @@ enum Lead
     Bar,
     /// A word, as a member's keyword is.
     Word,
-    /// A reserved word at the top level, as a declaration's keyword is.
+    /// A word of [`DECLARATION_LEADS`] at the top level.
     Keyword,
 }
 
@@ -208,7 +209,9 @@ impl Head
                 Lead::Other
             }
             else if sep == Sep::Top
-                && RESERVED_WORDS.iter().any(|word| word.as_bytes() == spelled)
+                && DECLARATION_LEADS
+                    .iter()
+                    .any(|word| word.as_bytes() == spelled)
             {
                 Lead::Keyword
             }
@@ -1710,8 +1713,8 @@ mod tests
             "theory S where {\n  sort A : Type sort B : Type⟪;⟫\n}\n"
         );
         // A line at column zero ends the declaration before it, when a
-        // reserved word begins that declaration, as `def` and `oper` do. An
-        // attribute and a token that is no word end nothing after them.
+        // declaration's keyword begins that declaration, as `def` and `oper`
+        // do. An attribute and a token that is no word end nothing after them.
         assert_eq!(
             marked(
                 "def f(x : A) -> A = x\n@[checks]\ndef g(x : A) -> A = x\noper h : A\n§\nrelease x ;\n"
@@ -1752,12 +1755,13 @@ mod tests
             marked("import std.process;\nimport std.io\n@[checks]\ndef f(x : A) -> A = x;\n"),
             "import std.process;\nimport std.io⟪;⟫\n@[checks]\ndef f(x : A) -> A = x;\n"
         );
-        // A `pub` alone on its line marks the declaration after it, and a
-        // form that no reserved word begins is a stray. Neither takes a
+        // A `pub` alone on its line marks the declaration after it. A form
+        // that no declaration's keyword begins is a stray, whether a name
+        // begins it or a reserved word of an expression. None takes a
         // separator.
         assert_eq!(
-            marked("pub\ndef f(x : A) -> A = x;\nprint x\ndef g(x : A) -> A = x;\n"),
-            "pub\ndef f(x : A) -> A = x;\nprint x\ndef g(x : A) -> A = x;\n"
+            marked("pub\ndef f(x : A) -> A = x;\nprint x\nreturn x\ndef g(x : A) -> A = x;\n"),
+            "pub\ndef f(x : A) -> A = x;\nprint x\nreturn x\ndef g(x : A) -> A = x;\n"
         );
         // A declaration whose body closes has its end.
         assert_eq!(

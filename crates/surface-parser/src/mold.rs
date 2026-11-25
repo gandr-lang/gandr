@@ -943,6 +943,15 @@ pub const STATEMENT_LEADS: &[&str] = &[
     "let", "run", "unpack", "hold", "var", "recv", "acquire", "release", "fork",
 ];
 
+/// The reserved words that begin a declaration of a source: each one heads
+/// an item form ([`heads_declaration`]), or stands before one as an item form
+/// of one tile, as `pub` does. The layout pass has no grammar, so it reads
+/// this table.
+pub const DECLARATION_LEADS: &[&str] = &[
+    "codata", "data", "def", "extern", "flow", "import", "module", "oper", "pub", "rec", "rule",
+    "theory", "type", "world",
+];
+
 /// Return the grammar tile labels to enumerate for a labeled token.
 ///
 /// The returned slice is in a fixed order; the molder unions the `candidates`
@@ -5611,6 +5620,7 @@ mod tests
     use anodized::spec;
     use gandr_surface_grammar::CandidateCount;
     use gandr_surface_grammar::Pbg;
+    use gandr_surface_grammar::RESERVED_WORDS;
     use gandr_surface_grammar::RuleName;
     use gandr_surface_grammar::TileLabel;
     use gandr_surface_grammar::built_in;
@@ -5622,6 +5632,7 @@ mod tests
 
     use super::Ahead;
     use super::CandidateLabel;
+    use super::DECLARATION_LEADS;
     #[cfg(feature = "census")]
     use super::DecisionCount;
     use super::Follow;
@@ -5633,6 +5644,8 @@ mod tests
     use super::TokenIndex;
     use super::TokenText;
     use super::candidate_labels;
+    use super::heads_declaration;
+    use super::prefixes_declaration;
     use crate::MeldState;
     use crate::SpaceText;
     use crate::failure::Failure;
@@ -6265,6 +6278,31 @@ mod tests
     {
         let pbg = built_in()?;
         Ok(pbg)
+    }
+
+    #[test]
+    fn the_declaration_leads_are_the_reserved_words_that_begin_an_item() -> Result<(), Failure>
+    {
+        // The grammar decides which reserved words begin a declaration. The
+        // table states the same words, so a rule that the grammar gains or
+        // loses changes this test.
+        let pbg = built()?;
+        let mut begins: Vec<&str> = RESERVED_WORDS
+            .iter()
+            .copied()
+            .filter(|&word| {
+                let source = SourceFragment::from(word);
+                label(SourceFragment::from(word))
+                    .first()
+                    .is_some_and(|&token| {
+                        bool::from(heads_declaration(&pbg, token, &source))
+                            || bool::from(prefixes_declaration(&pbg, token, &source))
+                    })
+            })
+            .collect();
+        begins.sort_unstable();
+        assert_eq!(DECLARATION_LEADS, begins);
+        Ok(())
     }
 
     /// The rule of `def f(x, y) …`.
