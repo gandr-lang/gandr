@@ -37,7 +37,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the change takes 3 things out of the tree, and the body has no `## Deletes` section: write one row for each (`units.md` § units-pr, #6817)\na `refactor` pull request carries `## Preserved and changed`: one table of the behaviour it keeps, with the test that passes before and after, and one of the behaviour or test it changes, with the reason"
   },
@@ -92,7 +92,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "`kept.txt:v::boundary::Other` (kept) leaves the tree with no row in `## Deletes`"
   },
@@ -117,7 +117,7 @@
       "lonely": [],
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the `deleted` row of `v::hom::DirectedHom::new` leaves `Future use` empty\nthe `deleted` row of `v::hom::DirectedHom::new` gives `Origin` \"#699\", and the commit that adds it comes from pull request #700\nthe `deleted` row of `v::hom::DirectedHom::new` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   },
@@ -143,14 +143,14 @@
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect, 2026-11-11)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": { "v::hom::DirectedHom::new": ["crates/vd/tests/directed.rs"] }
         }
       ],
-      "architects": { "agent-shade": "(architect", "silvanshade": "" }
+      "architects": { "architect": "(architect", "maintainer": "" }
     },
     "output": ""
   },
@@ -181,14 +181,14 @@
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect, 2026-11-11)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": {}
         }
       ],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": ""
   },
@@ -247,14 +247,14 @@
       },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect, 2026-11-14)\n\n`v::bridge::FOLD_MARGIN`, `v::Releasing::Fold` and `v::gone::Thing` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": {}
         }
       ],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the crate's `## Provided features` names `v::gone::Thing`: no sign-off admits its deletion until the README line leaves in the same change, with its own row"
   },
@@ -280,14 +280,14 @@
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "silvanshade",
+          "author": "maintainer",
           "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": { "v::hom::DirectedHom::new": ["crates/vd/tests/directed.rs"] }
         }
       ],
-      "architects": { "agent-shade": "(architect", "silvanshade": "" }
+      "architects": { "architect": "(architect", "maintainer": "" }
     },
     "output": ""
   },
@@ -313,14 +313,14 @@
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] }
         }
       ],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the words of `crates/vd/src/hom.rs` that name the item move; the architect reads that and signs again"
   },
@@ -346,7 +346,7 @@
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
@@ -354,7 +354,7 @@
           "reshaped": ["v::hom::DirectedHom::new"]
         }
       ],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the record of the item at the base changes; the architect reads that and signs again"
   },
@@ -380,7 +380,7 @@
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
@@ -389,7 +389,7 @@
           "reshaped": []
         }
       ],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": ""
   },
@@ -410,7 +410,7 @@
       },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": null,
           "fork": null,
@@ -418,7 +418,7 @@
           "reshaped": []
         },
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::old` at 4d75302a6: signed.",
           "sha": "4d75302a6bbbb",
           "fork": null,
@@ -426,7 +426,7 @@
           "reshaped": []
         }
       ],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the commit that it names is not in this clone, and no fetch reaches it; the architect reads that and signs again\nthe architect's sign-off of `v::hom::DirectedHom::old` is stale: no commit of this clone joins the signed commit and the base, so neither half binds; the architect reads that and signs again"
   },
@@ -444,14 +444,14 @@
       "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": {}
         }
       ],
-      "architects": { "agent-shade": "(architect", "silvanshade": "" }
+      "architects": { "architect": "(architect", "maintainer": "" }
     },
     "output": "the `deleted` row of `v::hom::DirectedHom::new` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   },
@@ -482,14 +482,14 @@
       "files": { "gandr_vd::hom::DirectedHom": ["crates/vd/src/hom.rs"] },
       "signoffs": [
         {
-          "author": "agent-shade",
+          "author": "architect",
           "body": "## Deletion sign-off (architect)\n\n`gandr_vd::hom::DirectedHom` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
           "changed": {}
         }
       ],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the crate's `## Provided features` names `gandr_vd::hom::DirectedHom`: no sign-off admits its deletion until the README line leaves in the same change, with its own row\nno other crate names `vd`, so its items wait for their consumer: the row of `gandr_vd::hom::DirectedHom` is refused, and the dead-weight row reads `find the consumer`"
   },
@@ -506,7 +506,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "`v::kept::Item` is still in the head, and its row says `moved`\nthe `## Deletes` row of `v::gone::Item` says `removed`; the act is one of `deleted`, `moved`, `renamed`, `merged`, `narrowed`, `restored`\nthe `restored` row of `v::back::Item` names no pull request that it reverses in `Why`"
   },
@@ -532,7 +532,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the test `tests::directed::directed_j_on_the_reflexive_hom_is_the_reflexive_hom` changes its text: name it in the second table of `## Preserved and changed`, with what it no longer asserts and why"
   },
@@ -549,7 +549,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": ""
   },
@@ -598,7 +598,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the change takes 1 things out of the tree, and the body has no `## Deletes` section: write one row for each (`units.md` § units-pr, #6817)\na `refactor` pull request carries `## Preserved and changed`: one table of the behaviour it keeps, with the test that passes before and after, and one of the behaviour or test it changes, with the reason"
   },
@@ -632,7 +632,7 @@
       "lonely": [],
       "files": { "v::hom::DirectedHom": ["crates/vd/src/hom.rs"] },
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "`v::hom::changed` stands nowhere in the head with the same body, and the row of `v::hom::changed` says `moved`: no item that the head adds has its tokens, so the row says `deleted`, `merged` or `narrowed`, with the architect's sign-off (#7058)\n`v::hom::DirectedHom` stands at `v::directed::DirectedHom` with the same body, and its row says `deleted`: the row says `moved`, or it leaves, since the check reads the move (#7058)\nthe `deleted` row of `v::hom::DirectedHom` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   },
@@ -649,7 +649,7 @@
       "lonely": [],
       "files": {},
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the `merged` row of `v::hom::join` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`\nthe `narrowed` row of `v::hom::wide` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   },
@@ -683,7 +683,7 @@
       "lonely": [],
       "files": { "v::hom::wide": ["crates/vd/src/hom.rs"] },
       "signoffs": [],
-      "architects": { "agent-shade": "(architect" }
+      "architects": { "architect": "(architect" }
     },
     "output": "the `narrowed` row of `v::hom::wide` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
   }

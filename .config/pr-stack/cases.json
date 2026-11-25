@@ -2680,7 +2680,7 @@
     "name": "a seat's push, or a rebase that changed the patch, runs the lanes whatever the replaced head did",
     "program": "rebased.jq",
     "input": {
-      "committer": "agent-shade",
+      "committer": "architect",
       "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
       "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
       "required": [
@@ -4761,7 +4761,7 @@
     "input": {
       "root": "/w/gandr",
       "named": [
-        "/w/unit/target/debug/build/gandr-grammar/00000000000000b1/out/tests-00000000000000b1.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr-worktrees/unit/crates/grammar",
+        "/w/unit/target/debug/build/gandr-grammar/00000000000000b1/out/tests-00000000000000b1.d:# env-dep:CARGO_MANIFEST_DIR=/w/unit/crates/grammar",
         "/w/unit/target/debug/deps/tests-00000000000000b2.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr/crates/grammar"
       ]
     },

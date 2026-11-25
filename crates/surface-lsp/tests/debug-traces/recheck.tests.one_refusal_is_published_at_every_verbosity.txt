@@ -68,8 +68,8 @@ Process 3781388 stopped
 ((std::time::Instant, &gandr_core_checker::retire::Unretired, gandr_surface_lsp::recheck::Readings))  = ({0:{t:{tv_sec:31221, tv_nsec:{0:882748648}}}}, {}, Unkept)
 (gandr_surface_session::instrument::Silent *) sink = 0x00007ffff79fa87f {}
 (gandr_surface_syntax::span::SourceText) text = {0:<error: length 0x7ffff0241610 past mapped memory>}
-(quenchant_shape::shape::Maybe<gandr_surface_dispatcher::component::Laid, gandr_surface_dispatcher::component::laid::Absent>) laid = Present({text:"B\u{2}��\u{7}\0\0\0�e\u{f}6�*K�e/Development/gandr-lang/gandr-worktrees/triage-int-repairs-landing/library/std", unit:{sources:size=95, prelude:None}, base:{0:140737347811728}, paths:<len 0x7ffff0242c20 past mapped memory>, opened:size=0, named:<len 0x8 past mapped memory>, written:<len 0x7ffff0242c20 past mapped memory>}) {
-  0 = {text:"B\u{2}��\u{7}\0\0\0�e\u{f}6�*K�e/Development/gandr-lang/gandr-worktrees/triage-int-repairs-landing/library/std", unit:{sources:size=95, prelude:None}, base:{0:140737347811728}, paths:<len 0x7ffff0242c20 past mapped memory>, opened:size=0, named:<len 0x8 past mapped memory>, written:<len 0x7ffff0242c20 past mapped memory>}
+(quenchant_shape::shape::Maybe<gandr_surface_dispatcher::component::Laid, gandr_surface_dispatcher::component::laid::Absent>) laid = Present({text:"B\u{2}��\u{7}\0\0\0�e\u{f}6�*K�e/w/unit/library/std", unit:{sources:size=95, prelude:None}, base:{0:140737347811728}, paths:<len 0x7ffff0242c20 past mapped memory>, opened:size=0, named:<len 0x8 past mapped memory>, written:<len 0x7ffff0242c20 past mapped memory>}) {
+  0 = {text:"B\u{2}��\u{7}\0\0\0�e\u{f}6�*K�e/w/unit/library/std", unit:{sources:size=95, prelude:None}, base:{0:140737347811728}, paths:<len 0x7ffff0242c20 past mapped memory>, opened:size=0, named:<len 0x8 past mapped memory>, written:<len 0x7ffff0242c20 past mapped memory>}
 }
 (gandr_surface_diagnostics::verbosity::Verbosity) verbosity = User
 (gandr_surface_grammar::spelling::Spelling) spelling = Unicode

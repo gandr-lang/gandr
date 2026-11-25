@@ -10,7 +10,7 @@
             "isDraft": false,
             "author": {
               "__typename": "User",
-              "login": "agent-shade"
+              "login": "architect"
             },
             "headRefName": "corpus-2444",
             "baseRefName": "main",
@@ -2510,7 +2510,7 @@
             "isDraft": false,
             "author": {
               "__typename": "User",
-              "login": "agent-shade"
+              "login": "architect"
             },
             "headRefName": "surface-4642-restack-past-red",
             "baseRefName": "main",
@@ -2683,7 +2683,7 @@
             "isDraft": false,
             "author": {
               "__typename": "User",
-              "login": "agent-shade"
+              "login": "architect"
             },
             "headRefName": "lane-5112",
             "baseRefName": "main",
@@ -2741,7 +2741,7 @@
             "isDraft": false,
             "author": {
               "__typename": "User",
-              "login": "agent-shade"
+              "login": "architect"
             },
             "headRefName": "lane-5111",
             "baseRefName": "main",
@@ -2953,7 +2953,7 @@
             "isDraft": false,
             "author": {
               "__typename": "User",
-              "login": "agent-shade"
+              "login": "architect"
             },
             "headRefName": "flex-e-7377-small-string",
             "baseRefName": "landing",
