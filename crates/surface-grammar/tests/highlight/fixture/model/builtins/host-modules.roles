@@ -38,7 +38,7 @@
 589..590 Other ":"
 591..597 TypeBuiltin "String"
 597..598 Other "}"
-599..600 Other "="
+599..600 Keyword "="
 603..606 Keyword "let"
 607..610 Variable "dir"
 611..612 Other "="

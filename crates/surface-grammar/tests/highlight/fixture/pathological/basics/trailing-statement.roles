@@ -18,7 +18,7 @@
 285..286 Other ")"
 287..289 Operator "->"
 290..297 TypeBuiltin "Integer"
-298..299 Other "="
+298..299 Keyword "="
 302..306 Keyword "pure"
 307..309 Other "*{"
 309..310 Other "}"

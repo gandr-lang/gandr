@@ -881,7 +881,7 @@
 3532..3533 Other ")"
 3534..3536 Operator "->"
 3537..3541 Type "Term"
-3542..3543 Other "="
+3542..3543 Keyword "="
 3546..3549 Keyword "let"
 3550..3551 Variable "q"
 3552..3553 Other "="

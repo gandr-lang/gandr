@@ -197,7 +197,7 @@
 1302..1303 Other ")"
 1304..1306 Operator "->"
 1307..1314 TypeBuiltin "Integer"
-1315..1316 Other "="
+1315..1316 Keyword "="
 1319..1324 Keyword "match"
 1325..1330 Variable "boxed"
 1331..1332 Other "{"

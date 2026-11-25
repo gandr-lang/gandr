@@ -300,7 +300,7 @@
 2176..2181 Constructor "Point"
 2181..2182 Other "."
 2182..2188 Member "origin"
-2189..2190 Other "="
+2189..2190 Keyword "="
 2193..2197 Constructor "Path"
 2197..2198 Other "."
 2198..2202 Member "walk"

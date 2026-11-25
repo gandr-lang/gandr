@@ -40,7 +40,7 @@
 501..502 Other ")"
 503..505 Operator "->"
 506..513 TypeBuiltin "Integer"
-514..515 Other "="
+514..515 Keyword "="
 518..522 Keyword "pure"
 523..528 Keyword "thunk"
 529..530 Other "{"

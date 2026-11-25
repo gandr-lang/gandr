@@ -16,7 +16,7 @@
 52..53 Other ")"
 54..56 Operator "->"
 57..64 TypeBuiltin "Integer"
-65..66 Other "="
+65..66 Keyword "="
 69..73 Variable "fact"
 73..74 Other "["
 74..75 Operator "<"

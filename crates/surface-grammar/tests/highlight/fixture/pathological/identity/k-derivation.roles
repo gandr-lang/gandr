@@ -51,7 +51,7 @@
 109..110 Variable "p"
 111..111 Other ""
 111..112 Variable "q"
-113..114 Other "="
+113..114 Keyword "="
 117..122 Keyword "match"
 123..124 Variable "p"
 125..126 Other "{"

@@ -81,7 +81,7 @@
 900..907 Type "Partial"
 907..908 Other "]"
 909..916 TypeBuiltin "Integer"
-917..918 Other "="
+917..918 Keyword "="
 921..924 Keyword "let"
 925..926 Variable "_"
 927..928 Other "="

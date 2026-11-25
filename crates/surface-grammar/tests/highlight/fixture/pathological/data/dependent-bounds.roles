@@ -45,7 +45,7 @@
 1019..1020 Other ")"
 1021..1023 Operator "->"
 1024..1031 TypeBuiltin "Integer"
-1032..1033 Other "="
+1032..1033 Keyword "="
 1036..1041 Keyword "match"
 1042..1043 Variable "i"
 1044..1045 Other "{"

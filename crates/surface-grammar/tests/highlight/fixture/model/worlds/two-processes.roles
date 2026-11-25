@@ -50,7 +50,7 @@
 1073..1074 Other ")"
 1075..1077 Operator "->"
 1078..1085 TypeBuiltin "Integer"
-1086..1087 Other "="
+1086..1087 Keyword "="
 1090..1093 Keyword "let"
 1094..1098 Variable "held"
 1099..1100 Other ":"

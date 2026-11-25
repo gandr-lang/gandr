@@ -56,7 +56,7 @@
 502..503 Other ")"
 503..504 Other ")"
 504..505 Other ")"
-506..507 Other "="
+506..507 Keyword "="
 510..514 Constructor "Path"
 514..515 Other "."
 515..519 Member "here"

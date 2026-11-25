@@ -63,7 +63,7 @@
 505..509 Type "List"
 510..510 Other ""
 510..517 TypeBuiltin "Integer"
-518..519 Other "="
+518..519 Keyword "="
 522..523 Other "("
 523..527 Constructor "Cons"
 528..528 Other ""

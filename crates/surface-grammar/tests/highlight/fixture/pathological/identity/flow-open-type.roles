@@ -32,7 +32,7 @@
 84..85 Other ","
 86..87 TypeVariable "t"
 87..88 Other ")"
-89..90 Other "="
+89..90 Keyword "="
 93..97 Constructor "Flow"
 97..98 Other "."
 98..102 Member "into"

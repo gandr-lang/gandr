@@ -27,7 +27,7 @@
 402..403 Other ")"
 404..406 Operator "->"
 407..411 TypeBuiltin "Unit"
-412..413 Other "="
+412..413 Keyword "="
 416..422 Keyword "handle"
 423..424 VariableDef "c"
 425..426 Other ":"

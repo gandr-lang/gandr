@@ -110,7 +110,7 @@
 910..911 Other ")"
 912..914 Operator "->"
 915..919 TypeBuiltin "Unit"
-920..921 Other "="
+920..921 Keyword "="
 924..927 Keyword "let"
 928..932 Variable "file"
 933..934 Other "="

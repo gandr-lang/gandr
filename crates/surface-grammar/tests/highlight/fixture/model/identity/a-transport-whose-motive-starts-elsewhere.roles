@@ -182,7 +182,7 @@
 837..837 Other ""
 837..838 Variable "r"
 838..839 Other ")"
-840..841 Other "="
+840..841 Keyword "="
 844..848 Constructor "Path"
 848..849 Other "."
 849..853 Member "here"

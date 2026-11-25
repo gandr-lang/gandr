@@ -22,7 +22,7 @@
 345..352 Type "Partial"
 352..353 Other "]"
 354..361 TypeBuiltin "Integer"
-362..363 Other "="
+362..363 Keyword "="
 366..369 Keyword "var"
 370..371 VariableDef "n"
 372..373 Other "="

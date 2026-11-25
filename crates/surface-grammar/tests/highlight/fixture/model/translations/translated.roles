@@ -81,7 +81,7 @@
 1391..1392 Other ")"
 1393..1395 Operator "->"
 1396..1403 TypeBuiltin "Integer"
-1404..1405 Other "="
+1404..1405 Keyword "="
 1408..1415 Keyword "migrate"
 1416..1417 Other "["
 1417..1420 Label "far"

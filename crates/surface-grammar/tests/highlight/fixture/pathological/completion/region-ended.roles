@@ -32,7 +32,7 @@
 1051..1052 Other ")"
 1053..1055 Operator "->"
 1056..1060 TypeBuiltin "Unit"
-1061..1062 Other "="
+1061..1062 Keyword "="
 1065..1068 Keyword "var"
 1069..1072 VariableDef "buf"
 1073..1074 Other "="

@@ -32,7 +32,7 @@
 105..106 Other ")"
 107..109 Operator "->"
 110..114 Type "Glob"
-115..116 Other "="
+115..116 Keyword "="
 119..123 Keyword "glob"
 124..125 Other "{"
 130..135 Member "cells"

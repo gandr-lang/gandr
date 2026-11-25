@@ -35,7 +35,7 @@
 442..443 Other ")"
 444..446 Operator "->"
 447..451 TypeBuiltin "Type"
-452..453 Other "="
+452..453 Keyword "="
 456..462 Keyword "handle"
 463..465 VariableDef "st"
 466..467 Other ":"

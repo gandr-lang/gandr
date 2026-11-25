@@ -122,7 +122,7 @@
 826..827 Other ")"
 828..830 Operator "->"
 831..835 TypeBuiltin "Unit"
-836..837 Other "="
+836..837 Keyword "="
 840..843 Keyword "let"
 844..848 Variable "file"
 849..850 Other "="

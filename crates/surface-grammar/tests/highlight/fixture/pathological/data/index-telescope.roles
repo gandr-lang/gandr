@@ -351,7 +351,7 @@
 2250..2251 TypeVariable "n"
 2252..2252 Other ""
 2252..2253 TypeVariable "i"
-2254..2255 Other "="
+2254..2255 Keyword "="
 2258..2261 Keyword "let"
 2262..2263 Variable "p"
 2264..2265 Other "="

@@ -18,7 +18,7 @@
 358..359 Other ")"
 360..362 Operator "->"
 363..369 TypeBuiltin "String"
-370..371 Other "="
+370..371 Keyword "="
 374..377 Keyword "let"
 378..379 Variable "s"
 380..381 Other "="

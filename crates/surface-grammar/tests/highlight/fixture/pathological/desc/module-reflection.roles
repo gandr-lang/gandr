@@ -90,7 +90,7 @@
 1311..1312 Other ")"
 1313..1315 Operator "->"
 1316..1322 TypeBuiltin "String"
-1323..1324 Other "="
+1323..1324 Keyword "="
 1327..1333 Variable "concat"
 1334..1334 Other ""
 1334..1335 Other "("

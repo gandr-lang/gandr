@@ -98,7 +98,7 @@
 1239..1240 Variable "p"
 1241..1241 Other ""
 1241..1242 Variable "q"
-1243..1244 Other "="
+1243..1244 Keyword "="
 1249..1254 Keyword "match"
 1255..1256 Variable "p"
 1257..1258 Other "{"

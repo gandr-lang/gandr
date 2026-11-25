@@ -53,7 +53,7 @@
 1084..1093 Type "Evolution"
 1093..1094 Other "."
 1094..1104 Type "SeatEnd′"
-1105..1106 Other "="
+1105..1106 Keyword "="
 1109..1113 Constructor "Flow"
 1113..1114 Other "."
 1114..1118 Member "ride"

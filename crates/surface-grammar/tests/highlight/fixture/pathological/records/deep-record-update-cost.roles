@@ -49,7 +49,7 @@
 373..374 Other "}"
 374..375 Other "}"
 375..376 Other "}"
-377..378 Other "="
+377..378 Keyword "="
 381..383 Other "*{"
 383..384 Variable "d"
 385..386 Operator "|"

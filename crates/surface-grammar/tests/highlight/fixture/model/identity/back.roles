@@ -46,7 +46,7 @@
 731..732 Variable "b"
 733..733 Other ""
 733..734 Variable "a"
-735..736 Other "="
+735..736 Keyword "="
 739..743 Constructor "Path"
 743..744 Other "."
 744..748 Member "back"

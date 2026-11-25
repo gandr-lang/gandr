@@ -87,7 +87,7 @@
 1191..1197 Variable "twelve"
 1197..1198 Other ")"
 1199..1200 Other ")"
-1201..1202 Other "="
+1201..1202 Keyword "="
 1205..1209 Constructor "Path"
 1209..1210 Other "."
 1210..1214 Member "here"

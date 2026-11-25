@@ -24,7 +24,7 @@
 429..430 Other ")"
 431..433 Operator "->"
 434..438 TypeBuiltin "Unit"
-439..440 Other "="
+439..440 Keyword "="
 443..446 Keyword "let"
 447..454 Variable "pending"
 455..456 Other "="

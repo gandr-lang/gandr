@@ -22,7 +22,7 @@
 728..729 Other ")"
 730..732 Operator "->"
 733..737 TypeBuiltin "Unit"
-738..739 Other "="
+738..739 Keyword "="
 742..745 Keyword "let"
 746..750 Variable "ring"
 751..752 Other "="

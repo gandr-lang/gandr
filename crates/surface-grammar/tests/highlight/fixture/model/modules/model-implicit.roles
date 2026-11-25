@@ -265,7 +265,7 @@
 1570..1571 Other ")"
 1572..1574 Operator "->"
 1575..1582 TypeBuiltin "Integer"
-1583..1584 Other "="
+1583..1584 Keyword "="
 1587..1588 Variable "s"
 1588..1589 Other "."
 1589..1593 Member "read"

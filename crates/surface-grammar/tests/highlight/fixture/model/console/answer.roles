@@ -70,7 +70,7 @@
 960..963 Type "Eff"
 963..964 Other "]"
 965..969 TypeBuiltin "Unit"
-970..971 Other "="
+970..971 Keyword "="
 974..977 Keyword "let"
 978..984 Variable "answer"
 985..986 Other "="

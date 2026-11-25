@@ -152,7 +152,7 @@
 1452..1453 TypeVariable "r"
 1453..1454 Other "]"
 1455..1459 TypeBuiltin "Unit"
-1460..1461 Other "="
+1460..1461 Keyword "="
 1464..1470 Keyword "handle"
 1471..1472 VariableDef "c"
 1473..1474 Other ":"

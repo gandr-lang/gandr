@@ -93,7 +93,7 @@
 700..701 Other ")"
 702..704 Operator "->"
 705..709 Type "Bool"
-710..711 Other "="
+710..711 Keyword "="
 714..716 Keyword "if"
 717..718 Variable "g"
 718..719 Other "."

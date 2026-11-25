@@ -28,7 +28,7 @@
 321..322 Other ")"
 323..325 Operator "->"
 326..333 TypeBuiltin "Integer"
-334..335 Other "="
+334..335 Keyword "="
 338..339 Variable "r"
 339..340 Other "."
 340..341 Member "z"

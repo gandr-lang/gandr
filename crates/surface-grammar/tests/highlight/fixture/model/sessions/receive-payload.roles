@@ -79,7 +79,7 @@
 794..795 Other ")"
 796..798 Operator "->"
 799..803 TypeBuiltin "Unit"
-804..805 Other "="
+804..805 Keyword "="
 808..811 Keyword "let"
 812..816 Variable "desk"
 817..818 Other "="

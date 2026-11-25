@@ -37,7 +37,7 @@
 529..531 Operator "->"
 532..534 Keyword "-F"
 535..542 TypeBuiltin "Integer"
-543..544 Other "="
+543..544 Keyword "="
 547..553 Keyword "become"
 554..564 Variable "multiplies"
 565..565 Other ""

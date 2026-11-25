@@ -27,7 +27,7 @@
 947..948 Other ")"
 949..951 Operator "->"
 952..956 Type "Bool"
-957..958 Other "="
+957..958 Keyword "="
 961..964 Keyword "let"
 965..966 Variable "c"
 967..968 Other "="

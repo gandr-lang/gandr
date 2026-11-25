@@ -90,7 +90,7 @@
 934..935 Other ")"
 936..938 Operator "->"
 939..946 TypeBuiltin "Integer"
-947..948 Other "="
+947..948 Keyword "="
 951..957 Keyword "return"
 958..959 Variable "x"
 959..959 Other ""

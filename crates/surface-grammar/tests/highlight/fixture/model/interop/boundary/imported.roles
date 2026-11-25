@@ -35,7 +35,7 @@
 968..976 Type "Boundary"
 976..977 Other "]"
 978..981 TypeBuiltin "u32"
-982..983 Other "="
+982..983 Keyword "="
 986..989 Keyword "let"
 990..991 Variable "y"
 992..993 Other "="

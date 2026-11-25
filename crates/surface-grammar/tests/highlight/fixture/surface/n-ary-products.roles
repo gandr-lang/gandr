@@ -107,7 +107,7 @@
 332..333 Other ")"
 334..336 Operator "->"
 337..344 TypeBuiltin "Integer"
-345..346 Other "="
+345..346 Keyword "="
 349..354 Keyword "match"
 355..356 Variable "x"
 357..358 Other "{"

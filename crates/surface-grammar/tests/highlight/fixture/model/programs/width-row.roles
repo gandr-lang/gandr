@@ -46,7 +46,7 @@
 834..835 Other ")"
 836..838 Operator "->"
 839..846 TypeBuiltin "Integer"
-847..848 Other "="
+847..848 Keyword "="
 851..854 Keyword "let"
 855..858 Variable "sum"
 859..860 Other "="

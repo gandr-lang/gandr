@@ -45,7 +45,7 @@
 652..655 Type "Ask"
 655..656 Other "."
 656..663 Type "Decoded"
-664..665 Other "="
+664..665 Keyword "="
 668..672 Constructor "Path"
 672..673 Other "."
 673..678 Member "bisim"

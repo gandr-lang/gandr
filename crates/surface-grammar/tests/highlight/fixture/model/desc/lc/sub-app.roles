@@ -65,7 +65,7 @@
 455..456 Variable "s"
 456..457 Other ")"
 457..458 Other ")"
-459..460 Other "="
+459..460 Keyword "="
 463..467 Constructor "Path"
 467..468 Other "."
 468..472 Member "here"

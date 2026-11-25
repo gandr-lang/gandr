@@ -709,7 +709,7 @@
 5303..5304 Other ")"
 5305..5307 Operator "->"
 5308..5311 Type "T20"
-5312..5313 Other "="
+5312..5313 Keyword "="
 5316..5319 Keyword "let"
 5320..5322 Variable "s0"
 5323..5324 Other "="

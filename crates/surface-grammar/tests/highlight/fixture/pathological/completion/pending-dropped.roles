@@ -22,7 +22,7 @@
 426..427 Other ")"
 428..430 Operator "->"
 431..435 TypeBuiltin "Unit"
-436..437 Other "="
+436..437 Keyword "="
 440..443 Keyword "let"
 444..448 Variable "ring"
 449..450 Other "="

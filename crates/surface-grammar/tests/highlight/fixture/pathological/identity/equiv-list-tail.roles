@@ -32,7 +32,7 @@
 624..628 Type "List"
 629..629 Other ""
 629..633 Type "Bool"
-634..635 Other "="
+634..635 Keyword "="
 638..641 Variable "nil"
 641..641 Other ""
 643..717 Comment "/// To the empty list and back by the identity: the empty pattern returns,"

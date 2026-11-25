@@ -70,7 +70,7 @@
 806..807 Other ")"
 808..810 Operator "->"
 811..818 TypeBuiltin "Integer"
-819..820 Other "="
+819..820 Keyword "="
 823..829 Keyword "return"
 830..831 Other "("
 831..832 Variable "x"

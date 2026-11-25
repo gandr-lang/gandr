@@ -30,7 +30,7 @@
 500..501 Other ")"
 502..504 Operator "->"
 505..509 TypeBuiltin "Unit"
-510..511 Other "="
+510..511 Keyword "="
 514..520 Keyword "handle"
 521..522 VariableDef "c"
 523..524 Other ":"

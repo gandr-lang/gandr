@@ -31,7 +31,7 @@
 634..635 Other ")"
 636..638 Operator "->"
 639..643 TypeBuiltin "Unit"
-644..645 Other "="
+644..645 Keyword "="
 648..651 Keyword "let"
 652..656 Variable "file"
 657..658 Other "="

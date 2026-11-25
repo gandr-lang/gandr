@@ -21,7 +21,7 @@
 441..442 Other ")"
 443..445 Operator "->"
 446..453 TypeBuiltin "Integer"
-454..455 Other "="
+454..455 Keyword "="
 458..461 Keyword "let"
 462..469 Variable "missing"
 470..471 Other "="

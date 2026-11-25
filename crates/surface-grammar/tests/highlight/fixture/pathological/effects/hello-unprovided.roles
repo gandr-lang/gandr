@@ -21,7 +21,7 @@
 273..278 Type "Clock"
 278..279 Other "]"
 280..284 TypeBuiltin "Unit"
-285..286 Other "="
+285..286 Keyword "="
 289..294 Constructor "Clock"
 294..295 Other "."
 295..300 Member "print"

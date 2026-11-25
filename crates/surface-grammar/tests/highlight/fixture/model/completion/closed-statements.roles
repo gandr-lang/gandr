@@ -22,7 +22,7 @@
 642..643 Other ")"
 644..646 Operator "->"
 647..651 TypeBuiltin "Unit"
-652..653 Other "="
+652..653 Keyword "="
 656..659 Keyword "let"
 660..667 Variable "pending"
 668..669 Other "="

@@ -64,7 +64,7 @@
 681..682 Other ")"
 683..685 Operator "->"
 686..693 TypeBuiltin "Integer"
-694..695 Other "="
+694..695 Keyword "="
 700..703 Keyword "let"
 704..705 Variable "z"
 706..707 Other "="

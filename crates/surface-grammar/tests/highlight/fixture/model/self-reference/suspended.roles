@@ -31,7 +31,7 @@
 690..691 Other ")"
 692..694 Operator "->"
 695..702 TypeBuiltin "Integer"
-703..704 Other "="
+703..704 Keyword "="
 707..710 Keyword "var"
 711..712 VariableDef "x"
 713..714 Other "="

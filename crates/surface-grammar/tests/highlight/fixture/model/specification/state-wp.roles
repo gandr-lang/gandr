@@ -38,7 +38,7 @@
 994..995 Other ")"
 996..998 Operator "->"
 999..1003 TypeBuiltin "Type"
-1004..1005 Other "="
+1004..1005 Keyword "="
 1008..1014 Keyword "handle"
 1015..1017 VariableDef "st"
 1018..1019 Other ":"

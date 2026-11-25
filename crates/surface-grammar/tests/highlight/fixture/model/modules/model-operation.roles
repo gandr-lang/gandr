@@ -111,7 +111,7 @@
 932..933 Other ")"
 934..936 Operator "->"
 937..944 TypeBuiltin "Integer"
-945..946 Other "="
+945..946 Keyword "="
 949..952 Keyword "let"
 953..956 Variable "one"
 957..958 Other "="

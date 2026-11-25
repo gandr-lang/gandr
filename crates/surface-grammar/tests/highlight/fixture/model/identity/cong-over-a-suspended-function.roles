@@ -121,7 +121,7 @@
 726..726 Other ""
 726..727 Variable "g"
 727..728 Other ")"
-729..730 Other "="
+729..730 Keyword "="
 733..737 Constructor "Path"
 737..738 Other "."
 738..740 Member "ap"

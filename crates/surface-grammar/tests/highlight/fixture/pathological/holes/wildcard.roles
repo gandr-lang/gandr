@@ -71,7 +71,7 @@
 808..809 Other ")"
 810..812 Operator "->"
 813..820 TypeBuiltin "Integer"
-821..822 Other "="
+821..822 Keyword "="
 825..826 Variable "_"
 826..826 Other ""
 829..830 Number "0"

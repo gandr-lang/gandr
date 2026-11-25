@@ -52,7 +52,7 @@
 880..887 Type "Partial"
 887..888 Other "]"
 889..896 TypeBuiltin "Integer"
-897..898 Other "="
+897..898 Keyword "="
 901..904 Keyword "let"
 905..906 Variable "s"
 907..908 Other "="

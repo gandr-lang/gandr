@@ -44,7 +44,7 @@
 1751..1752 Other ")"
 1753..1755 Operator "->"
 1756..1763 TypeBuiltin "Integer"
-1764..1765 Other "="
+1764..1765 Keyword "="
 1768..1774 Keyword "handle"
 1775..1780 VariableDef "outer"
 1781..1782 Other ":"

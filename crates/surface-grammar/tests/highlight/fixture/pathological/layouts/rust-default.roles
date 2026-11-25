@@ -39,7 +39,7 @@
 578..579 Other ")"
 580..582 Operator "->"
 583..589 Type "Layout"
-590..591 Other "="
+590..591 Keyword "="
 594..606 Variable "structLayout"
 607..607 Other ""
 607..608 Other "("

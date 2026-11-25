@@ -27,7 +27,7 @@
 237..238 Variable "f"
 239..239 Other ""
 239..240 Variable "f"
-241..242 Other "="
+241..242 Keyword "="
 245..249 Constructor "Path"
 249..250 Other "."
 250..256 Member "funext"

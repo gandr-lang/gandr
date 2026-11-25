@@ -987,7 +987,7 @@
 5752..5753 Other ")"
 5754..5756 Operator "->"
 5757..5764 TypeBuiltin "Integer"
-5765..5766 Other "="
+5765..5766 Keyword "="
 5769..5777 Variable "advanced"
 5778..5778 Other ""
 5778..5783 Constructor "Mark0"

@@ -27,7 +27,7 @@
 422..423 Other ")"
 424..426 Operator "->"
 427..434 TypeBuiltin "Integer"
-435..436 Other "="
+435..436 Keyword "="
 439..442 Keyword "let"
 443..448 Variable "items"
 449..450 Other "="

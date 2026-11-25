@@ -96,7 +96,7 @@
 819..820 Other ")"
 821..823 Operator "->"
 824..828 TypeBuiltin "Unit"
-829..830 Other "="
+829..830 Keyword "="
 833..836 Keyword "let"
 837..842 Variable "heard"
 843..844 Other "="

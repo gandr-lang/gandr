@@ -23,7 +23,7 @@
 71..72 Other ")"
 73..73 Other ""
 73..74 Variable "x"
-75..76 Other "="
+75..76 Keyword "="
 79..85 Keyword "return"
 86..90 Constructor "Path"
 90..91 Other "."

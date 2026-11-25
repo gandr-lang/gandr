@@ -49,7 +49,7 @@
 752..755 Type "Eff"
 755..756 Other "]"
 757..761 TypeBuiltin "Unit"
-762..763 Other "="
+762..763 Keyword "="
 766..771 Variable "print"
 772..772 Other ""
 772..773 Other "("

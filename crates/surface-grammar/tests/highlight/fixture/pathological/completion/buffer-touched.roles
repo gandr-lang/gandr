@@ -28,7 +28,7 @@
 644..645 Other ")"
 646..648 Operator "->"
 649..653 TypeBuiltin "Unit"
-654..655 Other "="
+654..655 Keyword "="
 658..661 Keyword "let"
 662..668 Variable "buffer"
 669..670 Other "="

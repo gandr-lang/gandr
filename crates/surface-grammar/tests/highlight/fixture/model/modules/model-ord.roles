@@ -250,7 +250,7 @@
 1718..1719 TypeVariable "o"
 1719..1720 Other "."
 1720..1727 Type "Carrier"
-1728..1729 Other "="
+1728..1729 Keyword "="
 1732..1734 Keyword "if"
 1735..1736 Variable "o"
 1736..1737 Other "."

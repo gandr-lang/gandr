@@ -26,7 +26,7 @@
 542..543 Other ")"
 544..546 Operator "->"
 547..551 TypeBuiltin "Unit"
-552..553 Other "="
+552..553 Keyword "="
 556..559 Keyword "let"
 560..564 Variable "desk"
 565..566 Other "="

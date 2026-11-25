@@ -47,7 +47,7 @@
 537..538 Other "("
 538..539 TypeVariable "h"
 539..540 Other ")"
-541..542 Other "="
+541..542 Keyword "="
 545..548 Keyword "fun"
 549..550 Other "("
 550..551 VariableParam "e"

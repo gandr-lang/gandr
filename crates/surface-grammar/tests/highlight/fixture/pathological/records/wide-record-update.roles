@@ -93,7 +93,7 @@
 471..472 Other ":"
 473..480 TypeBuiltin "Integer"
 481..482 Other "}"
-483..484 Other "="
+483..484 Keyword "="
 487..489 Other "*{"
 489..493 Variable "wide"
 494..495 Operator "|"

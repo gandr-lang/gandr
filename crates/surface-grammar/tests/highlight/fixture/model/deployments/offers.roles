@@ -142,7 +142,7 @@
 1877..1878 Other ")"
 1879..1881 Operator "->"
 1882..1889 TypeBuiltin "Integer"
-1890..1891 Other "="
+1890..1891 Keyword "="
 1894..1901 Keyword "migrate"
 1902..1903 Other "["
 1903..1906 Label "far"

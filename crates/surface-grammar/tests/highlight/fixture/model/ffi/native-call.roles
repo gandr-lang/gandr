@@ -71,7 +71,7 @@
 833..836 TypeBuiltin "i64"
 837..838 Operator "*"
 839..842 TypeBuiltin "i64"
-843..844 Other "="
+843..844 Keyword "="
 847..850 Keyword "let"
 851..858 Variable "doubled"
 859..860 Other "="

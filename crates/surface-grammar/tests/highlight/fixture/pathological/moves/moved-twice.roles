@@ -29,7 +29,7 @@
 583..584 Other ")"
 585..587 Operator "->"
 588..592 TypeBuiltin "Unit"
-593..594 Other "="
+593..594 Keyword "="
 597..600 Keyword "let"
 601..605 Variable "file"
 606..607 Other "="

@@ -15,7 +15,7 @@
 74..75 Other ")"
 76..78 Operator "->"
 79..85 TypeBuiltin "String"
-86..87 Other "="
+86..87 Keyword "="
 90..93 Variable "env"
 93..94 Other "."
 94..97 Member "get"

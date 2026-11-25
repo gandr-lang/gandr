@@ -29,7 +29,7 @@
 340..341 Other ")"
 342..344 Operator "->"
 345..352 TypeBuiltin "Integer"
-353..354 Other "="
+353..354 Keyword "="
 357..358 Variable "x"
 358..358 Other ""
 360..391 Comment "/// A number at a stated width."

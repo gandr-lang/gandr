@@ -20,7 +20,7 @@
 468..469 Other ")"
 470..472 Operator "->"
 473..480 TypeBuiltin "Integer"
-481..482 Other "="
+481..482 Keyword "="
 485..488 Keyword "let"
 489..490 Variable "n"
 491..492 Other "="

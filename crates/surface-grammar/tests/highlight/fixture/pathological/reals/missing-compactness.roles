@@ -60,7 +60,7 @@
 1518..1521 Type "Eff"
 1521..1522 Other "]"
 1523..1530 TypeBuiltin "Integer"
-1531..1532 Other "="
+1531..1532 Keyword "="
 1535..1538 Keyword "let"
 1539..1543 Variable "held"
 1544..1545 Other "="

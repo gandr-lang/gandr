@@ -57,7 +57,7 @@
 555..556 Variable "q"
 557..557 Other ""
 557..558 Variable "q"
-559..560 Other "="
+559..560 Keyword "="
 563..567 Constructor "Path"
 567..568 Other "."
 568..572 Member "walk"

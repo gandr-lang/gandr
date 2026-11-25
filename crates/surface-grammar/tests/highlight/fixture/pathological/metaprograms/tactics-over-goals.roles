@@ -102,7 +102,7 @@
 1033..1034 Other ")"
 1035..1037 Operator "->"
 1038..1045 TypeBuiltin "Integer"
-1046..1047 Other "="
+1046..1047 Keyword "="
 1050..1051 Other "~"
 1051..1061 Variable "assumption"
 1061..1061 Other ""

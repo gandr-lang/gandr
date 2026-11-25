@@ -35,7 +35,7 @@
 953..954 Other ")"
 955..957 Operator "->"
 958..965 TypeBuiltin "Integer"
-966..967 Other "="
+966..967 Keyword "="
 970..976 Keyword "handle"
 977..978 VariableDef "c"
 979..980 Other ":"

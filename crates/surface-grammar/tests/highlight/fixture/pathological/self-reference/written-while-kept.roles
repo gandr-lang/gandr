@@ -23,7 +23,7 @@
 534..535 Other ")"
 536..538 Operator "->"
 539..546 TypeBuiltin "Integer"
-547..548 Other "="
+547..548 Keyword "="
 551..554 Keyword "var"
 555..556 VariableDef "s"
 557..558 Other "="

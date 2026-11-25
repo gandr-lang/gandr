@@ -47,7 +47,7 @@
 765..766 Other ")"
 767..769 Operator "->"
 770..777 TypeBuiltin "Integer"
-778..779 Other "="
+778..779 Keyword "="
 782..786 Variable "step"
 787..787 Other ""
 787..788 Other "("

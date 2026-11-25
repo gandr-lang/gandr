@@ -35,7 +35,7 @@
 657..658 Other ")"
 659..661 Operator "->"
 662..666 TypeBuiltin "Unit"
-667..668 Other "="
+667..668 Keyword "="
 671..677 Keyword "handle"
 678..679 VariableDef "c"
 680..681 Other ":"

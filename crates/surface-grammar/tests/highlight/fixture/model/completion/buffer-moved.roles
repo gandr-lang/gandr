@@ -31,7 +31,7 @@
 1528..1529 Other ")"
 1530..1532 Operator "->"
 1533..1537 TypeBuiltin "Unit"
-1538..1539 Other "="
+1538..1539 Keyword "="
 1542..1545 Keyword "let"
 1546..1552 Variable "buffer"
 1553..1554 Other "="

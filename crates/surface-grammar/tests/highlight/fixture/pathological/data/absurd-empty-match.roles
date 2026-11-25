@@ -14,7 +14,7 @@
 48..49 Other ")"
 50..52 Operator "->"
 53..60 TypeBuiltin "Integer"
-61..62 Other "="
+61..62 Keyword "="
 65..70 Keyword "match"
 71..72 Variable "v"
 73..74 Other "{"

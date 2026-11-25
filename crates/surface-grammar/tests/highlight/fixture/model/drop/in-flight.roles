@@ -38,7 +38,7 @@
 878..879 Other ")"
 880..882 Operator "->"
 883..887 TypeBuiltin "Unit"
-888..889 Other "="
+888..889 Keyword "="
 892..898 Keyword "handle"
 899..900 VariableDef "c"
 901..902 Other ":"

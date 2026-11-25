@@ -142,7 +142,7 @@
 1234..1235 TypeVariable "c"
 1235..1236 Other "."
 1236..1237 Type "C"
-1238..1239 Other "="
+1238..1239 Keyword "="
 1242..1245 Keyword "let"
 1246..1250 Variable "step"
 1251..1252 Other "="

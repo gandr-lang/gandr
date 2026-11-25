@@ -78,7 +78,7 @@
 706..707 Variable "x"
 707..708 Other ")"
 709..710 Other ")"
-711..712 Other "="
+711..712 Keyword "="
 715..719 Constructor "Path"
 719..720 Other "."
 720..724 Member "here"

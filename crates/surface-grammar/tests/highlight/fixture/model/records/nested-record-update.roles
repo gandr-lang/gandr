@@ -69,7 +69,7 @@
 569..576 TypeBuiltin "Integer"
 576..577 Other "}"
 577..578 Other "}"
-579..580 Other "="
+579..580 Keyword "="
 583..585 Other "*{"
 585..590 Variable "outer"
 591..592 Operator "|"

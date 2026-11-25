@@ -62,7 +62,7 @@
 1072..1075 Type "Eff"
 1075..1076 Other "]"
 1077..1081 TypeBuiltin "Unit"
-1082..1083 Other "="
+1082..1083 Keyword "="
 1086..1093 Keyword "migrate"
 1094..1095 Other "["
 1095..1099 Label "bare"

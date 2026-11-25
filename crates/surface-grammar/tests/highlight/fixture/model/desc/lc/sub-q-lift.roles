@@ -50,7 +50,7 @@
 478..478 Other ""
 478..479 Constructor "Z"
 479..480 Other ")"
-481..482 Other "="
+481..482 Keyword "="
 485..489 Constructor "Path"
 489..490 Other "."
 490..494 Member "here"
