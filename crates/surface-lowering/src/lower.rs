@@ -5466,6 +5466,27 @@ mod tests
         );
     }
 
+    /// A `handle` at the column of its handler's body is a statement of the
+    /// body: a scope's lead with no binder, which stops at the end of the
+    /// word.
+    #[test]
+    fn a_handle_right_of_its_effect_is_refused_at_the_word_8067()
+    {
+        let pbg = grammar();
+        let source = "def quit() -> -F Unit =\n  effect c : std.process.Exit.Eff do\n    c.exit 1\n    handle\n      | pure(x) => pure x\n";
+        let end = source.find("handle").unwrap_or_default().saturating_add(6);
+        let tree = repaired(&pbg, SourceText::from(source));
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: span(ByteOffset::from(end), ByteOffset::from(end)),
+                form: FormName::from(NamedKind("handle_expression")),
+                fault: FormFault::Repaired(Repair::Unended(crate::form::Ending::Unnamed)),
+            },
+            "the `handle` right of its `effect` stops at the end of the word"
+        );
+    }
+
     /// A laid-out block of one expression, after the `=` of a `def` with no
     /// result arrow, lowers to that expression's core. A block in written
     /// braces, and a laid-out block with a statement, stay refused by their

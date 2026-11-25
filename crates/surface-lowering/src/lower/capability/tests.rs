@@ -2341,6 +2341,48 @@ fn an_effect_scope_is_its_handle_scope_8061()
     }
 }
 
+/// A handler by layout, with `do` after its `effect` head and `handle` on a
+/// line of its own before the clauses, lowers to the core of its form in
+/// braces; so does a handler by name.
+#[test]
+fn a_laid_out_handler_is_its_braced_form_8067()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}{put_put}{passing}",
+            "def quit_laid() -> -F Unit =\n  effect c : std.process.Exit.Eff do\n    c.exit 1\n  handle\n    | pure(x) => pure x\n    | oper exit(code, k) => k *{{}}\n",
+            "def quit_braced() -> -F Unit {{ effect c : std.process.Exit.Eff {{ c.exit 1 }} handle {{ | pure(x) => pure x | oper exit(code, k) => k *{{}} }} }}\n",
+            "def answered_laid() -> Integer -> Integer =\n  effect st : StatePutPut with sort S = Integer do\n    st.put 4\n    let a = st.get\n    pure fun (_s) {{ pure a }}\n  handle Passing\n",
+            "def answered_braced() -> Integer -> Integer {{ effect st : StatePutPut with sort S = Integer {{ st.put 4; let a = st.get; pure fun (_s) {{ pure a }} }} handle Passing }}\n",
+        ),
+        state = STATE,
+        put_put = PUT_PUT,
+        passing = PASSING,
+    );
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
+    let body = |name: &str| match outcome_of(&module, name.into()) {
+        DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body: {other:?}"),
+    };
+    for (laid, braced) in [
+        ("quit_laid", "quit_braced"),
+        ("answered_laid", "answered_braced"),
+    ] {
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, body(laid), body(braced)),
+            gandr_core_term::CertificateEquality::Equal,
+            "`{laid}` by layout lowers as `{braced}` in braces"
+        );
+    }
+}
+
 /// A cost theory whose costs a scope fixes: a charge, and the cost monoid's
 /// unit and sum as value operations, with decalf's two laws.
 const COST: &str = include_str!("tests/fixtures/cost.gandr");
