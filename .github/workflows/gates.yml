@@ -1,0 +1,134 @@
+# The four gates of a landing, on the hosted runners for Linux x86-64. Each
+# gate is one job, and the name of the job is the name of its required check.
+# The merge queue runs the gates again on the tree that lands.
+#
+# The gates restore the Cargo target directory of their own gate. Cargo
+# compares sources by content (`.cargo/config.toml`), so a restored unit whose
+# source did not change stays fresh under the new dates of the checkout. Only
+# a run on `main` saves a cache: a cache of `main` is the one cache that a pull
+# request and a merge group can both read.
+name: gates
+
+on:
+  # A draft runs no gate. Marking it ready starts the first run.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A push to a pull request ends its run that is not done. A merge group and
+# `main` have one run for each commit.
+concurrency:
+  group: gates-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # The cache holds no incremental state. A restored unit with the same
+  # source content is fresh without it.
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  gate:
+    name: ${{ matrix.gate }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: plain suite
+            slug: plain
+            target: target
+            nextest: true
+            run: cargo nextest run --workspace --locked --no-fail-fast
+          # `.config/mise/enforcing` sets the flag that runs each `#[spec]`
+          # clause. The suite has a target directory of its own, with an
+          # absolute path: a test that starts Cargo in the directory of a crate
+          # takes the same directory.
+          - gate: enforcing suite
+            slug: enforcing
+            target: target/enforcing
+            nextest: true
+            run: >-
+              CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/enforcing"
+              CARGO_UNSTABLE_FEATURE_UNIFICATION=true
+              .config/mise/enforcing cargo nextest run --workspace --locked
+              --config 'resolver.feature-unification="workspace"' --no-fail-fast
+          - gate: Clippy
+            slug: clippy
+            target: target
+            run: cargo clippy --workspace --all-targets --locked
+          # The format gate builds nothing, so it has no target cache. It saves
+          # the toolchain for the other gates.
+          - gate: cargo fmt
+            slug: fmt
+            toolchain-save: true
+            run: cargo fmt --all --check
+    steps:
+      - name: check out the tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The key hashes the pin file, so a change of the pin is a new cache.
+      - name: restore the toolchain
+        id: toolchain
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.rustup/toolchains/*
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+      # With no argument, rustup reads `rust-toolchain.toml`: its channel, its
+      # components and its profile.
+      - name: install the toolchain
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+      - name: save the toolchain
+        if: ${{ matrix.toolchain-save && github.event_name == 'push' && steps.toolchain.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.rustup/toolchains/*
+          key: ${{ steps.toolchain.outputs.cache-primary-key }}
+      # Each Linux build links with mold (`.cargo/config.toml`).
+      - name: install mold
+        if: ${{ matrix.target }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mold
+      # The version of the pin in `mise.toml`.
+      - name: install cargo-nextest
+        if: ${{ matrix.nextest }}
+        run: curl --proto '=https' --tlsv1.2 -fsSL https://get.nexte.st/0.9.150/linux | tar -xzf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+      # The newest cache of `main` for this gate, the toolchain and the lock
+      # file; else the newest one for this gate and the toolchain.
+      - name: restore the target directory
+        id: target
+        if: ${{ matrix.target }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ matrix.target }}
+          key: gate-${{ matrix.slug }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            gate-${{ matrix.slug }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-
+            gate-${{ matrix.slug }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+      - name: run the gate
+        run: ${{ matrix.run }}
+      - name: save the target directory
+        if: ${{ always() && matrix.target && github.event_name == 'push' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ matrix.target }}
+          key: ${{ steps.target.outputs.cache-primary-key }}
