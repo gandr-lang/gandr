@@ -1,6 +1,7 @@
 [
   {
     "name": "the syntax ledger",
+    "kind": "output",
     "paths": ["ledger/syntax.md", "ledger/syntax.json"],
     "inputs": ["crates/surface-grammar/", "crates/surface-syntax/"],
     "check": "mise run check:syntax-ledger",
@@ -8,6 +9,7 @@
   },
   {
     "name": "the comment ledger",
+    "kind": "ratchet",
     "paths": ["corpus/uncommented.ledger"],
     "inputs": [
       "corpus/",
@@ -21,8 +23,12 @@
   },
   {
     "each": "crate",
-    "name": "the goldens of {crate}",
-    "paths": ["crates/{crate}/tests/golden/"],
+    "name": "the goldens and captures of {crate}",
+    "kind": "output",
+    "paths": [
+      "crates/{crate}/tests/golden/",
+      "crates/{crate}/tests/captures/"
+    ],
     "inputs": ["crates/{crate}/"],
     "check": ".config/mise/scope cargo nextest run --locked --manifest-path crates/{crate}/Cargo.toml",
     "stale": [100],
@@ -30,9 +36,111 @@
   },
   {
     "name": "the references ledger",
+    "kind": "output",
     "paths": ["ledger/references.sql"],
     "inputs": ["crates/", "corpus/", ".config/references/"],
     "check": "mise run check:references",
     "record": "mise run ledger:references"
+  },
+  {
+    "name": "the package manifests",
+    "kind": "output",
+    "paths": [
+      "library/std/package.gandr.toml",
+      "workspace.gandr.toml",
+      "corpus/model/projects/hello/package.gandr.toml",
+      "corpus/model/projects/tools/package.gandr.toml",
+      "corpus/model/projects/workspace.gandr.toml"
+    ],
+    "inputs": ["library/std/", "corpus/model/projects/", "crates/surface-dispatcher/"],
+    "record": "gandr check, in the directory of each manifest"
+  },
+  {
+    "name": "the bootstrap census",
+    "kind": "output",
+    "paths": ["ledger/census.md"],
+    "inputs": ["Cargo.toml", "crates/"],
+    "record": "mise run report:bootstrap-census"
+  },
+  {
+    "name": "the features database",
+    "kind": "output",
+    "paths": ["ledger/ledger.db"],
+    "inputs": [],
+    "record": "none: the file has 0 bytes, and no program of the tree writes it"
+  },
+  {
+    "name": "the prose ledger",
+    "kind": "ratchet",
+    "paths": ["corpus/prose.ledger"],
+    "inputs": ["./"],
+    "record": "mise run check:prose --write"
+  },
+  {
+    "name": "the hover coverage ledger",
+    "kind": "ratchet",
+    "paths": ["crates/surface-lsp-core/coverage.ledger"],
+    "inputs": ["corpus/", "crates/surface-lsp-core/"],
+    "record": "SURFACE_LSP_COVERAGE_WRITE_LEDGER=1 cargo nextest run --cargo-profile sweeps --package gandr-surface-lsp-core"
+  },
+  {
+    "name": "the locks of cargo",
+    "kind": "first input",
+    "paths": [
+      "Cargo.lock",
+      "crates/runtime-rust-reader/Cargo.lock",
+      "crates/workflow-twin-census/tests/workspace/Cargo.lock"
+    ],
+    "reason": "cargo reads the lock before a program of the tree runs, and a build with no lock is not the same build two times"
+  },
+  {
+    "name": "the locks of the tools",
+    "kind": "first input",
+    "paths": ["mise.lock", "aube-lock.yaml", ".mise/locks/"],
+    "reason": "mise and aube read the lock before a program of the tree runs, and an install with no lock is not the same install two times"
+  },
+  {
+    "name": "the lock of the fixture workspace",
+    "kind": "first input",
+    "paths": ["corpus/model/projects/workspace.gandr.lock"],
+    "reason": "it is the subject of the fixture: a resolve that finds a different address is the refusal that the fixture shows"
+  },
+  {
+    "name": "the module map of std",
+    "kind": "record",
+    "paths": ["library/std/README.md"],
+    "reason": "a person writes each row, and no program can compute it"
+  },
+  {
+    "name": "the crate table",
+    "kind": "record",
+    "paths": ["crates/README.md"],
+    "reason": "a person writes one row for each crate, and no program can compute it"
+  },
+  {
+    "name": "the ledgers that a person writes",
+    "kind": "record",
+    "paths": [
+      "ledger/features.sql",
+      "ledger/purposes.sql",
+      "ledger/concerns.sql",
+      "ledger/positions.sql",
+      "ledger/shared.sql",
+      "ledger/builtins.sql"
+    ],
+    "reason": "a person writes each row, and a task puts the rows in order. `ledger:stamp` writes the column `since` of `ledger/features.sql`"
+  },
+  {
+    "name": "the mutation lists",
+    "kind": "record of one moment",
+    "paths": ["ledger/mutants/"],
+    "reason": "each list is the data of one mutation run, which builds the crate one time for each mutant, and no later change writes it"
+  },
+  {
+    "each": "crate",
+    "name": "the debug traces of {crate}",
+    "kind": "record of one moment",
+    "paths": ["crates/{crate}/tests/debug-traces/"],
+    "reason": "each trace is the record of one run of a test under the debugger, and no later change writes it"
   }
 ]

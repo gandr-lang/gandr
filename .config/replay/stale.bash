@@ -6,17 +6,26 @@
 # reads it: #6127's replay onto #6125's last head left 5 recovery records
 # stale on the landing.
 #
-# Each row of `artifacts.json` names one generated artifact: the paths it
-# lives at, the paths it derives from, the check that regenerates and
-# compares it, and the command that records it again. A row MAY name
-# `stale`, the exit statuses of its check that mean the artifacts disagree
-# (#6786): for a nextest check, 100, a red test. Another failing status is
-# the check's own error, as a package that no crate holds (101). A row with
-# no `stale` reads each failing status as stale. `due.jq` reads the rows
-# the replay makes due. The script runs each due row's check on the head, in
-# the current directory, which must hold the head's tree. A check reads the
-# new base as `REPLAY_BASE`, and mise trusts the directory, as `pr:land` runs
-# the reading in a scratch worktree.
+# Each row of the table of artifacts names files of the tree that a program
+# writes. It also names their kind: `output`, `ratchet`, `first input`,
+# `record` and `record of one moment`. A row of an output or a ratchet names
+# its paths, the paths of its inputs, and the command that records it again.
+# It MAY name the check that writes it again and compares it.
+#
+# A row of a file that stays names its `reason`. A row MAY name `stale`: the
+# exit statuses of its check that show a difference. For a nextest check,
+# 100 is a red test. A different failing status is an error of the check,
+# as 101 for a package that no crate holds.
+#
+# A row with no `stale` reads each failing status as stale. The script runs
+# the check of each row that needs it. It runs the checks on the
+# head, in the current directory, which holds the tree of the head. A check
+# reads the new base as `REPLAY_BASE`. mise trusts the directory, because
+# `pr:land` runs the reading in a scratch worktree.
+#
+# - see: `.config/replay/artifacts.json`
+# - see: `.config/replay/due.jq`
+# - see: #6786
 #
 # `pr:open` runs it on the head it stacks, and `chain_replay` on each member
 # that a restack, a cut or a signed restack replays, before anything moves.

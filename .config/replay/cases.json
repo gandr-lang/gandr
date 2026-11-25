@@ -18,7 +18,7 @@
     "moved": ["crates/core-checker/src/lib.rs"],
     "own": ["crates/core-checker/tests/golden/judgement.a_goal_8.txt"],
     "crates": ["core-checker", "core-nbe", "surface-parser"],
-    "due": ["the goldens of core-checker"]
+    "due": ["the goldens and captures of core-checker"]
   },
   {
     "name": "#6144: the base moves the grammar under commits that change the grammar and its goldens, so the goldens of the grammar are due",
@@ -28,7 +28,7 @@
       "crates/surface-grammar/tests/golden/mold.a_rule_9.txt"
     ],
     "crates": ["surface-grammar"],
-    "due": ["the goldens of surface-grammar"]
+    "due": ["the goldens and captures of surface-grammar"]
   },
   {
     "name": "#6144: the base moves a corpus source under a rewritten comment ledger, so the ledger is due",

@@ -14,5 +14,5 @@
 include "paths" {search: "../replay"};
 
 . as $in
-| [$in.rows[] | expanded($in.crates) | .paths[]] as $generated
+| [$in.rows[] | checked | expanded($in.crates) | .paths[]] as $generated
 | [$in.shared[] | select(holds($generated; [.]) | not)]

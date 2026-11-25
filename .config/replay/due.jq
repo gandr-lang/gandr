@@ -1,11 +1,19 @@
-# The rows of `artifacts.json` that a replay makes due (#6144), as
-# `stale.bash` reads them. A replay moves a branch's own commits onto a base
-# that moved, and keeps each generated artifact the commits hold. A row is due
-# when the base's move and the own commits both touch its paths or its inputs,
-# and one of the two touches its paths: then one side wrote the artifact from
-# inputs that the other side changed. A row with `each: "crate"` stands for
-# one row for each crate (`paths.jq`). Rows that share a check run it once,
-# their names joined.
+# The rows of the table of artifacts that need their check when a script
+# replays a branch. The script puts the own commits of the branch onto a base
+# that moves. It keeps each generated
+# artifact of the commits. A row needs its check when the move of the base and
+# the own commits both touch its paths or its inputs. One of the two must
+# touch its paths: then one side writes the artifact from inputs that the
+# other side changes.
+#
+# Only a row with a `check` can need its check. A row with `each: "crate"`
+# stands for one row for each crate. Rows with the same check run it one
+# time, and the result joins their names.
+#
+# - see: `.config/replay/artifacts.json`
+# - see: `.config/replay/stale.bash`
+# - see: `.config/replay/paths.jq`
+# - see: #6144
 #
 # Input:
 #   rows    the rows of `artifacts.json`
@@ -20,7 +28,7 @@
 include "paths" {search: "./"};
 
 . as $in
-| [$in.rows[] | expanded($in.crates)
+| [$in.rows[] | checked | expanded($in.crates)
     | select(holds(.paths + .inputs; $in.moved) and holds(.paths + .inputs; $in.own)
         and (holds(.paths; $in.moved) or holds(.paths; $in.own)))]
 | group_by(.check)

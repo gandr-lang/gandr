@@ -5011,7 +5011,8 @@
         {
           "name": "the references ledger",
           "paths": ["ledger/references.sql"],
-          "inputs": ["crates/"]
+          "inputs": ["crates/"],
+          "check": "mise run check:references"
         }
       ],
       "crates": ["a"]
@@ -5027,7 +5028,14 @@
         {
           "name": "the crate map",
           "paths": ["ledger/crates.dot", "ledger/README.md"],
-          "inputs": ["crates/"]
+          "inputs": ["crates/"],
+          "check": "mise run check:crate-map"
+        },
+        {
+          "name": "the crate table",
+          "kind": "record",
+          "paths": ["crates/README.md"],
+          "reason": "a person writes one row for each crate"
         }
       ],
       "crates": ["a"]
@@ -5044,7 +5052,8 @@
           "each": "crate",
           "name": "the goldens of {crate}",
           "paths": ["crates/{crate}/tests/golden/"],
-          "inputs": ["crates/{crate}/"]
+          "inputs": ["crates/{crate}/"],
+          "check": "cargo nextest run --manifest-path crates/{crate}/Cargo.toml"
         }
       ],
       "crates": ["a", "b"]
