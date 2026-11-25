@@ -1335,8 +1335,10 @@ impl Error for SettleFault
 ///   its refused run, once each in order; a report holds played channels only
 ///   for a traced run; only accepted declarations stating a normal form read
 ///   one, through [`LoweredModule::normal_form`], under the rules of the block
-///   that holds them; an admitted law the checker owes is owed nothing; the
-///   report preserves the checker ledger count.
+///   that holds them; an admitted law the checker owes is owed nothing; a
+///   declaration the checker refuses at the terms of a theory the lowering
+///   refused produces the refusal of those terms; the report preserves the
+///   checker ledger count.
 /// - fails: `SettleFault` for the first missing or misaligned verdict, an
 ///   unreadable expectation payload, or a verdict left after the module ends.
 ///   Calls made to the runner before a later fault are not rolled back.
@@ -1350,10 +1352,11 @@ impl Error for SettleFault
 ///
 /// # Adequacy
 /// - hypothesis: L3 — aligned, missing, shifted and surplus checker reports;
-///   unreadable payloads; a lowering refusal before checked names; strict
-///   guards retaining obligations; and accepted versus unaccepted run requests.
-///   Exact records and typed fault positions distinguish pairing, precedence
-///   and ledger errors. Callback positions are observed by the witnesses; the
+///   unreadable payloads; a lowering refusal before checked names; a
+///   declaration at the terms of a refused theory; strict guards retaining
+///   obligations; and accepted versus unaccepted run requests. Exact records
+///   and typed fault positions distinguish pairing, precedence and ledger
+///   errors. Callback positions are observed by the witnesses; the
 ///   postcondition never calls or replays the runner.
 /// - witness: `settle::tests::verdicts_that_are_not_the_modules_own_are_refused`
 /// - witness: `settle::tests::a_lowering_refused_declaration_consumes_no_verdict`
@@ -1366,6 +1369,7 @@ impl Error for SettleFault
 /// - witness: `settle::tests::an_admitted_law_settles_as_checks_and_lists_its_admission_2356`
 /// - witness: `settle::tests::a_boundary_check_stands_as_its_run_answers_2901`
 /// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
+/// - witness: `settle::tests::a_declaration_at_the_terms_of_a_refused_theory_states_its_cause`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
@@ -1393,17 +1397,19 @@ impl Error for SettleFault
                                 !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
                                     && boundary_at(module.attributes(), lowered).is_some()
                             }
-                            Produced::Unlowered(refusal) => match lowered.outcome() {
-                                DeclarationOutcome::Refused(expected) => {
-                                    expected == refusal && usize::from(declaration.owed) == 0_usize
-                                }
-                                DeclarationOutcome::Completed { .. }
-                                | DeclarationOutcome::Uncompleted { .. }
-                                | DeclarationOutcome::Bodied { .. }
-                                | DeclarationOutcome::Data(_)
-                                | DeclarationOutcome::Codata(_)
-                                | DeclarationOutcome::Abstract(_)
-                                | DeclarationOutcome::World => true,
+                            Produced::Unlowered(refusal) => {
+                                (matches!(
+                                    lowered.outcome(), DeclarationOutcome::Refused(expected) if
+                                    expected == refusal
+                                ) || verdicts.judged().iter().any(|answer| {
+                                    answer.constant() == lowered.constant()
+                                        && matches!(
+                                            answer.verdict(), Verdict::Refused(checked) if matches!(
+                                                unlowered_terms(module, checked),
+                                                Maybe::Present(cause) if cause == refusal
+                                            )
+                                        )
+                                })) && usize::from(declaration.owed) == 0_usize
                             }
                             Produced::Judged(_) => {
                                 !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
@@ -1494,7 +1500,10 @@ impl Error for SettleFault
                             || matches!(
                                 (answer.verdict(), declaration.produced),
                                 (Verdict::Refused(refusal), Produced::Unlowered(cause))
-                                    if unlowered_terms(module, refusal) == Maybe::Present(cause)
+                                    if matches!(
+                                        unlowered_terms(module, refusal),
+                                        Maybe::Present(terms) if terms == cause
+                                    )
                             )
                             || matches!(declaration.produced, Produced::Guarded(_)))
                 })
