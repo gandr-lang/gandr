@@ -5219,6 +5219,49 @@ mod tests
     }
 
     #[test]
+    fn a_declaration_ends_at_the_next_word_at_column_zero_8060()
+    {
+        let mut arena = CoreArena::new();
+        let laid = lowered(
+            SourceText::from(include_str!(
+                "lower/fixtures/a-declaration-ends-at-the-next-word-at-column-zero-8060-laid.gandr"
+            )),
+            &mut arena,
+        );
+        let written = lowered(
+            SourceText::from(include_str!(
+                "lower/fixtures/a-declaration-ends-at-the-next-word-at-column-zero-8060-written.gandr"
+            )),
+            &mut arena,
+        );
+        let names = |module: &LoweredModule<'_>| {
+            module
+                .declarations()
+                .iter()
+                .map(|declaration| String::from(declaration.name().as_ref()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names(&laid),
+            names(&written),
+            "a source with no `;` after a declaration declares what the source with each `;` does"
+        );
+        let body = |module: &LoweredModule<'_>| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == "f")
+                .unwrap_or_else(|| panic!("`f` is declared"));
+            body_of(declaration.outcome())
+        };
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, body(&laid), body(&written)),
+            gandr_core_term::CertificateEquality::Equal,
+            "a definition after a `type` and a `world` that end at their lines lowers alike"
+        );
+    }
+
+    #[test]
     fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));

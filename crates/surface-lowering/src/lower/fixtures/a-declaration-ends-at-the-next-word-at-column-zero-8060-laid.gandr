@@ -1,0 +1,4 @@
+type T = Integer
+world w
+def f(x : T) -> T = x
+def g(x : T) -> T = f x;
