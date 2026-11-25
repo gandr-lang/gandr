@@ -187,7 +187,7 @@ use gandr_theory_coherent_resolutions::PairJoining;
 use gandr_theory_coherent_resolutions::PairScheme;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::TraceletReplay;
-use gandr_theory_coherent_resolutions::normalize;
+use gandr_theory_coherent_resolutions::normalize_past;
 use gandr_theory_coherent_resolutions::record_path;
 use gandr_theory_coherent_resolutions::replay_path;
 use gandr_theory_computads::AdmittedFaceIndex;
@@ -882,30 +882,13 @@ pub(crate) fn decide<G>(
     let nameable = naming_port(description).is_some();
     // A symmetry of an operation forms peaks and normalizes nothing, in each
     // reading. A rule that overlaps it parts from it at the other order of the
-    // rule, and completion derives that order as a rule. A derived rule has an
-    // operation at the head of its left side, so the symmetry of a constructor
-    // is read as each other rule.
-    let symmetric = |faces: &[(AdmittedFaceIndex, CellId)]| -> BTreeSet<CellId> {
-        faces
-            .iter()
-            .filter(|&&(index, _)| {
-                description
-                    .rules
-                    .get(usize::from(index))
-                    .is_some_and(|face| {
-                        face.reading() == RuleReading::Symmetry
-                            && matches!(face.lhs.view(), TermView::Op { .. })
-                    })
-            })
-            .map(|&(_, cell)| cell)
-            .collect()
-    };
+    // rule, and completion derives that order as a rule.
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
     // The sequent reading fires a cell only at a command's root, so the
     // composite criterion's argument does not hold there, and its pairs take
     // no class.
-    let mut joining = PairJoining::past(symmetric(faces));
+    let mut joining = PairJoining::past(symmetric_cells(description, faces));
     let (commands, derived_commands) = match joining.resume(&rewriting, budget) {
         Joinability::Joined(certificates) => (certificates, Vec::new()),
         first @ (Joinability::Diverges { .. } | Joinability::Undecided(_)) => {
@@ -941,7 +924,7 @@ pub(crate) fn decide<G>(
                 Maybe::Absent(_) => None,
             };
             let mut criterion = CompositeCriterion::new();
-            let mut joining = PairJoining::past(symmetric(&presented.faces));
+            let mut joining = PairJoining::past(symmetric_cells(description, &presented.faces));
             let first = joining.resume_with(&presented.store, budget, &mut criterion);
             let reading = Reading {
                 description,
@@ -1425,6 +1408,42 @@ fn orient_derived<G>(
     None
 }
 
+/// The cells of `faces` that are the symmetry of an operation of
+/// `description`: the cells that form peaks and normalize nothing.
+///
+/// # Specification
+/// - ensures: the cell of each face of `faces` whose rule reads as
+///   [`RuleReading::Symmetry`] and has an operation at the head of its left
+///   side, and no other cell. A derived rule has an operation at the head of
+///   its left side, so the symmetry of a constructor is read as each other
+///   rule.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decide`] and [`normal_form`] for a symmetry.
+/// - witness: `tests::coincide::a_symmetry_is_no_rewrite_in_either_place`
+/// - witness: `tests::coincide::a_call_that_no_rule_matches_is_normal_past_a_symmetry`
+#[spec(ensures: |ret| ret.len() <= faces.len())]
+fn symmetric_cells<G>(
+    description: &TheoryDesc<G>,
+    faces: &[(AdmittedFaceIndex, CellId)],
+) -> BTreeSet<CellId>
+{
+    faces
+        .iter()
+        .filter(|&&(index, _)| {
+            description
+                .rules
+                .get(usize::from(index))
+                .is_some_and(|face| {
+                    face.reading() == RuleReading::Symmetry
+                        && matches!(face.lhs.view(), TermView::Op { .. })
+                })
+        })
+        .map(|&(_, cell)| cell)
+        .collect()
+}
+
 /// The cells of `store` a rewrite reads: every cell but the admitted circuit
 /// cells no face shares, in store order.
 ///
@@ -1756,11 +1775,16 @@ pub fn normal_form<G>(
         });
     }
     let (path, normal) = match cells.presented {
-        Maybe::Present(ref presented) => over_terms(presented, &call)?,
+        Maybe::Present(ref presented) => over_terms(
+            &symmetric_cells(description, &presented.faces),
+            presented,
+            &call,
+        )?,
         Maybe::Absent(presented_reading::Absent::NoTermFace) => {
             match elaborate_call(&call, description.polarity, &cells.operations) {
                 Ok(command) => {
                     let (path, normal) = certified_normal(
+                        &symmetric_cells(description, &cells.faces),
                         &cells.rewriting(),
                         &command,
                         |command| match read_command(command) {
@@ -1775,7 +1799,9 @@ pub fn normal_form<G>(
                 // the block's oriented rules, which rewrite a call wherever
                 // it stands (#1510).
                 Err(ElaborateError::UnsupportedShape) => {
-                    over_terms(&oriented_terms(description, cells), &call)?
+                    let terms = oriented_terms(description, cells);
+                    let idle = symmetric_cells(description, &terms.faces);
+                    over_terms(&idle, &terms, &call)?
                 },
                 Err(error) => return Err(NormalFormFault::NotACall(error)),
             }
@@ -1804,27 +1830,33 @@ pub fn normal_form<G>(
 /// - witness: `tests::coincide::a_call_nesting_operations_reads_over_terms_1510`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.1 == terms.written(&found.1)))]
 fn over_terms(
+    idle: &BTreeSet<CellId>,
     terms: &PresentedRules,
     call: &FreeTerm,
 ) -> Result<(NormalPath, FreeTerm), NormalFormFault>
 {
     let indexed = terms.call(call).map_err(NormalFormFault::Unsorted)?;
     let (path, normal) =
-        certified_normal(&*terms.firing(), &Term::from(&indexed), |term| {
-            match term.read() {
+        certified_normal(
+            idle,
+            &*terms.firing(),
+            &Term::from(&indexed),
+            |term| match term.read() {
                 Maybe::Present(written) => Ok(terms.written(&written)),
                 Maybe::Absent(reason) => Err(Unwriting::Term(reason)),
-            }
-        })?;
+            },
+        )?;
     Ok((NormalPath::Terms(path), normal))
 }
 
-/// The normal form `start` reaches under `store`, its path replayed, read back
-/// by `read`.
+/// The normal form `start` reaches under the cells of `store` outside `idle`,
+/// its path replayed, read back by `read`.
 ///
 /// # Specification
-/// - ensures: the path [`normalize`] takes within [`NORMAL_FORM_STEPS`] steps
-///   and the normal form `read` writes.
+/// - ensures: the path [`normalize_past`] takes past `idle` within
+///   [`NORMAL_FORM_STEPS`] steps and the normal form `read` writes. A symmetry
+///   of an operation is idle ([`symmetric_cells`]), so a call that no other
+///   rule matches is its own normal form.
 /// - fails: [`NormalFormFault::Exhausted`] when the budget runs out,
 ///   [`NormalFormFault::Uncertified`] when the path does not replay, then
 ///   [`NormalFormFault::Unwritable`] with `read`'s reason.
@@ -1841,6 +1873,7 @@ fn over_terms(
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.0.len() <= NORMAL_FORM_STEPS))]
 fn certified_normal<A, R>(
+    idle: &BTreeSet<CellId>,
     store: &CellStore<A>,
     start: &A::Cmd,
     read: R,
@@ -1849,7 +1882,12 @@ where
     A: CellAlphabet,
     R: FnOnce(&A::Cmd) -> Result<FreeTerm, Unwriting>,
 {
-    let normalized = normalize(store, start, NormalizationBudget::from(NORMAL_FORM_STEPS));
+    let normalized = normalize_past(
+        store,
+        start,
+        NormalizationBudget::from(NORMAL_FORM_STEPS),
+        idle,
+    );
     if bool::from(normalized.exhausted) {
         return Err(NormalFormFault::Exhausted);
     }

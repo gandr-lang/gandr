@@ -1066,6 +1066,34 @@ fn a_symmetry_is_no_rewrite_in_either_place()
     }
 }
 
+/// A call normalizes past the symmetry of an operation. A call that no rule
+/// matches is its own normal form, and a rule fires in each order of its two
+/// arguments, by the rule of the other order that the block derives.
+#[test]
+fn a_call_that_no_rule_matches_is_normal_past_a_symmetry()
+{
+    let source = SourceText::from(include_str!(
+        "coincide/fixtures/a-call-that-no-rule-matches-is-normal-past-a-symmetry.gandr"
+    ));
+    lowered(source, |module| {
+        let family = module.declarations().iter().next().unwrap();
+        for (call, normal) in [
+            ("meet(some, some)", "meet(some, some)"),
+            ("meet(some, all)", "some"),
+            ("meet(all, some)", "some"),
+            ("meet(some, none)", "none"),
+        ] {
+            assert_eq!(
+                module
+                    .normal_form(family, CallText::from(call))
+                    .map(|form| form.normal.to_string()),
+                Ok(String::from(normal)),
+                "{call}"
+            );
+        }
+    });
+}
+
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
 /// failure passed for a cut is ill sorted. Over 2-cells a vertical composite
