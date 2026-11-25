@@ -527,6 +527,61 @@ fn a_pair_stands_in_each_order_under_a_symmetry()
 }
 
 #[test]
+fn a_derived_rule_replays_its_peak_in_each_order_under_a_symmetry()
+{
+    // pair = 0, low = 1, mid = 2.
+    let symbols =
+        SmallVec::<_, 0, Global>::from_iter([operation!(2, 2), operation!(0, 0), operation!(1, 0)]);
+    let symmetry = rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]);
+    // `pair(low, mid) ==> low` and `pair(mid, low) ==> mid`.
+    let lows = rule(&[s!(0), s!(1), s!(2)], &[s!(1)]);
+    let mids = rule(&[s!(0), s!(2), s!(1)], &[s!(2)]);
+    // `mid ==> low` joins `pair(low, mid)`, which is `low` by the first rule
+    // and `mid` by the second one in the other order of its left side.
+    let joins = rule(&[s!(2)], &[s!(1)]);
+    // `pair(low, low) ==> low` joins `pair(low, mid)`, which is `low` by the
+    // first rule and `pair(low, low)` by the rule above at `mid`.
+    let folds = rule(&[s!(0), s!(1), s!(1)], &[s!(1)]);
+    let mut rules = TheoryRules::new(
+        symbols,
+        SmallVec::<_, 0, Global>::from_iter([symmetry, lows, mids]),
+    );
+    let mut search = PeakSearch::default();
+    let across = CriticalPeak {
+        outer: RuleIndex::from(1_usize),
+        position: SidePosition::from(0_usize),
+        inner: RuleIndex::from(2_usize),
+    };
+    assert_eq!(
+        rules.peak_of(&joins, &mut search, &mut fuel()),
+        Ok(Some(across)),
+        "the two written rules overlap at the root in the other order of the second"
+    );
+    rules.derive(joins, across);
+    assert_eq!(
+        rules.decide(&mut fuel()),
+        refused!(1, TheoryRuleFault::Diverges(RuleIndex::from(3_usize))),
+        "the derived rule replays, and it rewrites `pair(low, mid)` to `pair(low, low)`"
+    );
+    let below = CriticalPeak {
+        outer: RuleIndex::from(1_usize),
+        position: SidePosition::from(2_usize),
+        inner: RuleIndex::from(3_usize),
+    };
+    assert_eq!(
+        rules.peak_of(&folds, &mut search, &mut fuel()),
+        Ok(Some(below)),
+        "the first rule overlapped by the derived rule at `mid`"
+    );
+    rules.derive(folds, below);
+    assert_eq!(
+        rules.decide(&mut fuel()),
+        Ok(()),
+        "each derived rule replays its peak, and each pair joins"
+    );
+}
+
+#[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {
     let symbols = SmallVec::<_, 0, Global>::from_iter([
