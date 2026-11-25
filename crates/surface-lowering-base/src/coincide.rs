@@ -65,6 +65,13 @@
 //! constructor is a cell of this check. A redex of a symmetry below the seam
 //! of a pair does not make the pair composite: the check joins that pair.
 //!
+//! The two normal forms of a pair of a rule and a symmetry join also where
+//! steps of the symmetry take one to the other: they are one term in two
+//! orders of its arguments. The certificate of the pair holds those steps. A
+//! pair of two rules joins where its two normal forms are one term as written:
+//! the kernel's decision of a theory's presentation compares the two sides of
+//! such a pair as written.
+//!
 //! A block that passes is orthogonal — no two of its rules overlap — or
 //! joined, with one replaying certificate per critical pair and one per
 //! derived rule ([`Coincidence`], [`DerivedRule`]). A derived rule's left
@@ -831,7 +838,10 @@ impl fmt::Display for PairTerm
 ///   two rules is joined with each other order in the store. Thus the place of
 ///   the symmetry among the rules decides nothing. A pair with a redex of a
 ///   symmetry below its seam, and no redex of a rule before it, is joined and
-///   not skipped as a composite pair.
+///   not skipped as a composite pair. A pair of a rule and a symmetry joins
+///   also where steps of the symmetry take one of its normal forms to the
+///   other, and its certificate holds those steps. A pair of two rules is
+///   compared as written.
 /// - panics: none.
 ///
 /// # Errors
@@ -859,12 +869,16 @@ impl fmt::Display for PairTerm
 ///   of a constructor is uncompleted; a pair of two rules that joins only by
 ///   the other order of a rule joins with the symmetry written first or last; a
 ///   rule that parts from itself at a peak with a redex of a symmetry below the
-///   seam is uncompleted, in a `data` block and in a `theory` block; reporting
-///   the earlier rule's span, deciding joinability first, reading the circle in
-///   the sequent store alone, normalizing by the symmetry, deciding a pair of
-///   two rules before the pairs of the symmetry, skipping a pair as composite
-///   by a redex of a symmetry, or deriving a rule between two constructor terms
-///   that are not the two orders of one rule changes one of them.
+///   seam is uncompleted, in a `data` block and in a `theory` block; a rule
+///   whose two orders give the two orders of one term joins the symmetry by a
+///   step of it, in a `data` block and in a `theory` block, and two rules that
+///   give the two orders of one term are uncompleted; reporting the earlier
+///   rule's span, deciding joinability first, reading the circle in the sequent
+///   store alone, normalizing by the symmetry, deciding a pair of two rules
+///   before the pairs of the symmetry, skipping a pair as composite by a redex
+///   of a symmetry, comparing the two normal forms of a pair with the symmetry
+///   as written, or deriving a rule between two constructor terms that are not
+///   the two orders of one rule changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -880,6 +894,8 @@ impl fmt::Display for PairTerm
 /// - witness: `tests::coincide::a_rule_that_tears_under_the_symmetry_of_a_constructor_is_uncompleted`
 /// - witness: `tests::coincide::a_pair_that_needs_the_other_order_of_a_rule_joins_in_each_place_of_the_symmetry`
 /// - witness: `tests::coincide::a_pair_above_a_redex_of_a_symmetry_is_decided`
+/// - witness: `tests::coincide::a_pair_with_a_symmetry_joins_under_the_symmetry`
+/// - witness: `tests::coincide::a_pair_of_two_rules_is_compared_as_written_beside_a_symmetry`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),

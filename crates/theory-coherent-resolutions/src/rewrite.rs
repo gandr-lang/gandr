@@ -216,6 +216,22 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why no path of steps of the idle cells takes one term to another.
+    pub mod idle_path {
+        /// The reason no path is found.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No path of steps of the idle cells leads from the first term
+            /// to the second.
+            Apart,
+            /// The search reached as many terms as its budget permits, and
+            /// the second term is not one of them.
+            BudgetExhausted,
+        }
+    }
+}
+
 /// Normalize `term` under `store`, taking at most `budget` steps.
 ///
 /// # Specification
@@ -455,6 +471,106 @@ where
         }
     }
     Maybe::Absent(redex_search::Absent::NormalForm)
+}
+
+/// A term that a search by idle cells reached, with the place of the term
+/// before it and the step between the two. No step reaches the first term.
+type Reached<A> = (<A as CellAlphabet>::Cmd, Option<(usize, CellApp<A>)>);
+
+/// The shortest path of steps of the cells of `idle` from `start` to `end`.
+///
+/// Two terms that a symmetry of a block joins are one term in two orders of
+/// its arguments. The steps of the symmetry between them are the evidence
+/// that a certificate keeps.
+///
+/// # Specification
+/// - requires: as [`normalize`].
+/// - ensures: a path whose steps are each by a cell of `idle`, which replays
+///   from `start` to `end`, and no shorter path of such steps does so; the
+///   empty path exactly when `start` is `end`. The search reaches the terms in
+///   the order of their distance from `start`: positions in the alphabet's
+///   [`CellAlphabet::command_positions`] order, and the cells of `idle` in the
+///   order of their identifiers within a position.
+/// - provides: [`idle_path::Absent::Apart`] when no path of such steps leads
+///   from `start` to `end`; [`idle_path::Absent::BudgetExhausted`] when the
+///   search reached `budget` terms other than `start`, and `end` is none of
+///   them.
+/// - panics: none.
+/// - intension: a breadth-first search of the terms that steps of `idle` reach
+///   from `start`. Each term reached is kept once, with the step that reached
+///   it. The terms that a symmetry reaches from a term with `n` nodes of its
+///   symbol are at most `2ⁿ`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over the toy alphabet, a sum reaches its other order by
+///   one step of the symmetry at the root, a sum of two sums reaches the term
+///   with each sum in its other order by three steps, a term with another
+///   constant is apart, and a budget of one term stops the search of three
+///   steps.
+/// - witness: `rewrite::tests::steps_of_an_idle_cell_join_the_orders_of_a_term`
+#[inline]
+#[spec(ensures: |output| match output {
+    Maybe::Present(ref path) => path.is_empty() == (start == end)
+        && path.len() <= usize::from(budget)
+        && path.iter().all(|step| idle.contains(&step.cell))
+        && path.iter().try_fold(start.clone(), |term, step| match store.get(step.cell) {
+            Maybe::Present(cell) => match rewrite_at(cell, &term, &step.at) {
+                Maybe::Present(next) => Some(next),
+                Maybe::Absent(_) => None,
+            },
+            Maybe::Absent(_) => None,
+        }).as_ref() == Some(end),
+    Maybe::Absent(idle_path::Absent::Apart | idle_path::Absent::BudgetExhausted) => start != end,
+})]
+pub fn path_by_idle<A>(
+    store: &CellStore<A>,
+    (start, end): (&A::Cmd, &A::Cmd),
+    idle: &BTreeSet<CellId>,
+    budget: NormalizationBudget,
+) -> Maybe<Vec<CellApp<A>>, idle_path::Absent>
+where
+    A: CellAlphabet,
+{
+    if start == end {
+        return Maybe::Present(Vec::new());
+    }
+    // The first term is `start`.
+    let mut reached: Vec<Reached<A>> = Vec::from([(start.clone(), None)]);
+    let mut next = 0_usize;
+    while let Some(term) = reached.get(next).map(|&(ref term, _)| term.clone()) {
+        for at in A::command_positions(&term) {
+            for &id in idle {
+                let Maybe::Present(cell) = store.get(id)
+                else {
+                    continue;
+                };
+                let Maybe::Present(rewrite) = fire_at(id, cell, &term, at.clone())
+                else {
+                    continue;
+                };
+                if reached.iter().any(|&(ref seen, _)| *seen == rewrite.result) {
+                    continue;
+                }
+                if reached.len() > usize::from(budget) {
+                    return Maybe::Absent(idle_path::Absent::BudgetExhausted);
+                }
+                let found = rewrite.result == *end;
+                reached.push((rewrite.result, Some((next, rewrite.step))));
+                if found {
+                    let mut path = Vec::new();
+                    let mut place = reached.len().saturating_sub(1);
+                    while let Some(&(_, Some((before, ref step)))) = reached.get(place) {
+                        path.push(step.clone());
+                        place = before;
+                    }
+                    path.reverse();
+                    return Maybe::Present(path);
+                }
+            }
+        }
+        next = next.saturating_add(1);
+    }
+    Maybe::Absent(idle_path::Absent::Apart)
 }
 
 /// Fire `cell` at `pos` in `term`.
@@ -1170,6 +1286,77 @@ mod tests
             framed_zero(),
             out.normal,
             "and the term is returned as it came"
+        );
+    }
+
+    #[test]
+    fn steps_of_an_idle_cell_join_the_orders_of_a_term()
+    {
+        use gandr_theory_cell_complexes_tools::Toy;
+        use gandr_theory_cell_complexes_tools::ToyAlphabet;
+        use gandr_theory_cell_complexes_tools::toy_cell;
+        let mut store = CellStore::<ToyAlphabet>::new();
+        let symmetry = store.insert(toy_cell(
+            Toy::add(Toy::var("x"), Toy::var("y")),
+            Toy::add(Toy::var("y"), Toy::var("x")),
+        ));
+        let idle = BTreeSet::from([symmetry]);
+        let budget = NormalizationBudget::from(8_usize);
+        let replayed = |start: &Toy, path: &[CellApp<ToyAlphabet>]| {
+            path.iter().fold(start.clone(), |term, step| {
+                let Maybe::Present(cell) = store.get(step.cell)
+                else {
+                    panic!("the store holds the cell of each step")
+                };
+                match rewrite_at(cell, &term, &step.at) {
+                    Maybe::Present(next) => next,
+                    Maybe::Absent(reason) => panic!("each step fires: {reason:?}"),
+                }
+            })
+        };
+        let one = Toy::succ(Toy::zero());
+        let two = Toy::succ(one.clone());
+        let sum = Toy::add(Toy::zero(), one.clone());
+        let turned = Toy::add(one, Toy::zero());
+        let Maybe::Present(path) = path_by_idle(&store, (&sum, &turned), &idle, budget)
+        else {
+            panic!("one step of the symmetry turns the sum");
+        };
+        assert_eq!(
+            path.iter()
+                .map(|step| (step.cell, step.at.clone()))
+                .collect::<Vec<_>>(),
+            [(symmetry, ToyAlphabet::root_position())],
+            "the step is at the root"
+        );
+        assert_eq!(replayed(&sum, &path), turned);
+        assert_eq!(
+            path_by_idle(&store, (&sum, &sum), &idle, budget),
+            Maybe::Present(Vec::new()),
+            "a term reaches itself by no step"
+        );
+        let nested = Toy::add(sum.clone(), Toy::add(Toy::zero(), two.clone()));
+        let each_turned = Toy::add(Toy::add(two.clone(), Toy::zero()), turned);
+        let Maybe::Present(path) = path_by_idle(&store, (&nested, &each_turned), &idle, budget)
+        else {
+            panic!("the outer sum and its two sums each turn");
+        };
+        assert_eq!(path.len(), 3, "one step for each of the three sums");
+        assert_eq!(replayed(&nested, &path), each_turned);
+        assert_eq!(
+            path_by_idle(&store, (&sum, &Toy::add(Toy::zero(), two)), &idle, budget),
+            Maybe::Absent(idle_path::Absent::Apart),
+            "no step of the symmetry changes a constant"
+        );
+        assert_eq!(
+            path_by_idle(
+                &store,
+                (&nested, &each_turned),
+                &idle,
+                NormalizationBudget::from(1_usize)
+            ),
+            Maybe::Absent(idle_path::Absent::BudgetExhausted),
+            "the search stops at its budget"
         );
     }
 }

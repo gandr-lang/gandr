@@ -1331,6 +1331,140 @@ fn a_pair_above_a_redex_of_a_symmetry_is_decided()
     }
 }
 
+/// The two normal forms of a pair of a rule and a symmetry join where a step
+/// of the symmetry takes one to the other. The rule takes the pair of two
+/// wrapped terms to the pair of the two terms. Its left side in the other
+/// order is a redex of the rule again, so the two normal forms are the two
+/// orders of one pair. The two paths of the certificate hold two steps of the
+/// rule and two steps of the symmetry, and the block derives no rule.
+#[test]
+fn a_pair_with_a_symmetry_joins_under_the_symmetry()
+{
+    for (source, block, call, normal) in [
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-with-a-symmetry-joins-under-the-symmetry-data-first.gandr"
+            ),
+            "a `data` block with the symmetry first",
+            "Pair(Wrap(Low), Wrap(High))",
+            "Pair(Low, High)",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-with-a-symmetry-joins-under-the-symmetry-data-last.gandr"
+            ),
+            "a `data` block with the symmetry last",
+            "Pair(Wrap(Low), Wrap(High))",
+            "Pair(Low, High)",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-with-a-symmetry-joins-under-the-symmetry-theory-first.gandr"
+            ),
+            "a `theory` block with the symmetry first",
+            "pair(wrap(low), wrap(high))",
+            "pair(low, high)",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-with-a-symmetry-joins-under-the-symmetry-theory-last.gandr"
+            ),
+            "a `theory` block with the symmetry last",
+            "pair(wrap(low), wrap(high))",
+            "pair(low, high)",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref cells] = *module.cells().declarations.as_slice()
+            else {
+                panic!("one block")
+            };
+            let Coincidence::Joined(ref certificates) = cells.coincidence
+            else {
+                panic!("{block}: the pair joins: {:?}", module.cells().diagnostics)
+            };
+            assert!(
+                certificates.derived_terms.is_empty(),
+                "{block}: the pair joins with no derived rule"
+            );
+            let [ref certificate] = *certificates.terms.as_slice()
+            else {
+                panic!("{block}: one pair: {:?}", certificates.terms)
+            };
+            let Maybe::Present(ref presented) = cells.presented
+            else {
+                panic!("{block}: the block is read over terms")
+            };
+            assert!(
+                bool::from(certificate.replay(&presented.store)),
+                "{block}: the certificate replays over the term store"
+            );
+            let mut fired: Vec<CellId> = certificate
+                .path_a
+                .iter()
+                .chain(&certificate.path_b)
+                .map(|step| step.cell)
+                .collect();
+            fired.sort_unstable();
+            let (first, second) = (CellId::from(0_usize), CellId::from(1_usize));
+            assert_eq!(
+                fired,
+                [first, first, second, second],
+                "{block}: the two paths hold two steps of the rule and two steps of the symmetry"
+            );
+            let family = module.declarations().iter().next().unwrap();
+            assert_eq!(
+                module
+                    .normal_form(family, CallText::from(call))
+                    .map(|form| form.normal.to_string()),
+                Ok(String::from(normal)),
+                "{block}: {call}"
+            );
+        });
+    }
+}
+
+/// A pair of two rules is compared as written beside a symmetry. One rule
+/// takes a wrapped pair to the pair in the other order, and one rule takes a
+/// wrapped term to the term. Their two normal forms are the two orders of one
+/// pair, and the block is refused in each place of the symmetry.
+#[test]
+fn a_pair_of_two_rules_is_compared_as_written_beside_a_symmetry()
+{
+    for (source, place) in [
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-first.gandr"
+            ),
+            "first",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-last.gandr"
+            ),
+            "last",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+            else {
+                panic!(
+                    "one cell diagnostic with the symmetry written {place}: {:?}",
+                    module.cells().diagnostics
+                )
+            };
+            assert!(
+                matches!(
+                    diagnostic.fault,
+                    CellFault::Coherence(CoherenceFault::Uncompleted { .. })
+                ),
+                "the symmetry written {place}: the two rules give two orders of one pair: {:?}",
+                diagnostic.fault
+            );
+        });
+    }
+}
+
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
 /// failure passed for a cut is ill sorted. Over 2-cells a vertical composite

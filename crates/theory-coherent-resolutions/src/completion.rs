@@ -150,8 +150,10 @@ use crate::overlap::interior_overlaps_between;
 use crate::overlap::root_overlaps_between;
 use crate::rewrite::CellApp;
 use crate::rewrite::firing;
+use crate::rewrite::idle_path;
 use crate::rewrite::normalize;
 use crate::rewrite::normalize_past;
+use crate::rewrite::path_by_idle;
 use crate::rewrite::replay_at;
 use crate::rewrite::rewrite_at;
 use crate::tracelet::Tracelet;
@@ -1417,7 +1419,12 @@ where
     ///   joining has not decided. So a completion derives each rule that an
     ///   idle cell gives before it joins a pair that needs that rule, and the
     ///   place of the idle cell in the store does not decide the verdict of
-    ///   such a pair.
+    ///   such a pair. A pair of an idle cell and another cell joins also where
+    ///   steps of the idle cells take its left normal form to its right one
+    ///   ([`path_by_idle`]): the left path of its certificate ends with those
+    ///   steps. Such a pair is [`Joinability::Undecided`] when that search
+    ///   spends `budget`. A pair of two other cells joins where its two normal
+    ///   forms are one term.
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
@@ -1442,13 +1449,17 @@ where
     ///   first that parts, where the same store with no idle cell parts first
     ///   at the pair of the two rules. Two rules that part at a peak with a
     ///   redex of an idle symmetry below its seam part, where the same store
-    ///   with no idle cell skips that pair as a composite one.
+    ///   with no idle cell skips that pair as a composite one. A rule whose
+    ///   reduct by an idle symmetry is a redex of the rule again joins the
+    ///   symmetry by one step of it, in each place of the symmetry, and two
+    ///   rules that give the two orders of one sum part.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
     /// - witness: `completion::tests::an_idle_cell_forms_peaks_and_normalizes_nothing`
     /// - witness: `completion::tests::a_pair_with_an_idle_cell_is_decided_before_each_other_pair`
     /// - witness: `completion::tests::a_step_of_an_idle_cell_is_no_witness_of_a_composite_pair`
+    /// - witness: `completion::tests::a_pair_with_an_idle_cell_joins_by_steps_of_the_idle_cell`
     #[spec(
         captures: before = (self.decided, self.composites.len()),
         ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1 && match output {
@@ -1580,19 +1591,42 @@ where
                         place.within = place.within.saturating_add(1);
                         continue;
                     };
-                    let left = normalize_past(store, &left_reduct, budget, &self.idle);
+                    let mut left = normalize_past(store, &left_reduct, budget, &self.idle);
                     let right = normalize_past(store, &right_reduct, budget, &self.idle);
                     if bool::from(left.exhausted) || bool::from(right.exhausted) {
                         return Some(Joinability::Undecided(overlap));
                     }
                     if left.normal != right.normal {
-                        return Some(Joinability::Diverges {
-                            overlap,
-                            left: left.normal,
-                            left_steps: left.path,
-                            right: right.normal,
-                            right_steps: right.path,
-                        });
+                        // The two normal forms of a pair with an idle cell
+                        // join where steps of the idle cells take one to the
+                        // other. A pair of two other cells joins as written.
+                        let between = match sweep {
+                            Sweep::BesideIdle => path_by_idle(
+                                store,
+                                (&left.normal, &right.normal),
+                                &self.idle,
+                                budget,
+                            ),
+                            Sweep::Others => Maybe::Absent(idle_path::Absent::Apart),
+                        };
+                        match between {
+                            Maybe::Present(steps) => {
+                                left.path.extend(steps);
+                                left.normal = right.normal.clone();
+                            },
+                            Maybe::Absent(idle_path::Absent::BudgetExhausted) => {
+                                return Some(Joinability::Undecided(overlap));
+                            },
+                            Maybe::Absent(idle_path::Absent::Apart) => {
+                                return Some(Joinability::Diverges {
+                                    overlap,
+                                    left: left.normal,
+                                    left_steps: left.path,
+                                    right: right.normal,
+                                    right_steps: right.path,
+                                });
+                            },
+                        }
                     }
                     if let Maybe::Present(certificate) = joined(&overlap, left, right, store) {
                         self.certificates.push(certificate);
@@ -2104,6 +2138,74 @@ mod tests
             (overlap.left, overlap.right),
             (CellId::from(0_usize), CellId::from(1_usize)),
             "with no idle cell, the pairs are decided in the order of the later cell"
+        );
+    }
+
+    #[test]
+    fn a_pair_with_an_idle_cell_joins_by_steps_of_the_idle_cell()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let store_of = |cells: &[(Toy, Toy)]| {
+            let mut store = CellStore::<ToyAlphabet>::new();
+            for cell in cells {
+                let _id = store.insert(toy_cell(cell.0.clone(), cell.1.clone()));
+            }
+            store
+        };
+        let symmetry = (
+            Toy::add(Toy::var("x"), Toy::var("y")),
+            Toy::add(Toy::var("y"), Toy::var("x")),
+        );
+        // The sum of two successors is the sum of the two. The reduct of the
+        // rule's left side by the symmetry is a redex of the rule again, and
+        // the two normal forms are the two orders of one sum.
+        let peels = (
+            Toy::add(Toy::succ(Toy::var("x")), Toy::succ(Toy::var("y"))),
+            Toy::add(Toy::var("x"), Toy::var("y")),
+        );
+        for (store, symmetric) in [
+            (store_of(&[peels.clone(), symmetry.clone()]), 1_usize),
+            (store_of(&[symmetry.clone(), peels]), 0_usize),
+        ] {
+            let symmetric = CellId::from(symmetric);
+            let Joinability::Joined(certificates) =
+                PairJoining::past(BTreeSet::from([symmetric])).resume(&store, budget)
+            else {
+                panic!("the two normal forms are the two orders of one sum");
+            };
+            let [ref certificate] = *certificates.as_slice()
+            else {
+                panic!("the rule and the symmetry overlap at the root alone: {certificates:?}");
+            };
+            assert!(bool::from(certificate.replay(&store)));
+            let by_symmetry = |path: &[CellApp<ToyAlphabet>]| {
+                path.iter().filter(|step| step.cell == symmetric).count()
+            };
+            assert_eq!(
+                by_symmetry(&certificate.path_a).saturating_add(by_symmetry(&certificate.path_b)),
+                2,
+                "one step of the symmetry forms the peak, and one joins the two normal forms"
+            );
+        }
+        // Two rules give the two orders of one sum. Their pair holds no idle
+        // cell, so it is compared as written.
+        let two_rules = store_of(&[
+            (
+                Toy::succ(Toy::add(Toy::var("x"), Toy::var("y"))),
+                Toy::add(Toy::var("y"), Toy::var("x")),
+            ),
+            (Toy::succ(Toy::var("z")), Toy::var("z")),
+            symmetry,
+        ]);
+        let Joinability::Diverges { overlap, .. } =
+            PairJoining::past(BTreeSet::from([CellId::from(2_usize)])).resume(&two_rules, budget)
+        else {
+            panic!("the pair of the two rules parts");
+        };
+        assert_eq!(
+            (overlap.left, overlap.right),
+            (CellId::from(0_usize), CellId::from(1_usize)),
+            "the pair of each rule and the symmetry joins, and the pair of the two rules parts"
         );
     }
 

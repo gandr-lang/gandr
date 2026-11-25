@@ -695,8 +695,10 @@ where
 /// normalizations, when they join, recorded over `store`.
 ///
 /// # Specification
-/// - requires: `left` and `right` normalize the overlap's left and right
-///   reducts under `store` and one budget.
+/// - requires: `left` and `right` hold the paths that a joining took from the
+///   overlap's left and right reducts under `store` and one budget: a
+///   normalization, and after it the steps of the idle cells that join a pair
+///   with an idle cell.
 /// - ensures: the certificate [`confluence_tracelet`] describes when both
 ///   normalizations reached one normal form. Its paths hold the cells and the
 ///   positions of the normalizations' steps, and each step records its

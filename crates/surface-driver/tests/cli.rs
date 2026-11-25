@@ -3639,6 +3639,81 @@ fn a_data_block_with_the_symmetry_of_a_constructor_settles_in_each_place_of_the_
     }
 }
 
+/// A rule whose two orders give the two orders of one term joins the symmetry
+/// by a step of it. The rule takes the pair of two wrapped terms to the pair
+/// of the two terms. The kernel decides the block again in each place of the
+/// symmetry, for a `data` block and for a `theory` block. Each source settles
+/// under `--recheck`: a block that the checker admits and the kernel refuses
+/// faults the run. The path of the `data` block takes the pair of two wrapped
+/// terms to the pair of the two terms in the other order.
+#[test]
+fn a_rule_whose_two_orders_give_two_orders_of_one_term_settles_beside_a_symmetry()
+{
+    const DATA: &str = "data Flat : Type where\n  | Low : Flat\n  | High : Flat\n  | Pair : (x : \
+                        Flat, y : Flat) --> Flat\n  | Wrap : (x : Flat) --> Flat\n";
+    const THEORY: &str = "theory Flat where\n  sort F : Type;\n  oper low : F;\n  oper high : \
+                          F;\n  oper pair : (x : F, y : F) --> F;\n  oper wrap : (x : F) --> F;\n";
+    const PATH: &str = "\ndef unwrapped(x : Flat, y : Flat) -> Path (Pair (Wrap x) (Wrap y)) \
+                        (Pair y x) =\n  Path.here (Pair y x)\n";
+    let scratch = Scratch::new(Path::new("join-under-a-symmetry"));
+    for (name, parts, declarations) in [
+        (
+            "data-first.gandr",
+            [
+                DATA,
+                "  rule : Pair x y <=> Pair y x;\n",
+                "  rule : Pair (Wrap x) (Wrap y) ==> Pair x y;\n",
+                PATH,
+            ],
+            "declarations: 2 settled, 0 unsettled",
+        ),
+        (
+            "data-last.gandr",
+            [
+                DATA,
+                "  rule : Pair (Wrap x) (Wrap y) ==> Pair x y;\n",
+                "  rule : Pair x y <=> Pair y x;\n",
+                PATH,
+            ],
+            "declarations: 2 settled, 0 unsettled",
+        ),
+        (
+            "theory-first.gandr",
+            [
+                THEORY,
+                "  rule pairComm : pair x y <=> pair y x;\n",
+                "  rule unwrapBoth : pair (wrap x) (wrap y) ==> pair x y;\n",
+                "",
+            ],
+            "declarations: 1 settled, 0 unsettled",
+        ),
+        (
+            "theory-last.gandr",
+            [
+                THEORY,
+                "  rule unwrapBoth : pair (wrap x) (wrap y) ==> pair x y;\n",
+                "  rule pairComm : pair x y <=> pair y x;\n",
+                "",
+            ],
+            "declarations: 1 settled, 0 unsettled",
+        ),
+    ] {
+        let text = parts.concat();
+        let source = scratch.file(Path::new(name), Text::from(text.as_str()));
+        let mut command = gandr(&["check", "--recheck"]);
+        command.arg(&source);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{name}: {}", stderr(&output));
+        let report = stdout(&output);
+        for line in [declarations, "verdict: settled"] {
+            assert!(
+                report.lines().any(|found| found == line),
+                "{name}: {report}"
+            );
+        }
+    }
+}
+
 /// The kernel decides a path between two orders of two fields again where a
 /// side is a call. The checker names the crossed pairing at the value that the
 /// call returns, and the kernel replays it at that value. The source settles

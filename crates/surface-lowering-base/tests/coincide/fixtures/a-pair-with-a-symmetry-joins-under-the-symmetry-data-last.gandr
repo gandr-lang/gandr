@@ -1,0 +1,8 @@
+data Flat : Type where {
+  | Low : Flat
+  | High : Flat
+  | Pair : (x : Flat, y : Flat) --> Flat
+  | Wrap : (x : Flat) --> Flat
+  rule : Pair (Wrap x) (Wrap y) ==> Pair x y;
+  rule : Pair x y <=> Pair y x;
+}
