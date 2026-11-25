@@ -177,7 +177,6 @@ mod tests
             "github:zizmorcore/zizmor",
             "github:aubepkg/aube",
             "github:tombi-toml/tombi",
-            "cargo:bindgen-cli",
             "github:kunobi-ninja/kache",
             "mise",
         ]);

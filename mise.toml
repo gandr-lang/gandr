@@ -49,12 +49,6 @@ includes = [".config/mise/tasks"]
 # resolution misses, and that hazard recurs with every upstream default
 # change.
 [tools]
-# The bindgen command makes the liburing crate's bindings for riscv64. Its
-# releases publish no binary, so it is a cargo pin. The builder cross-builds
-# it for the riscv64 hosts, and the CI jobs that do not build for riscv64
-# disable it.
-# - see: #7720, `.config/riscv64/cross.bash`, `.config/host-tools/builds.toml`
-"cargo:bindgen-cli" = "0.72.1"
 "cargo:dylint-link" = "6.3.2"
 "cargo:hotpath" = { version = "0.30.3", features = ["hotpath", "hotpath-mcp", "tui"] }
 # The features ledger's engine (`ledger/README.md`): one pinned sqlite3 writes
