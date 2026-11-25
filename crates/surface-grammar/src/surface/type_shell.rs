@@ -912,6 +912,17 @@ fn add_type_rules(
         type_atom,
         tile(TileLabel("?")),
     ));
+    // The wildcard `_` where a type is read: an endpoint the elaborator
+    // answers from the comparisons that force it, `Path[.A = Type] A _`, as a
+    // listed endpoint `Path[.A = Type](A, _)` is. Its tile and its node kind
+    // are the expression wildcard's.
+    rules.push(Rule::with_provenance(
+        RuleName("wildcard.type"),
+        Provenance("wildcard"),
+        ty,
+        type_atom,
+        tile(TileLabel("_")),
+    ));
     rules.push(rule(
         RuleName("type_identifier"),
         ty,
