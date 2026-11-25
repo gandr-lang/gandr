@@ -32,6 +32,7 @@
 //! | opener | block | separator |
 //! | --- | --- | --- |
 //! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
+//! | `=` ending any other `def` head | a statement block after the `=` | `;` |
 //! | `=` ending the line of a `let`, a `var` or an assignment in a statement block | a statement block after the `=` | `;` |
 //! | `=>` ending the line of an item that a line-leading `\|` begins: an arm, a clause | a statement block after the `=>` | `;` |
 //! | `where` ending a `match` head or an `offer` head | an arm list | none: a line-leading `\|` separates arms |
@@ -71,6 +72,11 @@
 //! nothing, because a source in braces keeps its reading. The `=>` of an arm
 //! or of a clause keeps its tile in the same way, and its block closes at the
 //! next line that stands at the column of the arms or left of it.
+//!
+//! The `=` of a `def` with no `->` result keeps its tile in the same way, and
+//! the `def` takes its `;` after the block's close. A `;` that ends the last
+//! line of that block ends the `def`: the block closes before it. The lowering
+//! reads a block of one expression there as that expression.
 //!
 //! An item ends with a separator only when it needs one. An item a
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
@@ -164,9 +170,11 @@ enum Opener
     /// No `def` head waits for its `=`.
     #[default]
     None,
-    /// A `def` began the item.
+    /// A `def` began the item. Its `=` keeps its tile, and a block opens after
+    /// it.
     Def,
-    /// The `def` head has met `->` after its parameters.
+    /// The `def` head has met `->` after its parameters. Its `=` is the open
+    /// of its brace body.
     Arrow,
 }
 
@@ -275,6 +283,9 @@ struct Frame
     ending: Ending,
     /// What its items are, when it is an explicit `{`.
     holds: Holds,
+    /// The block is the one a `def`'s `=` opens. A `;` that ends its last
+    /// line ends the `def`.
+    defines: bool,
 }
 
 impl Frame
@@ -295,6 +306,7 @@ impl Frame
             items: 0,
             ending: Ending::Ends,
             holds: Holds::Statements,
+            defines: false,
         }
     }
 }
@@ -328,6 +340,15 @@ enum Pending
     /// its index in the stream. It keeps its tile, and its block opens after
     /// it.
     Statement
+    {
+        /// The `=`'s index.
+        at: usize,
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+    /// The `=` of a `def` with no result arrow, at its index in the stream.
+    /// It keeps its tile, and its block opens after it.
+    Definition
     {
         /// The `=`'s index.
         at: usize,
@@ -585,6 +606,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::a_statement_s_line_final_equals_opens_a_block_after_it`
 /// - witness: `label::layout::tests::an_arm_s_line_final_arrow_opens_a_block_after_it`
 /// - witness: `label::layout::tests::a_line_final_do_opens_a_statement_block`
+/// - witness: `label::layout::tests::a_def_s_line_final_equals_opens_a_block_with_or_with_no_arrow`
 /// - witness: `label::layout::tests::a_where_opens_the_arms_of_an_offer_and_the_declarations_of_a_rec`
 /// - witness: `label::layout::tests::a_word_at_column_zero_ends_the_declaration_before_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
@@ -697,7 +719,10 @@ pub(super) fn lay_out(
             | Pending::Arms { indent, .. }
             | Pending::ArmsWhere { indent, .. }
             | Pending::Do { indent, .. } => Some(Column(indent)),
-            Pending::Statement { .. } | Pending::Arm { .. } | Pending::None => None,
+            Pending::Statement { .. }
+            | Pending::Definition { .. }
+            | Pending::Arm { .. }
+            | Pending::None => None,
         };
         let below = step
             .and(waiting)
@@ -760,6 +785,23 @@ pub(super) fn lay_out(
                 {
                     plan.place(Lexeme::LayoutOpen);
                     open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
+                }
+            },
+            Pending::Definition { at, indent } => {
+                pending = Pending::None;
+                if line_start
+                    && !brace
+                    && column > indent
+                    && !bool::from(names_no_expression(bytes, tokens, at))
+                {
+                    let depth = frames.len();
+                    plan.place(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
+                    if frames.len() > depth
+                        && let Some(frame) = frames.last_mut()
+                    {
+                        frame.defines = true;
+                    }
                 }
             },
             Pending::Arm { indent } => {
@@ -1003,6 +1045,7 @@ pub(super) fn lay_out(
                         | Pending::Members { .. }
                         | Pending::Arms { .. }
                         | Pending::Statement { .. }
+                        | Pending::Definition { .. }
                         | Pending::Arm { .. }
                         | Pending::ArmsWhere { .. }
                         | Pending::Do { .. } => Pending::Members {
@@ -1047,6 +1090,17 @@ pub(super) fn lay_out(
                                 indent: line_indent,
                             };
                         }
+                        // A `def`'s `=` with no result arrow keeps its tile.
+                        // Its block opens after it, when the `=` ends its line.
+                        else if frame.head.opener == Opener::Def
+                            && opener_allowed
+                            && pending == Pending::None
+                        {
+                            pending = Pending::Definition {
+                                at: index,
+                                indent: line_indent,
+                            };
+                        }
                         // A statement's `=` keeps its tile. Its block opens
                         // after it, when the `=` ends its line.
                         else if frame.sep == Sep::Semi
@@ -1082,6 +1136,18 @@ pub(super) fn lay_out(
                     // next. A `,` separates within an item: a clause's
                     // patterns, a call's arguments.
                     restart = spelled == b";";
+                    // A `;` that ends the last line of a `def`'s block ends
+                    // the `def`, as it does after a `=` that opens nothing:
+                    // the block closes before it.
+                    if restart
+                        && let Some(&frame) = frames.last()
+                        && frame.defines
+                        && let Kind::Layout { column: block } = frame.kind
+                        && bool::from(ends_its_block(bytes, tokens, index, block))
+                    {
+                        plan.close(&frame);
+                        frames.pop();
+                    }
                     // An arm list takes no separator, so a `;` in a layout arm
                     // list belongs to the block around it: each arm list that
                     // is innermost closes before the `;`. A brace or a bracket
@@ -1149,6 +1215,7 @@ pub(super) fn lay_out(
             },
             Pending::Arms { .. }
             | Pending::Statement { .. }
+            | Pending::Definition { .. }
             | Pending::Arm { .. }
             | Pending::None => {},
         }
@@ -1208,6 +1275,54 @@ fn names_no_expression(
                 Some(b"type" | b"sort" | b"module" | b"face")
             )
     }))
+}
+
+primitive_copy_wrapper!(
+    /// Whether a token ends the last line of its block.
+    struct EndsBlock(bool);
+);
+
+/// Whether the token at `at` is the last of its line, and the next line
+/// stands left of `column`, so the column rule closes the block whose items
+/// stand at `column` before that line. With no token after `at`, what follows
+/// the run closes every block.
+///
+/// # Specification
+/// trivial.
+fn ends_its_block(
+    bytes: SourceBytes<'_>,
+    tokens: &[Token],
+    at: usize,
+    column: u32,
+) -> EndsBlock
+{
+    let Some(token) = tokens.get(at)
+    else {
+        return EndsBlock(false);
+    };
+    let Some(next) = tokens
+        .get(at.saturating_add(1) ..)
+        .unwrap_or_default()
+        .iter()
+        .find(|token| token.lexeme != Lexeme::Space)
+    else {
+        return EndsBlock(true);
+    };
+    let gap = bytes
+        .0
+        .get(
+            usize::try_from(token.end).unwrap_or(usize::MAX)
+                .. usize::try_from(next.start).unwrap_or(usize::MAX),
+        )
+        .unwrap_or_default();
+    EndsBlock(
+        gap.iter()
+            .rposition(|&byte| byte == b'\n')
+            .is_some_and(|newline| {
+                u32::try_from(gap.len().saturating_sub(newline).saturating_sub(1))
+                    .is_ok_and(|indent| indent < column)
+            }),
+    )
 }
 
 primitive_copy_wrapper!(
@@ -1935,6 +2050,45 @@ mod tests
         assert_eq!(
             marked("def f() -> A {\n  g (thunk do\n    x)\n  y\n}\n"),
             "def f() -> A {\n  g (thunk do\n    x)⟪;⟫\n  y\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_def_s_line_final_equals_opens_a_block_with_or_with_no_arrow()
+    {
+        // The `=` of a `def` with no result arrow keeps its tile, and the
+        // block opens after it. The block's close ends no declaration, so the
+        // `def` takes its `;` before the next word at column zero.
+        assert_eq!(
+            marked("def three : Integer =\n  3\ndef four : Integer = 4;\n"),
+            "def three : Integer =⟪{⟫\n  3⟪}⟫⟪;⟫\ndef four : Integer = 4;\n"
+        );
+        assert_eq!(
+            marked("def twice(x : A) =\n  let y = x\n  y\n"),
+            "def twice(x : A) =⟪{⟫\n  let y = x⟪;⟫\n  y⟪}⟫\n"
+        );
+        // The `=` of a `def` with a result arrow is the open of its brace
+        // body.
+        assert_eq!(
+            marked("def f() -> A =\n  x\ndef b = 1;\n"),
+            "def f() -> A ⟪=→{⟫\n  x⟪}⟫\ndef b = 1;\n"
+        );
+        // A `;` that ends the block's last line ends the `def`: the block
+        // closes before it. A `;` before a line of the block stays in it.
+        assert_eq!(marked("def k =\n  1 ;\n"), "def k =⟪{⟫\n  1⟪}⟫ ;\n");
+        assert_eq!(
+            marked("def k =\n  let a = 1;\n  a;\ndef b = 1;\n"),
+            "def k =⟪{⟫\n  let a = 1;\n  a⟪}⟫;\ndef b = 1;\n"
+        );
+        // A line that starts with a written `{`, and a `=` that does not end
+        // its line, open nothing.
+        assert_eq!(
+            marked("def three : Integer =\n  { 3 };\n"),
+            "def three : Integer =\n  { 3 };\n"
+        );
+        assert_eq!(
+            marked("def three : Integer = g\n  3;\n"),
+            "def three : Integer = g\n  3;\n"
         );
     }
 
