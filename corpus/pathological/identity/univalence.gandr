@@ -64,10 +64,4 @@ def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type] a a] (
 /// wildcard, declared to end at the unit type: `ua(winding)` forces the
 /// wildcard to the integers, which the unit type is not.
 @[refuses("TypeMismatch")]
-def loopsAreUnit : Path[.A = Type](
-  Path[.A = Circle] Base Base,
-  Unit
-) = (ua winding : Path[.A = Type](
-  Path[.A = Circle] Base Base,
-  _
-));
+def loopsAreUnit : Path[.A = Type] (Path[.A = Circle] Base Base) Unit = (ua winding : Path[.A = Type] (Path[.A = Circle] Base Base) _);

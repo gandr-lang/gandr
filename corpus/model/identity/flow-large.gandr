@@ -44,7 +44,7 @@ def types : Flow[.A = Type[+, 1]](Type, Type) = Flow.stay Type;
 def lifted : Flow[.A = Type[+, 2]](Packed, Packed) = Flow.stay Packed;
 
 /// The `packedSame` path is reflexivity at the large code.
-def packedSame : Path[.A = Type[+, 1]](Packed, Packed) = Path.here Packed;
+def packedSame : Path[.A = Type[+, 1]] Packed Packed = Path.here Packed;
 
 /// The motive for `packedMoved` decodes its code at level one.
 def packedMoved(p : Packed) -> Packed =
