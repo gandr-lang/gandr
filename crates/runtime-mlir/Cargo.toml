@@ -1,0 +1,28 @@
+[package]
+name = "gandr-runtime-mlir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The Rust side of the MLIR shim: MLIR text and a target go in, an object comes out."
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["codegen", "gandr", "llvm", "mlir"]
+categories = ["compilers", "external-ffi-bindings"]
+# The shim library of `cxx/`, which the build script builds and links under
+# the feature `full`.
+links = "gandr_mlir_shim"
+publish.workspace = true
+
+# `full` builds the C++ shim of `cxx/` with the MLIR toolchain of the pin and
+# links it, so the two entries exist. Without it the crate builds no C++ and
+# holds the types of the entries alone. The facade `anodized` gives the
+# executable specifications of the entries.
+[features]
+full = ["dep:anodized"]
+
+[dependencies]
+anodized = { workspace = true, optional = true }
+
+[lints]
+workspace = true

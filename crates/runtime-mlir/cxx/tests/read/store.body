@@ -1,0 +1,2 @@
+%place = llvm.inttoptr ${address} : i64 to !llvm.ptr
+llvm.store ${word}, %place : i64, !llvm.ptr

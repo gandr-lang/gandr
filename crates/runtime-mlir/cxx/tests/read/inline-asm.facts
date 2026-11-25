@@ -1,0 +1,8 @@
+operation llvm.inline_asm
+operand hole 0
+operand hole 1
+attribute asm_string "syscall"
+attribute constraints "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"
+attribute has_side_effects unit
+attribute tail_call_kind #llvm.tailcallkind<none>
+result i64

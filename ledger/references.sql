@@ -802,6 +802,7 @@ INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','boot-
 INSERT INTO reference VALUES('vault:01a1ebc5-2ff2-7833-b871-85901e734925','surface-lowering-expression','lower::row','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf','core-term','builtin','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf','surface-lowering-expression','lower::row','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1f7d8-3d56-7502-b037-3d37c5464b50','runtime-mlir','','dependency',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or

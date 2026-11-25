@@ -1536,6 +1536,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-runtime-mlir"
+version = "0.0.0"
+dependencies = [
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-runtime-net"
 version = "0.0.0"
 dependencies = [
