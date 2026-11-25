@@ -12,4 +12,4 @@ def same(b : Bool) -> Bool =
   b
 
 /// The two functions agree at both booleans.
-def agreement : Path[.A = Bool -> Bool](by_cases, same) = Path.funext by_cases same;
+def agreement : Path[.A = Bool -> Bool] by_cases same = Path.funext by_cases same;
