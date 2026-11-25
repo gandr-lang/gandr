@@ -201,27 +201,33 @@ sqlite3 -bail -header -separator $'\t' "$db" "
   ORDER BY e.crate, e.path, e.kind;"
 '''
 
-# The references ledger, `ledger/references.sql`, is the crates'
-# documentation read by `.config/references/cites.awk`: one row per source a
-# module cites, by a key line of its `# References` or by a DOI or arXiv
-# locator, its README's at the crate root. Beside them, its `work` rows state
-# the year of a work the crates or the corpus cite, written by hand; a row no
-# citation names is dropped. Its `fidelity` rows, written by hand, record the
-# sites the citation refresh has read, and are kept as written (#4533). This
-# task rewrites the file from the tree, each row keeping its committed
-# reading, as `sqlite3`'s own dump.
-# `check:references` fails while the file is not what this task writes.
+# The references ledger is the crates' documentation read by
+# `.config/references/cites.awk`: one `reference` row per source a module
+# cites, by a key line of its `# References` or by a DOI or arXiv locator, its
+# README's at the crate root, with the site's last reading. The tree holds no
+# `reference` row: this task writes the ledger, as `sqlite3`'s own dump, into
+# `target/ledger/references.sql` or into the directory it is given.
+# `ledger/references.sql` holds what a person writes: the schema, the
+# `reading` rows that `refs:read` records, the `work` rows that state the
+# year of a work the crates or the corpus cite, and the `fidelity` rows of
+# the sites that the citation refresh has read (#4533).
 ["ledger:references"]
-description = "Write ledger/references.sql from the citations in the crates' documentation"
+description = "Write references.sql, the references ledger, from the citations in the crates' documentation"
+usage = '''
+arg "[directory]" help="the directory the file is written to" default="target/ledger"
+'''
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 source .config/references/ledger.bash
+dir={{ usage.directory }}
+mkdir -p "$dir"
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
 references_load "$fresh/references.db"
 references_fresh "$fresh/references.db"
-sqlite3 "$fresh/fresh.db" .dump > ledger/references.sql
+sqlite3 "$fresh/fresh.db" .dump > "$dir/references.sql"
+echo "wrote $dir/references.sql"
 '''
 
 # Each row of `ledger/references.sql`, of the named crate or of every crate:
@@ -262,10 +268,10 @@ sqlite3 -bail -header -separator $'\t' "$fresh/references.db" "
 
 # Records a reading: each source the site cites, or each key named, read
 # against the module's source as it stands. The site is a crate's directory,
-# then `::` and the module unless it is the crate root. The ledger is first
-# written from the tree, as `ledger:references` writes it, so a key line just
-# added can be read; each row read takes the commit checked out, today's date
-# in UTC and the blob id of the module's source.
+# then `::` and the module unless it is the crate root. The citations are
+# read from the tree, so a key line just added can be read; each key read
+# takes a `reading` row in `ledger/references.sql`: the commit checked out,
+# today's date in UTC and the blob id of the module's source.
 ["refs:read"]
 description = "Stamp a site's sources, or the keys named, as read against the module's source now"
 usage = '''
@@ -288,8 +294,7 @@ read -ra keys <<< "${usage_key:-}"
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
 references_load "$fresh/references.db"
-references_fresh "$fresh/references.db"
-db=$fresh/fresh.db
+db=$fresh/references.db
 at="crate = '$crate' AND module = '$module'"
 where=$at
 if (( $(sqlite3 "$db" "SELECT count(*) FROM reference WHERE $where;") == 0 )); then
@@ -307,9 +312,11 @@ if (( ${#keys[@]} )); then
   done
   where+=" AND key IN ($(IFS=,; echo "${quoted[*]}"))"
 fi
-IFS=$'\t' read -r path blob < <(sqlite3 -separator $'\t' "$fresh/references.db" "SELECT path, blob FROM source WHERE $at;")
-read=$(sqlite3 "$db" "UPDATE reference SET read_commit = '$(git rev-parse HEAD)', read_date = '$(date -u +%F)', read_blob = '$blob' WHERE $where RETURNING key;" | wc -l)
-sqlite3 "$db" .dump > ledger/references.sql
+IFS=$'\t' read -r path blob < <(sqlite3 -separator $'\t' "$db" "SELECT path, blob FROM source WHERE $at;")
+hand=$fresh/hand.db
+sqlite3 -bail "$hand" < ledger/references.sql
+read=$(sqlite3 -bail "$hand" "ATTACH '$db' AS tree;" "INSERT OR REPLACE INTO reading SELECT key, crate, module, '$(git rev-parse HEAD)', '$(date -u +%F)', '$blob' FROM tree.reference WHERE $where RETURNING key;" | wc -l)
+sqlite3 "$hand" .dump > ledger/references.sql
 echo "read $((read)) at $site, against $path as blob ${blob:0:12}"
 {% endraw %}'''
 

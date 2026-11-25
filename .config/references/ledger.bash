@@ -19,12 +19,12 @@ references_corpus() {
     | while IFS= read -r path; do if [[ -e $path ]]; then printf '%s\n' "$path"; fi; done
 }
 
-# Builds the database named: `reference`, `work` and `fidelity`, the ledger as
+# Builds the database named: `reading`, `work` and `fidelity`, the ledger as
 # committed; `cite`, one row per line `cites.awk` prints over the crates and
 # the corpus; `source`, each module's source with its blob id now; `corpus`,
 # each corpus source's path; `derived`, the rows the crates' citations make,
 # each key at each site once, its role the one its key lines state or
-# `background`.
+# `background`; `reference`, each row of `derived` with its reading.
 references_load() {
   local db=$1 dir sources
   dir=$(dirname "$db")
@@ -43,22 +43,37 @@ references_load() {
     'CREATE TABLE corpus(path TEXT PRIMARY KEY);' \
     ".import $dir/corpus corpus" \
     "CREATE VIEW source AS SELECT c.crate, c.module, c.location AS path, h.blob, c.crate || CASE c.module WHEN '' THEN '' ELSE '::' || c.module END AS shown FROM cite c JOIN hash h ON h.path = c.location WHERE c.kind = 'file';" \
-    "CREATE VIEW derived AS SELECT key, crate, module, min(role) AS role FROM cite WHERE kind IN ('cite', 'locator') GROUP BY key, crate, module;"
+    "CREATE VIEW derived AS SELECT key, crate, module, min(role) AS role FROM cite WHERE kind IN ('cite', 'locator') GROUP BY key, crate, module;" \
+    'INSERT INTO reference SELECT d.key, d.crate, d.module, d.role, r.read_commit, r.read_date, r.read_blob FROM derived d LEFT JOIN reading r USING (key, crate, module);'
 }
 
-# Builds `fresh.db` beside the database named: the ledger the tree makes, the
-# rows `derived` holds, each carrying its committed reading, the committed
-# `work` rows of the works the crates or the corpus still cite, and every
-# committed `fidelity` row, which the citation refresh writes by hand.
+# Builds `fresh.db` beside the database named: the ledger the tree makes, its
+# `reference` rows, each with its reading, and the committed `work` and
+# `fidelity` rows.
 references_fresh() {
   local db=$1 dir
   dir=$(dirname "$db")
   rm -f "$dir/fresh.db"
   sqlite3 -bail "$db" '.schema reference' '.schema work' '.schema fidelity' | sqlite3 -bail "$dir/fresh.db"
   sqlite3 -bail "$dir/fresh.db" "ATTACH '$db' AS tree;" \
-    'INSERT INTO reference SELECT d.key, d.crate, d.module, d.role, r.read_commit, r.read_date, r.read_blob FROM tree.derived d LEFT JOIN tree.reference r USING (key, crate, module);' \
-    "INSERT INTO work SELECT * FROM tree.work w WHERE EXISTS (SELECT 1 FROM tree.cite c WHERE c.key = w.key AND c.kind IN ('cite', 'locator', 'corpus'));" \
+    'INSERT INTO reference SELECT * FROM tree.reference;' \
+    'INSERT INTO work SELECT * FROM tree.work;' \
     'INSERT INTO fidelity SELECT * FROM tree.fidelity;'
+}
+
+# Prints the rows of `ledger/references.sql` that name nothing the tree
+# cites, over the database named as `references_load` builds it: a reading of
+# a key at a site that does not cite it, and a `work` row of a work that the
+# crates and the corpus do not cite.
+references_orphans() {
+  sqlite3 -bail "$1" "
+    SELECT 'ledger/references.sql: the reading of \`' || key || '\` at ' || crate || CASE module WHEN '' THEN '' ELSE '::' || module END
+      || ' names a citation that the tree does not make; delete the row'
+    FROM reading r WHERE NOT EXISTS (SELECT 1 FROM derived d WHERE d.key = r.key AND d.crate = r.crate AND d.module = r.module)
+    UNION ALL
+    SELECT 'ledger/references.sql: the \`work\` row of \`' || key || '\` names a work that the crates and the corpus do not cite; delete the row'
+    FROM work w WHERE NOT EXISTS (SELECT 1 FROM cite c WHERE c.key = w.key AND c.kind IN ('cite', 'locator', 'corpus'))
+    ORDER BY 1;"
 }
 
 # Prints the citation window's findings over the database named, which holds

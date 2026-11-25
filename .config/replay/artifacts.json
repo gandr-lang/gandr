@@ -57,12 +57,5 @@
     "inputs": ["Cargo.toml", "crates/", "ledger/concerns.sql"],
     "check": "mise run check:crate-map",
     "record": "mise run ledger:crate-map"
-  },
-  {
-    "name": "the references ledger",
-    "paths": ["ledger/references.sql"],
-    "inputs": ["crates/", "corpus/", ".config/references/"],
-    "check": "mise run check:references",
-    "record": "mise run ledger:references"
   }
 ]
