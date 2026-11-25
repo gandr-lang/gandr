@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 3f1c37d08f6b76731ae55d4d83523d732b8cb05bcf19ef9c225a7709e82447a1
+# blake3: 13fbdbb7e8a7d569c00621fe9dd761874e7acba02970e8311c359e3c23758e0c
 
 [package]
 name = "std"
@@ -29,6 +29,7 @@ modules = [
   "net",
   "overflow",
   "process",
+  "ptr",
   "quantum",
   "rand",
   "reals",
