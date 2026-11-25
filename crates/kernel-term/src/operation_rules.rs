@@ -852,6 +852,10 @@ enum Placement
     NotAbove,
 }
 
+/// The steps of one presentation over operation nodes, each with its position
+/// among the presentation's rules.
+type Steps = SmallVec<(RuleIndex, OperationRule), 0, Global>;
+
 /// The rules a normalization rewrites by: the operation's own, those of every
 /// operation they call, and the presented rules of every family they build.
 ///
@@ -862,17 +866,8 @@ struct System
 {
     /// Every operation rule, each as its two sides.
     rules: SmallVec<OperationRule, 0, Global>,
-    /// Every presented family read, with each step of its presentation over
-    /// operation nodes and that step's position among the presentation's
-    /// rules.
-    presentations: SmallVec<
-        (
-            ConstantIndex,
-            SmallVec<(RuleIndex, OperationRule), 0, Global>,
-        ),
-        0,
-        Global,
-    >,
+    /// Every presented family read, with the steps of its presentation.
+    presentations: SmallVec<(ConstantIndex, Steps), 0, Global>,
     /// The constructor of each symmetry of a family read, ascending.
     symmetric: SmallVec<OperationNode, 0, Global>,
 }
