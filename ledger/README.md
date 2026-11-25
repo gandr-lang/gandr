@@ -1,11 +1,10 @@
 # Ledgers
 
-The language surface and its features, each checked by the gates. The syntax ledger is enumerated by the toolchain from its own grammar and never edited by hand; the features ledger is a table written by hand as features land; the exemplars are small sources written by hand and verified against the ledgers.
+The language surface and its features, each checked by the gates. The syntax ledger is enumerated by the toolchain from its own grammar, and the tree holds no copy of it; the features ledger is a table written by hand as features land; the exemplars are small sources written by hand and verified against the ledgers.
 
 ## Files
 
-- `syntax.md`: the syntax ledger, for reading. Every rule of the built-in grammar, grouped by sort: its form spelled from its tiles and holes, its precedence group, node kind, admission and highlight roles, each committed rule linking its exemplar; then the internal rules, which no source molds, each with its reason, and every registered attribute with its payload and exemplar. The header names the grammar's fingerprint.
-- `syntax.json`: the same rows, for machines. Each form is a tree whose tiles carry the mold the grammar's build assigned them, their tile kind, their spelling and their role; one rule or attribute per line.
+- The syntax ledger is not a file of the tree. `mise run ledger:syntax [<directory>]` writes it into `target/ledger` or into the directory, as two files. `syntax.md` is for reading: every rule of the built-in grammar, grouped by sort, with its form spelled from its tiles and holes, its precedence group, node kind, admission and highlight roles, each committed rule linking its exemplar; then the internal rules, which no source molds, each with its reason, and every registered attribute with its payload and exemplar. The header names the grammar's fingerprint. `syntax.json` has the same rows for machines. Each form is a tree whose tiles carry the mold the grammar's build assigned them, their tile kind, their spelling and their role; one rule or attribute per line.
 - `features.sql`: the features ledger, the `sqlite3` dump of one table of what gandr implements, partly implements, plans and declines, each row with its evidence: the schema first, then one `INSERT` per row in `id` order. `features.db` is built from it and never tracked.
 - `crates.dot`: the per-crate map, one node per crate, clustered by category, each concern drawn as a dashed overlay through its crates; [`crates/README.md` § Map](../crates/README.md#map) draws the category map, in the layering order of `crates/README.md` § Layering. `mise run ledger:crate-map` generates both from `cargo metadata`. `mise run check:crate-map` fails while either is stale, while a crate lies outside the layering's categories, or while an edge points to a category listed after its own. A change that adds a crate or an edge between two crates regenerates the map in the same commit, so its diff shows the new edge.
 - `concerns.sql`: a concern is an interface that cuts across crates. The file records each concern and its sites, each site a crate and module that defines, implements or consumes the concern. For `sharing`, each site also names the descent datum its mechanism glues: positions, cover, compatibility, gluing and the certificate the kernel replays. `mise run check:crate-map` also fails while a concern has no site, while a site names a module its crate lacks, or while a concern's interface trait is implemented outside a test where no site names it. Edit a row by hand, then run `mise run ledger:concerns` to normalize the file.
@@ -96,10 +95,10 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 
 | Command | Does |
 | ------- | ---- |
-| `mise run ledger:syntax` | regenerates `syntax.md` and `syntax.json` with the worktree's own build, never the default toolchain's |
+| `mise run ledger:syntax [<directory>]` | writes `syntax.md` and `syntax.json` into `target/ledger` or into the directory, with the worktree's own build, never the default toolchain's |
 | `cargo run --package gandr-lang -- ledger exemplars corpus/ledger` | verifies every exemplar, printing `<file>: <fault>` for each that does not hold |
 | `cargo run --package gandr-lang -- test corpus/ledger` | settles every exemplar |
-| `mise run check:syntax-ledger` | regenerates both ledger files into a temporary directory through `ledger:syntax` and fails, printing the difference, while either differs from the committed file |
+| `mise run check:syntax-ledger` | writes both ledger files into a temporary directory through `ledger:syntax` under each toolchain case, and fails while a case does not write them |
 | `mise run check:syntax-exemplars` | fails while a committed rule, an attribute or a refusal has no exemplar or owed row, a file names none, an exemplar does not show what it names, or a features exemplar states `owes` or `refuses` |
 | `mise run check:exemplars` | fails while an exemplar leaves a declaration unsettled |
 | `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features.sql`, and dump it back |

@@ -43,12 +43,7 @@ pub struct Base<'rev>(pub &'rev str);
 
 /// The markdown paths the rule sets aside: a directory ends in `/`, and a
 /// file is named whole.
-const SET_ASIDE: [&str; 4] = [
-    ".config/issues/templates/",
-    ".github/",
-    "ledger/census.md",
-    "ledger/syntax.md",
-];
+const SET_ASIDE: [&str; 3] = [".config/issues/templates/", ".github/", "ledger/census.md"];
 
 /// The directories, named at any depth, whose `#` comments a tool writes.
 const WRITTEN_BY_TOOLS: [&str; 1] = ["proptest-regressions"];

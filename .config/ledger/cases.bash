@@ -37,7 +37,7 @@ identity "$repo"
 sqlite3 "$scratch/features.db" .dump > "$repo/ledger/features.sql"
 printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest.' '///' '/// - owes: #2' 'package owing {}' \
   > "$repo/corpus/ledger/features/owing.gandr"
-echo '{"superseded": []}' > "$repo/ledger/syntax.json"
+echo '{"superseded": []}' > "$scratch/syntax.json"
 git -C "$repo" add .
 git -C "$repo" commit --quiet -m 'chore(repo): ledger base'
 base=$(git -C "$repo" rev-parse HEAD)
@@ -80,10 +80,12 @@ while IFS= read -r case; do
     jq -r --arg n "$number" '.answers[$n]' <<< "$case" > "$scratch/answers/$number"
   done
   if jq -e 'has("superseded")' <<< "$case" > /dev/null; then
-    jq '{superseded: .superseded}' <<< "$case" > "$repo/ledger/syntax.json"
+    jq '{superseded: .superseded}' <<< "$case" > "$scratch/syntax.json"
+  else
+    echo '{"superseded": []}' > "$scratch/syntax.json"
   fi
   status=0
-  env=(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/answers")
+  env=(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/answers" LEDGER_SYNTAX_JSON="$scratch/syntax.json")
   if jq -e 'has("body")' <<< "$case" > /dev/null; then
     jq -r .body <<< "$case" > "$scratch/body.md"
     env+=(LEDGER_BODY="$scratch/body.md")
