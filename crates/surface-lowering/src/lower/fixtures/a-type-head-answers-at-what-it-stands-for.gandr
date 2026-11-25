@@ -13,4 +13,4 @@ module Seed where {
   def zero = 0;
 }
 
-module A = MkCounter(Seed);
+module A = MkCounter Seed;

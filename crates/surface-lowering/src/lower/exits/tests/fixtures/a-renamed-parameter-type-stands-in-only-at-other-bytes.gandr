@@ -14,4 +14,4 @@ module MkCounter(S : *{type T, zero : T, next : T -> T}) :> *{
   def step = S.next;
 }
 
-module A = MkCounter(Seed);
+module A = MkCounter Seed;
