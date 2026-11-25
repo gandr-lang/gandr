@@ -6617,7 +6617,8 @@ def echo() -> [
   let read = returned (io.read 0 #[0u8, 0u8, 0u8, 0u8])
   let wrote = returned (io.write 1 read.1 read.0)
   let refused = returned (io.write 2 #[7u8] 1)
-  let named = if refused.0 == 0 - 9 { returned (io.write 1 #[9u8] 1) } else { returned (io.write 1 #[] 0) }
+  let shown : Integer = if refused.0 == 0 - 9 { 1 } else { 0 }
+  let named = returned (io.write 1 #[9u8] shown)
   let status = shut (io.close_file 1)
   pure wrote.0
 
