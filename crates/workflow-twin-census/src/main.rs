@@ -39,6 +39,7 @@ use gandr_workflow_twin_census::CENSUS_PATH;
 use gandr_workflow_twin_census::CensusError;
 use gandr_workflow_twin_census::Workspace;
 use gandr_workflow_twin_census::rustdoc;
+use gandr_workflow_twin_census::rustdoc::Surface;
 use gandr_workflow_twin_census::stale;
 use rayon::iter::IntoParallelRefIterator as _;
 use rayon::iter::ParallelIterator as _;
@@ -152,8 +153,7 @@ fn census(
 }
 
 /// Run `cargo doc` at `root` for the library of each crate of `workspace`,
-/// read the JSON of each library, and put its count of generic public items
-/// in the row of its crate.
+/// read the JSON of each library, and put its counts in the row of its crate.
 ///
 /// # Specification
 /// trivial.
@@ -166,7 +166,7 @@ fn census(
 /// # Cost
 /// - allocation: the output of `cargo doc`, and the bytes and the index of each
 ///   file at the same time on each thread, setup
-fn generic_items(
+fn surfaces(
     root: &Path,
     workspace: &mut Workspace,
     parts: &mut Vec<Part>,
@@ -207,11 +207,11 @@ fn generic_items(
         .libraries()
         .map(|(name, library)| (name.to_owned(), doc.join(format!("{library}.json"))))
         .collect();
-    let counts: Vec<Result<usize, Fault>> = libraries
+    let surfaces: Vec<Result<Surface, Fault>> = libraries
         .par_iter()
         .map(|&(_, ref path)| {
             let bytes = std::fs::read(path).map_err(|error| Fault::File(path.clone(), error))?;
-            rustdoc::generic_items(&bytes).map_err(|refusal| Fault::Rustdoc(path.clone(), refusal))
+            rustdoc::read(&bytes).map_err(|refusal| Fault::Rustdoc(path.clone(), refusal))
         })
         .collect();
     parts.push(Part {
@@ -219,8 +219,8 @@ fn generic_items(
         calls: libraries.len(),
         time: started.elapsed(),
     });
-    for (&(ref name, _), count) in libraries.iter().zip(counts) {
-        workspace.set_generic_items(name, count?);
+    for (&(ref name, _), surface) in libraries.iter().zip(surfaces) {
+        workspace.set_surface(name, surface?);
     }
     Ok(())
 }
@@ -245,7 +245,7 @@ fn ran(
     let mut parts = Vec::new();
     let path = cli.root.join(CENSUS_PATH);
     let outcome = census(&cli.root, &mut parts).and_then(|mut workspace| {
-        generic_items(&cli.root, &mut workspace, &mut parts)?;
+        surfaces(&cli.root, &mut workspace, &mut parts)?;
         let started = Instant::now();
         let text = workspace.render();
         parts.push(Part {

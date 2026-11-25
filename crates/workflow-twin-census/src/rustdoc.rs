@@ -1,5 +1,7 @@
-//! The count of generic public items of one crate, read from the JSON that
-//! rustdoc writes for its library.
+//! What the census reads in the JSON that rustdoc writes for one library.
+//!
+//! The reader gives three counts: the generic public items, the public
+//! functions, and the public functions that an export can carry.
 //!
 //! An item is generic when it has a type parameter or a trait bound. An entry
 //! under the C convention carries neither, so a generic item has no twin
@@ -15,6 +17,14 @@
 //! A lifetime parameter and a const parameter are not generic by this rule.
 //! The items of a trait implementation are not public items of the crate,
 //! because the trait fixes their signatures.
+//!
+//! A public function is a public function or method of the crate by the same
+//! rule. An export can carry it when it is not generic, each operand is a
+//! fixed-width integer or an address, and it has a result that is one of the
+//! two. The fixed-width integers are the widths of gandr: `u8` to `u64`, `i8`
+//! to `i64`, `usize` and `isize`. An address is a reference or a raw pointer
+//! to a sized type: `self` by reference too, and not a slice, a `str` or a
+//! trait object, whose pointer has a length or a table beside the address.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -30,6 +40,26 @@ use crate::CensusError;
 
 /// The format of rustdoc's JSON that the reader reads.
 pub const FORMAT: u32 = 61;
+
+/// The fixed-width integers of gandr, by the names of Rust's primitives.
+const FIXED_WIDTH: [&str; 10] = [
+    "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "usize", "isize",
+];
+
+/// What the census reads of the library of one crate.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Surface
+{
+    /// The count of generic public items.
+    pub generic_items: usize,
+    /// The count of public functions and methods.
+    pub functions: usize,
+    /// The count of public functions and methods that an export can carry.
+    pub exportable: usize,
+}
 
 /// The format of a file, read alone when the whole file does not read.
 #[derive(Deserialize)]
@@ -166,6 +196,166 @@ fn trait_bound(bounds: &[Bound]) -> bool
     bounds.iter().any(|bound| matches!(*bound, Bound::Trait(_)))
 }
 
+/// What an export reads of a type.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Shape
+{
+    /// A fixed-width integer.
+    Integer,
+    /// A reference or a raw pointer to a sized type.
+    Address,
+    /// A type with no size: a slice, `str` or a trait object.
+    Unsized,
+    /// Each other type.
+    Other,
+}
+
+impl Shape
+{
+    /// Whether an export carries a value of the type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn carried(self) -> bool
+    {
+        matches!(self, Self::Integer | Self::Address)
+    }
+}
+
+/// The content of a reference or of a raw pointer.
+#[derive(Deserialize)]
+struct Pointer
+{
+    /// The type that the pointer reaches.
+    #[serde(rename = "type")]
+    pointee: Shape,
+}
+
+/// Reads the object of a type, which has one key: the kind. A kind with no
+/// content, such as `infer`, is a string.
+struct ShapeVisitor;
+
+impl<'de> serde::de::Visitor<'de> for ShapeVisitor
+{
+    type Value = Shape;
+
+    /// What the visitor reads.
+    ///
+    /// # Specification
+    /// trivial.
+    fn expecting(
+        &self,
+        formatter: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        formatter.write_str("a type")
+    }
+
+    /// A kind with no content.
+    ///
+    /// # Specification
+    /// trivial.
+    fn visit_str<E>(
+        self,
+        _kind: &str,
+    ) -> Result<Shape, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Shape::Other)
+    }
+
+    /// A kind with its content.
+    ///
+    /// # Specification
+    /// trivial.
+    fn visit_map<A>(
+        self,
+        mut map: A,
+    ) -> Result<Shape, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let mut shape = Shape::Other;
+        while let Some(kind) = map.next_key::<String>()? {
+            shape = match kind.as_str() {
+                "primitive" => {
+                    let name = map.next_value::<String>()?;
+                    if FIXED_WIDTH.contains(&name.as_str()) {
+                        Shape::Integer
+                    }
+                    else if name == "str" {
+                        Shape::Unsized
+                    }
+                    else {
+                        Shape::Other
+                    }
+                },
+                "borrowed_ref" | "raw_pointer" => match map.next_value::<Pointer>()?.pointee {
+                    Shape::Unsized => Shape::Other,
+                    Shape::Integer | Shape::Address | Shape::Other => Shape::Address,
+                },
+                "slice" | "dyn_trait" => {
+                    map.next_value::<IgnoredAny>()?;
+                    Shape::Unsized
+                },
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                    Shape::Other
+                },
+            };
+        }
+        Ok(shape)
+    }
+}
+
+impl<'de> Deserialize<'de> for Shape
+{
+    /// Reads a type with [`ShapeVisitor`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(ShapeVisitor)
+    }
+}
+
+/// The signature of a function.
+#[derive(Deserialize)]
+struct Signature
+{
+    /// Each operand: its name and its type.
+    inputs: Vec<(IgnoredAny, Shape)>,
+    /// The result, absent for `()`.
+    output: Option<Shape>,
+}
+
+impl Signature
+{
+    /// Whether an export carries each operand and the result.
+    ///
+    /// # Specification
+    /// trivial.
+    fn carried(&self) -> bool
+    {
+        self.inputs.iter().all(|&(_, shape)| shape.carried())
+            && self.output.is_some_and(Shape::carried)
+    }
+}
+
+/// The content of a function.
+#[derive(Deserialize)]
+struct Function
+{
+    /// The signature.
+    sig: Signature,
+    /// The generics.
+    generics: Generics,
+}
+
 /// The content of an item of a kind that carries generics.
 #[derive(Deserialize)]
 struct Plain
@@ -200,7 +390,9 @@ struct Impl
 /// The kind of an item, as the reader reads it.
 enum Inner
 {
-    /// A function, a structure, an enumeration, a union or a type alias.
+    /// A function or a method.
+    Function(Function),
+    /// A structure, an enumeration, a union or a type alias.
     Plain(Generics),
     /// A trait.
     Trait(Trait),
@@ -258,7 +450,8 @@ impl<'de> serde::de::Visitor<'de> for InnerVisitor
         let mut inner = Inner::Other;
         while let Some(kind) = map.next_key::<String>()? {
             inner = match kind.as_str() {
-                "function" | "struct" | "enum" | "union" | "type_alias" => {
+                "function" => Inner::Function(map.next_value()?),
+                "struct" | "enum" | "union" | "type_alias" => {
                     Inner::Plain(map.next_value::<Plain>()?.generics)
                 },
                 "trait" => Inner::Trait(map.next_value()?),
@@ -287,14 +480,15 @@ impl<'de> Deserialize<'de> for Inner
     }
 }
 
-/// The count of generic public items in `rustdoc`, the JSON that rustdoc
-/// writes for the library of one crate.
+/// What the census reads in `rustdoc`, the JSON that rustdoc writes for the
+/// library of one crate.
 ///
 /// # Specification
 /// - requires: nothing; a text that is not the JSON of format [`FORMAT`] is
 ///   refused.
-/// - ensures: the count of public items of the crate, of the kinds that the
-///   module lists, that are generic by its rule.
+/// - ensures: the counts of the public items of the crate that the module
+///   names: the generic items, the functions, and the functions that an export
+///   can carry.
 /// - fails: [`CensusError::RustdocFormat`] when the format is not [`FORMAT`];
 ///   [`CensusError::Rustdoc`] when the text is not the JSON of rustdoc.
 /// - panics: none.
@@ -313,12 +507,15 @@ impl<'de> Deserialize<'de> for Inner
 ///   `impl Trait` parameter, a `where` bound, a supertrait, a method of a
 ///   generic implementation, a lifetime parameter, a const parameter, a method
 ///   of a trait implementation, a private item, an item of a different crate
-///   and a kind with no content; a text of a different format and a text that
-///   is not JSON are each refused by name.
+///   and a kind with no content; functions over integers, over references to a
+///   sized type, to a slice and to `str`, with no result and with a result of a
+///   type of the crate; a text of a different format and a text that is not
+///   JSON are each refused by name.
 /// - witness: `tests::census::a_generic_public_item_counts_and_each_other_item_does_not`
+/// - witness: `tests::census::an_export_carries_integers_and_addresses_of_sized_types`
 /// - witness: `tests::census::rustdoc_of_another_format_or_no_json_is_refused_by_name`
 #[inline]
-pub fn generic_items(rustdoc: &[u8]) -> Result<usize, CensusError>
+pub fn read(rustdoc: &[u8]) -> Result<Surface, CensusError>
 {
     // rustdoc writes the format last, so a file of a different format can
     // fail in its index first. The format is read alone only then.
@@ -345,22 +542,38 @@ pub fn generic_items(rustdoc: &[u8]) -> Result<usize, CensusError>
             {
                 Some(implementation.items.iter().copied())
             },
-            Inner::Plain(_) | Inner::Trait(_) | Inner::Impl(_) | Inner::Other => None,
+            Inner::Function(_)
+            | Inner::Plain(_)
+            | Inner::Trait(_)
+            | Inner::Impl(_)
+            | Inner::Other => None,
         })
         .flatten()
         .collect();
-    Ok(own()
-        .filter(|&(id, item)| {
-            matches!(item.visibility, Visibility::Public)
-                && match item.inner {
-                    Inner::Plain(ref generics) => {
-                        generics.generic() || in_generic_impl.contains(id)
-                    },
-                    Inner::Trait(ref definition) => {
-                        definition.generics.generic() || trait_bound(&definition.bounds)
-                    },
-                    Inner::Impl(_) | Inner::Other => false,
+    let mut surface = Surface::default();
+    for (id, item) in own() {
+        if !matches!(item.visibility, Visibility::Public) {
+            continue;
+        }
+        let in_impl = in_generic_impl.contains(id);
+        let generic = match item.inner {
+            Inner::Function(ref function) => {
+                let generic = function.generics.generic() || in_impl;
+                surface.functions = surface.functions.saturating_add(1);
+                if !generic && function.sig.carried() {
+                    surface.exportable = surface.exportable.saturating_add(1);
                 }
-        })
-        .count())
+                generic
+            },
+            Inner::Plain(ref generics) => generics.generic() || in_impl,
+            Inner::Trait(ref definition) => {
+                definition.generics.generic() || trait_bound(&definition.bounds)
+            },
+            Inner::Impl(_) | Inner::Other => false,
+        };
+        if generic {
+            surface.generic_items = surface.generic_items.saturating_add(1);
+        }
+    }
+    Ok(surface)
 }

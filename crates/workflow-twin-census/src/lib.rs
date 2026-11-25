@@ -1,6 +1,7 @@
 //! **Twin census**: for each crate of the workspace, whether the emitter
-//! depends on it, read from `cargo metadata`, and the count of its generic
-//! public items, read from the JSON of rustdoc.
+//! depends on it, read from `cargo metadata`; and the count of its generic
+//! public items and the share of its public functions that an export can
+//! carry, read from the JSON of rustdoc.
 //!
 //! A twin is a function of a crate that gandr source states. Two carriers run
 //! it: an object that a build links, and a record that the runtime loads
@@ -8,16 +9,18 @@
 //! take the record, because the emitter runs before the record loads. So the
 //! census marks each crate that the emitter reaches. An entry under the C
 //! convention carries no type parameter and no trait bound, so the census
-//! counts the public items that have one.
+//! counts the public items that have one. An export carries fixed-width
+//! integers and addresses, so the census counts the public functions whose
+//! operands and result are such values.
 //!
 //! - [`Workspace::read`] reads the JSON of `cargo metadata` with its resolved
 //!   graph: each crate of the workspace with its directory and its library, and
 //!   each crate that the emitter reaches by a normal or a build dependency,
 //!   directly or through other crates. A dev dependency is no part of the
 //!   emitter.
-//! - [`rustdoc::generic_items`] counts the generic public items in the JSON
-//!   that rustdoc writes for one library, and [`Workspace::set_generic_items`]
-//!   puts the count in the row of its crate.
+//! - [`rustdoc::read`] reads the counts of one library in the JSON that rustdoc
+//!   writes for it, and [`Workspace::set_surface`] puts them in the row of its
+//!   crate.
 //! - [`Workspace::render`] writes the text of `ledger/twin-census.md`.
 //! - [`stale`] compares a committed text with the rendered one and names each
 //!   crate whose row differs.
@@ -39,6 +42,7 @@ use core::fmt;
 use core::fmt::Write as _;
 
 use anodized::spec;
+use rustdoc::Surface;
 
 /// The package of the emitter.
 pub const EMITTER: &str = "gandr-runtime-emitter";
@@ -248,12 +252,12 @@ struct Row
     standing: Standing,
     /// The name of the crate's library, with `_` for each `-`, if it has one.
     library: Option<String>,
-    /// The count of generic public items of the library, once it is read.
-    generic_items: Option<usize>,
+    /// The counts of the library, once it is read.
+    surface: Option<Surface>,
 }
 
 /// Each crate of the workspace, by its directory below `crates/`, with its
-/// standing and its count of generic public items; and the target directory
+/// standing and the counts of its library; and the target directory
 /// of the workspace.
 ///
 /// # Specification
@@ -367,7 +371,7 @@ impl Workspace
                 (directory(&package.manifest_path), Row {
                     standing,
                     library,
-                    generic_items: None,
+                    surface: None,
                 })
             })
             .collect();
@@ -402,21 +406,21 @@ impl Workspace
             .filter_map(|(name, row)| Some((name.as_str(), row.library.as_deref()?)))
     }
 
-    /// Puts `count`, the count of generic public items of the library of the
-    /// crate in the directory `crate_directory`, in the row of that crate. A
-    /// directory that is no crate of the workspace changes nothing.
+    /// Puts `surface`, the counts of the library of the crate in the directory
+    /// `crate_directory`, in the row of that crate. A directory that is no
+    /// crate of the workspace changes nothing.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn set_generic_items(
+    pub fn set_surface(
         &mut self,
         crate_directory: &str,
-        count: usize,
+        surface: Surface,
     )
     {
         if let Some(row) = self.crates.get_mut(crate_directory) {
-            row.generic_items = Some(count);
+            row.surface = Some(surface);
         }
     }
 
@@ -452,10 +456,11 @@ impl Workspace
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one row for each crate, in the order of its directory, with
-    ///   `yes`, `no` or `the emitter`, and with the count of generic public
-    ///   items, `no library` or `not read`; one line with the counts of
-    ///   [`Self::counts`], and one line with the sum of the generic public
-    ///   items.
+    ///   `yes`, `no` or `the emitter`, with the count of generic public items,
+    ///   and with the public functions in the export fragment as a count of the
+    ///   public functions and a share; `no library` or `not read` in the two
+    ///   cells of a crate with no counts. One line with the counts of
+    ///   [`Self::counts`], and one line with each sum.
     /// - panics: none.
     /// - executable: none — the text is its golden's to show.
     ///
@@ -478,34 +483,70 @@ impl Workspace
              has a type parameter or a trait bound. An entry under the C convention carries \
              neither, so a generic item has no twin without a wrapper. The column counts the \
              public functions, methods, types, traits and type aliases of the crate's library \
-             that are generic.\n\n`twin-census --write` writes this file from `cargo metadata` \
-             and from the JSON that rustdoc writes for each library. `twin-census --check` \
-             refuses it when it is not the census of the workspace.\n\n| Crate | Under the \
-             emitter | Generic items |\n| ----- | ----------------- | ------------- |\n",
+             that are generic.\n\nAn export carries a function that is not generic, whose \
+             operands are fixed-width integers or addresses, and whose result is one of the \
+             two. A fixed-width integer is `u8` to `u64`, `i8` to `i64`, `usize` or `isize`. An \
+             address is a reference or a raw pointer to a sized type. The column gives the \
+             count of such public functions and methods, of the count of all, and its \
+             share.\n\n`twin-census --write` writes this file from `cargo metadata` and from the \
+             JSON that rustdoc writes for each library. `twin-census --check` refuses it when \
+             it is not the census of the workspace.\n\n| Crate | Under the emitter | Generic \
+             items | Export fragment |\n| ----- | ----------------- | ------------- | \
+             --------------- |\n",
         );
-        let mut generic = 0_usize;
+        let mut sum = Surface::default();
         for (name, row) in &self.crates {
             let standing = match row.standing {
                 Standing::Emitter => "the emitter",
                 Standing::Under => "yes",
                 Standing::Apart => "no",
             };
-            let _infallible = match (row.library.as_ref(), row.generic_items) {
-                (_, Some(count)) => {
-                    generic = generic.saturating_add(count);
-                    writeln!(text, "| `{name}` | {standing} | {count} |")
+            let _infallible = match (row.library.as_ref(), row.surface) {
+                (_, Some(surface)) => {
+                    sum.generic_items = sum.generic_items.saturating_add(surface.generic_items);
+                    sum.functions = sum.functions.saturating_add(surface.functions);
+                    sum.exportable = sum.exportable.saturating_add(surface.exportable);
+                    writeln!(
+                        text,
+                        "| `{name}` | {standing} | {} | {} |",
+                        surface.generic_items,
+                        share(surface.exportable, surface.functions)
+                    )
                 },
-                (None, None) => writeln!(text, "| `{name}` | {standing} | no library |"),
-                (Some(_), None) => writeln!(text, "| `{name}` | {standing} | not read |"),
+                (None, None) => {
+                    writeln!(text, "| `{name}` | {standing} | no library | no library |")
+                },
+                (Some(_), None) => {
+                    writeln!(text, "| `{name}` | {standing} | not read | not read |")
+                },
             };
         }
         let (under, all) = self.counts();
         let _infallible = writeln!(
             text,
-            "\nCrates under the emitter: {under} of {all}.\n\nGeneric public items: {generic}."
+            "\nCrates under the emitter: {under} of {all}.\n\nGeneric public items: {}.\n\nPublic \
+             functions in the export fragment: {}.",
+            sum.generic_items,
+            share(sum.exportable, sum.functions)
         );
         text
     }
+}
+
+/// `part of whole`, with the share in whole percent, rounded down, when
+/// `whole` is not zero.
+///
+/// # Specification
+/// trivial.
+fn share(
+    part: usize,
+    whole: usize,
+) -> String
+{
+    part.saturating_mul(100).checked_div(whole).map_or_else(
+        || alloc::format!("{part} of {whole}"),
+        |percent| alloc::format!("{part} of {whole} ({percent} %)"),
+    )
 }
 
 /// The name of the directory of the manifest at `manifest_path`.
