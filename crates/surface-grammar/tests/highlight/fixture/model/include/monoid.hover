@@ -266,7 +266,7 @@
 76:27-76:27 = ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @76:1-78:6
 77:3-77:5 let ⇒ -F Integer @77:3-77:6
 77:7-77:7 h ⇒ h : Integer -> Integer @77:7-77:8
-77:9-77:9 = ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @76:1-78:6
+77:9-77:9 = ⇒ -F Integer @76:28-78:6
 77:11-77:15 Endo. ⇒ Endo.mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @77:11-77:19
 77:16-77:18 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @77:16-77:19
 77:20-77:20 ( ⇒ Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) : -F (Integer -> Integer) @77:11-77:59

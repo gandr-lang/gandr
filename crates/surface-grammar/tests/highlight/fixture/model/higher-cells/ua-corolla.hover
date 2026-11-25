@@ -9,7 +9,7 @@
 19:28-19:28 = ⇒ flip : Bool -> Bool⏎⏎`flip` applies `exchange` three times. @19:1-21:24
 20:3-20:5 let ⇒ -F Bool @20:3-20:6
 20:7-20:7 c ⇒ c : Bool @20:7-20:8
-20:9-20:9 = ⇒ flip : Bool -> Bool⏎⏎`flip` applies `exchange` three times. @19:1-21:24
+20:9-20:9 = ⇒ -F Bool @19:29-21:24
 20:11-20:18 exchange ⇒ exchange : Bool -> Bool @20:11-20:19
 20:20-20:20 b ⇒ b : Bool @20:20-20:21
 21:3-21:10 exchange ⇒ exchange : Bool -> Bool @21:3-21:11

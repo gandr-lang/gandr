@@ -189,6 +189,21 @@ enum Opener
     /// A `def` began the item. Its `=` keeps its tile, and a block opens after
     /// it.
     Def,
+    /// A `def` began the item, and a result arrow follows its parameters.
+    Function,
+}
+
+/// The `def` whose `=` opens a block.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Body
+{
+    /// A `def` with no result arrow. A `;` that ends the block's last line
+    /// ends the `def`.
+    Value,
+    /// A `def` with a result arrow. A `;` that ends the block's last line
+    /// stays in the block: the block runs that statement and returns the
+    /// unit.
+    Function,
 }
 
 /// What began an item.
@@ -313,9 +328,8 @@ struct Frame
     ending: Ending,
     /// What its items are, when it is an explicit `{`.
     holds: Holds,
-    /// The block is the one a `def`'s `=` opens. A `;` that ends its last
-    /// line ends the `def`.
-    defines: bool,
+    /// The `def` whose `=` opens the block, if one does.
+    defines: Option<Body>,
 }
 
 impl Frame
@@ -336,7 +350,7 @@ impl Frame
             items: 0,
             ending: Ending::Ends,
             holds: Holds::Statements,
-            defines: false,
+            defines: None,
         }
     }
 }
@@ -368,14 +382,16 @@ enum Pending
         /// The indentation of the opener's line.
         indent: u32,
     },
-    /// The `=` of a `def` with no result arrow, at its index in the stream.
-    /// It keeps its tile, and its block opens after it.
+    /// The `=` of a `def`, at its index in the stream. It keeps its tile, and
+    /// its block opens after it.
     Definition
     {
         /// The `=`'s index.
         at: usize,
         /// The indentation of the opener's line.
         indent: u32,
+        /// The `def` whose `=` it is.
+        body: Body,
     },
     /// The `=>` of an arm or of a clause, or an `else`. It keeps its tile, and
     /// its block opens after it.
@@ -826,7 +842,7 @@ pub(super) fn lay_out(
                     open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Continues);
                 }
             },
-            Pending::Definition { at, indent } => {
+            Pending::Definition { at, indent, body } => {
                 pending = Pending::None;
                 if line_start
                     && !brace
@@ -839,7 +855,7 @@ pub(super) fn lay_out(
                     if frames.len() > depth
                         && let Some(frame) = frames.last_mut()
                     {
-                        frame.defines = true;
+                        frame.defines = Some(body);
                     }
                 }
             },
@@ -987,7 +1003,9 @@ pub(super) fn lay_out(
         // A `)` with no open bracket to close is stray. It leaves every layout
         // block open, and the melder marks it where it stands. A stray `}` or
         // `]` still closes the blocks: the melder pairs it with a block's
-        // virtual brace when the block stays open.
+        // virtual brace when the block stays open. A stray closer that closes
+        // the block a top-level `def`'s `=` opened ends the `def` there, as
+        // the end of the source does, so the `def` takes its `;` before it.
         let mut ending = Ending::Ends;
         if closer
             && (spelled != b")"
@@ -996,12 +1014,20 @@ pub(super) fn lay_out(
                     .skip(1)
                     .any(|frame| !matches!(frame.kind, Kind::Layout { .. })))
         {
+            let mut defined = false;
             while frames.len() > 1
                 && let Some(&frame) = frames.last()
                 && matches!(frame.kind, Kind::Layout { .. })
             {
                 plan.close(&frame);
                 frames.pop();
+                defined = frame.defines.is_some() && frames.len() == 1;
+            }
+            if defined
+                && let Some(base) = frames.first()
+                && bool::from(plan.unended(base))
+            {
+                plan.place(Lexeme::LayoutSemi);
             }
             if frames.len() > 1
                 && let Some(frame) = frames.pop()
@@ -1165,18 +1191,34 @@ pub(super) fn lay_out(
         }
         else if token.lexeme == Lexeme::Punct {
             match spelled {
+                // A result arrow after a `def`'s parameters: `->`, or the
+                // linear arrow `⊸` or its ASCII spelling `-o`.
+                b"->" | b"-o" | b"\xE2\x8A\xB8" => {
+                    if let Some(frame) = frames.last_mut()
+                        && frame.head.opener == Opener::Def
+                        && matches!(before_arrow, b")" | b"]")
+                    {
+                        frame.head.opener = Opener::Function;
+                    }
+                },
                 b"=" => {
                     if let Some(frame) = frames.last_mut() {
                         // A `def`'s `=` keeps its tile, with a result arrow
                         // or with none. Its block opens after it, when the
                         // `=` ends its line.
-                        if frame.head.opener == Opener::Def
+                        if matches!(frame.head.opener, Opener::Def | Opener::Function)
                             && opener_allowed
                             && pending == Pending::None
                         {
                             pending = Pending::Definition {
                                 at: index,
                                 indent: line_indent,
+                                body: if frame.head.opener == Opener::Function {
+                                    Body::Function
+                                }
+                                else {
+                                    Body::Value
+                                },
                             };
                         }
                         // A statement's `=` keeps its tile. Its block opens
@@ -1214,12 +1256,12 @@ pub(super) fn lay_out(
                     // next. A `,` separates within an item: a clause's
                     // patterns, a call's arguments.
                     restart = spelled == b";";
-                    // A `;` that ends the last line of a `def`'s block ends
-                    // the `def`, as it does after a `=` that opens nothing:
-                    // the block closes before it.
+                    // A `;` that ends the last line of the block of a `def`
+                    // with no result arrow ends the `def`, as it does after a
+                    // `=` that opens nothing: the block closes before it.
                     if restart
                         && let Some(&frame) = frames.last()
-                        && frame.defines
+                        && frame.defines == Some(Body::Value)
                         && let Kind::Layout { column: block } = frame.kind
                         && bool::from(ends_its_block(bytes, tokens, index, block))
                     {
@@ -1305,7 +1347,7 @@ pub(super) fn lay_out(
     {
         if matches!(frame.kind, Kind::Layout { .. }) {
             plan.close(&frame);
-            defined = frame.defines && frames.len() == 1;
+            defined = frame.defines.is_some() && frames.len() == 1;
         }
     }
     if (next == Next::Reset || defined)
@@ -2151,12 +2193,19 @@ mod tests
             marked("def f() -> A =\n  x\ndef b = 1;\n"),
             "def f() -> A =⟪{⟫\n  x⟪}⟫⟪;⟫\ndef b = 1;\n"
         );
-        // A `;` that ends the block's last line ends the `def`: the block
-        // closes before it. A `;` before a line of the block stays in it.
+        // In the block of a `def` with no result arrow, a `;` that ends the
+        // block's last line ends the `def`: the block closes before it. A `;`
+        // before a line of the block stays in it.
         assert_eq!(marked("def k =\n  1 ;\n"), "def k =⟪{⟫\n  1⟪}⟫ ;\n");
         assert_eq!(
             marked("def k =\n  let a = 1;\n  a;\ndef b = 1;\n"),
             "def k =⟪{⟫\n  let a = 1;\n  a⟪}⟫;\ndef b = 1;\n"
+        );
+        // In the block of a `def` with a result arrow, that `;` stays in the
+        // block, and the `def` takes its own `;` after the block (#7733).
+        assert_eq!(
+            marked("def f() -> A =\n  g;\ndef b = 1;\n"),
+            "def f() -> A =⟪{⟫\n  g;⟪}⟫⟪;⟫\ndef b = 1;\n"
         );
         // A line that starts with a written `{`, and a `=` that does not end
         // its line, open nothing.
@@ -2434,10 +2483,11 @@ mod tests
             marked("def f(x : A) -> A =\n  let y = g x)\n  y\n"),
             "def f(x : A) -> A =⟪{⟫\n  let y = g x)⟪;⟫\n  y⟪}⟫⟪;⟫\n"
         );
-        // A stray `}` still closes the blocks before it.
+        // A stray `}` still closes the blocks before it. When it closes the
+        // block of a top-level `def`, the `def` takes its `;` before it.
         assert_eq!(
             marked("def f(x : A) -> A =\n  let y = x}\n  y\n"),
-            "def f(x : A) -> A =⟪{⟫\n  let y = x⟪}⟫}\n  y\n"
+            "def f(x : A) -> A =⟪{⟫\n  let y = x⟪}⟫⟪;⟫}\n  y\n"
         );
     }
 

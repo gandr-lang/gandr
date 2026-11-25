@@ -1008,15 +1008,15 @@ impl Braces
     /// # Specification
     /// - requires: `mold` is the tile's mold under `grammar`.
     /// - ensures: the brace or `;` the mold's label names, so a layout block's
-    ///   zero-width tokens and a body's relabeled `=` read as the braces they
-    ///   stand for; otherwise the tile's own text.
+    ///   zero-width tokens read as the braces they stand for; otherwise the
+    ///   tile's own text.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — a clause would restate the look-up of the label.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`runs`], and a layout body's relabeled `=` ends
-    ///   its declaration's head as a written `{` does (#5196).
+    /// - hypothesis: L3 — as [`runs`], and a layout body's zero-width `{` ends
+    ///   its declaration's head after the `=` as a written `{` does (#5196).
     /// - witness: `gandr-surface-lsp-core::reading::tests::a_layout_block_holds_its_members_4853`
     /// - witness: `gandr-surface-lsp-core::hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
     #[inline]

@@ -1820,12 +1820,12 @@ pending/surface/data-operation-members.gandr:NatRule:48bc1087d354c32d uncommente
 pending/surface/desc-declined-metadata.gandr:<file> uncommented
 pending/surface/desc-declined-metadata.gandr:Declared.Mk:8ebba07737aad3eb uncommented
 pending/surface/desc-declined-metadata.gandr:Declared:3c7079fcd8fbb7e1 uncommented
-sketch/environments/tactics.gandr:module_declaration:45f4db7b2d0d6ab2 uncommented
+sketch/environments/tactics.gandr:module_declaration:60fba5b69a59e301 uncommented
 sketch/environments/tactics.gandr:module_declaration:a93c288035ae3d0e uncommented
 sketch/foreign/mlir.gandr:module_declaration:4d448e00aa27c165 uncommented
 sketch/model-refinement/forgetting.gandr:T:f7d85ed8d2c13eaf uncommented
 sketch/model-refinement/operations.gandr:size:0a036c2d7559492b uncommented
-sketch/model-refinement/operations.gandr:size:50869f15b3c8224c uncommented
+sketch/model-refinement/operations.gandr:size:af4420db78c0d725 uncommented
 sketch/model-refinement/operations.gandr:size:ff1eb19b0d239f31 uncommented
 sketch/providers/provider.gandr:module_declaration:449831ed16ff1c8f uncommented
 sketch/user-notation/derive.gandr:Point.Point:ca18de0a9ac4a649 uncommented

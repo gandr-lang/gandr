@@ -222,10 +222,11 @@ fn tiles(
 /// The head of the form at `at` declaring `symbol`: from the form's own start
 /// to the first `where` or brace among its own tiles outside its own square
 /// brackets, or to the symbol's end when the form has neither. A tile reads as
-/// [`Braces::spelled`] gives it, so a layout body's `=`, which the layout pass
-/// relabels as the block's `{`, ends the head as a written `{` does (#5196). A
-/// brace inside the form's brackets, as an offer's `renaming { … }` writes it,
-/// opens no body, so the head runs past it (#5469).
+/// [`Braces::spelled`] gives it. A `=` whose body is a layout block, which
+/// opens with the zero-width `{` that the layout pass writes, ends the head as
+/// a written `{` does (#5196). A brace inside the form's brackets, as an
+/// offer's `renaming { … }` writes it, opens no body, so the head runs past it
+/// (#5469).
 ///
 /// # Specification
 /// trivial.
@@ -237,29 +238,60 @@ fn head(
     symbol: &DocumentSymbol,
 ) -> Range
 {
+    // Whether the form at `form` opens with a zero-width `{`.
+    let laid = |form: NodeIndex| {
+        tree.node(form).is_some_and(|outer| {
+            tree.children(form).any(|child| {
+                tree.node(child).is_some_and(|node| {
+                    let NodeLabel::Tile(mold) = node.label()
+                    else {
+                        return false;
+                    };
+                    node.span().start() == outer.span().start()
+                        && node.span().start() == node.span().end()
+                        && braces.spelled(grammar, tree, child, mold).map(<&str>::from) == Some("{")
+                })
+            })
+        })
+    };
     let mut bracketed = 0_usize;
-    let brace = tree.children(at).find_map(|child| {
-        let node = tree.node(child)?;
+    let mut own = tree
+        .children(at)
+        .filter(|&child| {
+            tree.node(child)
+                .is_some_and(|node| matches!(node.label(), NodeLabel::Tile(_) | NodeLabel::Meld(_)))
+        })
+        .peekable();
+    let mut brace = None;
+    while let Some(child) = own.next() {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
         let NodeLabel::Tile(mold) = node.label()
         else {
-            return None;
+            continue;
         };
         let spelled = braces.spelled(grammar, tree, child, mold).map(<&str>::from);
-        match spelled {
+        let ends = match spelled {
             Some("[") => {
                 bracketed = bracketed.saturating_add(1);
-                None
+                false
             },
             Some("]") => {
                 bracketed = bracketed.saturating_sub(1);
-                None
+                false
             },
-            Some("where" | "{") if bracketed == 0 => {
-                Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
-            },
-            Some(_) | None => None,
+            Some("where" | "{") => bracketed == 0,
+            Some("=") => bracketed == 0 && own.peek().is_some_and(|&next| laid(next)),
+            Some(_) | None => false,
+        };
+        if ends {
+            brace =
+                Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok();
+            break;
         }
-    });
+    }
     let start = tree
         .node(at)
         .and_then(|node| {
