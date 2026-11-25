@@ -1,8 +1,9 @@
 // `std.io`: the standard streams, which a program writes and reads through
-// the console's root capability. `std.authority`'s `console` opens that
-// capability from the authority `main` receives. A program reaches the
-// streams only through a capability that `main` passes on, never through the
-// ambient interfaces. So it prints or reads only what `main` holds.
+// the console's root capability, and `Io`, the IO of a program as a theory.
+// `std.authority`'s `console` opens that capability from the authority `main`
+// receives. A program reaches the streams only through a capability that
+// `main` passes on, never through the ambient interfaces. So it prints or
+// reads only what `main` holds.
 //
 // Each stream is an interface of its own, `std.io.Console.Eff`,
 // `std.io.Stderr.Eff` and `std.io.Stdin.Eff`, as `cap-std` holds three
@@ -11,7 +12,19 @@
 // interfaces where it imports this module, `import std.io;`, and this module
 // names its own.
 //
+// `Io.Eff` states the IO of a program one time, and a mode of IO is a model
+// of it. Each operation gives a completion endpoint, and the buffer of a read
+// or a write comes back with its completion. A program over `Io.Eff` names no
+// model: the scope that handles it chooses one. `Scripted` is the model with
+// no kernel: it answers each operation from a tape in the source.
+//
 // - see: #4523
+// - see: #7844 — the theory, a model and the buffer
+// - see: `corpus/model/completion/` — the completion contract that a model
+//   keeps
+
+// The bytes of a buffer and of a tape.
+import std.list (List);
 
 /// One line, written to standard output through `console`.
 pub def print(console : Cap { print }, line : String) -> [std.io.Console.Eff] Unit =
@@ -25,3 +38,192 @@ pub def eprint(console : Cap { eprint }, line : String) -> [std.io.Stderr.Eff] U
 /// answers the empty string once the input runs out.
 pub def read_line(console : Cap { read_line }) -> [std.io.Stdin.Eff] String =
   console.read_line
+
+/// The IO of a program: a read, a write and the close of a file. Each
+/// operation gives its continuation a completion endpoint, which the program
+/// receives on one time. The buffer of a read or a write moves into the
+/// operation and comes back with its completion. The count of a completion is
+/// the count of bytes, or the error number of the model as a negative count.
+/// The close is `close_file`, because `close` is the keyword of a session.
+pub theory Io.Eff where
+  /// A file, as the model names one.
+  sort F : Type+;
+  /// A buffer, as the model holds one: a list of bytes, or an address and a
+  /// length.
+  sort B : Type+;
+  /// A count of bytes.
+  sort N : Type+;
+  /// The completion of a read or a write: an endpoint that gives the count
+  /// and the buffer.
+  sort D : Type+;
+  /// The completion of a close: an endpoint that gives the status.
+  sort E : Type+;
+  /// The carrier, the answer of the handler.
+  sort C : Type;
+  /// Read from `file` into the start of `buffer`, at most its length.
+  oper read : (file : F, buffer : B, k : pi+ (done : D). C) --> C;
+  /// Write the first `count` bytes of `buffer` to `file`.
+  oper write : (file : F, buffer : B, count : N, k : pi+ (done : D). C) --> C;
+  /// Close `file`.
+  oper close_file : (file : F, k : pi+ (done : E). C) --> C;
+
+/// The completion of a read or a write under `Scripted`, as the program holds
+/// it: it gives the count, then the buffer back, and it ends.
+pub type Returned = (Integer * List u8) >? end;
+
+/// The completion of a close under `Scripted`, as the program holds it: it
+/// gives the status, and it ends.
+pub type Shut = Integer >? end;
+
+/// The state of the kernel of `Scripted`: the input that no read took yet,
+/// and the output of the writes, in their order.
+pub data Tape : Type where
+  /// The input still to read, and the output written.
+  | Tape : (input : List u8, output : List u8) --> Tape
+
+/// The count of an operation on a file that `Scripted` does not hold: the
+/// error number 9, `EBADF`, as a negative count.
+def bad_file() -> Integer = 0 - 9;
+
+/// The bytes of `input` placed over the start of `buffer`, as many as both
+/// hold. The rest of the buffer keeps its bytes.
+def rec placed(buffer : List u8, input : List u8) -> List u8 =
+  match buffer where
+    | #[] => buffer
+    | #[b, ..rest] => match input where
+      | #[] => buffer
+      | #[i, ..more] => cons i (placed[<] rest more)
+
+/// The input that a read into `buffer` leaves.
+def rec left(buffer : List u8, input : List u8) -> List u8 =
+  match buffer where
+    | #[] => input
+    | #[b, ..rest] => match input where
+      | #[] => input
+      | #[i, ..more] => left[<] rest more
+
+/// The first `count` bytes of `buffer`, or each byte when it holds fewer.
+def rec front(buffer : List u8, count : Integer) -> List u8 =
+  match buffer where
+    | #[] => buffer
+    | #[b, ..rest] => if count > 0 { cons b (front[<] rest (count - 1)) } else { #[] }
+
+/// The count of the bytes of `bytes`.
+def rec size(bytes : List u8) -> Integer =
+  match bytes where
+    | #[] => 0
+    | #[b, ..rest] => { let n = size[<] rest; n + 1 }
+
+/// The bytes of `first`, then the bytes of `second`.
+def rec joined(first : List u8, second : List u8) -> List u8 =
+  match first where
+    | #[] => second
+    | #[b, ..rest] => cons b (joined[<] rest second)
+
+/// The model of `Io.Eff` with no kernel: a kernel in the source answers each
+/// operation from a tape. The file 0 reads the input of the tape, and the file
+/// 1 writes its output. Each other file gets the count `-9`, `EBADF`, and the
+/// tape stays. A close of the file 0 or 1 gives the status 0. A buffer is a
+/// list of bytes. The kernel of each operation is a forked process that sends
+/// the completion and ends.
+pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut where
+  /// The carrier: a run from the tape before to the tape after.
+  type C = Tape -> Tape;
+  /// A read of the file 0 places the first bytes of the input over the start
+  /// of the buffer, as many as the buffer holds, and takes them from the
+  /// input. Its count is the number of those bytes: 0 at the end of the
+  /// input.
+  def read(file : Integer, buffer : List u8, k : Returned -> (Tape -> Tape)) -> Tape -> Tape =
+    fun (tape) {
+      match tape where
+        | Tape(input, output) => {
+          let held = file == 0
+          let filled : List u8 = if held { placed buffer input } else { buffer }
+          let rest : List u8 = if held { left buffer input } else { input }
+          let count : Integer = if held { size input - size rest } else { bad_file }
+          let done = fork (kernel : (Integer * List u8) >! end) {
+            send kernel (count, filled)
+            close kernel
+          }
+          let after = k done
+          after (Tape rest output)
+        }
+    }
+  /// A write to the file 1 adds the first `count` bytes of the buffer to the
+  /// output. Its count is the number of those bytes.
+  def write(
+    file : Integer,
+    buffer : List u8,
+    count : Integer,
+    k : Returned -> (Tape -> Tape)
+  ) -> Tape -> Tape =
+    fun (tape) {
+      match tape where
+        | Tape(input, output) => {
+          let held = file == 1
+          let bytes : List u8 = if held { front buffer count } else { #[] }
+          let written : Integer = if held { size bytes } else { bad_file }
+          let done = fork (kernel : (Integer * List u8) >! end) {
+            send kernel (written, buffer)
+            close kernel
+          }
+          let after = k done
+          after (Tape input (joined output bytes))
+        }
+    }
+  /// A close of the file 0 or 1 gives the status 0.
+  def close_file(file : Integer, k : Shut -> (Tape -> Tape)) -> Tape -> Tape =
+    fun (tape) {
+      let status : Integer = if file == 0 { 0 } else { if file == 1 { 0 } else { bad_file } }
+      let done = fork (kernel : Integer >! end) {
+        send kernel status
+        close kernel
+      }
+      let after = k done
+      after tape
+    }
+
+/// The answer of a completion of a read or a write under `Scripted`: the
+/// count, then the buffer.
+pub def returned(done : Returned) -> Integer * List u8 =
+  let answer = recv done
+  close done
+  pure answer
+
+/// The status of a completion of a close under `Scripted`.
+pub def shut(done : Shut) -> Integer =
+  let status = recv done
+  close done
+  pure status
+
+/// A read of three bytes from the file 0, then their write to the file 1,
+/// then the close of the file 1. The answer is the count of the write.
+def echo() -> [
+  io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut
+] Integer =
+  let read = returned (io.read 0 #[0u8, 0u8, 0u8])
+  let wrote = returned (io.write 1 read.1 read.0)
+  let status = shut (io.close_file 1)
+  pure wrote.0
+
+/// `echo` under `Scripted`: the first three bytes of the input move to the
+/// output, and the fourth stays.
+@[runs("Tape (cons 4u8 nil) (cons 1u8 (cons 2u8 (cons 3u8 nil)))")]
+def echoed() -> Tape =
+  let program : Tape -> Tape = handle io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+    let count = echo
+    pure fun (tape) { pure tape }
+  } with Scripted
+  program (Tape #[1u8, 2u8, 3u8, 4u8] #[])
+
+/// A write to the file 2, which `Scripted` does not hold, gets the count `-9`.
+/// The run gives the tape whose output is the byte 9 when the count is `-9`,
+/// and the tape before the run otherwise.
+@[runs("Tape nil (cons 9u8 nil)")]
+def refused() -> Tape =
+  let program : Tape -> Tape = handle io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+    let wrote = returned (io.write 2 #[7u8] 1)
+    let named = wrote.0 == bad_file
+    pure fun (tape) { if named { pure Tape #[] #[9u8] } else { pure tape } }
+  } with Scripted
+  program (Tape #[] #[])
