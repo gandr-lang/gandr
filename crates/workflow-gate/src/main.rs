@@ -3,8 +3,8 @@
 //! # Boundaries
 //!
 //! The commands `inputs list`, `inputs digest`, `verdict key`, `verdict read`,
-//! `verdict write` and `verdict publish` are the rows of the table of
-//! `README.md`, with what each prints.
+//! `verdict write`, `verdict publish`, `scope` and `scoped` are the rows of
+//! the table of `README.md`, with what each prints.
 //!
 //! `--tables <directory>` names the directory of `inputs.json`,
 //! `verdicts.json` and the scope script. `--times` prints each part of the
@@ -36,7 +36,9 @@
 //! - `2`: a refusal — a failed call of git, of Cargo, of mise, of GitHub or of
 //!   the compiler, a table that does not read, a check with no task or with no
 //!   row of a verdict, a read with no signing key, or standard output closed;
-//!   also a malformed invocation.
+//!   also a malformed invocation, and a command of `scoped` that does not start
+//!   or that a signal ends.
+//! - The exit code of the command of `scoped` when it runs.
 
 use core::fmt::Write as _;
 use std::io::Write as _;
@@ -50,6 +52,7 @@ use gandr_workflow_gate::Commit;
 use gandr_workflow_gate::Elapsed;
 use gandr_workflow_gate::End;
 use gandr_workflow_gate::KeyRequest;
+use gandr_workflow_gate::Part;
 use gandr_workflow_gate::Parts;
 use gandr_workflow_gate::Passing;
 use gandr_workflow_gate::ReadRequest;
@@ -57,6 +60,8 @@ use gandr_workflow_gate::RecordRequest;
 use gandr_workflow_gate::Request;
 use gandr_workflow_gate::RequireRequest;
 use gandr_workflow_gate::Scope;
+use gandr_workflow_gate::ScopeRequest;
+use gandr_workflow_gate::Scoped;
 use gandr_workflow_gate::SendRequest;
 use gandr_workflow_gate::WriteRequest;
 
@@ -97,6 +102,104 @@ enum Top
     /// The records of the gates that passed on a tree.
     #[command(subcommand)]
     Pass(Pass),
+    /// Print the scope of a change: `workspace`, `none`, or `packages` and
+    /// the name of each crate that the change can break.
+    Scope
+    {
+        /// The base of the change.
+        #[arg(long)]
+        base: Commit,
+        /// The head of the change; the working tree without it.
+        #[arg(long)]
+        head: Option<Commit>,
+    },
+    /// Run a command one time for the scope of a change, with the package
+    /// arguments of Cargo after it: `--workspace`, or `-p` and each name.
+    Scoped
+    {
+        /// The base of the change.
+        #[arg(long)]
+        base: Commit,
+        /// The head of the change; the working tree without it.
+        #[arg(long)]
+        head: Option<Commit>,
+        /// The command, after `--`.
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
+    },
+}
+
+/// Writes the causes of a scope of the whole workspace to standard error.
+///
+/// # Specification
+/// trivial.
+fn causes(scoped: &Scoped)
+{
+    if let Scoped::Workspace(ref causes) = *scoped {
+        let mut errors = std::io::stderr().lock();
+        for cause in causes {
+            let _written = writeln!(errors, "gate: the whole workspace: {cause}");
+        }
+    }
+}
+
+/// Runs `command` one time for the scope of `request`, with the package
+/// arguments after it, and gives its exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for no crate, nothing runs, `no package in scope` is on standard
+///   output and the code is `0`. Else the scope is on standard error, the
+///   command runs with the streams of this process, and the code is the
+///   command's. A refusal of the scope, a command that does not start, and a
+///   command that a signal ends give `2`.
+/// - provides: one run of a gate command for the crates of a change.
+/// - fails: never; a refusal is an exit code.
+/// - panics: none.
+/// - executable: none — the outcome is the process's streams and status.
+fn scoped(
+    request: &ScopeRequest,
+    command: &[String],
+    parts: &Parts,
+) -> ExitCode
+{
+    let scope = match gandr_workflow_gate::scope(request, parts) {
+        Ok(scope) => scope,
+        Err(refusal) => {
+            let _written = writeln!(std::io::stderr().lock(), "gate: {refusal}");
+            return ExitCode::from(REFUSED);
+        },
+    };
+    causes(&scope);
+    if scope == Scoped::None {
+        let _written = writeln!(std::io::stdout().lock(), "no package in scope");
+        return ExitCode::SUCCESS;
+    }
+    let _written = writeln!(std::io::stderr().lock(), "gate: scope {scope}");
+    let Some((program, arguments)) = command.split_first()
+    else {
+        return ExitCode::from(REFUSED);
+    };
+    let started = Instant::now();
+    let status = std::process::Command::new(program)
+        .args(arguments)
+        .args(scope.arguments())
+        .status();
+    parts.add(Part::from("the scoped command"), started.elapsed());
+    match status {
+        Ok(status) => status
+            .code()
+            .and_then(|code| u8::try_from(code).ok())
+            .map_or_else(|| ExitCode::from(REFUSED), ExitCode::from),
+        Err(error) => {
+            let _written = writeln!(
+                std::io::stderr().lock(),
+                "gate: {} does not start: {error}",
+                command.join(" ")
+            );
+            ExitCode::from(REFUSED)
+        },
+    }
 }
 
 /// The commands on the records of passed gates.
@@ -395,6 +498,27 @@ fn main() -> ExitCode
             &parts,
         )
         .map(printed),
+        Top::Scope { base, head } => {
+            gandr_workflow_gate::scope(&ScopeRequest { base, head }, &parts).map(|scope| {
+                causes(&scope);
+                (format!("{scope}\n"), End::Held)
+            })
+        },
+        Top::Scoped {
+            base,
+            head,
+            command,
+        } => {
+            let code = scoped(&ScopeRequest { base, head }, &command, &parts);
+            if cli.times {
+                let _written = writeln!(
+                    std::io::stderr().lock(),
+                    "{parts}gate: {}  the whole run",
+                    Elapsed::from(start.elapsed())
+                );
+            }
+            return code;
+        },
     };
     let mut errors = std::io::stderr().lock();
     if cli.times {

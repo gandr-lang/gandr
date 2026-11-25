@@ -12,6 +12,8 @@ A gate of a landing asks which of its long checks must run. A check must run whe
 | `gate verdict read <check>...` | to standard error, which check holds on the tree of `HEAD`, by the inputs of its base or by a signed record of a pass |
 | `gate verdict write <tree> <check>...` | to standard error, the one signed record of the checks that a gate ran on the tree, which the ref of each check names |
 | `gate verdict publish <commit>` | to standard error, the records of the tree of the commit that one push sends |
+| `gate scope --base <commit> [--head <commit>]` | one line: `workspace`, `none`, or `packages` and the name of each crate of the scope of the change. To standard error, the causes of a whole workspace. With no head, the head is the working tree |
+| `gate scoped --base <commit> [--head <commit>] -- <command>...` | the output of the command, which runs one time with the package arguments of the scope after it: `--workspace`, or `-p <name>` for each crate. For no crate, `no package in scope`, and nothing runs. The exit code is the command's |
 
 `--tables <directory>` names the directory of `inputs.json` and `verdicts.json`. `--times` prints each part of the run to standard error: its time, the count of its calls and its name.
 
@@ -28,6 +30,29 @@ A gate of a landing asks which of its long checks must run. A check must run whe
 | each grep of the check in `verdicts.json` | `grep:<path>:<pattern>` and the digest of the files that hold the pattern |
 
 A check that sets `table` in `verdicts.json` reads the paths of its row of `table.json` at the commit in place of the crates. Its list holds the line `table:<check>` with the digest of the row. A path that a commit does not hold has the object `absent`.
+
+## The scope of a change
+
+A gate must run only what a change can break. The scope of a change is each crate whose directory holds a changed path, and each crate that depends on one of them, through a dependency of each kind, until the set does not grow. The changed paths are those of `git diff --name-only <base> [<head>]`, and with no head also each untracked path that git does not ignore. One run reads `cargo metadata` one time, and it starts Cargo and git at the same time.
+
+The table `scope.json` of the crate maps each path that no crate holds. The first row that holds a path decides it. The binary carries the table.
+
+| Changed path | Scope |
+| ------------ | ----- |
+| a path in the directory of a crate | that crate and its dependents |
+| a source of `corpus/` or of `library/` | the crates of `readers`, whose tests read the corpus, and their dependents |
+| a workspace input: the root `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `clippy.toml`, `rustfmt.toml`, a path of `.cargo/` or of `.config/` | the whole workspace |
+| a page, a licence, and the configuration of a tool that builds no crate | no crate |
+| a path that no crate and no row holds | the whole workspace, and the cause names the path |
+| a set that holds each crate | the whole workspace |
+
+Before a pull request, the author runs each suite on the scope of the change against `origin/main`:
+
+```console
+$ cargo run --locked --quiet --package gandr-workflow-gate --bin gate -- scoped --base origin/main -- cargo nextest run --locked --no-fail-fast
+gate: scope packages gandr-workflow-gate
+...
+```
 
 ## The work of one run
 

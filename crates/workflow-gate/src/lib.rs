@@ -25,8 +25,10 @@
 //!   gate on a tree, [`require`] answers whether a gate passed on a head, and
 //!   [`admit`] writes here the pass of a gate on another host. [`times`] and
 //!   [`passed`] are their rules.
-//! - [`Parts`] holds the count and the time of each call of a run, and
-//!   [`Elapsed`] writes a time.
+//! - [`Parts`] holds the count and the time of each call of a run, [`Part`]
+//!   names one, and [`Elapsed`] writes a time.
+//! - [`scope()`] gives the [`Scoped`] of a [`ScopeRequest`]: the crates that a
+//!   change can break, each touched crate with each crate that depends on it.
 //! - [`GateError`] is each refusal of a run.
 //!
 //! # Boundaries
@@ -48,11 +50,13 @@ mod name;
 mod pass;
 mod record;
 mod run;
+mod scope;
 mod tables;
 mod verdict;
 mod write;
 
 pub use crate::call::Elapsed;
+pub use crate::call::Part;
 pub use crate::call::Parts;
 pub use crate::error::GateError;
 pub use crate::list::Digest;
@@ -84,6 +88,9 @@ pub use crate::record::Reading;
 pub use crate::record::read;
 pub use crate::run::Request;
 pub use crate::run::lists;
+pub use crate::scope::ScopeRequest;
+pub use crate::scope::Scoped;
+pub use crate::scope::scope;
 pub use crate::verdict::Key;
 pub use crate::verdict::KeyRequest;
 pub use crate::verdict::keys;

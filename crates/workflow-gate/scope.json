@@ -1,0 +1,40 @@
+{
+  "readers": [
+    "gandr-surface-dispatcher",
+    "gandr-surface-evaluate",
+    "gandr-surface-grammar",
+    "gandr-surface-parser"
+  ],
+  "rows": [
+    { "path": "Cargo.toml", "scope": "workspace" },
+    { "path": "Cargo.lock", "scope": "workspace" },
+    { "path": "rust-toolchain.toml", "scope": "workspace" },
+    { "path": "clippy.toml", "scope": "workspace" },
+    { "path": "rustfmt.toml", "scope": "workspace" },
+    { "path": ".cargo/", "scope": "workspace" },
+    { "path": ".config/", "scope": "workspace" },
+    { "path": "corpus/", "scope": "readers" },
+    { "path": "library/", "scope": "readers" },
+    { "path": "**.md", "scope": "none" },
+    { "path": "LICENSE.Apache-2.0.txt", "scope": "none" },
+    { "path": "LICENSE.LLVM-exception.txt", "scope": "none" },
+    { "path": ".github/", "scope": "none" },
+    { "path": ".actrc", "scope": "none" },
+    { "path": ".coderabbit.yaml", "scope": "none" },
+    { "path": ".gitignore", "scope": "none" },
+    { "path": ".oxfmtrc.json", "scope": "none" },
+    { "path": ".oxlintrc.json", "scope": "none" },
+    { "path": "aube-lock.yaml", "scope": "none" },
+    { "path": "aube-workspace.yaml", "scope": "none" },
+    { "path": "cliff.toml", "scope": "none" },
+    { "path": "codecov.yml", "scope": "none" },
+    { "path": "commitlint.config.mjs", "scope": "none" },
+    { "path": "package.json", "scope": "none" },
+    { "path": "prek.toml", "scope": "none" },
+    { "path": "rumdl.toml", "scope": "none" },
+    { "path": "sizelint.toml", "scope": "none" },
+    { "path": "tombi.toml", "scope": "none" },
+    { "path": "treefmt.toml", "scope": "none" },
+    { "path": "typos.toml", "scope": "none" }
+  ]
+}

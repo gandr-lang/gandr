@@ -38,7 +38,7 @@ fn unread(
 
 /// A crate of the workspace.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Member
+pub struct Member
 {
     /// The package's name.
     name: String,
@@ -47,6 +47,42 @@ struct Member
     /// Each crate of the workspace that the crate depends on, by any kind of
     /// dependency.
     deps: BTreeSet<String>,
+}
+
+impl Member
+{
+    /// The package's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn name(&self) -> &str
+    {
+        &self.name
+    }
+
+    /// The crate's directory, relative to the root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn dir(&self) -> &str
+    {
+        &self.dir
+    }
+
+    /// Each crate of the workspace that the crate depends on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn deps(&self) -> &BTreeSet<String>
+    {
+        &self.deps
+    }
 }
 
 /// What Cargo's metadata holds of one dependency.
@@ -148,6 +184,17 @@ impl Workspace
             });
         }
         Ok(Self(members))
+    }
+
+    /// The crates of the workspace, in the order of Cargo's metadata.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn members(&self) -> &[Member]
+    {
+        &self.0
     }
 }
 
