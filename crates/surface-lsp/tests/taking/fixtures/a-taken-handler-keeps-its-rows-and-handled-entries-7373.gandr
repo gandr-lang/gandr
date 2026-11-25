@@ -10,9 +10,9 @@ def tallied() -> [n : Counter.Eff] Integer =
 /// The bump handled at seven: the scope's clause answers.
 @[runs("7")]
 def tallyHandled() -> Integer =
-  handle c : Counter.Eff {
+  effect c : Counter.Eff {
     tallied
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper bump(k) => pure 7
   }
