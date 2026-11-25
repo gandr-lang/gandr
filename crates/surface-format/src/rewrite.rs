@@ -2279,6 +2279,33 @@ impl<'source> Respelling<'_, 'source>
         }
     }
 
+    /// The operand `child` as an argument of a juxtaposition the type grammar
+    /// reads. A type quote takes parentheses there, `Path[.A = Type]
+    /// (type(X)) Y`, since the type grammar reads no quote as a juxtaposed
+    /// operand.
+    ///
+    /// # Specification
+    /// trivial.
+    fn argument(
+        &self,
+        child: Child<'source>,
+    ) -> Operand<'source>
+    {
+        let quoted = |child: Child<'source>| {
+            matches!(child, Child::Node(at) if self.rule(at) == Some(MoldName("type_quote_expression")))
+        };
+        let mut operand = self.operand(child);
+        if quoted(child) {
+            operand.band = Band::Loose;
+        }
+        if self.unwrapped(child).is_some_and(quoted)
+            && let Some((_, ref mut band)) = operand.inner
+        {
+            *band = Band::Loose;
+        }
+        operand
+    }
+
     /// The source bytes the operand `child` covers.
     ///
     /// # Specification
@@ -3920,6 +3947,11 @@ impl<'source> Respelling<'_, 'source>
                 Role::Own(text) => match <&str>::from(text) {
                     "(" if !opened => opened = true,
                     "," if opened => {},
+                    // A comma of the carrier's own tiles, `Type[+, 1]`.
+                    "," => {
+                        out.fragment(text);
+                        out.gap(Spelling(" "));
+                    },
                     ")" if opened => opened = false,
                     "=" => {
                         out.gap(Spelling(" "));
@@ -3935,7 +3967,12 @@ impl<'source> Respelling<'_, 'source>
                     _ => out.fragment(text),
                 },
                 Role::Operand(child) => {
-                    let operand = self.operand(child);
+                    let operand = if opened {
+                        self.argument(child)
+                    }
+                    else {
+                        self.operand(child)
+                    };
                     if opened {
                         if led.is_none() {
                             led = Some(operand.enclosed() == Enclosed::Yes);
@@ -4019,9 +4056,7 @@ impl<'source> Respelling<'_, 'source>
                             .iter()
                             .map(|&own| <&str>::from(own))
                             .eq(["]", "(", ",", ")"])
-                        && carrier
-                            .iter()
-                            .all(|&own| !matches!(<&str>::from(own), "[" | "]" | "(" | ")" | ","))
+                        && carried_tiles(carrier)
                 }));
         if supplied {
             return self.supplied_path_type(out, parts);
@@ -4176,7 +4211,7 @@ impl<'source> Respelling<'_, 'source>
         let mut led = None;
         let mut joined = glued == Glued::Always;
         for (index, &child) in arguments.iter().enumerate() {
-            let operand = self.operand(child);
+            let operand = self.argument(child);
             if led.is_none() {
                 led = Some(operand.enclosed());
             }
@@ -4582,6 +4617,33 @@ fn split<'source>(parts: &[Part<'source>]) -> (Vec<SourceFragment<'source>>, Vec
         }
     }
     (owns, operands)
+}
+
+/// Whether `carrier`, the own tiles a supplied path writes between `=` and
+/// its `]`, closes each bracket it opens and holds no parenthesis, and a
+/// comma only inside its brackets: `Type` and `Type[+, 1]` do.
+///
+/// # Specification
+/// trivial.
+fn carried_tiles(carrier: &[SourceFragment<'_>]) -> bool
+{
+    let mut depth = 0_usize;
+    for &own in carrier {
+        match <&str>::from(own) {
+            "[" => depth = depth.saturating_add(1),
+            "]" => {
+                let Some(outer) = depth.checked_sub(1)
+                else {
+                    return false;
+                };
+                depth = outer;
+            },
+            "," if depth == 0 => return false,
+            "(" | ")" => return false,
+            _ => {},
+        }
+    }
+    depth == 0
 }
 
 /// How a thunk type writes the default grade `ω`.
