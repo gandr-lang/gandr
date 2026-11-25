@@ -1714,6 +1714,34 @@ fn fmt_check_names_a_declaration_out_of_the_sugared_form_7873()
     );
 }
 
+/// `fmt --form sugared --rewrite <name>` runs that rewrite of the form alone
+/// and keeps each other rewrite's spelling; a name that no rewrite has is a
+/// malformed invocation that names each rewrite.
+#[test]
+fn fmt_runs_only_the_rewrite_it_names()
+{
+    let scratch = Scratch::new(Path::new("fmt-rewrite-named"));
+    let source = scratch.file(
+        Path::new("pair.gandr"),
+        Text::from("def pair : *{Integer, String};\n\ndef choice : +{Integer, String};\n"),
+    );
+    let (fmt, form) = (Path::new("fmt"), Path::new("--form=sugared"));
+    let sum = ran(gandr(&[fmt, form, Path::new("--rewrite=sum"), &source]));
+    assert_eq!(code(&sum), Code(0_i32), "{}", stderr(&sum));
+    assert_eq!(
+        std::fs::read_to_string(&source).expect("the source is readable"),
+        "def pair : *{Integer, String};\n\ndef choice : Integer + String;\n",
+        "the sum is sugared and the product keeps its spelling"
+    );
+    let unnamed = ran(gandr(&[fmt, form, Path::new("--rewrite=handle"), &source]));
+    assert_eq!(code(&unnamed), Code(2_i32), "{}", stderr(&unnamed));
+    assert!(
+        stderr(&unnamed).contains("no rewrite is named `handle`; the rewrites are product, sum,"),
+        "{}",
+        stderr(&unnamed)
+    );
+}
+
 /// `gandr cells` prints each cell of the occurrence-count exemplar on its
 /// rule's line, each hole with how many times the cell's right-hand side
 /// writes it; a path that names no source is a fault on standard error and

@@ -1240,6 +1240,31 @@ fn a_selection_runs_only_the_rewrites_it_names()
     );
 }
 
+/// Each rewrite of the table is selected by its name and no other, the names
+/// in the table's order, and a name no rewrite has selects nothing.
+#[test]
+fn each_rewrite_is_selected_by_its_name()
+{
+    let mut tabled: Vec<RewriteName> = gandr_surface_format::REWRITES
+        .iter()
+        .map(|rewrite| rewrite.name)
+        .collect();
+    tabled.dedup();
+    assert_eq!(
+        tabled,
+        RewriteName::EVERY,
+        "every name, in the table's order"
+    );
+    for &name in RewriteName::EVERY {
+        assert_eq!(
+            RewriteName::named(name.label()),
+            Some(&[name][..]),
+            "`{name}` selects itself"
+        );
+    }
+    assert_eq!(RewriteName::named("handle"), None);
+}
+
 /// #8341: a `let` whose value is a layout block holds the block's close and
 /// the separator after it at one offset, both over no text. A rewrite that
 /// respells the form around them keeps each, so the layout pairs the block

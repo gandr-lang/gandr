@@ -147,19 +147,39 @@ pub enum RewriteName
     BodyAfterEquals,
 }
 
-impl fmt::Display for RewriteName
+impl RewriteName
 {
-    /// The rewrite's name, as a caller selects it.
+    /// Every rewrite's name, in the table's order.
+    pub const EVERY: &'static [Self] = &[
+        Self::Product,
+        Self::Sum,
+        Self::LazyProduct,
+        Self::ValueFunction,
+        Self::DefaultGrade,
+        Self::PathComposite,
+        Self::PathInverse,
+        Self::PathAction,
+        Self::TailReturn,
+        Self::InsertedReturner,
+        Self::ShortAlias,
+        Self::InsertedThunk,
+        Self::InsertedReduct,
+        Self::InsertedForget,
+        Self::FunctionForm,
+        Self::JoinedDefinition,
+        Self::TypeApplication,
+        Self::BodyAfterEquals,
+    ];
+
+    /// The rewrite's name, as a caller selects it: `type-application`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
+    #[must_use]
+    pub const fn label(self) -> &'static str
     {
-        f.write_str(match *self {
+        match self {
             Self::Product => "product",
             Self::Sum => "sum",
             Self::LazyProduct => "lazy-product",
@@ -178,7 +198,49 @@ impl fmt::Display for RewriteName
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
             Self::BodyAfterEquals => "body-after-equals",
-        })
+        }
+    }
+
+    /// The rewrite whose [`label`](Self::label) is `text`, as a selection of
+    /// one: `--rewrite type-application` selects
+    /// `Selection::Only(&[RewriteName::TypeApplication])`.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the one-element slice of [`EVERY`](Self::EVERY) whose label
+    ///   is `text`; nothing when no rewrite has that label.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each name of the table selects its own rewrite and no
+    ///   other, and a name no rewrite has selects nothing.
+    /// - witness: `tests::rewrite::each_rewrite_is_selected_by_its_name`
+    ///
+    /// # Cost
+    /// - time: one comparison for each rewrite of the table at most.
+    /// - allocation: none.
+    #[inline]
+    #[must_use]
+    pub fn named(text: &str) -> Option<&'static [Self]>
+    {
+        let index = Self::EVERY.iter().position(|name| name.label() == text)?;
+        Self::EVERY.get(index ..= index)
+    }
+}
+
+impl fmt::Display for RewriteName
+{
+    /// The rewrite's name, as a caller selects it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(self.label())
     }
 }
 
