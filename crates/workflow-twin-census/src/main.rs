@@ -26,6 +26,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitCode;
+use std::process::Stdio;
 use std::time::Instant;
 
 use anodized::spec;
@@ -33,6 +34,7 @@ use gandr_workflow_twin_census::CensusError;
 use gandr_workflow_twin_census::Workspace;
 use gandr_workflow_twin_census::rustdoc;
 use gandr_workflow_twin_census::rustdoc::Surface;
+use gandr_workflow_twin_census::test_names;
 use rayon::iter::IntoParallelRefIterator as _;
 use rayon::iter::ParallelIterator as _;
 
@@ -77,7 +79,7 @@ enum Fault
 {
     /// A command of Cargo did not run, or it did not succeed.
     Cargo(&'static str, String),
-    /// A file of rustdoc could not be read.
+    /// A source or a file of rustdoc could not be read.
     File(PathBuf, std::io::Error),
     /// The census refused the metadata.
     Census(CensusError),
@@ -147,8 +149,9 @@ fn census(
 /// [`Fault::Rustdoc`] when it does not read as rustdoc's JSON.
 ///
 /// # Cost
-/// - allocation: the output of `cargo doc`, and the bytes and the index of each
-///   file at the same time on each thread, setup
+/// - allocation: the output of `cargo doc`, the text of each source of a crate,
+///   and the bytes and the index of each file of rustdoc at the same time on
+///   each thread, setup
 fn surfaces(
     root: &Path,
     workspace: &mut Workspace,
@@ -158,7 +161,7 @@ fn surfaces(
     let started = Instant::now();
     let target = Path::new(workspace.target_directory()).join("twin-census");
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let output = Command::new(cargo)
+    let child = Command::new(cargo)
         .args([
             "doc",
             "--workspace",
@@ -171,8 +174,37 @@ fn surfaces(
         .arg(root.join("Cargo.toml"))
         .env("RUSTDOCFLAGS", RUSTDOCFLAGS)
         .env("CARGO_TARGET_DIR", &target)
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|error| Fault::Cargo("doc", error.to_string()))?;
+    // The tests are read while rustdoc runs.
+    let tests_started = Instant::now();
+    let crates: Vec<String> = workspace
+        .libraries()
+        .map(|(name, _)| name.to_owned())
+        .collect();
+    let tests: Vec<Result<Vec<String>, Fault>> = crates
+        .par_iter()
+        .map(|name| {
+            let directory = root.join("crates").join(name);
+            let mut names = Vec::new();
+            sources(&directory.join("src"), &mut names)?;
+            sources(&directory.join("tests"), &mut names)?;
+            Ok(names)
+        })
+        .collect();
+    parts.push(Part {
+        name: "read tests",
+        calls: crates.len(),
+        time: tests_started.elapsed(),
+    });
+    let output = child
+        .wait_with_output()
+        .map_err(|error| Fault::Cargo("doc", error.to_string()))?;
+    for (name, names) in crates.iter().zip(tests) {
+        workspace.set_tests(name, names?);
+    }
     parts.push(Part {
         name: "cargo doc",
         calls: 1,
@@ -204,6 +236,45 @@ fn surfaces(
     });
     for (&(ref name, _), surface) in libraries.iter().zip(surfaces) {
         workspace.set_surface(name, surface?);
+    }
+    Ok(())
+}
+
+/// Appends to `names` the name of each test in each Rust source below
+/// `directory`. A directory that does not exist adds nothing.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Fault::File`] when a directory or a source cannot be read.
+///
+/// # Cost
+/// - allocation: the text of one source at a time, and the names
+fn sources(
+    directory: &Path,
+    names: &mut Vec<String>,
+) -> Result<(), Fault>
+{
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(Fault::File(directory.to_owned(), error)),
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<Result<_, _>>()
+        .map_err(|error| Fault::File(directory.to_owned(), error))?;
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            sources(&path, names)?;
+        }
+        else if path.extension().is_some_and(|extension| extension == "rs") {
+            let text =
+                std::fs::read_to_string(&path).map_err(|error| Fault::File(path.clone(), error))?;
+            names.extend(test_names(&text));
+        }
     }
     Ok(())
 }

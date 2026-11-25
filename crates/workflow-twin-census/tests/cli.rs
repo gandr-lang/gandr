@@ -22,9 +22,10 @@ fn run(
         .expect("the binary runs")
 }
 
-/// The census of the fixture workspace: the emitter depends on `near`, and
-/// the emitter has one generic public function and one in the export
-/// fragment.
+/// The census of the fixture workspace: the emitter depends on `near`; the
+/// emitter has one generic public function and one in the export fragment;
+/// `near` has one function in the fragment and one test, so it is the one
+/// crate that can take a twin.
 const FIXTURE: &str = "# Twin census
 
 A twin is a function of a crate that gandr source states. A crate is under the emitter when `gandr-runtime-emitter` depends on it by a normal or a build dependency, directly or through other crates. A twin of such a crate runs as an object, and not as a record that the runtime loads.
@@ -37,14 +38,30 @@ An export carries a function that is not generic, whose operands are fixed-width
 
 | Crate | Under the emitter | Generic items | Export fragment |
 | ----- | ----------------- | ------------- | --------------- |
-| `near` | yes | 0 | 0 of 0 |
+| `near` | yes | 0 | 1 of 1 (100 %) |
 | `runtime-emitter` | the emitter | 1 | 1 of 2 (50 %) |
 
 Crates under the emitter: 1 of 2.
 
 Generic public items: 1.
 
-Public functions in the export fragment: 1 of 2 (50 %).
+Public functions in the export fragment: 2 of 3 (66 %).
+
+## The next twins
+
+A crate can take a twin when it has a test, and each of its public functions is in the export fragment or has a wrapper. A wrapper passes each operand as its words and gives the result as its words. A result of more than one word goes to an address that the caller gives. The census ranks such crates by the fewest generic public items, then by the most functions in the fragment, then by the most tests, and names the first 3.
+
+Crates that can take a twin: 1.
+
+### 1. `near`
+
+The carrier is the object, because the emitter depends on the crate.
+
+| Function | What an export needs |
+| -------- | -------------------- |
+| `twice` | nothing |
+
+Tests: 1. `twice_doubles`.
 ";
 
 /// The binary prints the census of the fixture workspace, and `--cost` names

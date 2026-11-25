@@ -19,10 +19,13 @@
 //!   directly or through other crates. A dev dependency is no part of the
 //!   emitter.
 //! - [`rustdoc::read`] reads the counts of one library in the JSON that rustdoc
-//!   writes for it, and [`Workspace::set_surface`] puts them in the row of its
-//!   crate.
-//! - [`Workspace::render`] writes the text of the census, which the binary
-//!   prints. No file of the tree holds it.
+//!   writes for it, with what an export needs to carry each public function,
+//!   and [`Workspace::set_surface`] puts them in the row of its crate.
+//! - [`test_names`] reads the names of the tests in a source, and
+//!   [`Workspace::set_tests`] puts them in the row of its crate.
+//! - [`Workspace::candidates`] ranks the crates that can take a twin.
+//! - [`Workspace::render`] writes the text of the census with the first three
+//!   candidates, which the binary prints. No file of the tree holds it.
 //!
 //! The graph is the one that Cargo resolves for the workspace, with the
 //! features of each member unified. So an optional dependency that a different
@@ -37,10 +40,12 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cmp::Reverse;
 use core::fmt;
 use core::fmt::Write as _;
 
 use anodized::spec;
+use rustdoc::Carry;
 use rustdoc::Surface;
 
 /// The package of the emitter.
@@ -237,6 +242,8 @@ struct Row
     library: Option<String>,
     /// The counts of the library, once it is read.
     surface: Option<Surface>,
+    /// The name of each test of the crate, once its sources are read.
+    tests: Option<Vec<String>>,
 }
 
 /// Each crate of the workspace, by its directory below `crates/`, with its
@@ -355,6 +362,7 @@ impl Workspace
                     standing,
                     library,
                     surface: None,
+                    tests: None,
                 })
             })
             .collect();
@@ -407,6 +415,74 @@ impl Workspace
         }
     }
 
+    /// Puts `tests`, the names of the tests of the crate in the directory
+    /// `crate_directory`, in the row of that crate. A directory that is no
+    /// crate of the workspace changes nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn set_tests(
+        &mut self,
+        crate_directory: &str,
+        tests: Vec<String>,
+    )
+    {
+        if let Some(row) = self.crates.get_mut(crate_directory) {
+            row.tests = Some(tests);
+        }
+    }
+
+    /// Each crate that can take a twin, best first: the crate has a test, its
+    /// library has a public function, and each public function is in the
+    /// export fragment or has a wrapper. The order is the fewest generic
+    /// public items, then the most functions in the fragment, then the most
+    /// tests, then the name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as the summary states; a crate with no counts or no tests is
+    ///   not in it.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: one entry for each crate that can take a twin
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — four crates that can take a twin, in the four keys of
+    ///   the order, and three that cannot: no test, a refused function and no
+    ///   function.
+    /// - witness: `tests::census::the_next_twins_are_ranked_by_generic_items_fragment_and_tests`
+    #[spec(ensures: |ret| ret.len() <= self.crates.len())]
+    #[must_use]
+    #[inline]
+    pub fn candidates(&self) -> Vec<&str>
+    {
+        let mut candidates: Vec<(&str, &Surface, usize)> = self
+            .crates
+            .iter()
+            .filter_map(|(name, row)| {
+                let surface = row.surface.as_ref()?;
+                let tests = row.tests.as_ref()?.len();
+                let carried = !surface.entries.is_empty()
+                    && surface
+                        .entries
+                        .iter()
+                        .all(|entry| !matches!(entry.carry, Carry::Refused(_)));
+                (tests > 0 && carried).then_some((name.as_str(), surface, tests))
+            })
+            .collect();
+        candidates.sort_by_key(|&(name, surface, tests)| {
+            (
+                surface.generic_items,
+                Reverse(surface.exportable),
+                Reverse(tests),
+                name,
+            )
+        });
+        candidates.into_iter().map(|(name, ..)| name).collect()
+    }
+
     /// The count of crates under the emitter, and the count of crates.
     ///
     /// # Specification
@@ -452,8 +528,9 @@ impl Workspace
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the golden of a graph of five crates, one of them
-    ///   with no library.
+    ///   with no library; the section of the next twins of a fixture workspace.
     /// - witness: `tests::census::a_crate_under_the_emitter_is_marked_and_a_dev_edge_is_not`
+    /// - witness: `tests::cli::the_census_of_the_fixture_is_its_text`
     #[must_use]
     #[inline]
     pub fn render(&self) -> String
@@ -483,7 +560,7 @@ impl Workspace
                 Standing::Under => "yes",
                 Standing::Apart => "no",
             };
-            let _infallible = match (row.library.as_ref(), row.surface) {
+            let _infallible = match (row.library.as_ref(), row.surface.as_ref()) {
                 (_, Some(surface)) => {
                     sum.generic_items = sum.generic_items.saturating_add(surface.generic_items);
                     sum.functions = sum.functions.saturating_add(surface.functions);
@@ -511,8 +588,138 @@ impl Workspace
             sum.generic_items,
             share(sum.exportable, sum.functions)
         );
+        self.render_next_twins(&mut text);
         text
     }
+
+    /// Writes the section of the next twins to `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn render_next_twins(
+        &self,
+        text: &mut String,
+    )
+    {
+        let candidates = self.candidates();
+        let _infallible = writeln!(
+            text,
+            "\n## The next twins\n\nA crate can take a twin when it has a test, and each of its \
+             public functions is in the export fragment or has a wrapper. A wrapper passes each \
+             operand as its words and gives the result as its words. A result of more than one \
+             word goes to an address that the caller gives. The census ranks such crates by the \
+             fewest generic public items, then by the most functions in the fragment, then by \
+             the most tests, and names the first {NEXT}.\n\nCrates that can take a twin: {}.",
+            candidates.len()
+        );
+        for (place, name) in candidates.iter().take(NEXT).enumerate() {
+            let Some(row) = self.crates.get(*name)
+            else {
+                continue;
+            };
+            let carrier = match row.standing {
+                Standing::Emitter => "The carrier is the object, because the crate is the emitter.",
+                Standing::Under => {
+                    "The carrier is the object, because the emitter depends on the crate."
+                },
+                Standing::Apart => {
+                    "The carrier is the object, or the record that the runtime loads."
+                },
+            };
+            let _infallible = writeln!(
+                text,
+                "\n### {}. `{name}`\n\n{carrier}\n\n| Function | What an export needs |\n| \
+                 -------- | -------------------- |",
+                place.saturating_add(1)
+            );
+            for entry in row.surface.iter().flat_map(|surface| &surface.entries) {
+                let _infallible = match entry.carry {
+                    Carry::Fragment => writeln!(text, "| `{}` | nothing |", entry.name),
+                    Carry::Wrapper { operands, result } => writeln!(
+                        text,
+                        "| `{}` | a wrapper: {} in, {} out{} |",
+                        entry.name,
+                        words(operands),
+                        words(result),
+                        if result > 1 { ", at an address" } else { "" }
+                    ),
+                    Carry::Refused(ref reason) => {
+                        writeln!(text, "| `{}` | no wrapper: {reason} |", entry.name)
+                    },
+                };
+            }
+            let tests = row.tests.as_deref().unwrap_or_default();
+            let names: Vec<String> = tests
+                .iter()
+                .map(|test| alloc::format!("`{test}`"))
+                .collect();
+            let _infallible = writeln!(text, "\nTests: {}. {}.", tests.len(), names.join(", "));
+        }
+    }
+}
+
+/// The count of the next twins that the census names.
+const NEXT: usize = 3;
+
+/// `count` words, as a text.
+///
+/// # Specification
+/// trivial.
+fn words(count: usize) -> String
+{
+    if count == 1 {
+        String::from("1 word")
+    }
+    else {
+        alloc::format!("{count} words")
+    }
+}
+
+/// The name of each test in `source`, the text of a Rust file: each
+/// function after an attribute `#[test]`, in the order of the text.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one name for each line `#[test]` that a line with `fn <name>`
+///   follows, after other attributes and comments.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the names
+///
+/// # Adequacy
+/// - hypothesis: L3 — a text with a test, a test with a second attribute, a
+///   function with no attribute and an attribute in a comment.
+/// - witness: `tests::census::each_function_after_a_test_attribute_is_a_test`
+#[must_use]
+#[inline]
+pub fn test_names(source: &str) -> Vec<String>
+{
+    let mut names = Vec::new();
+    let mut pending = false;
+    for line in source.lines() {
+        let line = line.trim_start();
+        if line == "#[test]" {
+            pending = true;
+            continue;
+        }
+        if !pending || line.starts_with("#[") || line.starts_with("//") {
+            continue;
+        }
+        pending = false;
+        let Some((_, rest)) = line.split_once("fn ")
+        else {
+            continue;
+        };
+        let name: String = rest
+            .chars()
+            .take_while(|&c| c.is_alphanumeric() || c == '_')
+            .collect();
+        if !name.is_empty() {
+            names.push(name);
+        }
+    }
+    names
 }
 
 /// `part of whole`, with the share in whole percent, rounded down, when
