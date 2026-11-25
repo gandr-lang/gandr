@@ -33,6 +33,7 @@
 //! | --- | --- | --- |
 //! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
 //! | `=` ending the line of a `let`, a `var` or an assignment in a statement block | a statement block after the `=` | `;` |
+//! | `=>` ending the line of an item that a line-leading `\|` begins: an arm, a clause | a statement block after the `=>` | `;` |
 //! | `where` ending a `match` head | an arm list | none: a line-leading `\|` separates arms |
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
@@ -59,7 +60,9 @@
 //! name of a `type`, a `sort`, a `module` or a `face` opens nothing, because
 //! its right side is no expression. A `{` after `glob` or `Cap` holds fields,
 //! so no `=` in it opens. A line that starts with an explicit `{` opens
-//! nothing, because a source in braces keeps its reading.
+//! nothing, because a source in braces keeps its reading. The `=>` of an arm
+//! or of a clause keeps its tile in the same way, and its block closes at the
+//! next line that stands at the column of the arms or left of it.
 //!
 //! An item ends with a separator only when it needs one. An item a
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
@@ -322,6 +325,13 @@ enum Pending
         /// The indentation of the opener's line.
         indent: u32,
     },
+    /// The `=>` of an arm or of a clause. It keeps its tile, and its block
+    /// opens after it.
+    Arm
+    {
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
     /// A `where` that opens a declaration body.
     Members
     {
@@ -547,6 +557,7 @@ impl Plan<'_>
 /// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
 /// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
 /// - witness: `label::layout::tests::a_statement_s_line_final_equals_opens_a_block_after_it`
+/// - witness: `label::layout::tests::an_arm_s_line_final_arrow_opens_a_block_after_it`
 /// - witness: `label::layout::tests::a_word_at_column_zero_ends_the_declaration_before_it`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
 #[expect(clippy::too_many_lines, reason = "one column-stack state machine")]
@@ -651,7 +662,7 @@ pub(super) fn lay_out(
             | Pending::Members { indent }
             | Pending::Arms { indent, .. }
             | Pending::ArmsWhere { indent, .. } => Some(Column(indent)),
-            Pending::Statement { .. } | Pending::None => None,
+            Pending::Statement { .. } | Pending::Arm { .. } | Pending::None => None,
         };
         let below = step
             .and(waiting)
@@ -699,6 +710,13 @@ pub(super) fn lay_out(
                     && column > indent
                     && !bool::from(names_no_expression(bytes, tokens, at))
                 {
+                    plan.place(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Semi);
+                }
+            },
+            Pending::Arm { indent } => {
+                pending = Pending::None;
+                if line_start && !brace && column > indent {
                     plan.place(Lexeme::LayoutOpen);
                     open(&mut frames, &mut plan, indent, Sep::Semi);
                 }
@@ -927,6 +945,7 @@ pub(super) fn lay_out(
                         | Pending::Members { .. }
                         | Pending::Arms { .. }
                         | Pending::Statement { .. }
+                        | Pending::Arm { .. }
                         | Pending::ArmsWhere { .. } => Pending::Members {
                             indent: line_indent,
                         },
@@ -969,6 +988,20 @@ pub(super) fn lay_out(
                             };
                         }
                         frame.head.opener = Opener::None;
+                    }
+                },
+                // The `=>` of an arm or of a clause keeps its tile. Its block
+                // opens after it, when the `=>` ends its line.
+                b"=>" => {
+                    if let Some(frame) = frames.last()
+                        && frame.head.lead == Lead::Bar
+                        && frame.holds == Holds::Statements
+                        && opener_allowed
+                        && pending == Pending::None
+                    {
+                        pending = Pending::Arm {
+                            indent: line_indent,
+                        };
                     }
                 },
                 b";" | b"," => {
@@ -1034,7 +1067,10 @@ pub(super) fn lay_out(
                 plan.place(Lexeme::LayoutOpen);
                 plan.shut(Sep::Arms);
             },
-            Pending::Arms { .. } | Pending::Statement { .. } | Pending::None => {},
+            Pending::Arms { .. }
+            | Pending::Statement { .. }
+            | Pending::Arm { .. }
+            | Pending::None => {},
         }
     }
     // What follows closes every block. The end of the source ends no
@@ -1692,6 +1728,56 @@ mod tests
         assert_eq!(
             marked("def f(x : A) -> A {\n  let a =\n    { x }\n  a\n}\n"),
             "def f(x : A) -> A {\n  let a =\n    { x }⟪;⟫\n  a\n}\n"
+        );
+    }
+
+    #[test]
+    fn an_arm_s_line_final_arrow_opens_a_block_after_it()
+    {
+        // The `=>` of an arm keeps its tile, and the block opens after it. The
+        // next arm's bar at the column of the arms closes the block and takes
+        // no separator.
+        assert_eq!(
+            marked(
+                "def f(x : A) -> A =\n  match x where\n    | a =>\n      let y = x\n      y\n    | b => x\n"
+            ),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫\n    | b => x⟪}⟫⟪}⟫\n"
+        );
+        // An arm in braces opens in the same way, and so does a clause of a
+        // handler.
+        assert_eq!(
+            marked(
+                "def f(x : A) -> A {\n  match x {\n    | a =>\n      let y = x\n      y\n    | b => x\n  }\n}\n"
+            ),
+            "def f(x : A) -> A {\n  match x {\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫\n    | b => x\n  }\n}\n"
+        );
+        assert_eq!(
+            marked(
+                "def f() -> A {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>\n      let y = g\n      k y\n  }\n}\n"
+            ),
+            "def f() -> A {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>⟪{⟫\n      let y = g⟪;⟫\n      k y⟪}⟫\n  }\n}\n"
+        );
+        // The last arm's block closes with the arms, and the statement that
+        // binds the match takes its separator.
+        assert_eq!(
+            marked(
+                "def f(x : A) -> A {\n  let n = match x where\n    | a =>\n      let y = x\n      y\n  n\n}\n"
+            ),
+            "def f(x : A) -> A {\n  let n = match x ⟪where→{⟫\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫⟪}⟫⟪;⟫\n  n\n}\n"
+        );
+        // A line at the arm's column opens nothing, nor a line that starts
+        // with an explicit `{`, nor a `=>` inside a bracket.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  match x {\n    | a =>\n    | b => x\n  }\n}\n"),
+            "def f(x : A) -> A {\n  match x {\n    | a =>\n    | b => x\n  }\n}\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  match x {\n    | a =>\n      { x }\n  }\n}\n"),
+            "def f(x : A) -> A {\n  match x {\n    | a =>\n      { x }\n  }\n}\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"),
+            "def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"
         );
     }
 
