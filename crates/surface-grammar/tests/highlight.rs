@@ -603,31 +603,33 @@ fn layout_takes_a_role_only_as_a_comment_or_a_shebang() -> Result<(), Failure>
 }
 
 /// A layout word is the open of its block, and its role is a keyword's: a
-/// line-final `do`, and the line-final `where` of a `match` head. A `{` that
-/// the source writes keeps the role of a bracket.
+/// line-final `do`, the line-final `then` of an `if` head, and the line-final
+/// `where` of a `match` head. A `{` that the source writes keeps the role of a
+/// bracket.
 #[test]
 fn a_layout_word_is_a_keyword() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
     let source = SourceText::from(
-        "def f(b : Bool, n : Integer) -> Integer {\n  while n > 0 do\n    g n\n  match b where\n    | true => n\n    | false => 0\n}\n",
+        "def f(b : Bool, n : Integer) -> Integer {\n  while n > 0 do\n    g n\n  if b then\n    g n\n  else\n    g 0\n  match b where\n    | true => n\n    | false => 0\n}\n",
     );
     let parsed = parse(&pbg, source)?;
     let spans = table.highlight(parsed.tree())?;
     let read: Vec<(&str, HlRole)> = spans
         .iter()
         .map(|span| (<&str>::from(text_of(source, span.range)), span.role))
-        .filter(|&(text, _role)| matches!(text, "do" | "where" | "{"))
+        .filter(|&(text, _role)| matches!(text, "do" | "then" | "where" | "{"))
         .collect();
     assert_eq!(
         [
             ("{", HlRole::Other),
             ("do", HlRole::Keyword),
+            ("then", HlRole::Keyword),
             ("where", HlRole::Keyword)
         ],
         read[..],
-        "the written brace, then the two layout words"
+        "the written brace, then the three layout words"
     );
     Ok(())
 }

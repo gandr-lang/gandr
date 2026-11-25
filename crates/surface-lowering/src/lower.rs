@@ -5406,6 +5406,66 @@ mod tests
         );
     }
 
+    /// A conditional by layout, with `then` at the head's end and `else` on a
+    /// line of its own, lowers to the core of its form in braces. So does a
+    /// chain of `else if c then`.
+    #[test]
+    fn a_laid_out_conditional_is_its_braced_form_8066()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def one_laid(b : Bool) -> Integer =\n  if b then\n    1\n  else\n    2\n\
+                 def one_braced(b : Bool) -> Integer {\n  if b { 1 } else { 2 }\n}\n\
+                 def chain_laid(a : Bool, b : Bool) -> Integer =\n  if a then\n    2\n  \
+                 else if b then\n    1\n  else\n    0\n\
+                 def chain_braced(a : Bool, b : Bool) -> Integer {\n  \
+                 if a { 2 } else if b { 1 } else { 0 }\n}\n",
+            ),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        for (laid, braced) in [("one_laid", "one_braced"), ("chain_laid", "chain_braced")] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(laid), body(braced)),
+                gandr_core_term::CertificateEquality::Equal,
+                "`{laid}` by layout lowers as `{braced}` in braces"
+            );
+        }
+    }
+
+    /// A `then` that does not end its line opens no block, and no form reads
+    /// the word, so the `if` holds a hole where its first block stands.
+    #[test]
+    fn a_then_inside_a_line_is_refused_at_the_word_8066()
+    {
+        let pbg = grammar();
+        let source = "def f(b : Bool) -> Integer =\n  if b then 1 else 2\n";
+        let start = source.find("then").unwrap_or_default();
+        let tree = repaired(&pbg, SourceText::from(source));
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: span(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(4))
+                ),
+                form: FormName::from(NamedKind("if_expression")),
+                fault: FormFault::Repaired(
+                    Repair::Grout(gandr_surface_syntax::GroutShape::Convex,)
+                ),
+            },
+            "a term is missing in the `if` at its `then`"
+        );
+    }
+
     /// A laid-out block of one expression, after the `=` of a `def` with no
     /// result arrow, lowers to that expression's core. A block in written
     /// braces, and a laid-out block with a statement, stay refused by their
