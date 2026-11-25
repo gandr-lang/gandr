@@ -5,4 +5,4 @@ module Plain where {
 }
 
 @[refuses("NotAFunctor")]
-module Applied = Plain(Plain);
+module Applied = Plain Plain;

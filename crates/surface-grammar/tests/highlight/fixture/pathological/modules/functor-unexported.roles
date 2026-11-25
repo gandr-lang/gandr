@@ -72,7 +72,5 @@
 793..803 Type "Unreadable"
 804..805 Other "="
 806..815 Type "MkCounter"
-815..816 Other "("
 816..822 Type "Unread"
-822..823 Other ")"
-823..824 Other ";"
+822..823 Other ";"

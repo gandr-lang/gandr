@@ -8249,7 +8249,10 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Present(repaired) = pieces.repair
             && !self.carried(pieces).0
         {
-            return refused(repaired.refusal(FormName::MODULE));
+            return refused(
+                self.glued(pieces, repaired)
+                    .unwrap_or_else(|| repaired.refusal(FormName::MODULE)),
+            );
         }
         if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
             return match Self::application(&mut cursor) {
@@ -8480,15 +8483,70 @@ impl<'source> Collector<'_, 'source>
         }))
     }
 
+    /// The refusal of a functor application whose argument is glued to the
+    /// functor's name, `module A = F(B) ;`: the binding reads `=` and the
+    /// name, and stops unended where a `(` touches the name.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the pieces of a module form, and `repaired`
+    ///   their repair.
+    /// - ensures: [`LoweringRefusal::MalformedForm`] of the module with
+    ///   [`FormFault::GluedArgument`] at the repair's point, when the repair is
+    ///   [`crate::form::Repair::Unended`], the last two pieces are the `=` tile
+    ///   and a name tile, and the source writes `(` at that point; nothing
+    ///   otherwise.
+    /// - panics: none.
+    /// - executable: none — the clause reads the source text at the repair,
+    ///   which no predicate over the pieces states more simply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a glued argument and a glued dotted argument are
+    ///   refused by name, and a module that stops after `=` alone keeps the
+    ///   refusal of its repair.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_glued_argument_is_refused_by_name`
+    fn glued(
+        &self,
+        pieces: &Pieces,
+        repaired: crate::form::Repaired,
+    ) -> Option<LoweringRefusal<'source>>
+    {
+        let unended = matches!(repaired.repair, crate::form::Repair::Unended(_));
+        let point = repaired.span.start();
+        let written = pieces
+            .pieces
+            .iter()
+            .filter(|piece| piece.placed().span.end() <= point)
+            .collect::<Vec<_>>();
+        let applied = matches!(
+            written.as_slice(),
+            [
+                ..,
+                Piece::Tile { label: equals, .. },
+                Piece::Tile { label: functor, .. },
+            ] if *equals == TileName::EQUALS
+                && (*functor == TileName::TYPE_IDENTIFIER || *functor == TileName::IDENTIFIER)
+        );
+        let source = self.tree.source();
+        let text: &str = source.as_ref();
+        let opened = text
+            .get(usize::from(repaired.span.start()) ..)
+            .is_some_and(|rest| rest.starts_with('('));
+        (unended && applied && opened).then_some(LoweringRefusal::MalformedForm {
+            span: repaired.span,
+            form: FormName::MODULE,
+            fault: FormFault::GluedArgument,
+        })
+    }
+
     /// Read a functor application's tail past its `=`: `F P(.p)* ;`, or a
-    /// flow's, `f P(.p)* ;`, the argument bare or in parentheses.
+    /// flow's, `f P(.p)* ;`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the binding's `=`.
     /// - ensures: the functor's or the flow's name tile and the argument path's
-    ///   segment tiles, at least one, when the tail reads `F P(.p)* ;` or `F(P(.p)*)
-    ///   ;` and nothing follows it; absent, the cursor at the first tile out of
-    ///   place, otherwise.
+    ///   segment tiles, at least one, when the tail reads `F P(.p)* ;` and
+    ///   nothing follows it; absent, the cursor at the first tile out of place,
+    ///   otherwise.
     /// - provides: the application half of [`Self::header`].
     /// - fails: never.
     /// - panics: none.
@@ -8514,7 +8572,6 @@ impl<'source> Collector<'_, 'source>
                 Maybe::Absent(_) => return misplaced,
             },
         };
-        let enclosed = matches!(cursor.tile(TileName::PAREN_OPEN), Maybe::Present(_));
         let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             return misplaced;
@@ -8529,9 +8586,6 @@ impl<'source> Collector<'_, 'source>
                 },
             };
             argument.push(segment);
-        }
-        if enclosed && let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
-            return misplaced;
         }
         if let (Maybe::Present(_), Maybe::Absent(_)) =
             (cursor.tile(TileName::SEMICOLON), cursor.peek())

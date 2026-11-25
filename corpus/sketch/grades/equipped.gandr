@@ -34,10 +34,10 @@ module Cache(g : Model Grade) where {
 }
 
 /// The cache that counts, where `1 + 1` is two loads.
-module CountedCache = Cache(Count);
+module CountedCache = Cache Count;
 
 /// The cache that tracks usage, where `1 + 1` is many.
-module UsedCache = Cache(Usage);
+module UsedCache = Cache Usage;
 
 /// Reads once outside a block and twice inside it. The block counts its
 /// reads, and `Usage` grades the rest.

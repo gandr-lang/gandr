@@ -2039,7 +2039,7 @@ impl Offering<'_>
             let read = match label.answer.through {
                 Through::Exact => module.clone(),
                 Through::Flow { ref flow, .. } => {
-                    let _written = writeln!(written, "module {TRANSLATED}{at} = {flow}({module});");
+                    let _written = writeln!(written, "module {TRANSLATED}{at} = {flow} {module};");
                     format!("{TRANSLATED}{at}")
                 },
                 Through::Renaming {

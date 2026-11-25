@@ -1587,8 +1587,8 @@ pathological/module-signature-mismatch.gandr:Bad:47b2a13b160a2f63 uncommented
 pathological/modules/functor-mistyped.gandr:Integral.T:150abf207ffa9972 uncommented
 pathological/modules/functor-unexported.gandr:Unread.T:150abf207ffa9972 uncommented
 pathological/modules/generative-distinctness.gandr:<file> uncommented
-pathological/modules/generative-distinctness.gandr:A:05a377b022ce9502 uncommented
-pathological/modules/generative-distinctness.gandr:B:20cb0ad0a9e69c5f uncommented
+pathological/modules/generative-distinctness.gandr:A:9fa3ef7790c8e9c8 uncommented
+pathological/modules/generative-distinctness.gandr:B:455ca14e529606a5 uncommented
 pathological/modules/generative-distinctness.gandr:MkCounter.T:36d0df2ade0a5201 uncommented
 pathological/modules/generative-distinctness.gandr:MkCounter.seed:9bc64e9d1a0a4fbe uncommented
 pathological/modules/generative-distinctness.gandr:MkCounter.step:8d7befebc669a72d uncommented

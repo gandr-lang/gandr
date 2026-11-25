@@ -2681,7 +2681,7 @@ mod tests
             marked(SourceText::from(include_str!(
                 "hover/unformatted/a-module-instantiation-answers-itself-never-a-member-s-type-405.gandr"
             ))),
-            Ok(fenced(SourceText::from("module A = Keep(Seed)")))
+            Ok(fenced(SourceText::from("module A = Keep Seed")))
         );
     }
 

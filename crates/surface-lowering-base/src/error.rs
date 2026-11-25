@@ -534,6 +534,10 @@ pub enum FormFault
     /// An implicit supplied twice in one bracket, by name twice or by position
     /// and by name, `f[T, .a = U]`.
     SuppliedTwice,
+    /// A functor application whose argument is glued to the functor's name,
+    /// `module A = F(B) ;`. The argument follows the name after a space,
+    /// `module A = F B ;`.
+    GluedArgument,
 }
 
 /// Why a `builtin` mark binds its declaration to no row of the builtin table.
@@ -643,6 +647,7 @@ impl fmt::Display for FormFault
             },
             Self::CompoundPositional => f.write_str("supplies a compound value by position"),
             Self::SuppliedTwice => f.write_str("supplies one implicit twice"),
+            Self::GluedArgument => f.write_str("glues the argument to the functor"),
         }
     }
 }

@@ -596,6 +596,9 @@ fn lowered(
                 FormFault::SuppliedTwice => {
                     f.write_str("this implicit is supplied a second time")
                 },
+                FormFault::GluedArgument => {
+                    f.write_str("this functor application glues its argument to the functor")
+                },
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
                         ClosingClass::Paren => "(",

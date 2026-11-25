@@ -776,14 +776,13 @@ fn functor_parameter() -> Regex
 ///
 /// The argument is a path, `IntOrd` or `Outer.Inner`, never a structure
 /// literal: an application names modules that exist, and an inline structure
-/// is a module binding written first. The glued argument, `= MkSet(IntOrd)
-/// ;`, stays read until the sources move to the juxtaposed one.
+/// is a module binding written first.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an equals sign, the functor's name of either case, the argument
-///   path bare or in parentheses, and a semicolon; the path is a type name
-///   followed by any number of dotted segments of either name case.
+/// - ensures: an equals sign, the functor's name of either case, a type name
+///   followed by any number of dotted segments of either name case, and a
+///   semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -793,25 +792,17 @@ fn functor_parameter() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && [(0_usize, "="), (3, ";")].iter().all(|&(at, label)| parts.get(at).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))) && [1_usize, 2].iter().all(|&at| parts.get(at).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref names) if names.len() == 2)))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && [(0_usize, "="), (2, "type_identifier"), (4, ";")].iter().all(|&(at, label)| parts.get(at).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref names) if names.len() == 2)) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
 fn functor_application_tail() -> Regex
 {
-    let argument = || {
-        seq([
-            t(TileLabel("type_identifier")),
-            repeat(seq([
-                t(TileLabel(".")),
-                alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
-            ])),
-        ])
-    };
     seq([
         t(TileLabel("=")),
         alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
-        alt([
-            argument(),
-            seq([t(TileLabel("(")), argument(), t(TileLabel(")"))]),
-        ]),
+        t(TileLabel("type_identifier")),
+        repeat(seq([
+            t(TileLabel(".")),
+            alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+        ])),
         t(TileLabel(";")),
     ])
 }

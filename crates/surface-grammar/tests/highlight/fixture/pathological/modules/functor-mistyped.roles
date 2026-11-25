@@ -88,7 +88,5 @@
 940..948 Type "Mistyped"
 949..950 Other "="
 951..960 Type "MkCounter"
-960..961 Other "("
 961..969 Type "Integral"
-969..970 Other ")"
-970..971 Other ";"
+969..970 Other ";"

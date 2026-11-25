@@ -93,14 +93,16 @@ use crate::failure::Failure;
 /// ends at a bare value name, `M.f` (#8307), then by a `where` before the
 /// block of `rec`, then by the handler's words `effect … handle`, then by the
 /// pipeline field `e |>.m a`, then by the descent `[<]` as an operand of its
-/// own, `el [<] a`, then by the wildcard as a type atom, `Path[.A = A] a _`.
-const BUILT_IN_FINGERPRINT: u64 = 0x8791_f051_8982_739d;
+/// own, `el [<] a`, then by the wildcard as a type atom, `Path[.A = A] a _`,
+/// then by a functor application whose argument is juxtaposed, `module A = F
+/// B ;`.
+const BUILT_IN_FINGERPRINT: u64 = 0xe3aa_5bda_fddd_ec73;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3197);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3195);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -117,8 +119,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 1),
     ("&&", 1),
     ("&{", 2),
-    ("(", 131),
-    (")", 135),
+    ("(", 130),
+    (")", 134),
     ("*", 2),
     ("*=", 17),
     ("*{", 9),

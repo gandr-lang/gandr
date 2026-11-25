@@ -4306,7 +4306,7 @@ data NatUnits : Type where {{
         let report = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"module Mk(C : *{ zero : Integer }) where { @[ checks ] def seed = C.zero ; } module Bare where { @[ checks ] def other = 1 ; } @[ refuses("UnknownMember") ] module Applied = Mk(Bare) ; @[ refuses("UnresolvedName") ] def b = z ;"#,
+                r#"module Mk(C : *{ zero : Integer }) where { @[ checks ] def seed = C.zero ; } module Bare where { @[ checks ] def other = 1 ; } @[ refuses("UnknownMember") ] module Applied = Mk Bare ; @[ refuses("UnresolvedName") ] def b = z ;"#,
             ),
         );
         let unsettled: Vec<_> = report
