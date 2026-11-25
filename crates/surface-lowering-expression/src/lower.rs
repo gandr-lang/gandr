@@ -7388,17 +7388,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(Some((bound, rest)))
     }
 
-    /// Classify a block standing as a computation, `{ let x = c ; … c }`.
+    /// Classify a block standing as a computation, `{ let x = c ; … c }`, or
+    /// a laid-out block of one expression where a value stands.
     ///
     /// # Specification
     /// - requires: `site` is a block in term position.
-    /// - ensures: a block standing as a computation reads its statements and
+    /// - ensures: a block whose open the layout pass wrote, which holds one
+    ///   expression and no statement, where a value is read, reads as that
+    ///   expression, as a parenthesis does, and is planned transparent over it;
+    ///   each other block standing as a computation reads its statements and
     ///   its last computation as a thunk's or a lambda's block does, under its
     ///   own frame, passes the answer its position states and the paths through
     ///   its position to its last computation, runs the paths on to its
     ///   statements when a path passes it, and is planned over them.
     /// - provides: sequencing where one computation is read, a match arm's body
-    ///   among them.
+    ///   among them, and the body of a `def` on the lines after its `=`.
     /// - fails: yields the wrong-sort refusal outside computation position, the
     ///   block's own refusal, and the unreachable refusal for statements after
     ///   one every path of which exits.
@@ -7409,11 +7413,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block arm binds its statement over its last
-    ///   computation, and a block where a value is read is refused.
+    ///   computation, a block where a value is read is refused, and a laid-out
+    ///   block of one expression lowers to that expression's core.
     /// - witness: `gandr-surface-lowering::lower::tests::a_block_standing_as_a_computation_binds_its_statements`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_laid_out_block_of_one_expression_is_that_expression_8065`
     #[spec(
         ensures: |ret| {
             ret.is_err()
+                || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Transparent(_)))
                 || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Block(Block { statements, .. })) if self.cx().statements.whole(statements).is_some())
         },
     )]
@@ -7423,6 +7430,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        if let Reading::Value(_) = site.reading
+            && let Some(inner) = self.laid_one(&cursor)?
+        {
+            self.group(site, inner);
+            self.read(inner.node, site.reading);
+            if let Some(&answer) = self.cx().answers.get(&site.at.node) {
+                let _passed = self.cx_mut().answers.insert(inner.node, answer);
+            }
+            if let Some(&inherited) = self.cx().inherited.get(&site.at.node) {
+                let _passed = self.cx_mut().inherited.insert(inner.node, inherited);
+            }
+            Exits::new(self.host()).pass_paths(site.at.node, inner.node);
+            self.plan(site, Plan::Transparent(inner.node));
+            return Ok(());
+        }
         let frame = self.require(site, Produced::Computation)?;
         let body = self.block(site, &mut cursor, frame)?;
         let answer = match self.cx().answers.get(&site.at.node) {
@@ -7440,6 +7462,64 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         self.plan(site, Plan::Block(body));
 
         Ok(())
+    }
+
+    /// The one expression of the block `cursor` stands at, when the layout
+    /// pass wrote the block's open and the block holds no statement: `e`, or
+    /// `e ;` before its close.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the block's open.
+    /// - ensures: `Some` exactly when the open is no written `{` and one
+    ///   operand that ends no statement, then at most a `;`, then the close are
+    ///   all the block holds; the cursor is left where it stands.
+    /// - fails: a fault reading a form inside the block.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a laid-out block of one expression, and a block in
+    ///   written braces of one expression, at a `def`'s value.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_laid_out_block_of_one_expression_is_that_expression_8065`
+    ///
+    /// # Cost
+    /// - allocation: the copy of the cursor's position, setup
+    fn laid_one(
+        &self,
+        cursor: &Cursor<'_>,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
+    {
+        let mut ahead = cursor.clone();
+        let Maybe::Present(open) = ahead.tile(TileName::BRACE_OPEN)
+        else {
+            return Ok(None);
+        };
+        let source = self.cx().tree.source();
+        let text: &str = source.as_ref();
+        if text.get(usize::from(open.span.start()) .. usize::from(open.span.end())) == Some("{") {
+            return Ok(None);
+        }
+        let Maybe::Present(Piece::Operand(first)) = ahead.peek()
+        else {
+            return Ok(None);
+        };
+        if self.shared().ends_a_statement(first, &ahead)?.0 {
+            return Ok(None);
+        }
+        let Run::One(one) = ahead.operands()
+        else {
+            return Ok(None);
+        };
+        if let Maybe::Present(_) = ahead.at(TileName::SEMICOLON) {
+            let _semicolon = ahead.tile(TileName::SEMICOLON);
+        }
+        let Maybe::Present(_) = ahead.tile(TileName::BRACE_CLOSE)
+        else {
+            return Ok(None);
+        };
+        Ok(matches!(ahead.peek(), Maybe::Absent(_)).then_some(one))
     }
 
     /// Classify a function tail, `def f(x: A, …) -> B { … }` or `def f(x: A,

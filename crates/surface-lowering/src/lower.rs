@@ -5406,6 +5406,53 @@ mod tests
         );
     }
 
+    /// A laid-out block of one expression, after the `=` of a `def` with no
+    /// result arrow, lowers to that expression's core. A block in written
+    /// braces, and a laid-out block with a statement, stay refused by their
+    /// sort.
+    #[test]
+    fn a_laid_out_block_of_one_expression_is_that_expression_8065()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def three_laid : Integer =\n  3\ndef three_plain : Integer = 3;\n\
+                 def four_laid : Integer =\n  three_plain ;\n\
+                 def four_plain : Integer = three_plain;\n",
+            ),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        for (laid, plain) in [("three_laid", "three_plain"), ("four_laid", "four_plain")] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(laid), body(plain)),
+                gandr_core_term::CertificateEquality::Equal,
+                "`{laid}`'s block of one expression lowers as `{plain}`'s expression"
+            );
+        }
+        let pbg = grammar();
+        for source in [
+            "def three : Integer = { 3 };\n",
+            "def three : Integer =\n  let x = 3\n  x\n\ndef four : Integer = 4;\n",
+        ] {
+            let tree = parsed(&pbg, SourceText::from(source));
+            assert!(
+                matches!(refusal_in(&pbg, &tree), LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::WrongSort,
+                    ..
+                }),
+                "a block that is no laid-out block of one expression stays a computation at a value: {source:?}"
+            );
+        }
+    }
+
     #[test]
     fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
