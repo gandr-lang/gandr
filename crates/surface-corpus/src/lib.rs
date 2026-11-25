@@ -336,6 +336,8 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+#[cfg(test)]
+mod census;
 mod distribution;
 mod expectation;
 #[cfg(test)]
