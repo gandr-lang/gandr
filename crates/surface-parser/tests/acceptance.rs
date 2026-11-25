@@ -913,6 +913,14 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
             (Oblig::MissingTile, ","),
         ],
     ),
+    // A bare copattern clause in the block after a `def`'s line-final `=`:
+    // a block statement holds no clause, so the parse owes the clause's
+    // tiles. A copattern body after `=` is a lazy record, `&{ .l => e }`.
+    ("fixture/model/codata/codata-parameterized.gandr", &[
+        (Oblig::MissingTile, "="),
+        (Oblig::MissingTile, "=>"),
+        (Oblig::MissingTile, ""),
+    ]),
     // A codata block holds no face: the grammar molds no `face` among its
     // observations, and the checker refuses the form (`MalformedForm`, #6604).
     // #6504 owes the face of a codata declaration, and its landing removes
@@ -1732,11 +1740,11 @@ fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Failure>
 fn a_closer_reaches_its_open_partner_6323() -> Result<(), Failure>
 {
     for (rel, dropped) in [
-        ("model/tasks/forced.gandr", 74_usize),
-        ("model/sessions/seat-exchange.gandr", 117),
-        ("model/completion/closed-statements.gandr", 50),
-        ("pathological/completion/buffer-orphaned.gandr", 52),
-        ("model/identity/model-counter-manifest-explicit.gandr", 137),
+        ("model/tasks/forced.gandr", 75_usize),
+        ("model/sessions/seat-exchange.gandr", 118),
+        ("model/completion/closed-statements.gandr", 51),
+        ("pathological/completion/buffer-orphaned.gandr", 53),
+        ("model/identity/model-counter-manifest-explicit.gandr", 142),
     ] {
         let source = std::fs::read_to_string(corpus_root().join(rel))?;
         let token = label(SourceFragment::from(source.as_str()))
@@ -1832,7 +1840,9 @@ fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Failure>
 /// application of `Dyad` took no operand there, so the parse owed a
 /// `MissingMeld` at `Dyad ⟦⟧(`, and the declaration fell apart (#6029). The
 /// call form `Dyad(` owed no such meld. A `?` dropped from a result type tears
-/// the group of `Run` in the same way.
+/// the group of `Run` in the same way. The torn result type holds the body
+/// after it, so the `=` and the end of the body each owe one tile, in the
+/// call form too.
 #[test]
 fn a_torn_group_stays_the_operand_of_its_juxtaposition_6029() -> Result<(), Failure>
 {
@@ -1847,7 +1857,7 @@ fn a_torn_group_stays_the_operand_of_its_juxtaposition_6029() -> Result<(), Fail
             include_str!(
                 "acceptance/unformatted/a-torn-group-stays-the-operand-of-its-juxtaposition-6029-run.gandr"
             ),
-            4_usize,
+            6_usize,
         ),
     ] {
         let result = parse(built(), SourceText::from(source))?;
@@ -1881,14 +1891,16 @@ fn a_torn_group_stays_the_operand_of_its_juxtaposition_6029() -> Result<(), Fail
 }
 
 /// A `def rec` that lost the `)` of its parameters keeps its reading when a
-/// declaration follows it: one minted `)` before its `->`, and the declaration
-/// after it whole.
+/// declaration follows it: one minted `)`, and the declaration after it
+/// whole.
 ///
 /// The frontier of the `def rec` stays in its parameters, whose next tile can
 /// be their `)`. When the close at the separator ends the `def rec` there, it
 /// mints the end of the `def rec` and one more missing tile, and the `def rec`
 /// falls apart into loose tiles (#5911). The separator stays in the
 /// declaration, and the repair at its end mints the `)` where the rest parses.
+/// The `->` continues the parameter's type `Bool -> Bool`, so the `)` stands
+/// before the `=`.
 #[test]
 fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Failure>
 {
@@ -1903,8 +1915,8 @@ fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Failure>
         result.obligations()
     );
     let closer = source
-        .find("x : Bool")
-        .map(|at| at.saturating_add("x : Bool".len()))
+        .find("x : Bool -> Bool")
+        .map(|at| at.saturating_add("x : Bool -> Bool".len()))
         .ok_or("the parameter is written")?;
     let minted: Vec<usize> = tree
         .positions()
@@ -1915,7 +1927,7 @@ fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Failure>
     assert_eq!(
         vec![closer],
         minted,
-        "the `)` is minted after the parameter's type, before the `->`"
+        "the `)` is minted after the parameter's type, before the `=`"
     );
     let declarations: Vec<String> = children(tree, tree.root())
         .into_iter()
@@ -1983,7 +1995,8 @@ fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result
 }
 
 /// A token left out before the group of a juxtaposed type in a binder owes
-/// what the call form owes, and the intact result type owes nothing.
+/// what the call form owes, and the intact result type owes nothing. The
+/// damaged binder holds the body too, so the body owes its own repairs.
 ///
 /// A name left out of `Run ((Seat.Dispatch) >? end)` leaves the `.` of a
 /// type path open in the binder. The slot below `Run` in the result type then
@@ -2031,8 +2044,11 @@ fn a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_610
             "the juxtaposed type owes what its call owes: {juxtaposed:?}"
         );
         let arrow = juxtaposed.find("->").ok_or("the result type is written")?;
+        let equals = juxtaposed.rfind('=').ok_or("the body is written")?;
         assert!(
-            applied.iter().all(|&(_, at)| at < arrow),
+            applied
+                .iter()
+                .all(|&(_, at)| !(arrow .. equals).contains(&at)),
             "the result type owes nothing: {juxtaposed:?} owes {applied:?}"
         );
     }

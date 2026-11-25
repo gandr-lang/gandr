@@ -1844,19 +1844,18 @@ mod tests
     #[test]
     fn a_line_final_opener_opens_a_block_at_the_next_column()
     {
-        // A body's `=` is the block's brace.
+        // A body's `=` keeps its tile, and the block opens after it.
         assert_eq!(
             marked("def f(x : A) -> A =\n  let y = x\n  y\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪;⟫\n  y⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n  let y = x⟪;⟫\n  y⟪}⟫⟪;⟫\n"
         );
         // A `=` with its body on its own line opens nothing.
         assert_eq!(
             marked("def f(x : A) -> A = x;\n"),
             "def f(x : A) -> A = x;\n"
         );
-        // The `where` ending a `match` head is the arms' brace, as a body's
-        // `=` is the body's: the arms take no separator, after an answer type
-        // too.
+        // The `where` ending a `match` head is the arms' brace: the arms take
+        // no separator, after an answer type too.
         assert_eq!(
             marked("def f(x : A) -> A {\n  match x where\n    | a => a\n    | b => b\n}\n"),
             "def f(x : A) -> A {\n  match x ⟪where→{⟫\n    | a => a\n    | b => b⟪}⟫\n}\n"
@@ -1868,7 +1867,7 @@ mod tests
         // A line no further right than the head's closes its arms at once.
         assert_eq!(
             marked("def f(x : A) -> A =\n  match x where\ndef g(x : A) -> A = x;\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫⟪}⟫⟪}⟫\ndef g(x : A) -> A = x;\n"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫⟪}⟫⟪}⟫⟪;⟫\ndef g(x : A) -> A = x;\n"
         );
         // A bare `match` head ending its line opens its arms too, so the parse
         // stays whole and the lowering refuses the head by name.
@@ -1896,7 +1895,7 @@ mod tests
         // opens at once.
         assert_eq!(
             marked("def f(x : A) -> A =\ndef g(x : A) -> A = x;\n"),
-            "def f(x : A) -> A ⟪=→{⟫⟪}⟫\ndef g(x : A) -> A = x;\n"
+            "def f(x : A) -> A =⟪;⟫\ndef g(x : A) -> A = x;\n"
         );
     }
 
@@ -1932,7 +1931,7 @@ mod tests
         // separator, in a layout block and in braces.
         assert_eq!(
             marked("def f() -> A =\n  let *{b, n} = *{true, 2}\n  n\n"),
-            "def f() -> A ⟪=→{⟫\n  let *{b, n} = *{true, 2}⟪;⟫\n  n⟪}⟫\n"
+            "def f() -> A =⟪{⟫\n  let *{b, n} = *{true, 2}⟪;⟫\n  n⟪}⟫⟪;⟫\n"
         );
         assert_eq!(
             marked("def f() -> A {\n  let p = *{true, 2}\n  p\n}\n"),
@@ -1940,11 +1939,11 @@ mod tests
         );
         assert_eq!(
             marked("def f(b : B) -> A =\n  let n = match b { | t => 1 | f => 2 }\n  n\n"),
-            "def f(b : B) -> A ⟪=→{⟫\n  let n = match b { | t => 1 | f => 2 }⟪;⟫\n  n⟪}⟫\n"
+            "def f(b : B) -> A =⟪{⟫\n  let n = match b { | t => 1 | f => 2 }⟪;⟫\n  n⟪}⟫⟪;⟫\n"
         );
         assert_eq!(
             marked("def f() -> A =\n  let h = fork (t : S) {\n    close t\n  }\n  recv h\n"),
-            "def f() -> A ⟪=→{⟫\n  let h = fork (t : S) {\n    close t\n  }⟪;⟫\n  recv h⟪}⟫\n"
+            "def f() -> A =⟪{⟫\n  let h = fork (t : S) {\n    close t\n  }⟪;⟫\n  recv h⟪}⟫⟪;⟫\n"
         );
         // A `loop` that its own brace closes takes the separator too, and a
         // `}` before the block's close takes none.
@@ -1962,7 +1961,7 @@ mod tests
         // separator.
         assert_eq!(
             marked("def f(x : A) -> A =\n  let a =\n    let b = x\n    b\n  a\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  let a =⟪{⟫\n    let b = x⟪;⟫\n    b⟪}⟫⟪;⟫\n  a⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n  let a =⟪{⟫\n    let b = x⟪;⟫\n    b⟪}⟫⟪;⟫\n  a⟪}⟫⟪;⟫\n"
         );
         // A `var` and an assignment open in the same way, in braces too.
         assert_eq!(
@@ -2015,7 +2014,7 @@ mod tests
             marked(
                 "def f(x : A) -> A =\n  match x where\n    | a =>\n      let y = x\n      y\n    | b => x\n"
             ),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫\n    | b => x⟪}⟫⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫\n    | b => x⟪}⟫⟪}⟫⟪;⟫\n"
         );
         // An arm in braces opens in the same way, and so does a clause of a
         // handler.
@@ -2101,13 +2100,13 @@ mod tests
             marked(
                 "def f() -> A =\n  let desk = fork (seat : S) do\n    send seat x\n    close seat\n  recv desk\n"
             ),
-            "def f() -> A ⟪=→{⟫\n  let desk = fork (seat : S) ⟪do→{⟫\n    send seat x⟪;⟫\n    close seat⟪}⟫⟪;⟫\n  recv desk⟪}⟫\n"
+            "def f() -> A =⟪{⟫\n  let desk = fork (seat : S) ⟪do→{⟫\n    send seat x⟪;⟫\n    close seat⟪}⟫⟪;⟫\n  recv desk⟪}⟫⟪;⟫\n"
         );
         assert_eq!(
             marked(
                 "def f() -> A =\n  let g = fun (x : A) do\n    x\n  let t = thunk do\n    g y\n  force t\n"
             ),
-            "def f() -> A ⟪=→{⟫\n  let g = fun (x : A) ⟪do→{⟫\n    x⟪}⟫⟪;⟫\n  let t = thunk ⟪do→{⟫\n    g y⟪}⟫⟪;⟫\n  force t⟪}⟫\n"
+            "def f() -> A =⟪{⟫\n  let g = fun (x : A) ⟪do→{⟫\n    x⟪}⟫⟪;⟫\n  let t = thunk ⟪do→{⟫\n    g y⟪}⟫⟪;⟫\n  force t⟪}⟫⟪;⟫\n"
         );
         // The close of the block ends no declaration, so a definition whose
         // value the block ends takes its `;` before the next word at column
@@ -2144,13 +2143,13 @@ mod tests
         );
         assert_eq!(
             marked("def twice(x : A) =\n  let y = x\n  y\n"),
-            "def twice(x : A) =⟪{⟫\n  let y = x⟪;⟫\n  y⟪}⟫\n"
+            "def twice(x : A) =⟪{⟫\n  let y = x⟪;⟫\n  y⟪}⟫⟪;⟫\n"
         );
-        // The `=` of a `def` with a result arrow is the open of its brace
-        // body.
+        // The `=` of a `def` with a result arrow keeps its tile in the same
+        // way.
         assert_eq!(
             marked("def f() -> A =\n  x\ndef b = 1;\n"),
-            "def f() -> A ⟪=→{⟫\n  x⟪}⟫\ndef b = 1;\n"
+            "def f() -> A =⟪{⟫\n  x⟪}⟫⟪;⟫\ndef b = 1;\n"
         );
         // A `;` that ends the block's last line ends the `def`: the block
         // closes before it. A `;` before a line of the block stays in it.
@@ -2182,26 +2181,26 @@ mod tests
             marked(
                 "def f() -> Unit =\n  effect r : T do\n    let b = r.alloc 4\n    r.free b\n  handle\n    | pure(x) => pure x\n    | oper free(b, k) => k *{}\n"
             ),
-            "def f() -> Unit ⟪=→{⟫\n  effect r : T ⟪do→{⟫\n    let b = r.alloc 4⟪;⟫\n    r.free b⟪}⟫\n  handle⟪{⟫\n    | pure(x) => pure x\n    | oper free(b, k) => k *{}⟪}⟫⟪}⟫\n"
+            "def f() -> Unit =⟪{⟫\n  effect r : T ⟪do→{⟫\n    let b = r.alloc 4⟪;⟫\n    r.free b⟪}⟫\n  handle⟪{⟫\n    | pure(x) => pure x\n    | oper free(b, k) => k *{}⟪}⟫⟪}⟫⟪;⟫\n"
         );
         // A handler by name needs no block, and the close of the clauses
         // ends no statement.
         assert_eq!(
             marked("def f() -> Integer =\n  effect st : S.Eff do\n    st.get\n  handle Counting\n"),
-            "def f() -> Integer ⟪=→{⟫\n  effect st : S.Eff ⟪do→{⟫\n    st.get⟪}⟫\n  handle Counting⟪}⟫\n"
+            "def f() -> Integer =⟪{⟫\n  effect st : S.Eff ⟪do→{⟫\n    st.get⟪}⟫\n  handle Counting⟪}⟫⟪;⟫\n"
         );
         assert_eq!(
             marked(
                 "def f() -> Unit =\n  effect r : T do\n    r.free b\n  handle\n    | pure(x) => pure x\n  g\n"
             ),
-            "def f() -> Unit ⟪=→{⟫\n  effect r : T ⟪do→{⟫\n    r.free b⟪}⟫\n  handle⟪{⟫\n    | pure(x) => pure x⟪}⟫⟪;⟫\n  g⟪}⟫\n"
+            "def f() -> Unit =⟪{⟫\n  effect r : T ⟪do→{⟫\n    r.free b⟪}⟫\n  handle⟪{⟫\n    | pure(x) => pure x⟪}⟫⟪;⟫\n  g⟪}⟫⟪;⟫\n"
         );
         // A `handle` at the column of the body is a statement of the body.
         assert_eq!(
             marked(
                 "def f() -> Unit =\n  effect r : T do\n    r.free b\n    handle\n      | pure(x) => pure x\n"
             ),
-            "def f() -> Unit ⟪=→{⟫\n  effect r : T ⟪do→{⟫\n    r.free b⟪;⟫\n    handle⟪{⟫\n      | pure(x) => pure x⟪}⟫⟪}⟫⟪}⟫\n"
+            "def f() -> Unit =⟪{⟫\n  effect r : T ⟪do→{⟫\n    r.free b⟪;⟫\n    handle⟪{⟫\n      | pure(x) => pure x⟪}⟫⟪}⟫⟪}⟫⟪;⟫\n"
         );
     }
 
@@ -2214,14 +2213,14 @@ mod tests
         // after it.
         assert_eq!(
             marked("def f(b : Bool) -> Integer =\n  if b then\n    1\n  else\n    2\n"),
-            "def f(b : Bool) -> Integer ⟪=→{⟫\n  if b ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    2⟪}⟫⟪}⟫\n"
+            "def f(b : Bool) -> Integer =⟪{⟫\n  if b ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    2⟪}⟫⟪}⟫⟪;⟫\n"
         );
         // A chain: `else if c then` opens the block of the second test.
         assert_eq!(
             marked(
                 "def f(n : Integer) -> Integer =\n  if n > 1 then\n    2\n  else if n > 0 then\n    1\n  else\n    0\n"
             ),
-            "def f(n : Integer) -> Integer ⟪=→{⟫\n  if n > 1 ⟪then→{⟫\n    2⟪}⟫\n  else if n > 0 ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    0⟪}⟫⟪}⟫\n"
+            "def f(n : Integer) -> Integer =⟪{⟫\n  if n > 1 ⟪then→{⟫\n    2⟪}⟫\n  else if n > 0 ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    0⟪}⟫⟪}⟫⟪;⟫\n"
         );
         // The conditional's last close ends no statement, so the line end
         // writes the separator of the statement that holds it.
@@ -2229,7 +2228,7 @@ mod tests
             marked(
                 "def f(b : Bool) -> Integer =\n  let n = if b then\n    1\n  else\n    2\n  n\n"
             ),
-            "def f(b : Bool) -> Integer ⟪=→{⟫\n  let n = if b ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    2⟪}⟫⟪;⟫\n  n⟪}⟫\n"
+            "def f(b : Bool) -> Integer =⟪{⟫\n  let n = if b ⟪then→{⟫\n    1⟪}⟫\n  else⟪{⟫\n    2⟪}⟫⟪;⟫\n  n⟪}⟫⟪;⟫\n"
         );
         // A line that starts with `else` after a block in braces continues
         // the conditional too.
@@ -2240,11 +2239,11 @@ mod tests
         // A `then` inside a line, or after no `if`, stays a word.
         assert_eq!(
             marked("def f(b : Bool) -> Integer =\n  if b then 1 else 2\n"),
-            "def f(b : Bool) -> Integer ⟪=→{⟫\n  if b then 1 else 2⟪}⟫\n"
+            "def f(b : Bool) -> Integer =⟪{⟫\n  if b then 1 else 2⟪}⟫⟪;⟫\n"
         );
         assert_eq!(
             marked("def f() -> A =\n  g then\n    x\n"),
-            "def f() -> A ⟪=→{⟫\n  g then\n    x⟪}⟫\n"
+            "def f() -> A =⟪{⟫\n  g then\n    x⟪}⟫⟪;⟫\n"
         );
     }
 
@@ -2355,12 +2354,13 @@ mod tests
             marked(
                 "def f(x : A) -> A =\n  match x where\n    | a => g(a\n  y\ndef h(x : A) -> A = x;\n"
             ),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => g(a\n  y⟪}⟫⟪}⟫\ndef h(x : A) -> A = x;\n"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫\n    | a => g(a\n  y⟪}⟫⟪}⟫⟪;⟫\ndef h(x : A) -> A = x;\n"
         );
-        // The end of the source closes every block.
+        // The end of the source closes every block, and a top-level `def`
+        // whose `=` opened one takes its `;`.
         assert_eq!(
             marked("def f(x : A) -> A =\n  match x where\n    | a => a"),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => a⟪}⟫⟪}⟫"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫\n    | a => a⟪}⟫⟪}⟫⟪;⟫"
         );
     }
 
@@ -2371,13 +2371,13 @@ mod tests
         // the dented line is one more item of the block.
         assert_eq!(
             marked("def f(x : A) -> A =\n  let y = x\n let z = y\n  z\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪;⟫\n let z = y⟪;⟫\n  z⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n  let y = x⟪;⟫\n let z = y⟪;⟫\n  z⟪}⟫⟪;⟫\n"
         );
         // A line left of a block of two items, with no line after it at the
         // block's column, closes the block.
         assert_eq!(
             marked("def f(x : A) -> A =\n  let y = x\n  let z = y\n z\ndef g(x : A) -> A = x;\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪;⟫\n  let z = y⟪}⟫\n z⟪;⟫\ndef g(x : A) -> A = x;\n"
+            "def f(x : A) -> A =⟪{⟫\n  let y = x⟪;⟫\n  let z = y⟪}⟫\n z⟪;⟫\ndef g(x : A) -> A = x;\n"
         );
     }
 
@@ -2388,19 +2388,19 @@ mod tests
         // deleted `let` leaves it, so the block takes their column.
         assert_eq!(
             marked("def f(x : A) -> A =\n   y = x\n  let z = y\n  z\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n   y = x⟪;⟫\n  let z = y⟪;⟫\n  z⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n   y = x⟪;⟫\n  let z = y⟪;⟫\n  z⟪}⟫⟪;⟫\n"
         );
         // The block's last line moves it too.
         assert_eq!(
             marked("def f(x : A) -> A =\n   y = x\n  y\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n   y = x⟪;⟫\n  y⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n   y = x⟪;⟫\n  y⟪}⟫⟪;⟫\n"
         );
         // A line one column right of the enclosing block, after a block one
         // column right of the line, is an item whose keyword is gone. The
         // block closes before it.
         assert_eq!(
             marked("def f(x : A) -> A =\n  x\n g(x : A) -> A = x;\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  x⟪}⟫\n g(x : A) -> A = x;\n"
+            "def f(x : A) -> A =⟪{⟫\n  x⟪}⟫\n g(x : A) -> A = x;\n"
         );
     }
 
@@ -2422,7 +2422,7 @@ mod tests
         // stands at a block's column.
         assert_eq!(
             marked("def f(x : A) -> A =\n  match x where\n    | a => a\n| b => b\n    | c => c\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => a⟪}⟫⟪}⟫\n| b => b\n    | c => c\n"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫\n    | a => a⟪}⟫⟪}⟫\n| b => b\n    | c => c\n"
         );
     }
 
@@ -2432,12 +2432,12 @@ mod tests
         // A `)` with no bracket to close stays inside the block.
         assert_eq!(
             marked("def f(x : A) -> A =\n  let y = g x)\n  y\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  let y = g x)⟪;⟫\n  y⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n  let y = g x)⟪;⟫\n  y⟪}⟫⟪;⟫\n"
         );
         // A stray `}` still closes the blocks before it.
         assert_eq!(
             marked("def f(x : A) -> A =\n  let y = x}\n  y\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪}⟫}\n  y\n"
+            "def f(x : A) -> A =⟪{⟫\n  let y = x⟪}⟫}\n  y\n"
         );
     }
 
@@ -2449,11 +2449,11 @@ mod tests
         let source = "def f(x : A) -> A =\n  match x where\n    | a => match a where\n      | b => b\n| c => c\n";
         let line = u32::try_from(source.find("| c").unwrap_or_default()).unwrap_or(u32::MAX);
         let moved = |closes: u32| marked_moving(source, &[Move { line, closes }]);
-        let head = "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => match a ⟪where→{⟫\n      | b => b";
+        let head = "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫\n    | a => match a ⟪where→{⟫\n      | b => b";
         assert_eq!(marked(source), format!("{head}⟪}}⟫⟪}}⟫⟪}}⟫\n| c => c\n"));
-        assert_eq!(moved(0), format!("{head}\n| c => c⟪}}⟫⟪}}⟫⟪}}⟫\n"));
-        assert_eq!(moved(1), format!("{head}⟪}}⟫\n| c => c⟪}}⟫⟪}}⟫\n"));
-        assert_eq!(moved(2), format!("{head}⟪}}⟫⟪}}⟫\n| c => c⟪}}⟫\n"));
+        assert_eq!(moved(0), format!("{head}\n| c => c⟪}}⟫⟪}}⟫⟪}}⟫⟪;⟫\n"));
+        assert_eq!(moved(1), format!("{head}⟪}}⟫\n| c => c⟪}}⟫⟪}}⟫⟪;⟫\n"));
+        assert_eq!(moved(2), format!("{head}⟪}}⟫⟪}}⟫\n| c => c⟪}}⟫⟪;⟫\n"));
         // A count past the blocks the column closes closes every one of them.
         assert_eq!(moved(3), marked(source));
         // A word at column zero resets, and no move keeps it.
@@ -2471,15 +2471,15 @@ mod tests
         let first_moved = |closes: u32| marked_moving(first, &[Move { line, closes }]);
         assert_eq!(
             marked(first),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫⟪}⟫⟪}⟫\n| a => a\n    | b => b\n"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫⟪}⟫⟪}⟫\n| a => a\n    | b => b\n"
         );
         assert_eq!(
             first_moved(0),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n| a => a\n    | b => b⟪}⟫⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫\n| a => a\n    | b => b⟪}⟫⟪}⟫⟪;⟫\n"
         );
         assert_eq!(
             first_moved(1),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫⟪}⟫\n| a => a\n    | b => b⟪}⟫\n"
+            "def f(x : A) -> A =⟪{⟫\n  match x ⟪where→{⟫⟪}⟫\n| a => a\n    | b => b⟪}⟫⟪;⟫\n"
         );
     }
 }
