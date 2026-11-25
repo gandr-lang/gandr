@@ -28,6 +28,11 @@
 //! removes it ([`sweeps::PARTING`]). It fails for each other block that
 //! parts, and for each known block that joins.
 //!
+//! A second sweep holds the decision of the kernel against the oracle. It
+//! takes each admitted `data` declaration with rules, asks
+//! [`Presentation::converges`] of its presentation, and asks the oracle of the
+//! same rules. The two give one verdict for each presented type.
+//!
 //! # References
 //!
 //! - `vault:01a213f1-00b3-765d-b3f9-135dd191549f` — background: the two
@@ -47,8 +52,14 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_term::CoreArena;
+use gandr_kernel_term::Convergence;
+use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::Exhausted;
+use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::Presentation;
+use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::TheoryNode;
@@ -727,39 +738,16 @@ fn systems(
     let mut found = Vec::new();
     for marked in declarations {
         let declaration = marked.declaration();
-        let segments: Vec<&str> = declaration
-            .name()
-            .segments()
-            .iter()
-            .map(AsRef::as_ref)
-            .collect();
-        let name = if segments.is_empty() {
-            String::from("a declaration with no name")
-        }
-        else {
-            segments.join(".")
-        };
+        let name = named(declaration);
         match *declaration.content() {
             DeclarationContent::Data {
                 ref constructors, ..
             } if !declaration.presentation().rules().is_empty() => {
-                let arity = |tag: usize| constructors.get(tag).map(|fields| fields.len());
-                let node = |node: &RuleNode| match *node {
-                    RuleNode::Constructor(tag) => Node::Symbol(usize::from(tag)),
-                    RuleNode::Variable(variable) => Node::Variable(u32::from(variable)),
-                };
-                let sides: Vec<(Vec<Node>, Vec<Node>)> = declaration
-                    .presentation()
-                    .rules()
-                    .iter()
-                    .map(|rule| {
-                        (
-                            rule.left().iter().map(node).collect(),
-                            rule.right().iter().map(node).collect(),
-                        )
-                    })
-                    .collect();
-                found.push(read(name, &sides, arity, 0));
+                found.push(data_system(
+                    name,
+                    declaration.presentation(),
+                    &arities(constructors),
+                ));
             },
             DeclarationContent::Def { declared, body } => {
                 if !presents(arena, declarations, declared)
@@ -822,6 +810,144 @@ fn systems(
         }
     }
     found
+}
+
+/// The name of `declaration` for the report: its segments joined by dots.
+///
+/// # Specification
+/// trivial.
+fn named(declaration: &Declaration) -> String
+{
+    let segments: Vec<&str> = declaration
+        .name()
+        .segments()
+        .iter()
+        .map(AsRef::as_ref)
+        .collect();
+    if segments.is_empty() {
+        String::from("a declaration with no name")
+    }
+    else {
+        segments.join(".")
+    }
+}
+
+/// The field count of each constructor of `constructors`, in tag order.
+///
+/// # Specification
+/// trivial.
+fn arities<F>(constructors: &[F]) -> Vec<FieldCount>
+where
+    F: AsRef<[ValueTypeId]>,
+{
+    constructors
+        .iter()
+        .map(|fields| FieldCount::from(fields.as_ref().len()))
+        .collect()
+}
+
+/// The system of the rules of `presentation` over the constructor table that
+/// `arities` counts, named `name`; beside it the fault when a side is no one
+/// term.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`read`], over the rules of `presentation` with each
+///   constructor a symbol.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the sides and the system's terms, growth within the rules
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the sweep.
+/// - witness: `kernel_export::convergence::sweeps::each_admitted_block_with_rules_joins_its_critical_pairs`
+fn data_system(
+    name: String,
+    presentation: &Presentation,
+    arities: &[FieldCount],
+) -> (System, Option<String>)
+{
+    let arity = |tag: usize| arities.get(tag).map(|&count| usize::from(count));
+    let node = |node: &RuleNode| match *node {
+        RuleNode::Constructor(tag) => Node::Symbol(usize::from(tag)),
+        RuleNode::Variable(variable) => Node::Variable(u32::from(variable)),
+    };
+    let sides: Vec<(Vec<Node>, Vec<Node>)> = presentation
+        .rules()
+        .iter()
+        .map(|rule| {
+            (
+                rule.left().iter().map(node).collect(),
+                rule.right().iter().map(node).collect(),
+            )
+        })
+        .collect();
+    read(name, &sides, arity, 0)
+}
+
+/// The decision of the kernel on one admitted presented type, beside the
+/// oracle's system of the same rules.
+///
+/// # Specification
+/// trivial.
+struct Presented
+{
+    /// The oracle's system of the rules, and its fault when a side is no one
+    /// term.
+    system: (System, Option<String>),
+    /// The verdict of [`Presentation::converges`].
+    verdict: Result<Convergence, Exhausted>,
+    /// The fuel that the verdict spent.
+    spent: u64,
+}
+
+/// The decision of [`Presentation::converges`] on each admitted `data`
+/// declaration with rules, beside the oracle's system of its rules.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry for each `data` declaration of `declarations` whose
+///   presentation holds a rule, in order, with the verdict that
+///   [`Presentation::converges`] gives over the declaration's constructor table
+///   and the fuel it spent of an unbounded supply.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the systems and the arities, growth within the declarations'
+///   rules and constructor tables
+///
+/// # Adequacy
+/// - hypothesis: L3 — each admitted presented type of the repository has one
+///   entry, and its verdict agrees with the oracle.
+/// - witness: `kernel_export::convergence::sweeps::each_admitted_presented_type_converges_as_its_critical_pairs_join`
+fn presented(declarations: &[MarkedDeclaration]) -> Vec<Presented>
+{
+    declarations
+        .iter()
+        .map(MarkedDeclaration::declaration)
+        .filter_map(|declaration| match *declaration.content() {
+            DeclarationContent::Data {
+                ref constructors, ..
+            } if !declaration.presentation().rules().is_empty() => {
+                let arities = arities(constructors);
+                let presentation = declaration.presentation();
+                let mut fuel = RewriteFuel::from(u64::MAX);
+                let verdict = presentation.converges(&arities, &mut fuel);
+                Some(Presented {
+                    system: data_system(named(declaration), presentation, &arities),
+                    verdict,
+                    spent: u64::MAX.saturating_sub(u64::from(fuel)),
+                })
+            },
+            DeclarationContent::Data { .. }
+            | DeclarationContent::Def { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
+            | DeclarationContent::AbstractType { .. }
+            | DeclarationContent::Codata { .. } => None,
+        })
+        .collect()
 }
 
 /// Whether `declared` is the presentation code: an unapplied data type whose
@@ -929,9 +1055,11 @@ mod sweeps
     use alloc::vec::Vec;
     use std::path::Path;
 
+    use gandr_kernel_term::Convergence;
     use gandr_surface_grammar::built_in;
 
     use super::admitted;
+    use super::presented;
     use super::sources;
     use super::systems;
 
@@ -1035,6 +1163,58 @@ mod sweeps
             joined.is_empty(),
             "known parting blocks that join or are not admitted now; remove each from `PARTING`:\n{}",
             joined.join("\n")
+        );
+    }
+
+    /// The kernel decides each admitted presented type as the oracle does:
+    /// [`super::Presentation::converges`] gives `Converges` exactly where the
+    /// oracle joins each critical pair, and it ends within its fuel.
+    #[test]
+    fn each_admitted_presented_type_converges_as_its_critical_pairs_join()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut texts = Vec::new();
+        for root in ["corpus", "library", "crates"] {
+            texts.extend(sources(&repository.join(root)));
+        }
+        let mut verdicts: BTreeMap<String, String> = BTreeMap::new();
+        let mut disagreeing: BTreeSet<String> = BTreeSet::new();
+        for &(ref path, ref text) in &texts {
+            let Some((_, declarations)) = admitted(&pbg, path, text)
+            else {
+                continue;
+            };
+            let shown = path.strip_prefix(&repository).unwrap_or(path).display();
+            for entry in presented(&declarations) {
+                let (ref system, ref fault) = entry.system;
+                let key = format!("{} {:?} {:?}", system.name, system.symmetric, system.rules);
+                let verdict = verdicts.entry(key).or_insert_with(|| {
+                    let joins = fault.is_none() && system.parted().is_empty();
+                    match (entry.verdict, joins) {
+                        (Ok(Convergence::Converges), true)
+                        | (Ok(Convergence::Diverges { .. }), false) => String::new(),
+                        (verdict, _) => format!(
+                            "the kernel gives {verdict:?} after {} units of fuel, and the oracle {}",
+                            entry.spent,
+                            if joins { "joins each pair" } else { "parts" }
+                        ),
+                    }
+                });
+                if !verdict.is_empty() {
+                    let _new = disagreeing.insert(format!("{shown}: {}: {verdict}", system.name));
+                }
+            }
+        }
+        assert!(
+            !verdicts.is_empty(),
+            "the repository admits a presented type"
+        );
+        assert!(
+            disagreeing.is_empty(),
+            "admitted presented types, of {}, that the kernel and the oracle decide apart:\n{}",
+            verdicts.len(),
+            disagreeing.into_iter().collect::<Vec<_>>().join("\n")
         );
     }
 }
