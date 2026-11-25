@@ -1150,10 +1150,19 @@ name = "gandr-boot-core"
 version = "0.0.0"
 
 [[package]]
+name = "gandr-boot-data"
+version = "0.0.0"
+dependencies = [
+ "gandr-boot-alloc",
+ "gandr-boot-core",
+]
+
+[[package]]
 name = "gandr-boot-io"
 version = "0.0.0"
 dependencies = [
  "gandr-boot-core",
+ "nix",
 ]
 
 [[package]]
@@ -1536,6 +1545,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-runtime-mlir"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "gandr-theory-levitation",
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-runtime-net"
 version = "0.0.0"
 dependencies = [
@@ -1706,6 +1728,8 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-syntax",
  "gandr-theory-cellular-sheaves",
+ "gandr-theory-computads",
+ "gandr-theory-levitation",
  "gandr-theory-probability",
  "gandr-workflow-debt-ledger",
  "gandr-workflow-sweep",
@@ -1746,6 +1770,8 @@ version = "0.0.0"
 dependencies = [
  "allocation-counter",
  "blake3",
+ "gandr-boot-core",
+ "gandr-boot-io",
  "gandr-core-checker",
  "gandr-core-content",
  "gandr-core-fork",
