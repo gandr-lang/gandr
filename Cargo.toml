@@ -1,117 +1,9 @@
 [workspace]
 resolver = "3"
-members = [
-  "crates/boot-alloc",
-  "crates/boot-core",
-  "crates/boot-data",
-  "crates/boot-io",
-  "crates/core-checker",
-  "crates/core-checker-base",
-  "crates/core-checker-bridge",
-  "crates/core-content",
-  "crates/core-fork",
-  "crates/core-incremental",
-  "crates/core-nbe",
-  "crates/core-nbe-base",
-  "crates/core-publish",
-  "crates/core-sequent",
-  "crates/core-session",
-  "crates/core-term",
-  "crates/core-unify",
-  "crates/kernel-check-memo",
-  "crates/kernel-conversion-trace",
-  "crates/kernel-core",
-  "crates/kernel-core-base",
-  "crates/kernel-data",
-  "crates/kernel-strata",
-  "crates/kernel-term",
-  "crates/runtime-emitter",
-  "crates/runtime-mlir",
-  "crates/runtime-net",
-  "crates/runtime-rust-record",
-  "crates/runtime-stencils",
-  "crates/storage-artifact",
-  "crates/storage-chunker",
-  "crates/storage-records",
-  "crates/storage-schema",
-  "crates/storage-store",
-  "crates/storage-values",
-  "crates/surface-agentic",
-  "crates/surface-build-identity",
-  "crates/surface-corpus",
-  "crates/surface-diagnostics",
-  "crates/surface-dispatcher",
-  "crates/surface-driver",
-  "crates/surface-evaluate",
-  "crates/surface-features",
-  "crates/surface-format",
-  "crates/surface-grammar",
-  "crates/surface-layout",
-  "crates/surface-lowering",
-  "crates/surface-lowering-base",
-  "crates/surface-lowering-capability",
-  "crates/surface-lowering-exits",
-  "crates/surface-lowering-expression",
-  "crates/surface-lowering-identity",
-  "crates/surface-lowering-model",
-  "crates/surface-lowering-native",
-  "crates/surface-lsp",
-  "crates/surface-lsp-base",
-  "crates/surface-lsp-core",
-  "crates/surface-lsp-diagnostics",
-  "crates/surface-lsp-navigation",
-  "crates/surface-parser",
-  "crates/surface-pretty",
-  "crates/surface-render-remote",
-  "crates/surface-render-terminal",
-  "crates/surface-repl",
-  "crates/surface-session",
-  "crates/surface-syntax",
-  "crates/surface-tui",
-  "crates/theory-cell-complexes",
-  "crates/theory-cell-complexes-tools",
-  "crates/theory-cellular-sheaves",
-  "crates/theory-circuit-algebras",
-  "crates/theory-coherent-resolutions",
-  "crates/theory-computads",
-  "crates/theory-decomposition-spaces",
-  "crates/theory-deep-inference",
-  "crates/theory-discrete-morse",
-  "crates/theory-dynamic-graphs",
-  "crates/theory-e-graphs",
-  "crates/theory-exact-reals",
-  "crates/theory-graded-posets",
-  "crates/theory-graphs",
-  "crates/theory-levitation",
-  "crates/theory-nominal-automata",
-  "crates/theory-order-maintenance",
-  "crates/theory-ordered-algebras",
-  "crates/theory-path-orders",
-  "crates/theory-probability",
-  "crates/theory-shapes",
-  "crates/theory-sites",
-  "crates/theory-spec-combinators",
-  "crates/theory-stone-duality",
-  "crates/theory-virtual-doctrines",
-  "crates/workflow-build-state",
-  "crates/workflow-coverage-guard",
-  "crates/workflow-debt-ledger",
-  "crates/workflow-gate",
-  "crates/workflow-github",
-  "crates/workflow-host-tools",
-  "crates/workflow-hotpath-guard",
-  "crates/workflow-lane-budget",
-  "crates/workflow-ledger-split",
-  "crates/workflow-ledger-tasks",
-  "crates/workflow-output-store",
-  "crates/workflow-outputs",
-  "crates/workflow-parser-report",
-  "crates/workflow-prose",
-  "crates/workflow-spec-cost",
-  "crates/workflow-sweep",
-  "crates/workflow-test-timing",
-  "crates/workflow-twin-census",
-]
+# Each directory of the crates folder is a member. A directory with no
+# manifest stops each cargo command. A checkout can keep such a directory
+# after a crate leaves the tree. Remove it, or add it to `exclude`.
+members = ["crates/*"]
 # The reader links rustc's own libraries, which the `rustc-dev` component
 # supplies and which no other crate links. So it builds in a workspace of its
 # own, under `check:rust-record`, and no build of this workspace needs the
@@ -128,22 +20,17 @@ repository = "https://github.com/gandr-lang/gandr"
 license = "Apache-2.0 WITH LLVM-exception"
 publish = false
 
-# One table per dependency: what it is, `# features:` with the need behind
-# each enabled feature, `# consumers:`. Defaults are always off; a feature is
-# on only because a build or a test failed without it.
+# One table per dependency: what it is, and `# features:` with the need behind
+# each enabled feature. The default features are always off. A feature is on
+# only because a build or a test failed without it. `cargo tree --invert
+# <package> --depth 1 --edges normal,build,dev --prefix none` prints the
+# crates that take one.
 [workspace.dependencies]
 
 # Thread-local heap high-water measurements in the staging example, and the
 # heap the edit loop keeps in the session's measurement.
 # features:
 # - none: the allocator counter has no optional features.
-# consumers:
-# - core-checker (dev)
-# - core-fork (dev)
-# - surface-dispatcher (dev)
-# - surface-session (dev)
-# - theory-exact-reals (dev)
-# - theory-probability (dev)
 [workspace.dependencies.allocation-counter]
 version = "0.8.1"
 default-features = false
@@ -152,8 +39,6 @@ default-features = false
 # diagnostic into, the one rustc and cargo render through. Defaults off: `std`
 # only gives `anstyle` an `io::Write` sink, and a rendering is a `String`.
 # The choice, its alternatives and its reversal are in the consumer's docs.
-# consumers:
-# - surface-render-terminal
 [workspace.dependencies.annotate-snippets]
 version = "0.12.17"
 default-features = false
@@ -172,93 +57,6 @@ default-features = false
 # - anodized: compile the development backend; `--cfg anodized_panic` selects
 #   enforcement for the whole build graph, independently of build profile.
 #   The feature alone never enables enforcement.
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-nbe
-# - core-publish
-# - core-sequent
-# - core-session
-# - core-term
-# - core-unify
-# - kernel-check-memo
-# - kernel-conversion-trace
-# - kernel-core
-# - kernel-strata
-# - kernel-term
-# - runtime-mlir
-# - runtime-net
-# - runtime-rust-record
-# - storage-artifact
-# - storage-chunker
-# - storage-records
-# - storage-schema
-# - storage-store
-# - storage-values
-# - surface-agentic
-# - surface-corpus
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-driver
-# - surface-features
-# - surface-format
-# - surface-grammar
-# - surface-layout
-# - surface-lowering
-# - surface-lowering-base
-# - surface-lowering-capability
-# - surface-lowering-exits
-# - surface-lowering-expression
-# - surface-lowering-identity
-# - surface-lowering-model
-# - surface-lowering-native
-# - surface-lsp
-# - surface-lsp-base
-# - surface-parser
-# - surface-pretty
-# - surface-render-remote
-# - surface-render-terminal
-# - surface-repl
-# - surface-session
-# - surface-syntax
-# - surface-tui
-# - theory-cell-complexes
-# - theory-cell-complexes-tools
-# - theory-cellular-sheaves
-# - theory-circuit-algebras
-# - theory-coherent-resolutions
-# - theory-computads
-# - theory-decomposition-spaces
-# - theory-deep-inference
-# - theory-discrete-morse
-# - theory-dynamic-graphs
-# - theory-exact-reals
-# - theory-graded-posets
-# - theory-graphs
-# - theory-levitation
-# - theory-nominal-automata
-# - theory-order-maintenance
-# - theory-ordered-algebras
-# - theory-path-orders
-# - theory-probability
-# - theory-shapes
-# - theory-sites
-# - theory-spec-combinators
-# - theory-stone-duality
-# - theory-virtual-doctrines
-# - workflow-build-state
-# - workflow-coverage-guard
-# - workflow-host-tools
-# - workflow-hotpath-guard
-# - workflow-lane-budget
-# - workflow-ledger-split
-# - workflow-ledger-tasks
-# - workflow-output-store
-# - workflow-outputs
-# - workflow-spec-cost
-# - workflow-sweep
-# - workflow-test-timing
-# - workflow-twin-census
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
 git = "https://github.com/gandr-lang/quenchant"
@@ -273,8 +71,6 @@ features = ["anodized"]
 # features:
 # - none: `weak`, `serde` and the experimental strategies stay off. The
 #   snapshot is a strong `Arc`, and nothing serialises it.
-# consumers:
-# - storage-store
 [workspace.dependencies.arc-swap]
 version = "1.9.3"
 default-features = false
@@ -287,25 +83,6 @@ default-features = false
 # The engine hub names its sockets by it, and a sweep's sample orders its
 # sources by it. A finding of the prose gate keys its sentence by it. A plan
 # keys its minimal form by it, and the emitter keys each machine block by it.
-# consumers:
-# - core-incremental
-# - kernel-core
-# - runtime-emitter
-# - runtime-rust-record
-# - storage-artifact
-# - storage-records
-# - storage-schema
-# - storage-values
-# - surface-build-identity (build script, dev)
-# - surface-corpus (dev)
-# - surface-lsp
-# - surface-lsp-base
-# - surface-syntax
-# - theory-exact-reals
-# - workflow-output-store
-# - workflow-outputs
-# - workflow-prose
-# - workflow-sweep
 [workspace.dependencies.blake3]
 version = "1.8.7"
 default-features = false
@@ -317,9 +94,6 @@ default-features = false
 # reversal are in the pull request of #6899 that adds it.
 # features:
 # - none: the crate has no feature to turn on.
-# consumers:
-# - runtime-net
-# - storage-store
 [workspace.dependencies.boxcar]
 version = "0.2.14"
 default-features = false
@@ -334,20 +108,6 @@ default-features = false
 # - usage: the usage line `--help` and an argument error print
 # - error-context: the context an argument error reports
 # - env: `GANDR_JOBS`, the environment's default for `--jobs`
-# consumers:
-# - surface-driver
-# - workflow-build-state
-# - workflow-coverage-guard
-# - workflow-gate
-# - workflow-host-tools
-# - workflow-hotpath-guard
-# - workflow-lane-budget
-# - workflow-ledger-split
-# - workflow-ledger-tasks
-# - workflow-prose
-# - workflow-spec-cost
-# - workflow-test-timing
-# - workflow-twin-census
 [workspace.dependencies.clap]
 version = "4.6.6"
 default-features = false
@@ -356,8 +116,6 @@ features = ["derive", "env", "error-context", "help", "std", "usage"]
 # Standing observer workers exchange jobs and results.
 # features:
 # - std: Sender/Receiver and bounded are absent without hosted support.
-# consumers:
-# - core-checker (dev)
 [workspace.dependencies.crossbeam-channel]
 version = "0.5.17"
 default-features = false
@@ -366,8 +124,6 @@ features = ["std"]
 # Standing observer workers balance irregular admission families.
 # features:
 # - std: Injector/Worker are absent without hosted epoch support.
-# consumers:
-# - core-checker (dev)
 [workspace.dependencies.crossbeam-deque]
 version = "0.8.8"
 default-features = false
@@ -379,8 +135,6 @@ features = ["std"]
 # a consumer reads, and over a ring of our own.
 # features:
 # - alloc: `ArrayQueue` in the `no_std` fork crate
-# consumers:
-# - core-fork
 [workspace.dependencies.crossbeam-queue]
 version = "0.3.14"
 default-features = false
@@ -394,23 +148,15 @@ features = ["alloc"]
 # features:
 # - fast: precomputed tables, so a verification costs 24 µs rather than 40
 # - zeroize: a signing key's bytes are cleared when it drops
-# consumers:
-# - kernel-core
 [workspace.dependencies.ed25519-dalek]
 version = "3.0.0"
 default-features = false
 features = ["fast", "zeroize"]
 
-# Snapshot comparison for the frozen tables of the grammar, the printer's
-# layout goldens and the inline completion's ranking golden: a file or an
-# inline literal compared whole, a diff on mismatch, and a rewrite under
-# `UPDATE_EXPECT=1`. It has no features to leave off.
-# consumers:
-# - surface-format (dev)
-# - surface-grammar (dev)
-# - surface-lsp (dev)
-# - surface-lsp-base (dev)
-# - surface-pretty (dev)
+# The snapshot comparison for the frozen tables of the grammar, the layout
+# goldens of the printer and the ranking golden of the inline completion. It
+# compares a file or an inline literal whole. It prints a diff on a mismatch.
+# `UPDATE_EXPECT=1` writes the file again. It has no optional feature.
 [workspace.dependencies.expect-test]
 version = "1.5.1"
 default-features = false
@@ -422,239 +168,117 @@ default-features = false
 # reversals are in the consumers' READMEs and module docs.
 # features:
 # - none: the fixed-seed state needs neither `std` nor a random seed
-# consumers:
-# - core-incremental
-# - surface-grammar
-# - surface-pretty
-# - theory-deep-inference
 [workspace.dependencies.foldhash]
 version = "0.2.0"
 default-features = false
 
 # The kernel's mapping calls with no C library, and a heap of size classes
 # over them.
-# consumers:
-# - boot-data
-# - runtime-emitter
 [workspace.dependencies.gandr-boot-alloc]
 path = "crates/boot-alloc"
 
-# The operations on a range of bytes that allocate nothing, with the range
-# that a function of the layer `boot` reads and the place that it writes.
-# consumers:
-# - boot-data
-# - boot-io
-# - surface-dispatcher (Linux x86-64)
+# The operations on a range of bytes that allocate nothing. Each operation
+# has the range that a function of the layer `boot` reads, and the place that
+# it writes.
 [workspace.dependencies.gandr-boot-core]
 path = "crates/boot-core"
 
-# The IO core of the bootstrap with no C library: the read of a file and the
-# write to a descriptor, each by the crate's own system call on Linux x86-64.
-# consumers:
-# - surface-dispatcher (Linux x86-64)
+# The IO core of the bootstrap with no C library. It reads a file and writes
+# to a descriptor, each time by its own system call on Linux x86-64.
 [workspace.dependencies.gandr-boot-io]
 path = "crates/boot-io"
 
-# The checking judgement: the name-free declaration input, the verdicts, the
-# obligation ledger and the refusal vocabulary.
-# consumers:
-# - core-incremental
-# - surface-corpus
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-lowering (dev)
-# - surface-render-terminal (dev)
-# - surface-pretty (dev)
-# - surface-repl
-# - surface-session
+# The judgement that checks a declaration: its name-free input, the verdicts,
+# the ledger of obligations and the words of a refusal.
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
 
-# The base of the checking judgement: the faces, the declaration input, the
-# module run, the verdicts, the obligation ledger and the refusal vocabulary.
-# consumers:
-# - core-checker
-# - core-checker-bridge
+# The base of the judgement that checks a declaration. It holds the faces,
+# the input of a declaration, the run of a module and the verdicts. It also
+# holds the ledger of obligations and the words of a refusal.
 [workspace.dependencies.gandr-core-checker-base]
 path = "crates/core-checker-base"
 
 # The kernel bridge of the checking judgement: readmission through the
 # kernel's one checked entry, and the staging templates.
-# consumers:
-# - core-checker
-# - core-checker-base (dev)
 [workspace.dependencies.gandr-core-checker-bridge]
 path = "crates/core-checker-bridge"
 
 # The content form of a core node: its canonical table, numbered by
 # discovery, free of arena ids and admission positions, and its mint.
-# consumers:
-# - core-incremental
-# - surface-dispatcher
-# - surface-pretty
-# - surface-repl
-# - surface-session
-# - surface-tui (dev)
 [workspace.dependencies.gandr-core-content]
 path = "crates/core-content"
 
 # The fork a check hands its independent jobs to, and its serial reference.
-# consumers:
-# - core-checker
-# - surface-dispatcher
-# - surface-driver (dev)
-# - surface-session
-# - workflow-parser-report
 [workspace.dependencies.gandr-core-fork]
 path = "crates/core-fork"
 
-# Incremental checking over the core judgement: the item seam, validated
-# resume, content-addressed checkpoints, the synthesis stream and the kernel
-# verdict store.
-# consumers:
-# - surface-driver
-# - surface-lsp
-# - surface-pretty (dev)
-# - surface-repl
-# - surface-session
-# - surface-tui (dev)
+# The incremental check over the core judgement. It holds the seam of an
+# item, the resume with its validation and the checkpoints by content. It
+# also holds the synthesis stream and the store of kernel verdicts.
 [workspace.dependencies.gandr-core-incremental]
 path = "crates/core-incremental"
 
-# Normalisation by evaluation over the core: weak-head evaluation, readback,
-# the conversion machine whose recorded traces the kernel replays, and the
-# oracle the tiers' readback is compared against.
-# consumers:
-# - core-checker
-# - core-sequent (dev)
-# - kernel-core (dev)
-# - surface-dispatcher
-# - surface-pretty (dev)
-# - surface-repl
-# - surface-session
+# The normal forms by evaluation of the core. It holds the weak-head
+# evaluation, the readback and the conversion machine. The kernel replays the
+# traces of that machine. The oracle of this crate checks the readback of
+# each tier.
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
 
-# The base of the glued value domain: the per-run arena, closures, values and
-# neutrals, free indices, content guards, element identity, the stage terms,
-# and the sharing overlay with its erasure and its measure.
-# consumers:
-# - core-nbe
+# The base of the glued value domain. It holds the arena of a run, the
+# closures, the values and the neutrals, and the free indices. It also holds
+# the content guards, the identity of an element and the stage terms. The
+# sharing overlay has its erasure and its measure.
 [workspace.dependencies.gandr-core-nbe-base]
 path = "crates/core-nbe-base"
 
 # The one writer that publishes a file whole: a private temporary created
 # exclusively, then renamed onto its name.
-# consumers:
-# - core-incremental
-# - runtime-rust-record
 [workspace.dependencies.gandr-core-publish]
 path = "crates/core-publish"
 
-# The sequent intermediate language: focusing a core term into commands,
-# the store a run answers into, and reading a run's terminal back.
-# consumers:
-# - runtime-emitter
-# - runtime-net (dev)
-# - runtime-stencils (dev)
-# - surface-dispatcher
+# The sequent intermediate language. It focuses a core term into commands. A
+# run answers into its store, and the language reads the terminal of a run.
 [workspace.dependencies.gandr-core-sequent]
 path = "crates/core-sequent"
 
-# Contractive binary session types and their one relation engine: the
-# judgement decides endpoint equivalence and subtyping through it, and a
-# dialogue's causal web and its decomposition come from it.
-# consumers:
-# - core-checker
-# - core-nbe
-# - runtime-emitter
+# Contractive binary session types and their one relation engine. The
+# judgement decides endpoint equivalence and the subtype relation through it.
+# The causal web of a dialogue and its decomposition come from it.
 [workspace.dependencies.gandr-core-session]
 path = "crates/core-session"
 
 # The core call-by-push-value syntax, the one unified context, the definition
 # chain and the per-scope definitional environment.
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-nbe
-# - core-sequent
-# - core-session
-# - core-unify
-# - kernel-core (dev)
-# - runtime-emitter
-# - runtime-mlir (dev)
-# - runtime-stencils (dev)
-# - surface-corpus
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-format
-# - surface-lowering
-# - surface-lowering-base
-# - surface-lowering-capability
-# - surface-lowering-exits
-# - surface-lowering-expression
-# - surface-lowering-identity
-# - surface-lowering-model
-# - surface-lowering-native
-# - surface-pretty
-# - surface-repl
-# - surface-session
-# - workflow-ledger-tasks
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
 
-# The metacontext and the solver an elaborator calls for the metavariables
-# it creates: the checker solves the holes a call nominates for the implicits
-# it omits.
-# consumers:
-# - core-checker
+# The metacontext and the solver that an elaborator calls for its
+# metavariables. The checker solves the holes that a call names for the
+# implicits that it omits.
 [workspace.dependencies.gandr-core-unify]
 path = "crates/core-unify"
 
 # The support-keyed check-memo seam, generic over consumer-owned types.
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-nbe
-# - kernel-core
 [workspace.dependencies.gandr-kernel-check-memo]
 path = "crates/kernel-check-memo"
 
 # The conversion-decision seam between the untrusted engine and the kernel.
-# consumers:
-# - core-checker
-# - core-nbe
-# - kernel-core
-# - kernel-term
-# - surface-corpus (dev)
-# - theory-coherent-resolutions (dev)
 [workspace.dependencies.gandr-kernel-conversion-trace]
 path = "crates/kernel-conversion-trace"
 
-# The certified kernel's checking machine, conversion, admission and the
-# replay of conversion traces.
-# features: none; synchronous no_std certificate replay.
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-nbe (dev)
-# - core-session
-# - surface-corpus (dev)
-# - surface-dispatcher
-# - surface-driver
-# - surface-lowering (dev)
-# - theory-coherent-resolutions (dev)
-# - theory-levitation (dev)
+# The checking machine of the certified kernel, the conversion, the admission,
+# and the check of a conversion trace again.
+# features: none. The check of a certificate is synchronous and no_std.
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"
 default-features = false
 
-# The kernel's record and its rewriting: admitted entries and their staging,
-# content encoding, check support, term rewriting, the kernel's refusals, and
-# verdict keys and receipts.
-# consumers:
-# - kernel-core
-# - surface-build-identity
+# The record of the kernel and its rewriting. It holds the admitted entries
+# and their staging, the content encoding and the check support. It also
+# holds the rewrite of terms, the refusals of the kernel, and the verdict keys
+# and receipts.
 [workspace.dependencies.gandr-kernel-core-base]
 path = "crates/kernel-core-base"
 
@@ -663,89 +287,32 @@ path = "crates/kernel-core-base"
 [workspace.dependencies.gandr-kernel-data]
 path = "crates/kernel-data"
 
-# The certified kernel's universe-level oracle.
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-nbe
-# - core-sequent
-# - core-term
-# - core-unify
-# - kernel-core
-# - kernel-term
-# - runtime-emitter
-# - storage-artifact (dev)
-# - surface-dispatcher
-# - surface-lowering
-# - surface-lowering-expression
-# - surface-lowering-identity
-# - surface-lowering-model
-# - surface-lowering-native
-# - surface-pretty
-# - surface-session (dev)
+# The oracle of the certified kernel for the levels of a universe.
 [workspace.dependencies.gandr-kernel-strata]
 path = "crates/kernel-strata"
 
-# The flat term arena, the subterm-table sharing format, and the decode budgets;
-# the leaf vocabularies the core language reads rather than restates.
-# features: none; native session code and evidence data.
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-nbe
-# - core-sequent
-# - core-session
-# - core-term
-# - core-unify
-# - kernel-core
-# - runtime-emitter
-# - runtime-net (dev)
-# - runtime-stencils (dev)
-# - storage-artifact
-# - surface-corpus
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-format
-# - surface-lowering
-# - surface-lowering-capability
-# - surface-lowering-exits
-# - surface-lowering-expression
-# - surface-lowering-identity
-# - surface-lowering-model
-# - surface-lowering-native
-# - surface-pretty
-# - surface-repl (dev)
-# - surface-session
-# - surface-tui (dev)
-# - theory-coherent-resolutions (dev)
-# - theory-levitation (dev)
+# The flat term arena, the format of the subterm table and the decode budgets.
+# It also holds the leaf vocabularies that the core language reads and does
+# not state again.
+# features: none. The crate holds native session code and evidence data.
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 default-features = false
 
 # The `gandr` driver: its verbs over the surface pipeline, the hub and the
 # faces it serves.
-# consumers:
-# - surface-driver (dev)
 [workspace.dependencies.gandr-lang]
 path = "crates/surface-driver"
 
-# Copy-and-patch emission: the lowering of the command IL, the patchers for
-# arm64 on macOS and Linux and for Linux x86-64, the content cache and the
-# native tier's policy, falling back to the portable executor.
-# consumers:
-# - core-sequent (dev)
-# - runtime-net (dev)
-# - runtime-stencils (dev)
-# - surface-dispatcher
+# The copy-and-patch emission. It lowers the command IL, and it has the
+# patchers for arm64 on macOS and Linux and for Linux x86-64. It holds the
+# content cache and the policy of the native tier. When it cannot emit, it
+# uses the portable executor.
 [workspace.dependencies.gandr-runtime-emitter]
 path = "crates/runtime-emitter"
 
 # The host's network for the `Net` interface: streams to peers named by
 # their keys, over QUIC through iroh, on a thread beside the program.
-# consumers:
-# - surface-dispatcher
-# - surface-driver
 [workspace.dependencies.gandr-runtime-net]
 path = "crates/runtime-net"
 
@@ -754,364 +321,174 @@ path = "crates/runtime-net"
 # alone. A consumer that reads the cache sets `std`.
 # features:
 # - std: set by surface-dispatcher, which reads the cache and runs the reader
-# consumers:
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-lowering (dev)
-# - surface-lowering-base
-# - surface-lowering-expression
 [workspace.dependencies.gandr-runtime-rust-record]
 path = "crates/runtime-rust-record"
 default-features = false
 
 # The L machine's transitions written once: the stencils the emitter copies
 # and the portable executor that dispatches the same functions.
-# consumers:
-# - runtime-emitter (build and normal)
 [workspace.dependencies.gandr-runtime-stencils]
 path = "crates/runtime-stencils"
 
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.
-# consumers:
-# - surface-corpus (dev)
-# - surface-session
 [workspace.dependencies.gandr-storage-artifact]
 path = "crates/storage-artifact"
 
-# Content-defined chunking: where a stream of canonical units is cut, and the
-# committed parameters that decide it.
-# consumers:
-# - storage-records
-# - storage-store
-# - runtime-emitter
-# - runtime-net (dev)
-# - storage-values
+# The content-defined chunks: the place where a stream of canonical units
+# breaks, and the committed parameters that decide that place.
 [workspace.dependencies.gandr-storage-chunker]
 path = "crates/storage-chunker"
 
 # The authenticated ordered-record plane.
-# consumers:
-# - storage-artifact
-# - storage-schema
-# - storage-store
-# - storage-values (dev)
-# - surface-corpus (dev)
-# - surface-lsp
-# - surface-repl
-# - surface-session
 [workspace.dependencies.gandr-storage-records]
 path = "crates/storage-records"
 
 # One store over the value plane, the record plane and named roots, under one
 # directory.
-# consumers:
-# - surface-dispatcher
-# - surface-driver
 [workspace.dependencies.gandr-storage-store]
 path = "crates/storage-store"
 
 # The content-addressed value plane: one value as a typed chunk DAG under
 # content pointers.
-# consumers:
-# - runtime-emitter
-# - runtime-net
-# - storage-store
-# - surface-dispatcher
 [workspace.dependencies.gandr-storage-values]
 path = "crates/storage-values"
 
-# The agentic face of the engine hub: the Reactive Agent Protocol's toolset
-# by default, and the Model Context Protocol for compatibility, both over
-# the hub's one table of operations.
-# consumers:
-# - surface-driver
+# The agentic face of the engine hub. It serves the toolset of the Reactive
+# Agent Protocol by default, and the Model Context Protocol for compatibility.
+# Both go through the one table of operations of the hub.
 [workspace.dependencies.gandr-surface-agentic]
 path = "crates/surface-agentic"
 
 # The identities of a build: the kernel's build identity and the build of the
 # theory sites, each a digest of what its library compiles. A binary alone
 # depends on it, so a change of a digest compiles no library again.
-# consumers:
-# - surface-driver
 [workspace.dependencies.gandr-surface-build-identity]
 path = "crates/surface-build-identity"
 
 # The expectation language: the expectation schemas, the strict and fixture
-# roots, the settle comparison and the report shape.
-# consumers:
-# - runtime-stencils (dev)
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-render-terminal (dev)
-# - surface-repl
-# - surface-session
-# - workflow-ledger-tasks
+# roots, the comparison that settles a value and the shape of a report.
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
 
 # The diagnostics model: refusals, unsettled declarations, goals, warnings and
 # ledger lines as diagnostics every face projects, and their builders.
-# consumers:
-# - surface-dispatcher
-# - surface-driver
-# - surface-format
-# - surface-lsp
-# - surface-lsp-base
-# - surface-render-terminal
-# - surface-repl
-# - surface-session (dev)
-# - workflow-ledger-tasks
-# - workflow-outputs
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
 
 # Routes a driver invocation into the surface pipeline, and composes that
 # pipeline over the sources a verb walks.
-# consumers:
-# - runtime-stencils (dev)
-# - surface-agentic
-# - surface-diagnostics (dev)
-# - surface-driver
-# - surface-lsp
-# - surface-render-terminal (dev)
-# - surface-repl
-# - surface-session
-# - surface-tui
-# - workflow-ledger-tasks
-# - workflow-outputs
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
 # The run stage: each run of a checked module's program, native or on the
 # executor, and the engine the composition and the walk take.
-# consumers:
-# - runtime-stencils (dev)
-# - surface-diagnostics (dev)
-# - surface-dispatcher (dev)
-# - surface-driver
-# - surface-lsp
-# - surface-render-terminal (dev)
-# - surface-repl
-# - surface-session
-# - workflow-ledger-tasks
-# - workflow-outputs
 [workspace.dependencies.gandr-surface-evaluate]
 path = "crates/surface-evaluate"
 
 # The features ledger as data: the record `gandr check` reads at the toolchain
 # step, and the rows the tools list and show.
-# consumers:
-# - surface-agentic
-# - surface-dispatcher
-# - surface-driver
-# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-features]
 path = "crates/surface-features"
 
-# The source formatter: a parsed source laid out at a page width, its tokens
-# and comments kept and its meaning checked unchanged.
-# consumers:
-# - surface-dispatcher
-# - surface-driver
-# - surface-lsp
+# The source formatter. It sets a parsed source at a page width. It keeps
+# the tokens and the comments, and it checks that the meaning does not change.
 [workspace.dependencies.gandr-surface-format]
 path = "crates/surface-format"
 
-# The checked precedence-bounded grammar: its mold table, its precedence
-# DAG, the built-in surface the melder pushes over, and the table pairing
-# each glyph with its ASCII spelling.
-# consumers:
-# - runtime-mlir (dev)
-# - surface-corpus
-# - surface-diagnostics (dev)
-# - surface-dispatcher
-# - surface-driver
-# - surface-format
-# - surface-lowering
-# - surface-lowering-base (dev)
-# - surface-lowering-capability
-# - surface-lowering-exits
-# - surface-lowering-expression
-# - surface-lsp
-# - surface-lsp-base
-# - surface-parser
-# - surface-pretty
-# - surface-render-terminal (dev)
-# - surface-repl
-# - surface-session
-# - surface-tui
-# - workflow-ledger-tasks
-# - workflow-outputs
-# - workflow-parser-report
+# The checked precedence-bounded grammar: its mold table and its precedence
+# DAG. It holds the default surface, which the melder pushes. It also holds the
+# table that pairs each glyph with its ASCII spelling.
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
 # The document-layout engine: the sealed document arena, Pareto resolution
 # under width taint, the plan arena and the first-order render machine.
-# consumers:
-# - surface-format
-# - surface-pretty
 [workspace.dependencies.gandr-surface-layout]
 path = "crates/surface-layout"
 
-# Lowering the surface into the core: resolution, module collection, the
-# attribute side table, the origin table and the refusal classifier.
-# consumers:
-# - runtime-mlir (dev)
-# - surface-corpus
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-format
-# - surface-lowering-base (dev)
-# - surface-lsp
-# - surface-lsp-base
-# - surface-render-terminal (dev)
-# - surface-session
-# - workflow-ledger-tasks
+# The lowering of the surface into the core: resolution, module collection,
+# the attribute side table, the origin table and the refusal classifier.
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
 
 # The base of the lowering: the namespace engine, the per-node table, the
 # form stretches and the circuit readings that the lowering's families share.
-# consumers:
-# - surface-lowering
-# - surface-lowering-capability
-# - surface-lowering-exits
-# - surface-lowering-expression
-# - surface-lowering-identity
-# - surface-lowering-model
-# - surface-lowering-native
 [workspace.dependencies.gandr-surface-lowering-base]
 path = "crates/surface-lowering-base"
 
 # The capability family of the lowering: capability scopes and their
 # handlers, session endpoints, method calls and field access, over the
 # lowering's base.
-# consumers:
-# - surface-lowering
-# - surface-lowering-expression
 [workspace.dependencies.gandr-surface-lowering-capability]
 path = "crates/surface-lowering-capability"
 
-# The exits family of the lowering: early exits commuted to where a body
-# ends, a loop's break, continue and re-entry, and the runs a computation
-# asks for, over the lowering's base.
-# consumers:
-# - surface-lowering
-# - surface-lowering-expression
+# The exits family of the lowering, over the base of the lowering. It moves
+# an early exit to the end of its body. It holds the break, the continue and
+# the re-entry of a loop, and the runs that a computation requests.
 [workspace.dependencies.gandr-surface-lowering-exits]
 path = "crates/surface-lowering-exits"
 
 # The expression and type lowering: each expression, type, pattern, block and
 # declaration body, over the lowering's base and its families.
-# consumers:
-# - surface-lowering
 [workspace.dependencies.gandr-surface-lowering-expression]
 path = "crates/surface-lowering-expression"
 
 # The identity family of the lowering: path, bridge and flow types, the
 # identity operations, transports and derived operations, over the
 # lowering's base.
-# consumers:
-# - surface-lowering
-# - surface-lowering-expression
 [workspace.dependencies.gandr-surface-lowering-identity]
 path = "crates/surface-lowering-identity"
 
-# The model and arity family of the lowering: type families, derived model
-# signatures, model implicits, reducts and the arity of the type forms, over
-# the lowering's base.
-# consumers:
-# - surface-lowering
-# - surface-lowering-expression
+# The model and arity family of the lowering, over the base of the lowering.
+# It holds the type families, the derived model signatures and the model
+# implicits. It also holds the reducts and the arity of the type forms.
 [workspace.dependencies.gandr-surface-lowering-model]
 path = "crates/surface-lowering-model"
 
-# The native family of the lowering: data families, constructors, a data
-# declaration's signature and a match compiled to native eliminations, over
-# the lowering's base.
-# consumers:
-# - surface-lowering
-# - surface-lowering-expression
+# The native family of the lowering, over the base of the lowering. It holds
+# the data families, the constructors and the signature of a data
+# declaration. It compiles a match to native eliminations.
 [workspace.dependencies.gandr-surface-lowering-native]
 path = "crates/surface-lowering-native"
 
-# The language server: diagnostics and semantic tokens over the Language
-# Server Protocol, each request rechecking the whole document; the engine
-# hub's shared workspace.
-# consumers:
-# - surface-agentic
-# - surface-driver
-# - workflow-parser-report
+# The language server. It gives diagnostics and semantic tokens over the
+# Language Server Protocol. Each request checks the whole document again. It
+# also holds the shared workspace of the engine hub.
 [workspace.dependencies.gandr-surface-lsp]
 path = "crates/surface-lsp"
 
-# The base of the language server: the protocol's messages, the transport,
-# positions, the token stream, inline completion and the markup that the
-# server's families share.
-# consumers:
-# - surface-lsp
+# The base of the language server. It holds the messages of the protocol,
+# the transport, the positions and the token stream. It also holds the inline
+# completion and the markup that the families of the server share.
 [workspace.dependencies.gandr-surface-lsp-base]
 path = "crates/surface-lsp-base"
 
-# The core of the language server's families: the reading of a held text,
-# hover, completion, definitions, signature help, semantic tokens and the
-# files of a workspace.
-# consumers:
-# - surface-lsp
-# - surface-lsp-diagnostics
-# - surface-lsp-navigation
+# The core of the families of the language server. It holds the reading of a
+# held text, the hover, the completion and the definitions. It also holds the
+# signature help, the semantic tokens and the files of a workspace.
 [workspace.dependencies.gandr-surface-lsp-core]
 path = "crates/surface-lsp-core"
 
-# The diagnostics of the language server: the recheck of a document, the
-# kernel tiers, the repairs and fills of a hole and the checkpoints a save
-# keeps.
-# consumers:
-# - surface-lsp
+# The diagnostics of the language server. It holds the recheck of a document
+# and the kernel tiers. It also holds the repairs and fills of a hole, and the
+# checkpoints that a save keeps.
 [workspace.dependencies.gandr-surface-lsp-diagnostics]
 path = "crates/surface-lsp-diagnostics"
 
-# The navigation of the language server: references, highlights, rename, the
-# call hierarchy, inlay hints, copied sources, shadowing and the
-# documentation site.
-# consumers:
-# - surface-lsp
+# The navigation of the language server. It holds references, highlights,
+# rename and the call hierarchy. It also holds inlay hints, copied sources,
+# shadows and the documentation site.
 [workspace.dependencies.gandr-surface-lsp-navigation]
 path = "crates/surface-lsp-navigation"
 
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.
-# consumers:
-# - runtime-mlir (dev)
-# - surface-corpus (dev)
-# - surface-diagnostics (dev)
-# - surface-dispatcher
-# - surface-format
-# - surface-grammar (dev)
-# - surface-lowering (dev)
-# - surface-lowering-base (dev)
-# - surface-lsp
-# - surface-lsp-base
-# - surface-repl
-# - surface-session
-# - workflow-ledger-tasks
-# - workflow-outputs
-# - workflow-parser-report
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
 
-# The presentation printer: checked core types and normal-form values laid
-# out at a page width through the layout engine.
-# consumers:
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-format
-# - surface-lsp
-# - surface-lsp-base
-# - surface-repl
-# - surface-session
+# The presentation printer. It sets checked core types and normal-form values
+# at a page width through the layout engine.
 [workspace.dependencies.gandr-surface-pretty]
 path = "crates/surface-pretty"
 
@@ -1120,78 +497,30 @@ path = "crates/surface-pretty"
 # features:
 # - serde: the wire image the codec witnesses round-trip, so the gate runs
 #   them; the hub's render-bus face writes it and `gandr view` reads it
-# consumers:
-# - surface-grammar
-# - surface-lsp
-# - surface-lsp-base
-# - surface-render-remote (dev)
-# - surface-repl
-# - surface-tui
-# - workflow-outputs
 [workspace.dependencies.gandr-surface-render-remote]
 path = "crates/surface-render-remote"
 
-# The terminal face of the diagnostics model: a diagnostic laid out as a
-# source snippet with its loci, contexts and notes.
-# consumers:
-# - surface-driver
-# - surface-repl
-# - surface-session (dev)
-# - surface-tui
-# - workflow-outputs
+# The terminal face of the diagnostics model. It shows a diagnostic as a
+# source snippet with its loci, its contexts and its notes.
 [workspace.dependencies.gandr-surface-render-terminal]
 path = "crates/surface-render-terminal"
 
 # The read-evaluate loop: the completeness gate, the session loop and its
 # meta-commands, the transcript encoder, the batch and line-editor faces.
-# consumers:
-# - surface-driver
-# - surface-tui
 [workspace.dependencies.gandr-surface-repl]
 path = "crates/surface-repl"
 
-# The interactive session: each revision lowered, judged, resumed through the
-# incremental checker and checkpointed.
-# consumers:
-# - surface-lsp
-# - surface-repl
-# - workflow-parser-report
+# The interactive session. It lowers each revision, judges it, resumes it
+# through the incremental checker and keeps a checkpoint of it.
 [workspace.dependencies.gandr-surface-session]
 path = "crates/surface-session"
 
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
-# consumers:
-# - runtime-mlir (dev)
-# - surface-corpus
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-format
-# - surface-grammar
-# - surface-lowering
-# - surface-lowering-base
-# - surface-lowering-capability
-# - surface-lowering-exits
-# - surface-lowering-expression
-# - surface-lowering-identity
-# - surface-lowering-model
-# - surface-lowering-native
-# - surface-lsp
-# - surface-lsp-base
-# - surface-parser
-# - surface-render-terminal
-# - surface-repl
-# - surface-session
-# - surface-tui
-# - workflow-ledger-tasks
-# - workflow-outputs
-# - workflow-parser-report
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
 
-# The terminal face: the read-evaluate loop's transcript, an input pane and a
-# status line, painted full-screen.
-# consumers:
-# - surface-driver
+# The terminal face. It paints the transcript of the read-evaluate loop, an
+# input pane and a status line on the full screen.
 [workspace.dependencies.gandr-surface-tui]
 path = "crates/surface-tui"
 
@@ -1199,32 +528,12 @@ path = "crates/surface-tui"
 # the cell alphabet and its store.
 # features:
 # - none: alloc-only cell patterns and stores.
-# consumers:
-# - core-sequent
-# - runtime-emitter
-# - runtime-stencils (dev)
-# - storage-artifact
-# - surface-dispatcher (dev)
-# - surface-lowering
-# - surface-lowering-expression
-# - theory-cell-complexes-tools
-# - theory-circuit-algebras
-# - theory-coherent-resolutions
-# - theory-computads
-# - theory-decomposition-spaces
-# - theory-deep-inference
-# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-cell-complexes]
 path = "crates/theory-cell-complexes"
 default-features = false
 
-# The toy alphabet and the adversary frame, for engine suites; a
-# dev-dependency only, which its workspace test checks.
-# consumers:
-# - theory-coherent-resolutions (dev)
-# - theory-computads (dev)
-# - theory-decomposition-spaces (dev)
-# - theory-deep-inference (dev)
+# The toy alphabet and the adversary frame, for engine suites. It is a
+# dev-dependency only, and its workspace test checks that.
 [workspace.dependencies.gandr-theory-cell-complexes-tools]
 path = "crates/theory-cell-complexes-tools"
 
@@ -1232,10 +541,6 @@ path = "crates/theory-cell-complexes-tools"
 # cohomology through a tower of levels.
 # features:
 # - none: alloc-only stalks, entry maps and exact rational matrices.
-# consumers:
-# - surface-corpus
-# - theory-probability
-# - theory-shapes (dev)
 [workspace.dependencies.gandr-theory-cellular-sheaves]
 path = "crates/theory-cellular-sheaves"
 default-features = false
@@ -1245,12 +550,6 @@ default-features = false
 # the overlaps of two diagrams.
 # features:
 # - none: alloc-only wiring and embedding matching.
-# consumers:
-# - surface-dispatcher (dev)
-# - surface-lowering
-# - surface-lowering-base
-# - surface-lowering-expression
-# - theory-sites
 [workspace.dependencies.gandr-theory-circuit-algebras]
 path = "crates/theory-circuit-algebras"
 default-features = false
@@ -1259,16 +558,6 @@ default-features = false
 # replayable coherence certificates, budgeted completion.
 # features:
 # - none: alloc-only bounded completion and replay.
-# consumers:
-# - storage-artifact (dev)
-# - surface-dispatcher
-# - surface-lowering
-# - surface-lowering-expression
-# - theory-computads
-# - theory-decomposition-spaces
-# - theory-deep-inference
-# - theory-e-graphs
-# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-coherent-resolutions]
 path = "crates/theory-coherent-resolutions"
 default-features = false
@@ -1276,11 +565,6 @@ default-features = false
 # Description elaboration into rewriting cells.
 # features:
 # - none: the certificate fixtures use the alloc-only elaborator.
-# consumers:
-# - surface-corpus (dev)
-# - surface-lowering
-# - surface-lowering-expression
-# - theory-decomposition-spaces (dev)
 [workspace.dependencies.gandr-theory-computads]
 path = "crates/theory-computads"
 default-features = false
@@ -1288,22 +572,12 @@ default-features = false
 # Certificate composition and bounded backward pathway queries.
 # features:
 # - none: alloc-only theory machinery.
-# consumers:
-# - storage-artifact
-# - theory-deep-inference (dev)
-# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-decomposition-spaces]
 path = "crates/theory-decomposition-spaces"
 default-features = false
 
-# The identity relations on derivations: earned shift equivalence and the
-# guard it is earned against, the causal order, the certificate normal form.
-# consumers:
-# - core-checker
-# - core-session
-# - storage-artifact
-# - theory-computads
-# - theory-decomposition-spaces
+# The identity relations on derivations: the earned shift equivalence and its
+# guard, the causal order and the normal form of a certificate.
 [workspace.dependencies.gandr-theory-deep-inference]
 path = "crates/theory-deep-inference"
 
@@ -1311,10 +585,6 @@ path = "crates/theory-deep-inference"
 # check, the greedy matching, and Brown's collapsing scheme.
 # features:
 # - none: alloc-only matchings over the caller's cells.
-# consumers:
-# - surface-lowering (dev)
-# - theory-coherent-resolutions
-# - theory-deep-inference
 [workspace.dependencies.gandr-theory-discrete-morse]
 path = "crates/theory-discrete-morse"
 default-features = false
@@ -1322,9 +592,6 @@ default-features = false
 # Standing insertion-only graph and offset-constraint maintenance.
 # features:
 # - none: alloc-only graph machinery.
-# consumers:
-# - surface-diagnostics (dev)
-# - theory-decomposition-spaces (dev)
 [workspace.dependencies.gandr-theory-dynamic-graphs]
 path = "crates/theory-dynamic-graphs"
 default-features = false
@@ -1334,8 +601,6 @@ default-features = false
 # worklist rebuild, e-class analyses and the phases of a saturation.
 # features:
 # - none: alloc-only classes over the caller's table.
-# consumers:
-# - surface-lowering (dev)
 [workspace.dependencies.gandr-theory-e-graphs]
 path = "crates/theory-e-graphs"
 default-features = false
@@ -1343,20 +608,12 @@ default-features = false
 # Canonical dyadics and oriented intervals with outward-rounded arithmetic.
 # features:
 # - none: the dyadics on big-integer mantissas, with no feature of their own.
-# consumers:
-# - surface-dispatcher
-# - theory-ordered-algebras
 [workspace.dependencies.gandr-theory-exact-reals]
 path = "crates/theory-exact-reals"
 
 # Finite graded posets with their cells as data, and their subcomplexes.
 # features:
 # - none: alloc-only posets over finite Stone duality's bit rows.
-# consumers:
-# - surface-lowering-base
-# - theory-cellular-sheaves
-# - theory-discrete-morse
-# - theory-shapes (dev)
 [workspace.dependencies.gandr-theory-graded-posets]
 path = "crates/theory-graded-posets"
 default-features = false
@@ -1364,14 +621,6 @@ default-features = false
 # The precedence DAG, the walk machine, and the graph algorithms they read.
 # features:
 # - none: alloc-only graph machinery.
-# consumers:
-# - surface-grammar
-# - surface-format
-# - surface-parser
-# - surface-diagnostics (dev)
-# - theory-decomposition-spaces
-# - theory-dynamic-graphs
-# - workflow-ledger-tasks
 [workspace.dependencies.gandr-theory-graphs]
 path = "crates/theory-graphs"
 default-features = false
@@ -1380,23 +629,6 @@ default-features = false
 # occurrence record, bridge arities.
 # features:
 # - none: allocation-only description syntax.
-# consumers:
-# - core-checker (dev)
-# - core-incremental
-# - core-term
-# - surface-corpus (dev)
-# - runtime-mlir
-# - surface-dispatcher (dev)
-# - surface-lowering
-# - surface-lowering-base
-# - surface-lowering-capability
-# - surface-lowering-expression
-# - surface-lowering-model
-# - surface-lowering-native
-# - surface-pretty (dev)
-# - theory-computads
-# - theory-decomposition-spaces (dev)
-# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-levitation]
 path = "crates/theory-levitation"
 default-features = false
@@ -1405,8 +637,6 @@ default-features = false
 # injective stores and their transfers.
 # features:
 # - none: alloc-only stores and automata.
-# consumers:
-# - theory-shapes
 [workspace.dependencies.gandr-theory-nominal-automata]
 path = "crates/theory-nominal-automata"
 default-features = false
@@ -1415,9 +645,6 @@ default-features = false
 # constant-time comparison.
 # features:
 # - none: alloc-only order maintenance.
-# consumers:
-# - core-incremental
-# - theory-dynamic-graphs
 [workspace.dependencies.gandr-theory-order-maintenance]
 path = "crates/theory-order-maintenance"
 default-features = false
@@ -1427,11 +654,6 @@ default-features = false
 # language's grades.
 # features:
 # - none: alloc-only laws and instances.
-# consumers:
-# - core-checker
-# - core-term
-# - surface-dispatcher
-# - theory-probability
 [workspace.dependencies.gandr-theory-ordered-algebras]
 path = "crates/theory-ordered-algebras"
 default-features = false
@@ -1440,10 +662,6 @@ default-features = false
 # a precedence, each returning a derivation its checker replays.
 # features:
 # - none: alloc-only orders and their evidence.
-# consumers:
-# - kernel-term
-# - theory-cell-complexes
-# - theory-levitation
 [workspace.dependencies.gandr-theory-path-orders]
 path = "crates/theory-path-orders"
 default-features = false
@@ -1452,8 +670,6 @@ default-features = false
 # their marginals, and exact inference by gluing.
 # features:
 # - none: alloc-only distributions over exact rational weights.
-# consumers:
-# - surface-corpus
 [workspace.dependencies.gandr-theory-probability]
 path = "crates/theory-probability"
 default-features = false
@@ -1462,23 +678,12 @@ default-features = false
 # and a boundary of names read as `Fin(m)`.
 # features:
 # - none: alloc-only shapes and their evidence.
-# consumers:
-# - surface-lowering
-# - surface-lowering-expression
 [workspace.dependencies.gandr-theory-shapes]
 path = "crates/theory-shapes"
 default-features = false
 
 # The carrier's shapes as a site, its degree, Reedy and Segal checks, and
 # the certified strata's species and their equivalences.
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-term
-# - surface-build-identity
-# - surface-diagnostics (dev)
-# - surface-lowering (dev)
-# - surface-pretty (dev)
 [workspace.dependencies.gandr-theory-sites]
 path = "crates/theory-sites"
 
@@ -1487,18 +692,6 @@ path = "crates/theory-sites"
 # an insertion point.
 # features:
 # - none: core-only checks.
-# consumers:
-# - core-nbe
-# - storage-artifact
-# - storage-records
-# - storage-values
-# - surface-lowering-base
-# - surface-parser
-# - theory-cell-complexes
-# - theory-circuit-algebras
-# - theory-coherent-resolutions
-# - theory-graphs
-# - theory-levitation
 [workspace.dependencies.gandr-theory-spec-combinators]
 path = "crates/theory-spec-combinators"
 
@@ -1506,82 +699,44 @@ path = "crates/theory-spec-combinators"
 # form, finite Birkhoff duality, and monotone maps against homomorphisms.
 # features:
 # - none: alloc-only lattices, posets and maps.
-# consumers:
-# - surface-lowering-base
-# - theory-cellular-sheaves
-# - theory-discrete-morse
-# - theory-graded-posets
-# - theory-shapes
 [workspace.dependencies.gandr-theory-stone-duality]
 path = "crates/theory-stone-duality"
 default-features = false
 
-# The debt ledger the workflow checks share: the committed findings, one key
-# per line, a new finding refusing and a fixed one leaving its line stale.
-# consumers:
-# - surface-corpus (dev)
-# - workflow-prose
+# The debt ledger that the workflow checks share. It holds the committed
+# findings, one key per line. The check refuses a new finding. A fixed finding
+# makes its line stale.
 [workspace.dependencies.gandr-workflow-debt-ledger]
 path = "crates/workflow-debt-ledger"
 
 # The workflow crates' one `gh` runner, the declared site of each call, and
 # the error family their failures share.
-# consumers:
-# - workflow-coverage-guard
-# - workflow-gate
-# - workflow-hotpath-guard
-# - workflow-lane-budget
-# - workflow-test-timing
 [workspace.dependencies.gandr-workflow-github]
 path = "crates/workflow-github"
 
-# The ledger tasks of the surface: the syntax ledger's writer, the exemplars
-# gate, the recovery sweep, and the features ledger's list and show, run by
-# the `ledger` binary.
-# consumers:
-# - workflow-parser-report
+# The ledger tasks of the surface, which the `ledger` binary runs. They are
+# the writer of the syntax ledger, the exemplars gate and the recovery sweep.
+# They also give the list and the show of the features ledger.
 [workspace.dependencies.gandr-workflow-ledger-tasks]
 path = "crates/workflow-ledger-tasks"
 
 # The store of the outputs: each value by its key, the list of the values of
 # each tree, and the values that a test gives.
-# consumers:
-# - surface-format (dev)
-# - surface-lsp (dev)
-# - surface-pretty (dev)
-# - surface-render-terminal (dev)
-# - surface-tui (dev)
-# - workflow-outputs
-# - workflow-prose
 [workspace.dependencies.gandr-workflow-output-store]
 path = "crates/workflow-output-store"
 
 # The writer of each kind of output: a value that a program computes from
 # the tree and that the tree does not hold.
-# consumers:
-# - surface-render-terminal (dev)
-# - workflow-prose
 [workspace.dependencies.gandr-workflow-outputs]
 path = "crates/workflow-outputs"
 
 # The corpus sources a sweep test visits: the stated sample under every
 # pull-request profile, the whole corpus under `sweeps`.
-# consumers:
-# - surface-diagnostics (dev)
-# - surface-dispatcher (dev)
-# - surface-format (dev)
-# - surface-lsp (dev)
-# - surface-lsp-base (dev)
-# - surface-parser (dev)
-# - surface-session (dev)
-# - workflow-parser-report
 [workspace.dependencies.gandr-workflow-sweep]
 path = "crates/workflow-sweep"
 
 # Recent merge-queue test durations: the specification-cost ranking profiles
 # the slowest enforcing tests the stored reports name.
-# consumers:
-# - workflow-spec-cost
 [workspace.dependencies.gandr-workflow-test-timing]
 path = "crates/workflow-test-timing"
 
@@ -1590,9 +745,6 @@ path = "crates/workflow-test-timing"
 # beneath other crates; std's own source is unstable.
 # features:
 # - none: `fill` needs neither `std` nor a fallback
-# consumers:
-# - surface-dispatcher
-# - surface-driver
 [workspace.dependencies.getrandom]
 version = "0.4.3"
 default-features = false
@@ -1603,11 +755,6 @@ default-features = false
 # grammar's README and the printer's scope module.
 # features:
 # - none: the index names its own hasher, so the default one stays off
-# consumers:
-# - core-incremental
-# - surface-grammar
-# - surface-pretty
-# - theory-deep-inference
 [workspace.dependencies.hashbrown]
 version = "0.17.1"
 default-features = false
@@ -1619,16 +766,6 @@ default-features = false
 # the driver's `hotpath` bench.
 # features:
 # - none: each consumer's `hotpath` feature turns on the profiler it needs
-# consumers:
-# - core-checker
-# - storage-schema
-# - surface-dispatcher
-# - surface-driver
-# - surface-lowering
-# - surface-lowering-expression
-# - surface-lowering-model
-# - surface-lsp
-# - theory-coherent-resolutions
 [workspace.dependencies.hotpath]
 version = "0.30.3"
 default-features = false
@@ -1639,8 +776,6 @@ default-features = false
 # request that adds the toolset.
 # features:
 # - none: a head parses without `std`
-# consumers:
-# - surface-agentic
 [workspace.dependencies.httparse]
 version = "1.10.1"
 default-features = false
@@ -1652,8 +787,6 @@ default-features = false
 # adds `runtime-net`.
 # features:
 # - tls-ring: the TLS provider; without one no handshake runs
-# consumers:
-# - runtime-net
 [workspace.dependencies.iroh]
 version = "=1.4.1"
 default-features = false
@@ -1664,8 +797,6 @@ features = ["tls-ring"]
 # The version moves with iroh's.
 # features:
 # - key: the ed25519 keys and the endpoint address
-# consumers:
-# - runtime-net
 [workspace.dependencies.iroh-base]
 version = "=1.4.1"
 default-features = false
@@ -1675,8 +806,6 @@ features = ["key"]
 # asks for it; dialing at the addresses a peer's spelling names needs none.
 # features:
 # - none: the lookup alone
-# consumers:
-# - runtime-net
 [workspace.dependencies.iroh-mdns-address-lookup]
 version = "=0.6.1"
 default-features = false
@@ -1694,9 +823,6 @@ default-features = false
 # `os_sync_wake_by_address_any`, the one such wait that the system names.
 # features:
 # - none: the bindings alone; `std` adds nothing the emitter calls
-# consumers:
-# - runtime-emitter
-# - surface-dispatcher (unix)
 [workspace.dependencies.libc]
 version = "0.2.189"
 default-features = false
@@ -1708,8 +834,6 @@ default-features = false
 # features:
 # - none: `arch` swaps in per-architecture routines; off, every platform runs
 #   the same soft implementation and answers bit for bit alike
-# consumers:
-# - core-term
 [workspace.dependencies.libm]
 version = "0.2.16"
 default-features = false
@@ -1723,8 +847,6 @@ default-features = false
 # that outgrows exhaustive search.
 # features:
 # - none: `checkpoint` and `futures` serve models this crate does not write
-# consumers:
-# - kernel-data (cfg(loom))
 [workspace.dependencies.loom]
 version = "0.7.2"
 default-features = false
@@ -1737,8 +859,6 @@ default-features = false
 # features:
 # - none: `Mmap::map` needs no optional feature; `stable_deref_trait` is for
 #   owning references the reader does not make
-# consumers:
-# - surface-dispatcher
 [workspace.dependencies.memmap2]
 version = "0.9.12"
 default-features = false
@@ -1774,11 +894,6 @@ default-features = false
 # - resource: `sys::resource::getrusage`, the CPU and the voluntary switches
 #   of each row of the store's load
 # - signal: `sys::signal::sigaction`, the handler of the IO core's witnesses
-# consumers:
-# - boot-io (dev, Linux x86-64)
-# - storage-store (dev)
-# - surface-dispatcher (dev)
-# - surface-driver (dev)
 [workspace.dependencies.nix]
 version = "0.31.3"
 default-features = false
@@ -1790,9 +905,6 @@ features = ["fs", "process", "pthread", "resource", "signal", "term"]
 # features:
 # - macos_fsevent: the FSEvents backend, macOS's recommended watcher, which
 #   needs it to build there. Linux's inotify backend has no feature.
-# consumers:
-# - surface-lsp
-# - surface-repl
 [workspace.dependencies.notify]
 version = "8.2.1"
 default-features = false
@@ -1806,10 +918,6 @@ features = ["macos_fsevent"]
 #   apart, and every crate above core-term compiles twice, once per feature
 #   set (#2148). Nothing in the workspace builds for a target without std;
 #   one that does reverses this.
-# consumers:
-# - core-term
-# - theory-exact-reals
-# - theory-ordered-algebras (dev)
 [workspace.dependencies.num-bigint]
 version = "0.5.1"
 default-features = false
@@ -1827,8 +935,6 @@ features = ["std"]
 # - read_core: the format-independent reading interface
 # - elf: the Linux objects
 # - macho: the macOS arm64 objects
-# consumers:
-# - runtime-emitter (and its build script)
 [workspace.dependencies.object]
 version = "0.40.0"
 default-features = false
@@ -1847,10 +953,6 @@ features = ["elf", "macho", "read_core"]
 # - none: `fast-barrier` stays off, as iroh has it. It trades a fence on each
 #   read for a system call on each reclamation, and no measurement asks for it
 #   yet. `serde` stays off: nothing serialises the index.
-# consumers:
-# - runtime-emitter
-# - runtime-net
-# - storage-store
 [workspace.dependencies.papaya]
 version = "0.2.5"
 default-features = false
@@ -1859,8 +961,6 @@ default-features = false
 # a file that moved, relative to the importer's directory.
 # features:
 # - none: `camino` stays off; the paths are the standard library's.
-# consumers:
-# - surface-lsp
 [workspace.dependencies.pathdiff]
 version = "0.2.3"
 default-features = false
@@ -1869,20 +969,15 @@ default-features = false
 # are in the language server's README.
 # features:
 # - alloc: the decoded path as an owned string
-# consumers:
-# - surface-lsp (dev)
-# - surface-lsp-base
 [workspace.dependencies.percent-encoding]
 version = "2.3.2"
 default-features = false
 features = ["alloc"]
 
-# Graph storage and algorithms. Reached only through `theory-graphs`, which
-# owns the dependency and exposes none of its types; the grammar's
-# closing-class derivation reads its strongly-connected-component
-# condensation. The choice and its reversal are in that crate's README.
-# consumers:
-# - theory-graphs
+# Graph storage and algorithms. Only `theory-graphs` reaches it. That crate
+# owns the dependency and exposes none of its types. The closing-class
+# derivation of the grammar reads its strongly-connected-component
+# condensation. The choice and its reversal are in the README of that crate.
 [workspace.dependencies.petgraph]
 version = "0.8.3"
 default-features = false
@@ -1894,8 +989,6 @@ default-features = false
 # features:
 # - span-locations: the line and column of every span; without it a parsed
 #   file's spans carry no position
-# consumers:
-# - workflow-spec-cost
 [workspace.dependencies.proc-macro2]
 version = "1.0.107"
 default-features = false
@@ -1904,33 +997,6 @@ features = ["span-locations"]
 # Property-based testing with shrinking.
 # features:
 # - std: the test runner, its random source and failure persistence
-# consumers:
-# - core-checker (dev)
-# - core-incremental (dev)
-# - core-nbe (dev)
-# - core-sequent (dev)
-# - kernel-core (dev)
-# - kernel-strata (dev)
-# - kernel-term (dev)
-# - storage-artifact (dev)
-# - storage-records (dev)
-# - storage-values (dev)
-# - surface-layout (dev)
-# - surface-lsp (dev)
-# - surface-parser (dev)
-# - surface-session (dev)
-# - theory-cell-complexes (dev)
-# - theory-circuit-algebras (dev)
-# - theory-coherent-resolutions (dev)
-# - theory-deep-inference (dev)
-# - theory-dynamic-graphs (dev)
-# - theory-e-graphs (dev)
-# - theory-exact-reals (dev)
-# - theory-graphs (dev)
-# - theory-levitation (dev)
-# - theory-order-maintenance (dev)
-# - theory-probability (dev)
-# - theory-virtual-doctrines (dev)
 [workspace.dependencies.proptest]
 version = "1.11.0"
 default-features = false
@@ -1942,8 +1008,6 @@ features = ["std"]
 # off, so the 2026 advisories do not apply, and 0.13.6 patches both.
 # features:
 # - html: the HTML writer
-# consumers:
-# - surface-lsp
 [workspace.dependencies.pulldown-cmark]
 version = "0.13.6"
 default-features = false
@@ -1952,9 +1016,6 @@ features = ["html"]
 # Profile-independent arithmetic families; strict operations are the default.
 # features:
 # - none: core-only arithmetic, without unsafe fast mode or instrumentation
-# consumers:
-# - core-term
-# - kernel-core
 [workspace.dependencies.quenchant-arith]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "666f60b58e1996e116f96cee889aba57cd189160"
@@ -1963,61 +1024,6 @@ default-features = false
 # Named non-failure absence, sealed at each decision site.
 # features:
 # - none: core-only shapes without instrumentation
-# consumers:
-# - core-checker
-# - core-incremental
-# - core-sequent
-# - core-session
-# - core-term
-# - core-unify
-# - kernel-core
-# - kernel-data
-# - kernel-term
-# - runtime-stencils (dev)
-# - storage-artifact
-# - storage-store
-# - surface-agentic (dev)
-# - surface-corpus
-# - surface-diagnostics
-# - surface-dispatcher
-# - surface-driver
-# - surface-format
-# - surface-layout
-# - surface-lowering
-# - surface-lowering-base
-# - surface-lowering-capability
-# - surface-lowering-exits
-# - surface-lowering-expression
-# - surface-lowering-identity
-# - surface-lowering-model
-# - surface-lowering-native
-# - surface-lsp
-# - surface-lsp-base
-# - surface-pretty
-# - surface-render-terminal
-# - surface-repl
-# - surface-session
-# - theory-cell-complexes
-# - theory-cell-complexes-tools
-# - theory-circuit-algebras
-# - theory-coherent-resolutions
-# - theory-computads
-# - theory-decomposition-spaces
-# - theory-deep-inference
-# - theory-dynamic-graphs
-# - theory-levitation
-# - theory-nominal-automata
-# - theory-shapes
-# - theory-sites
-# - theory-virtual-doctrines
-# - workflow-coverage-guard
-# - workflow-hotpath-guard
-# - workflow-lane-budget
-# - workflow-ledger-tasks
-# - workflow-parser-report
-# - workflow-prose
-# - workflow-spec-cost
-# - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "666f60b58e1996e116f96cee889aba57cd189160"
@@ -2032,8 +1038,6 @@ default-features = false
 # features:
 # - crossterm: the backend `gandr tui` draws through, with raw mode, the
 #   alternate screen and key events
-# consumers:
-# - surface-tui
 [workspace.dependencies.ratatui]
 version = "0.30.2"
 default-features = false
@@ -2045,8 +1049,6 @@ features = ["crossterm"]
 # why.
 # features:
 # - none: the pool, `scope` and `join` need no optional feature.
-# consumers:
-# - core-checker (dev)
 [workspace.dependencies.rayon]
 version = "1.12.0"
 default-features = false
@@ -2056,8 +1058,6 @@ default-features = false
 # features:
 # - std: required by the crate
 # - string: `Regex`, the matcher over `&str`
-# consumers:
-# - surface-parser (dev)
 [workspace.dependencies.regex-lite]
 version = "0.1.9"
 default-features = false
@@ -2066,8 +1066,6 @@ features = ["std", "string"]
 # Per-worker observer queues without an asynchronous runtime.
 # features:
 # - alloc: HeapRb and its owned endpoints are absent without heap storage.
-# consumers:
-# - core-checker (dev)
 [workspace.dependencies.ringbuf]
 version = "0.6.0"
 default-features = false
@@ -2076,12 +1074,11 @@ features = ["alloc"]
 # JUnit reports read as a read-only tree: the test-timing report reads each
 # `<testcase>`'s binary, name and time. Defaults off: `std` only adds
 # memchr's std path and `positions` node offsets the report never reads.
-# Chosen over quick-xml, the streaming de facto standard, for no required
-# dependency beyond memchr, no unsafe code and no published advisory;
-# quick-xml carries two from 2026. Reversal: an advisory against roxmltree
-# or reports too large to hold as a tree.
-# consumers:
-# - workflow-test-timing
+#
+# The tree takes it over quick-xml, the streaming de facto standard. It needs
+# no dependency beyond memchr, and it has no unsafe code and no advisory.
+# quick-xml carries two advisories from 2026. Reversal: an advisory against
+# roxmltree or reports too large to hold as a tree.
 [workspace.dependencies.roxmltree]
 version = "0.21.2"
 default-features = false
@@ -2094,9 +1091,6 @@ default-features = false
 # measurement finds slower than a shared queue.
 # features:
 # - none: allocation works without the optional standard-library facade.
-# consumers:
-# - core-checker (dev)
-# - surface-dispatcher
 [workspace.dependencies.rtrb]
 version = "0.4.1"
 default-features = false
@@ -2113,20 +1107,17 @@ default-features = false
 # - std: `AsFd` of `std`'s files and descriptors, which the porter's count and
 #   watch borrow, and `std::io::Error` from `io::Errno`
 # - thread: `thread::futex`
-# consumers:
-# - surface-dispatcher (Linux)
 [workspace.dependencies.rustix]
 version = "1.1.6"
 default-features = false
 features = ["fs", "std", "thread"]
 
-# The line editor of the read-evaluate loop's terminal face: raw-mode input,
-# editing keys and in-memory history. Defaults off: `with-file-history` writes
-# plaintext history, `with-dirs` locates it, `custom-bindings` adds a keymap
-# trie the face does not use. The choice, its alternatives and its reversal
+# The line editor of the terminal face of the read-evaluate loop: raw-mode
+# input, the edit keys and a history in memory. Defaults off:
+# `with-file-history` writes plaintext history, `with-dirs` locates it,
+# `custom-bindings` adds a keymap trie the face does not use. The choice, its
+# alternatives and its reversal
 # are in the consumer's README.
-# consumers:
-# - surface-repl
 [workspace.dependencies.rustyline]
 version = "19.0.0"
 default-features = false
@@ -2138,9 +1129,6 @@ default-features = false
 # features:
 # - none: the cell needs nothing beyond `core` and `alloc`; `old_rust` only
 #   serves compilers older than the workspace's
-# consumers:
-# - surface-dispatcher
-# - surface-lowering
 [workspace.dependencies.self_cell]
 version = "1.3.0"
 default-features = false
@@ -2155,21 +1143,6 @@ default-features = false
 # features:
 # - alloc: the owned strings and vectors, and the tagged enums' buffered content
 # - derive: the `Serialize` and `Deserialize` derives
-# consumers:
-# - core-checker
-# - surface-diagnostics
-# - surface-lsp
-# - surface-lsp-base
-# - surface-render-remote
-# - workflow-build-state
-# - workflow-coverage-guard
-# - workflow-gate
-# - workflow-host-tools
-# - workflow-hotpath-guard
-# - workflow-lane-budget
-# - workflow-prose
-# - workflow-spec-cost
-# - workflow-twin-census
 [workspace.dependencies.serde]
 version = "1.0.229"
 default-features = false
@@ -2183,30 +1156,6 @@ features = ["alloc", "derive"]
 # listing of a checkout's tools.
 # features:
 # - alloc: the owned value tree and the string encoder without std
-# consumers:
-# - core-checker (dev)
-# - surface-agentic
-# - surface-diagnostics
-# - surface-dispatcher (dev)
-# - surface-driver
-# - surface-features
-# - surface-lsp
-# - surface-lsp-base
-# - surface-render-remote (dev)
-# - surface-render-terminal (dev)
-# - surface-tui
-# - workflow-build-state
-# - workflow-coverage-guard
-# - workflow-gate
-# - workflow-host-tools
-# - workflow-hotpath-guard
-# - workflow-lane-budget
-# - workflow-ledger-tasks
-# - workflow-outputs
-# - workflow-parser-report
-# - workflow-prose
-# - workflow-spec-cost
-# - workflow-twin-census
 [workspace.dependencies.serde_json]
 version = "1.0.151"
 default-features = false
@@ -2214,7 +1163,6 @@ features = ["alloc"]
 
 # SHA-256, for the digest of the inputs of a check, which the record of a
 # verdict binds.
-# - workflow-gate
 [workspace.dependencies.sha2]
 version = "0.11.1"
 default-features = false
@@ -2232,9 +1180,6 @@ default-features = false
 # features:
 # - full: items, impls and traits beyond the derive-input subset
 # - parsing: `parse_file`
-# consumers:
-# - core-incremental (build script)
-# - workflow-spec-cost
 [workspace.dependencies.syn]
 version = "3.0.4"
 default-features = false
@@ -2242,9 +1187,7 @@ features = ["full", "parsing"]
 
 # Reads a macOS sysctl by name: the dispatcher's default width counts the
 # host's physical performance cores (`hw.perflevel0.physicalcpu`), which no
-# std interface reports. It has no features to leave off.
-# consumers:
-# - surface-dispatcher (macOS only)
+# std interface reports. It has no optional feature.
 [workspace.dependencies.sysctl]
 version = "0.7.1"
 default-features = false
@@ -2255,8 +1198,6 @@ default-features = false
 # - rt: the current-thread runtime
 # - sync: the request queue
 # - time: the closing grace
-# consumers:
-# - runtime-net
 [workspace.dependencies.tokio]
 version = "1.52.1"
 default-features = false
@@ -2273,14 +1214,6 @@ features = ["rt", "sync", "time"]
 # - parse: the parser
 # - serde: `from_str` into a `Table`, the one entry point that reads a whole
 #   document
-# consumers:
-# - core-incremental (build script)
-# - surface-build-identity (build script, dev)
-# - surface-driver
-# - workflow-host-tools
-# - workflow-hotpath-guard
-# - workflow-prose
-# - workflow-test-timing
 [workspace.dependencies.toml]
 version = "1.1.8"
 default-features = false
@@ -2289,10 +1222,6 @@ features = ["parse", "serde"]
 # Optional structured diagnostics, with no runtime or output backend.
 # features:
 # - attributes: skip-all boundary spans without argument Debug bounds
-# consumers:
-# - core-nbe
-# - surface-dispatcher
-# - surface-driver (also enables std for its scoped subscriber)
 [workspace.dependencies.tracing]
 version = "0.1.44"
 default-features = false
@@ -2301,8 +1230,6 @@ features = ["attributes"]
 # Application-owned stderr formatting, without a log bridge or filter parser.
 # features:
 # - fmt: scoped driver output, including its registry and std requirements
-# consumers:
-# - surface-driver
 [workspace.dependencies.tracing-subscriber]
 version = "0.3.23"
 default-features = false
