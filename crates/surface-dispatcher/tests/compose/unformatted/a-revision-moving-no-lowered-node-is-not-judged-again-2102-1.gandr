@@ -1,2 +1,2 @@
 def one : Integer = 1 ;
-def two : Path[.A = Integer](one, 1) = Path.here 1 ;
+def two : Path[.A = Integer] one 1 = Path.here 1 ;

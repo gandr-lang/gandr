@@ -7292,8 +7292,8 @@ mod tests
         let table = table(SourceText::from(source));
         // Each written term, beside the text that places it in the source.
         for (written, context) in [
-            ("Extend(d, 5)", "Ren(Extend(d, 5)"),
-            ("Extend(g, 6)", ", Extend(g, 6))"),
+            ("Extend d 5", "Ren (Extend d 5)"),
+            ("Extend g 6", " (Extend g 6))"),
             ("two", "Wrap two"),
         ] {
             let at = source.find(context).expect("the context occurs");
