@@ -346,6 +346,8 @@ mod refusal;
 mod report;
 mod root;
 mod run;
+#[cfg(test)]
+mod rule_census;
 mod settle;
 
 pub use crate::distribution::Bits;
