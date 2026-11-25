@@ -80,7 +80,7 @@ assert!(object.as_ref().starts_with(b"\x7fELF"));
 # fn main() {}
 ```
 
-The tests of the crate read the MLIR files of the C++ tests in `cxx/tests/`, and the tests of the read of a term and of the agreement read the block of `library/std/src/llvm.gandr` through the lowering of the surface. The tests of the lowering link each program with the `ld.lld` of the toolchain and run it. They run under the feature:
+The tests of the crate read the MLIR files of the C++ tests in `cxx/tests/`, and the tests of the read of a term and of the agreement read the block of `library/std/src/llvm.gandr` through the lowering of the surface. The tests of the lowering link each program with the `ld.lld` of the toolchain and run it. `tests/corpus.rs` holds the executor and the compiled code to one answer for each `runs` item of `corpus/model/programs` that the lowering accepts, and counts each refused item by the name of its refusal. They run under the feature:
 
 ```sh
 GANDR_MLIR_TOOLCHAIN=<root> cargo nextest run -p gandr-runtime-mlir --features full

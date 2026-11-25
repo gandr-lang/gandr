@@ -1,0 +1,29 @@
+//! `exit-code` computes one number at a machine width and gives it as
+//! its exit code.
+//!
+//! The wrapping addition of `u8` is a machine row.
+//! A program whose entry is `code` exits 4: the sum wraps to 2, and two
+//! calls add 2.
+//!
+//! Its `code` takes no argument and gives a `u8`.
+//! The source has no list, no string and no `Integer`.
+//!
+//! - see: width-row.gandr — the same row at `u32`
+
+/// One more than its argument. The sum wraps.
+def inc(x : u8) -> u8 = u8.wrapping_add x 1u8;
+
+/// `inc` twice: the first call runs, the second is the tail call.
+def twice(x : u8) -> u8 = inc (inc x);
+
+/// `wrapped` adds 3 to the greatest `u8` and wraps the sum.
+@[runs("2u8")]
+def wrapped() -> u8 = u8.wrapping_add 255u8 3u8;
+
+/// `answer` calls `twice` on the wrapped sum.
+@[runs("4u8")]
+def answer() -> u8 = { let sum = wrapped; twice sum };
+
+/// `code` gives the answer: the exit code of its compiled program.
+@[runs("4u8")]
+def code() -> u8 = { let value = answer; value };

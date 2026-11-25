@@ -437,6 +437,7 @@ path = "crates/boot-core"
 # obligation ledger and the refusal vocabulary.
 # consumers:
 # - core-incremental
+# - runtime-mlir (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -820,6 +821,7 @@ path = "crates/surface-build-identity"
 # The expectation language: the expectation schemas, the strict and fixture
 # roots, the settle comparison and the report shape.
 # consumers:
+# - runtime-mlir (dev)
 # - runtime-stencils (dev)
 # - surface-diagnostics
 # - surface-dispatcher
@@ -848,6 +850,7 @@ path = "crates/surface-diagnostics"
 # Routes a driver invocation into the surface pipeline, and composes that
 # pipeline over the sources a verb walks.
 # consumers:
+# - runtime-mlir (dev)
 # - runtime-stencils (dev)
 # - surface-agentic
 # - surface-diagnostics (dev)
@@ -864,6 +867,7 @@ path = "crates/surface-dispatcher"
 # The run stage: each run of a checked module's program, native or on the
 # executor, and the engine the composition and the walk take.
 # consumers:
+# - runtime-mlir (dev)
 # - runtime-stencils (dev)
 # - surface-diagnostics (dev)
 # - surface-dispatcher (dev)
@@ -1915,6 +1919,7 @@ default-features = false
 # - kernel-core
 # - kernel-data
 # - kernel-term
+# - runtime-mlir (dev)
 # - runtime-stencils (dev)
 # - storage-artifact
 # - storage-store
