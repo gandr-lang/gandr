@@ -612,6 +612,110 @@ fn a_machine_row_answers_as_its_evaluation_8002()
     assert_eq!(70, rows, "seven machine rows for each of ten widths");
 }
 
+/// Each row that names a checked operation answers, on the bounds of its
+/// width, what the exact operation answers: absent outside the width, and
+/// the value inside it. A shift is absent for an amount below zero or of the
+/// bit count or more. The bounds are zero, one, the largest signed value, the
+/// least signed value and all ones. The ten widths have five such rows each,
+/// so a row named as another's operation, or a row lost, changes one answer
+/// or the count.
+#[test]
+fn a_checked_row_answers_as_its_evaluation()
+{
+    let bits = |width| match width {
+        IntegerWidth::U8 | IntegerWidth::I8 => 8_u32,
+        IntegerWidth::U16 | IntegerWidth::I16 => 16,
+        IntegerWidth::U32 | IntegerWidth::I32 => 32,
+        IntegerWidth::U64 | IntegerWidth::I64 | IntegerWidth::Usize | IntegerWidth::Isize => 64,
+    };
+    let signed = |width| {
+        matches!(
+            width,
+            IntegerWidth::I8
+                | IntegerWidth::I16
+                | IntegerWidth::I32
+                | IntegerWidth::I64
+                | IntegerWidth::Isize
+        )
+    };
+    let mut rows = 0_usize;
+    for row in PRELUDE.iter().copied() {
+        let Some(CheckedOperation { width, instruction }) = row.checked_operation()
+        else {
+            continue;
+        };
+        rows = rows.saturating_add(1);
+        let count = bits(width);
+        let mask = u64::MAX.unbounded_shr(64_u32.saturating_sub(count));
+        let sign = 1_u64.unbounded_shl(count.saturating_sub(1));
+        let bounds = [0_u64, 1, sign.wrapping_sub(1), sign, mask];
+        // The value of a pattern of the width, with its sign for a signed
+        // width, and the least and the greatest value of the width.
+        let value = |pattern: u64| {
+            if signed(width) && pattern & sign != 0 {
+                i128::from(pattern)
+                    .wrapping_sub(i128::from(mask))
+                    .wrapping_sub(1)
+            }
+            else {
+                i128::from(pattern)
+            }
+        };
+        let (least, greatest) = if signed(width) {
+            (
+                i128::from(sign).wrapping_neg(),
+                i128::from(sign).wrapping_sub(1),
+            )
+        }
+        else {
+            (0, i128::from(mask))
+        };
+        let fixed =
+            |pattern| FixedInteger::try_from((width, pattern)).expect("a pattern of the width");
+        let pattern =
+            |exact: i128| u64::try_from(exact & i128::from(mask)).expect("a masked value");
+        for first in bounds {
+            for second in bounds {
+                let (left, right) = (value(first), value(second));
+                // A shift of a value below 2^64 by less than 64 bits stays
+                // inside `i128`.
+                let shift = |shifted: fn(i128, u32) -> Option<i128>| {
+                    u32::try_from(right)
+                        .ok()
+                        .filter(|&amount| amount < count)
+                        .and_then(|amount| shifted(left, amount))
+                        .map(pattern)
+                };
+                // A product past `i128` is past each width too.
+                let exact = |result: Option<i128>| {
+                    result
+                        .filter(|result| (least ..= greatest).contains(result))
+                        .map(pattern)
+                };
+                let answer = match instruction {
+                    CheckedInstruction::Add => exact(left.checked_add(right)),
+                    CheckedInstruction::Sub => exact(left.checked_sub(right)),
+                    CheckedInstruction::Mul => exact(left.checked_mul(right)),
+                    CheckedInstruction::Shl => shift(i128::checked_shl),
+                    CheckedInstruction::Shr => shift(i128::checked_shr),
+                };
+                let expected = answer.map_or(CheckedFixed::Absent(width), |word| {
+                    CheckedFixed::Present(fixed(word))
+                });
+                let operands = [Scalar::Fixed(fixed(first)), Scalar::Fixed(fixed(second))];
+                let borrowed = operands.each_ref().map(Scalar::borrowed);
+                assert_eq!(
+                    Ok(Scalar::Checked(expected)),
+                    row.evaluate(&borrowed),
+                    "{} on {first:#x} and {second:#x}",
+                    row.name().as_ref()
+                );
+            }
+        }
+    }
+    assert_eq!(50, rows, "five checked rows for each of ten widths");
+}
+
 #[test]
 fn each_width_form_answers_at_its_bounds()
 {

@@ -533,6 +533,7 @@ path = "crates/core-publish"
 # the store a run answers into, and reading a run's terminal back.
 # consumers:
 # - runtime-emitter
+# - runtime-mlir
 # - runtime-net (dev)
 # - runtime-stencils (dev)
 # - surface-dispatcher
@@ -560,7 +561,7 @@ path = "crates/core-session"
 # - core-unify
 # - kernel-core (dev)
 # - runtime-emitter
-# - runtime-mlir (dev)
+# - runtime-mlir
 # - runtime-stencils (dev)
 # - surface-corpus
 # - surface-diagnostics
@@ -677,6 +678,7 @@ path = "crates/kernel-strata"
 # - core-unify
 # - kernel-core
 # - runtime-emitter
+# - runtime-mlir
 # - runtime-net (dev)
 # - runtime-stencils (dev)
 # - storage-artifact
@@ -1172,6 +1174,7 @@ path = "crates/surface-tui"
 # consumers:
 # - core-sequent
 # - runtime-emitter
+# - runtime-mlir
 # - runtime-stencils (dev)
 # - storage-artifact
 # - surface-dispatcher (dev)

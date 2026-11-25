@@ -1,6 +1,6 @@
 # gandr-runtime-mlir
 
-The Rust side of the MLIR shim. It compiles MLIR text for a target triple into the bytes of an object, and it reads the facts of a machine body. It prints a term of a signature as MLIR text, and it reads the facts of a body back into a term.
+The Rust side of the MLIR shim. It compiles MLIR text for a target triple into the bytes of an object, and it reads the facts of a machine body. It lowers focused definitions to MLIR text of the `gandr` dialect. It prints a term of a signature as MLIR text, and it reads the facts of a body back into a term.
 
 <!-- toc -->
 
@@ -17,6 +17,8 @@ The Rust side of the MLIR shim. It compiles MLIR text for a target triple into t
 ## Synopsis
 
 **What.** `compile` takes MLIR text in the `llvm` and `gandr` dialects and a target triple. It gives an `Object` with the bytes of a relocatable object file, or a `CompileError` that names the step that refused the text. `read` gives the facts of a machine body. The C++ shim in `cxx/` does the work of both, through one C entry for each. `print_term` writes a term of a signature, such as the block `Llvm` of `std.llvm`, as MLIR text in the generic form. `read_term` reads the facts of a body into a term of that signature, and its print is the body.
+
+`lower` takes the focused definitions of a module and gives one `tailcc` function of the `gandr` dialect for each, or the `Form` that it refuses. A node or a type that the lowering has no form for gives `Form::Outside` with the name of its variant. `Lowered::entry` adds the entry of a program with no libc, and `Export` a symbol of the C convention.
 
 **Why.** gandr writes native code through MLIR. One small C entry keeps the C++ of the pin out of the Rust build. The verifier runs before the translation. Thus a wrong text gives a diagnostic and not a crash of the code generator. The `gandr` dialect writes each transition of the machine one time, as one operation with one lowering.
 
@@ -37,6 +39,9 @@ The Rust side of the MLIR shim. It compiles MLIR text for a target triple into t
 - `print_term` and `TermPrinter`: a `BindingTerm` and the table of its signature in, a `Printed` out, with one operation on each line and the type of each result. A `Place` puts the body inside a function. A `PrintError` names the port that has no print.
 - `read_term`: the `Operation`s of a body, the table of a signature and a `Naming` in, a `BindingTerm` out. A `TermReadError` names the operation or the port that does not read.
 - `Naming`: the MLIR names of a block where they are not the names of the block. `Naming::LLVM` is the table of `std.llvm`, and `Naming::NONE` keeps each name.
+- `lower`, `Definition`, `Lowered` and `Form`: a definition whose type is a thunk of arrows over widths, `Unit` and sums of two words or units, to a returner of such a type or of `Void`, lowers to one function. A native row lowers by its typed operation, `Primitive::machine_operation` or `Primitive::checked_operation`. The effect row of a returner does not refuse a definition: each node of its body does.
+- `Entry` and `ENTRY`: the entry of a program with no libc, which calls the main definition and gives its word to the system call `exit_group` of Linux x86-64.
+- `Export`: a function of the C convention that calls a definition of widths.
 - The `gandr` dialect in `cxx/src/gandr.td`. Each operation lowers to the `llvm` dialect:
 
 | Operation | Transition | Lowering |
@@ -75,7 +80,7 @@ assert!(object.as_ref().starts_with(b"\x7fELF"));
 # fn main() {}
 ```
 
-The tests of the crate read the MLIR files of the C++ tests in `cxx/tests/`, and the tests of the read of a term and of the agreement read the block of `library/std/src/llvm.gandr` through the lowering. They run under the feature:
+The tests of the crate read the MLIR files of the C++ tests in `cxx/tests/`, and the tests of the read of a term and of the agreement read the block of `library/std/src/llvm.gandr` through the lowering of the surface. The tests of the lowering link each program with the `ld.lld` of the toolchain and run it. They run under the feature:
 
 ```sh
 GANDR_MLIR_TOOLCHAIN=<root> cargo nextest run -p gandr-runtime-mlir --features full
@@ -92,6 +97,9 @@ GANDR_MLIR_TOOLCHAIN=<root> cargo nextest run -p gandr-runtime-mlir --features f
 | The operations of the `gandr` dialect | [`cxx/src/gandr.td`](cxx/src/gandr.td) |
 | The verifiers and the lowering of the dialect | [`cxx/src/dialect.cpp`](cxx/src/dialect.cpp) |
 | The read entry, and the form of its facts | [`src/read.rs`](src/read.rs) |
+| The forms of the lowering, command by command, and each refusal | [`src/lower.rs`](src/lower.rs) |
+| The entry of a program with no libc | [`src/entry.rs`](src/entry.rs) |
+| The symbol of an export | [`src/export.rs`](src/export.rs) |
 | The print of a term, port by port | [`src/print.rs`](src/print.rs) |
 | The read of the facts into a term | [`src/term.rs`](src/term.rs) |
 | The MLIR names of a block | [`src/naming.rs`](src/naming.rs) |

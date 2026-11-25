@@ -254,6 +254,10 @@ digraph crates {
   "runtime-emitter" -> "storage-chunker";
   "runtime-emitter" -> "storage-values";
   "runtime-emitter" -> "theory-cell-complexes";
+  "runtime-mlir" -> "core-sequent";
+  "runtime-mlir" -> "core-term";
+  "runtime-mlir" -> "kernel-term";
+  "runtime-mlir" -> "theory-cell-complexes";
   "runtime-mlir" -> "theory-levitation";
   "runtime-net" -> "core-term";
   "runtime-net" -> "storage-values";
