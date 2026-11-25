@@ -8,6 +8,7 @@ A twin is a function of a crate that gandr source states. A crate is under the e
 | ----- | ----------------- |
 | `boot-alloc` | yes |
 | `boot-core` | no |
+| `boot-data` | no |
 | `boot-io` | no |
 | `core-checker` | no |
 | `core-checker-base` | no |
@@ -30,6 +31,7 @@ A twin is a function of a crate that gandr source states. A crate is under the e
 | `kernel-strata` | yes |
 | `kernel-term` | yes |
 | `runtime-emitter` | the emitter |
+| `runtime-mlir` | no |
 | `runtime-net` | no |
 | `runtime-rust-record` | no |
 | `runtime-stencils` | yes |
@@ -112,4 +114,4 @@ A twin is a function of a crate that gandr source states. A crate is under the e
 | `workflow-test-timing` | no |
 | `workflow-twin-census` | no |
 
-Crates under the emitter: 32 of 105.
+Crates under the emitter: 32 of 107.
