@@ -460,6 +460,73 @@ fn a_repeated_variable_binds_two_terms_that_agree_under_a_symmetry()
 }
 
 #[test]
+fn a_pair_stands_in_each_order_under_a_symmetry()
+{
+    // pair = 0, low = 1, mid = 2, wrap = 3.
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
+        operation!(1, 2),
+        operation!(0, 0),
+        operation!(0, 0),
+        operation!(2, 1),
+    ]);
+    let decided = |rules: &[&TheoryRule]| {
+        TheoryRules::new(
+            symbols.clone(),
+            SmallVec::<_, 0, Global>::from_iter(rules.iter().map(|&rule| rule.clone())),
+        )
+        .decide(&mut fuel())
+    };
+    let symmetry = rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]);
+    // `pair(low, mid) ==> low` and `pair(mid, low) ==> mid`: under the symmetry
+    // the two left sides are one term, with the two normal forms `low` and
+    // `mid`.
+    let lows = rule(&[s!(0), s!(1), s!(2)], &[s!(1)]);
+    let mids = rule(&[s!(0), s!(2), s!(1)], &[s!(2)]);
+    assert_eq!(
+        decided(&[&lows, &mids]),
+        Ok(()),
+        "as written the two left sides do not overlap"
+    );
+    for (rules, outer, inner) in [
+        ([&symmetry, &lows, &mids], 1_usize, 2_usize),
+        ([&symmetry, &mids, &lows], 1, 2),
+        ([&lows, &symmetry, &mids], 0, 2),
+        ([&mids, &symmetry, &lows], 0, 2),
+        ([&lows, &mids, &symmetry], 0, 1),
+        ([&mids, &lows, &symmetry], 0, 1),
+    ] {
+        assert_eq!(
+            decided(&rules),
+            Err(TheoryRuleRefusal {
+                rule: RuleIndex::from(outer),
+                fault: TheoryRuleFault::Diverges(RuleIndex::from(inner)),
+            }),
+            "the first step parts from the second in the other order of its left side"
+        );
+    }
+    // `pair(x, y) ==> x`.
+    let first = rule(&[s!(0), v!(0), v!(1)], &[v!(0)]);
+    assert_eq!(
+        decided(&[&symmetry, &first]),
+        refused!(1, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "the rule overlaps its own other order at the root, with the sides `x` and `y`"
+    );
+    // `wrap(pair(x, y)) ==> pair(y, x)` and `wrap(z) ==> z`.
+    let turns = rule(&[s!(3), s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]);
+    let keeps = rule(&[s!(3), v!(0)], &[v!(0)]);
+    assert_eq!(
+        decided(&[&turns, &keeps]),
+        refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "with no symmetry `pair(y, x)` and `pair(x, y)` are two terms"
+    );
+    assert_eq!(
+        decided(&[&symmetry, &turns, &keeps]),
+        Ok(()),
+        "beside the symmetry the two normal forms of each pair are one term"
+    );
+}
+
+#[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {
     let symbols = SmallVec::<_, 0, Global>::from_iter([
