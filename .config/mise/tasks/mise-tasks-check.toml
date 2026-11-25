@@ -2078,14 +2078,14 @@ description = "The CI image lookup reads a tag as published only when every mani
 tools.jq = "1.8.1"
 run = ".github/actions/find-image/cases.bash"
 
-# The crate map holds three things. The dot file and the category graph of
-# the crates' README are what `cargo metadata` and the concerns ledger give
-# now. No crate lies outside the layering's categories. No edge points to a
-# category listed after its own. Each case holds the program's arguments, an
+# The crate map holds two things. No crate lies outside the layering's
+# categories. No edge points to a category listed after its own. The check
+# also writes both forms of the map into a temporary directory, so a map that
+# its program cannot write fails. Each case holds the program's arguments, an
 # input and the raw output it must give.
 # - see: #2290, #3890, #7689
 # - see: `.config/crate-map/map.jq`, `.config/crate-map/cases.json`
-# - see: `ledger/crates.dot`, `crates/README.md` § Map
+# - see: `crates/README.md` § Map
 #
 # The concerns ledger is its own re-dump and keeps its keys. Every concern has
 # a site, and every site names a module its crate has. A sharing mechanism has
@@ -2093,7 +2093,7 @@ run = ".github/actions/find-image/cases.bash"
 # interface trait, every implementation of that trait outside a test is
 # a site of the concern.
 ["check:crate-map"]
-description = "The crate map is the manifests' and the concerns', and keeps the layering"
+description = "The crate map keeps the layering, and the concerns ledger keeps its sites"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
@@ -2144,22 +2144,19 @@ while IFS='|' read -r concern interface; do
 done < <(concerns 'SELECT id, interface FROM concern WHERE interface IS NOT NULL ORDER BY id;')
 cargo metadata --locked --no-deps --format-version 1 > "$fresh/metadata.json"
 sites=$(sqlite3 -json "$db" 'SELECT DISTINCT concern, crate FROM site ORDER BY concern, crate;')
-map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --rawfile page crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq "$fresh/metadata.json"; }
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq "$fresh/metadata.json"; }
 findings=$(map -r findings)
 if [[ -n "$findings" ]]; then
   printf '%s\n' "$findings" >&2
   failed=1
 fi
-map -r dot > "$fresh/crates.dot"
-map -j readme > "$fresh/README.md"
-diff -u ledger/crates.dot "$fresh/crates.dot" >&2 || failed=2
-diff -u crates/README.md "$fresh/README.md" >&2 || failed=2
-if (( failed == 2 )); then echo 'the crate map is stale; run `mise run ledger:crate-map`' >&2; fi
+map -r dot > "$fresh/crates.dot" || failed=1
+map -r mermaid > "$fresh/crates.md" || failed=1
 if (( failed )); then
   echo 'crate map check FAILED' >&2
   exit 1
 fi
-echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, $(concerns 'SELECT count(*) FROM concern;') concerns on $(concerns 'SELECT count(*) FROM site;') sites, the map current"
+echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, $(concerns 'SELECT count(*) FROM concern;') concerns on $(concerns 'SELECT count(*) FROM site;') sites"
 '''
 
 # The crate leads (#3155, `.config/crate-lead/lead.jq`): each source the table

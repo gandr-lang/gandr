@@ -4,14 +4,13 @@
 # order; `$concerns` is `ledger/concerns.sql`'s sites as `[{concern, crate}]`;
 # `$form` picks the output:
 #
-# - `dot`: `ledger/crates.dot`, one node per crate in a cluster per category,
+# - `dot`: the per-crate map, one node per crate in a cluster per category,
 #   one edge per normal dependency between two workspace crates, dependent to
 #   dependency, then each concern's overlay: an undirected dashed edge in the
 #   concern's colour between each two of its crates in name order, a loop on
 #   a concern's only crate; everything sorted so the file depends on the
 #   graph alone;
-# - `readme`: the page `$page`, `crates/README.md`, with the category graph
-#   between its `crate-map` markers in § Map rewritten, one arrow per pair of
+# - `mermaid`: the category graph as a Mermaid block, one arrow per pair of
 #   categories, labelled with the edges it stands for (#3890, #7689);
 # - `findings`: one line per crate outside `crates/<category>-<name>`, per
 #   edge to a category listed after its own, the layering's two refusals, and
@@ -107,13 +106,6 @@ def mermaid:
     ]
   | join("\n");
 
-def readme:
-  mermaid as $block
-  | ($ARGS.named.page // error("the readme form takes the page holding the markers as `$page`")
-     | capture("^(?<head>(?:.|\n)*<!-- crate-map:begin -->\n)(?:.|\n)*?(?<tail><!-- crate-map:end -->(?:.|\n)*)$")
-     // error("the page holds no `<!-- crate-map:begin -->` … `<!-- crate-map:end -->` block"))
-  | .head + $block + "\n" + .tail;
-
 def findings:
   graph as $graph
   | categories as $order
@@ -129,7 +121,7 @@ def findings:
      | "\(.concern): a site in \(.crate), which is not a workspace crate");
 
 if $form == "dot" then dot
-elif $form == "readme" then readme
+elif $form == "mermaid" then mermaid
 elif $form == "findings" then findings
-else error("form is dot, readme or findings, not \($form)")
+else error("form is dot, mermaid or findings, not \($form)")
 end

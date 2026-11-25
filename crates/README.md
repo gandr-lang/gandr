@@ -22,40 +22,7 @@ workflow  repository tooling and gates
 
 ## Map
 
-An arrow is one category's dependencies on another, labelled with the count of `[dependencies]` edges between their crates. The count omits dev and build dependencies. Every arrow points down the layering: `check:crate-map` refuses an edge to a category listed after its own and names its two crates. `mise run ledger:crate-map` writes the block between the markers. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
-
-<!-- crate-map:begin -->
-```mermaid
-flowchart BT
-  boot
-  theory
-  kernel
-  core
-  storage
-  runtime
-  surface
-  workflow
-  kernel -->|5| theory
-  core -->|14| theory
-  core -->|43| kernel
-  storage -->|6| theory
-  storage -->|1| kernel
-  runtime -->|1| boot
-  runtime -->|1| theory
-  runtime -->|2| kernel
-  runtime -->|7| core
-  runtime -->|3| storage
-  surface -->|39| theory
-  surface -->|37| kernel
-  surface -->|48| core
-  surface -->|11| storage
-  surface -->|11| runtime
-  workflow -->|1| theory
-  workflow -->|1| kernel
-  workflow -->|2| core
-  workflow -->|18| surface
-```
-<!-- crate-map:end -->
+An arrow is one category's dependencies on another, labelled with the count of `[dependencies]` edges between their crates. The count omits dev and build dependencies. Every arrow points down the layering: `check:crate-map` refuses an edge to a category listed after its own and names its two crates. `mise run ledger:crate-map` writes the category graph, `crates.md`, and the per-crate map, `crates.dot`, into `target/ledger`.
 
 ## Members
 

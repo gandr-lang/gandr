@@ -23,26 +23,30 @@ mv ledger/features.db.new ledger/features.db
 description = "Dump ledger/features.db to the tracked ledger/features.sql, rows in id order"
 run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
 
-# The crate map: the dot file and the category graph between the markers of
-# the crates' README. The task makes both from `cargo metadata` and the sites
-# of the concerns ledger, in the layering of the crates' README.
-# `check:crate-map` holds their currency, the layering and the concerns'
-# sites.
+# The crate map: the per-crate dot graph and the category graph, from `cargo
+# metadata` and the sites of the concerns ledger, in the layering of the
+# crates' README. The tree holds no copy of the map: this task writes
+# `crates.dot` and `crates.md` into `target/ledger` or into the directory it
+# is given. `check:crate-map` holds the layering and the concerns' sites.
 # - see: #2290, #3890, #7689
-# - see: `.config/crate-map/map.jq`, `ledger/crates.dot`, `crates/README.md` § Map
+# - see: `.config/crate-map/map.jq`, `crates/README.md` § Map
 ["ledger:crate-map"]
-description = "Generate ledger/crates.dot and crates/README.md's category map from cargo metadata and the concerns"
+description = "Write crates.dot and crates.md, the crate map, from cargo metadata and the concerns"
+usage = '''
+arg "[directory]" help="the directory the two files are written to" default="target/ledger"
+'''
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+dir={{ usage.directory }}
+mkdir -p "$dir"
 metadata=$(cargo metadata --locked --no-deps --format-version 1)
 sites=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT DISTINCT concern, crate FROM site ORDER BY concern, crate;')
-map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --rawfile page crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq <<< "$metadata"; }
-map -r dot > ledger/crates.dot.new
-map -j readme > crates/README.md.new
-mv ledger/crates.dot.new ledger/crates.dot
-mv crates/README.md.new crates/README.md
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq <<< "$metadata"; }
+map -r dot > "$dir/crates.dot"
+map -r mermaid > "$dir/crates.md"
+echo "wrote $dir/crates.dot and $dir/crates.md"
 '''
 
 # The concerns ledger, `ledger/concerns.sql`, is edited by hand: an `INSERT`
