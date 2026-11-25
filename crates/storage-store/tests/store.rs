@@ -935,6 +935,11 @@ const CRASH_NAMINGS: u16 = 70_u16;
 /// trivial.
 fn crash_child(root: &Path)
 {
+    // The child ends with `SIGABRT` at its crash point, and the parent reads
+    // only its failed status. The kernel starts no core handler for a process
+    // that is not dumpable, so the abort stores no core and makes no notice.
+    #[cfg(target_os = "linux")]
+    nix::sys::prctl::set_dumpable(false).expect("the child is made not dumpable");
     let (store, mut register) = Store::open(root).expect("the child's store opens");
     let pointer = store
         .commit(&labels(Count(50)))

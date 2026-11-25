@@ -1695,10 +1695,15 @@ default-features = false
 # needs `unsafe` for both. Reversal: rustix gaining `getrusage`.
 #
 # The pool's grant test makes its jobserver as a FIFO with `mkfifo`.
+#
+# The store's crash test makes its child not dumpable before the child
+# aborts.
 # features:
 # - term: `pty::openpty`
 # - fs: `sys::statfs::statfs`, the type name of a filesystem on macOS, and
 #   `unistd::mkfifo`, the FIFO of the pool's grant test
+# - process: `sys::prctl::set_dumpable`, on Linux, the child of the store's
+#   crash test
 # - resource: `sys::resource::getrusage`, the CPU and the voluntary switches
 #   of each row of the store's load
 # consumers:
@@ -1708,7 +1713,7 @@ default-features = false
 [workspace.dependencies.nix]
 version = "0.31.3"
 default-features = false
-features = ["fs", "resource", "term"]
+features = ["fs", "process", "resource", "term"]
 
 # The operating system's file events: the hub's watch over the files open
 # documents import, for connections whose client watches none, and the

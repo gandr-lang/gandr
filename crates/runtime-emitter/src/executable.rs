@@ -686,6 +686,15 @@ mod tests
     #[ignore = "run by `no_view_is_writable_and_executable` as a child process"]
     fn a_write_to_the_executable_view_child()
     {
+        // The child ends with the fault signal, and the parent reads that
+        // signal. The kernel starts no core handler for a process that is not
+        // dumpable, so the fault stores no core and makes no notice.
+        #[cfg(target_os = "linux")]
+        // SAFETY: `PR_SET_DUMPABLE` with 0 takes no pointer and changes only
+        // the dumpable flag of this process.
+        unsafe {
+            libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0);
+        }
         let region = Region::map(Offset(1 << 16_u32)).expect("the host maps a region");
         // SAFETY: none is claimed; the write is meant to fault, and the
         // parent reads the fault.
