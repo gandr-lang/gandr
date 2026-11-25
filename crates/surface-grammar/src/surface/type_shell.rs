@@ -924,6 +924,23 @@ fn add_type_rules(
         type_atom,
         tile(TileLabel("type_variable")),
     ));
+    // The descent `[<]`, an operand of its own after a definition's name: a
+    // decoder's arm writes its own recursion in the type it returns, `el
+    // [<] a`, as its body writes the call it makes. The lowering reads it
+    // only as the first argument of a lowercase head, and refuses it
+    // anywhere else. No other type form opens with `[` and `<`. The
+    // tree-sitter grammar has no descent, so the kind is in
+    // `PBG_ONLY_KINDS`.
+    rules.push(rule(
+        RuleName("descent_type"),
+        ty,
+        type_atom,
+        Regex::seq([
+            tile(TileLabel("[")),
+            tile(TileLabel("<")),
+            tile(TileLabel("]")),
+        ]),
+    ));
     // A type at a mode variable, `m List(Integer)`: a method's receiver
     // `self : m T`, its mode the telescope's `[m : Mode]`. The variable is
     // also a whole type, `x : t`, so the two readings tie on the variable and

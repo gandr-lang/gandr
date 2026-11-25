@@ -5055,6 +5055,45 @@ mod tests
         );
     }
 
+    /// A lowercase head applies by juxtaposition off a method's receiver:
+    /// `twice Integer`, `apply twice Integer` and `both Integer (twice
+    /// Integer)` lower as their call forms, in a result, a parameter and an
+    /// arrow's domain. A head that names nothing is refused over the whole
+    /// form as a mode off a receiver.
+    #[test]
+    fn a_lowercase_head_applies_by_juxtaposition()
+    {
+        let mut arena = CoreArena::new();
+        let source =
+            include_str!("lower/fixtures/a-lowercase-head-applies-by-juxtaposition.gandr");
+        let module = lowered(SourceText::from(source), &mut arena);
+        let outcome = |name: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == name)
+                .map(LoweredDeclaration::outcome)
+        };
+        for name in ["once", "deep", "mixed", "arrowed"] {
+            assert!(
+                matches!(outcome(name), Some(DeclarationOutcome::Completed { .. })),
+                "`{name}` lowers its type and its body: {:?}",
+                outcome(name)
+            );
+        }
+        let start = source.find("nothing Integer").unwrap_or_default();
+        assert!(
+            matches!(
+                outcome("unknown"),
+                Some(DeclarationOutcome::Refused(LoweringRefusal::StrayReceiverMode { span, .. }))
+                    if usize::from(span.start()) == start
+                        && usize::from(span.end()) == start.saturating_add("nothing Integer".len())
+            ),
+            "a head that names nothing is refused over the form: {:?}",
+            outcome("unknown")
+        );
+    }
+
     #[test]
     fn a_product_binder_splits_as_the_tuple_binder_4853()
     {

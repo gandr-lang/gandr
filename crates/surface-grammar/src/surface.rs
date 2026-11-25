@@ -520,6 +520,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "cons_pattern",
     "continue_expression",
     "data_declaration",
+    "descent_type",
     "derived_rule_declaration",
     "equivalence_type",
     "extension_type",

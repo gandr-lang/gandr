@@ -195,6 +195,7 @@ use crate::form::opens_expression;
 use crate::form::owed_tile;
 use crate::form::read_as_type;
 use crate::form::read_pieces;
+use crate::form::moded_call;
 use crate::form::run_reading;
 use crate::form::shape_of;
 use crate::form::tile_label;
@@ -3441,7 +3442,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             Former::AtType => Capability::new(self.host()).at_type(site, cursor),
             Former::StagedType => self.staged_type(site, cursor),
             Former::ExtensionType => self.extension_type(site, cursor),
-            Former::ModedType => CapabilityRef::new(self.host_ref()).moded_type(site, cursor),
+            Former::ModedType => self.moded_application(site, pieces),
             Former::Scope => Capability::new(self.host()).capability_scope(site, pieces),
             Former::Instantiation => Native::new(self.host()).instantiation(site, cursor),
             Former::SessionType => Capability::new(self.host()).session_type(site),
@@ -7737,9 +7738,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     }
                     let mut declared = function.one(cursor.operands())?;
                     // A receiver at a mode variable, `self : m T`: the variable
-                    // names a mode binder, and `T` is the receiver's type.
-                    if let Some((mode, typed)) =
-                        CapabilityRef::new(self.host_ref()).moded(declared)?
+                    // names a mode binder, and `T` is the receiver's type. Off
+                    // that receiver, `f a` is an application the type reads.
+                    let receiving = self.cx().name_at(first).as_ref() == "self"
+                        && CapabilityRef::new(self.host_ref()).receiver_mode(site)
+                            == Some(ReceiverMode::Deduced);
+                    if receiving
+                        && let Some((mode, typed)) =
+                            CapabilityRef::new(self.host_ref()).moded(declared)?
                     {
                         deduced =
                             Some(CapabilityRef::new(self.host_ref()).mode_variable(site, mode)?);
@@ -12382,6 +12388,65 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             return Err(refusal);
         }
         self.applied_head(site, head, name, applied, &manifests)
+    }
+
+    /// Classify a lowercase word before a type operand off a method's
+    /// receiver as the head of an application: `f a b` reads as the call
+    /// `f(a, b)` and `el [<] a` as the descent `el[<](a)`, as [`moded_call`]
+    /// spells them. A word read alone, an argument the spine names, is a
+    /// type head.
+    ///
+    /// # Specification
+    /// - requires: `site` is a moded type, or one of its words, read as a type
+    ///   or a value; `pieces` are its pieces.
+    /// - ensures: the application [`Self::type_application`] plans over the
+    ///   call form the spine spells; a word alone as [`Self::type_head`]
+    ///   plans it.
+    /// - fails: [`LoweringRefusal::StrayReceiverMode`] over the whole form when
+    ///   its head names nothing; the application's own refusal otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Cost
+    /// - allocation: the call form's pieces, growth within the spine
+    fn moded_application(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let head = match *pieces.pieces.as_slice() {
+            [Piece::Tile { at: head, .. }, Piece::Operand(_)] => head,
+            [Piece::Tile { label, at }] if label == TileName::TYPE_VARIABLE => {
+                let word = [Piece::Tile { label, at }];
+                return self.type_head(site, Cursor::new(&word, site.at.span));
+            },
+            _ => {
+                return CapabilityRef::new(self.host_ref())
+                    .moded_type(site, Cursor::new(&pieces.pieces, site.at.span));
+            },
+        };
+        let mut call = Pieces::new();
+        if !moded_call(self.cx().pbg, self.cx().tree, site.at.node, &mut call)? {
+            return CapabilityRef::new(self.host_ref())
+                .moded_type(site, Cursor::new(&pieces.pieces, site.at.span));
+        }
+        let mode = self.cx().name_at(head);
+        self.type_application(site, Cursor::new(&call.pieces, site.at.span))
+            .map_err(|refusal| match refusal {
+                LoweringRefusal::UnresolvedName { span, .. }
+                | LoweringRefusal::UnresolvedTypeHead { head: span, .. }
+                    if span == head.span =>
+                {
+                    LoweringRefusal::StrayReceiverMode {
+                        span: site.at.span,
+                        mode,
+                    }
+                },
+                other => other,
+            })
     }
 
     /// Classify the type former `name`, written at `head` and applied to the

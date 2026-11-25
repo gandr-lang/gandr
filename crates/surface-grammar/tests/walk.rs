@@ -91,14 +91,15 @@ use crate::failure::Failure;
 /// and `T >? S` and the recursion `rec X => S`, then by the static bracket's
 /// face form `T[f ↦ v]` leaving the grammar (#8188), then by a type path that
 /// ends at a bare value name, `M.f` (#8307), then by a `where` before the
-/// block of `rec`, then by the handler's words `effect … handle`.
-const BUILT_IN_FINGERPRINT: u64 = 0x58f1_2ec6_eb01_537e;
+/// block of `rec`, then by the handler's words `effect … handle`, then by
+/// the descent `[<]` as an operand of its own, `el [<] a`.
+const BUILT_IN_FINGERPRINT: u64 = 0x3e68_82e1_c84c_91c5;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3192);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3195);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -140,7 +141,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (":", 256),
     (":>", 2),
     (";", 144),
-    ("<", 17),
+    ("<", 18),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
@@ -173,8 +174,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 61),
-    ("]", 79),
+    ("[", 62),
+    ("]", 80),
     ("_", 48),
     ("abort", 1),
     ("access", 1),
