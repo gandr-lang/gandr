@@ -3,13 +3,13 @@
 pub theory PartialEq where
   sort Carrier : Type;
   oper eq : (a : Carrier, b : Carrier) --> Bool;
-  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](eq a b, eq b a);
+  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool] (eq a b) (eq b a);
 
 /// Decidable equality over a carrier: a partial equality every value is
 /// equal to itself in.
 pub theory Eq where
   include PartialEq;
-  law refl : (a : Carrier) -> Path[.A = Bool](eq a a, true);
+  law refl : (a : Carrier) -> Path[.A = Bool] (eq a a) true;
 
 /// An unread empty-row call does not change the next computation.
 def unreadCall(
@@ -17,8 +17,5 @@ def unreadCall(
   b : Type,
   f : +U (a -> -F b),
   g : +U (a -> -F b)
-) -> Path[.A = +U (a -> -F b)](
-  fun (x) { let _ = g x; f x },
-  f
-) =
+) -> Path[.A = +U (a -> -F b)] (fun (x) { let _ = g x; f x }) f =
   Path.here f
