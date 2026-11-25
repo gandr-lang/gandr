@@ -1,0 +1,273 @@
+//! The two checks of `boot-core` over `Ptr.Eff`: whether a range is valid
+//! UTF-8, and where its first zero byte is, the byte that ends a C string.
+//!
+//! `check_utf8` and `find_zero` give the answers of the Rust functions of
+//! `crates/boot-core/src/check.rs`. They name no model of memory: the scope
+//! that handles `Ptr.Eff` chooses one. Each reads one byte at a time with
+//! `load8`, and it reads a byte only when the range holds it. An empty range
+//! can have any address, and no check reads it. Each check descends on the
+//! length of its range, as `ranges.gandr` states.
+//!
+//! The check of UTF-8 follows the table of well-formed byte sequences of the
+//! Unicode standard, as `core::str::from_utf8` does:
+//!
+//! - A lead byte below 128 is a whole sequence.
+//! - A lead byte from 194 to 223 starts a sequence of two bytes, from 224 to
+//!   239 one of three, and from 240 to 244 one of four. Each other lead byte
+//!   is a fault.
+//! - A continuation byte is from 128 to 191. The second byte after the leads
+//!   224, 237, 240 and 244 has a narrower range.
+//! - A fault is at the position of the lead byte of its sequence, and so is a
+//!   sequence that the range cuts.
+//!
+//! The `runs` items run the cases of `crates/boot-core/tests/check.rs` under
+//! `Extent`. Each range ends at the end of the extent, so a read past it ends
+//! the run with `Outside`.
+//!
+//! - see: `ranges.gandr` — `Range`, `Length` and `Found`
+//! - see: `search.gandr` — `find_byte`, which `find_zero` calls
+//! - see: `../../../library/std/src/ptr.gandr` — `Ptr.Eff` and `Extent`
+//! - see: `../../../crates/boot-core/src/check.rs` — the Rust functions
+
+// The bytes of a memory of `Extent`.
+import std.list (List);
+// The interface of memory, and its model in the source.
+import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent);
+// The ranges, the answer of a search, and the lists of bytes of a run.
+import "./ranges.gandr";
+// The search of a byte.
+import "./search.gandr";
+
+/// The answer of the check of UTF-8, as `Utf8` of `boot-core`.
+pub data Utf8 : Type where
+  /// The range is a whole sequence of valid UTF-8.
+  | Valid : Utf8
+  /// The bytes before `position` are valid UTF-8, and the sequence that
+  /// starts at `position` is not valid, or the range ends inside it.
+  | Fault : (position : u64) --> Utf8
+
+/// `true` when `byte` is from `low` to `high`, the two bounds included.
+def inside(byte : u8, low : Integer, high : Integer) -> Bool =
+  let value = u8.to_integer byte
+  pure value >= low && value <= high
+
+/// The least second byte of a sequence of three bytes after `lead`: 160 after
+/// 224, which refuses an overlong form.
+def low_of_three(lead : Integer) -> Integer = if lead == 224 { pure 160 } else { pure 128 };
+
+/// The greatest second byte of a sequence of three bytes after `lead`: 159
+/// after 237, which refuses a surrogate.
+def high_of_three(lead : Integer) -> Integer = if lead == 237 { pure 159 } else { pure 191 };
+
+/// The least second byte of a sequence of four bytes after `lead`: 144 after
+/// 240, which refuses an overlong form.
+def low_of_four(lead : Integer) -> Integer = if lead == 240 { pure 144 } else { pure 128 };
+
+/// The greatest second byte of a sequence of four bytes after `lead`: 143
+/// after 244, which refuses a code point above U+10FFFF.
+def high_of_four(lead : Integer) -> Integer = if lead == 244 { pure 143 } else { pure 191 };
+
+/// The address `distance` bytes after `address`.
+def beyond(address : u64, distance : u64) -> u64 = u64.wrapping_add address distance;
+
+/// The check of the `left` bytes from `base + index` on, where the bytes
+/// before `index` are valid UTF-8.
+def rec utf8(base : u64, index : u64, left : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Utf8 =
+  match left where
+    | Zero => pure Valid
+    | Next(one) => {
+      let here = beyond base index
+      let byte = p.load8 here
+      let lead = u8.to_integer byte
+      if lead < 128 {
+        utf8[<] base (beyond index 1u64) one
+      } else {
+        if lead < 194 {
+          pure Fault index
+        } else {
+          if lead < 224 {
+            match one where
+              | Zero => pure Fault index
+              | Next(two) => {
+                let second = p.load8 (beyond here 1u64)
+                if inside second 128 191 {
+                  utf8[<] base (beyond index 2u64) two
+                } else {
+                  pure Fault index
+                }
+              }
+          } else {
+            if lead < 240 {
+              match one where
+                | Zero => pure Fault index
+                | Next(two) => match two where
+                  | Zero => pure Fault index
+                  | Next(three) => {
+                    let second = p.load8 (beyond here 1u64)
+                    if inside second (low_of_three lead) (high_of_three lead) {
+                      let third = p.load8 (beyond here 2u64)
+                      if inside third 128 191 {
+                        utf8[<] base (beyond index 3u64) three
+                      } else {
+                        pure Fault index
+                      }
+                    } else {
+                      pure Fault index
+                    }
+                  }
+            } else {
+              if lead < 245 {
+                match one where
+                  | Zero => pure Fault index
+                  | Next(two) => match two where
+                    | Zero => pure Fault index
+                    | Next(three) => match three where
+                      | Zero => pure Fault index
+                      | Next(four) => {
+                        let second = p.load8 (beyond here 1u64)
+                        if inside second (low_of_four lead) (high_of_four lead) {
+                          let third = p.load8 (beyond here 2u64)
+                          if inside third 128 191 {
+                            let fourth = p.load8 (beyond here 3u64)
+                            if inside fourth 128 191 {
+                              utf8[<] base (beyond index 4u64) four
+                            } else {
+                              pure Fault index
+                            }
+                          } else {
+                            pure Fault index
+                          }
+                        } else {
+                          pure Fault index
+                        }
+                      }
+              } else {
+                pure Fault index
+              }
+            }
+          }
+        }
+      }
+    }
+
+/// Whether `range` is valid UTF-8: `Valid` when the range is a whole sequence
+/// of valid UTF-8, an empty range included, and else `Fault` at the position
+/// of the first sequence that is not valid or that the range cuts.
+pub def check_utf8(range : Range) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Utf8 =
+  match range where
+    | Range(start, length) => utf8 start 0u64 length
+
+/// The first zero byte of `range`: `At` the least position whose byte is
+/// zero, and `Absent` when no byte of the range is zero, an empty range
+/// included.
+pub def find_zero(range : Range) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Found = find_byte range 0u8;
+
+/// The answer of a run under `Extent`.
+data Checked : Type where
+  /// The check of UTF-8 gives `utf8`.
+  | Judged : (utf8 : Utf8) --> Checked
+  /// The search of a zero byte gives `found`.
+  | Located : (found : Found) --> Checked
+  /// The member `member` reads outside the extent at `address`.
+  | Stopped : (member : String, address : u64) --> Checked
+
+/// The word with each bit set: the word of `Valid` and of `Absent`.
+def each_bit : u64 = u64.not 0u64;
+
+/// `true` when `word` is the word with each bit set.
+def is_each_bit(word : u64) -> Bool = u64.to_integer word == u64.to_integer each_bit;
+
+/// The word that a run gives for `utf8`: the position of the fault, or the
+/// word with each bit set for `Valid`.
+def utf8_word(utf8 : Utf8) -> u64 =
+  match utf8 where
+    | Valid => each_bit
+    | Fault(position) => position
+
+/// The word that a run gives for `found`: its position, or the word with each
+/// bit set for `Absent`.
+def found_word(found : Found) -> u64 =
+  match found where
+    | At(position) => position
+    | Absent => each_bit
+
+/// The outcome of a check of UTF-8 that ends with `ended`.
+def judged(ended : Ended) -> Checked =
+  match ended where
+    | Gave(word, memory) => if is_each_bit word { pure Judged Valid } else {
+      pure Judged (Fault word)
+    }
+    | Kept(memory) => pure Judged Valid
+    | Outside(member, address) => pure Stopped member address
+
+/// The outcome of a search of a zero byte that ends with `ended`.
+def located(ended : Ended) -> Checked =
+  match ended where
+    | Gave(word, memory) => if is_each_bit word { pure Located Absent } else {
+      pure Located (At word)
+    }
+    | Kept(memory) => pure Located Absent
+    | Outside(member, address) => pure Stopped member address
+
+/// The answer of `check_utf8` for `bytes`, under `Extent`. The extent holds
+/// the bytes alone, from the address 4096.
+def utf8_in(bytes : List u8) -> Checked =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let checked = check_utf8 (Range 4096u64 (counted bytes))
+    pure fun (memory) { pure Gave (utf8_word checked) memory }
+  } with Extent
+  judged (program (Memory 4096u64 bytes))
+
+/// The answer of `find_zero` for `bytes`, under `Extent`. The extent holds
+/// the bytes alone, from the address 4096.
+def zero_in(bytes : List u8) -> Checked =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let found = find_zero (Range 4096u64 (counted bytes))
+    pure fun (memory) { pure Gave (found_word found) memory }
+  } with Extent
+  located (program (Memory 4096u64 bytes))
+
+/// The check of UTF-8 gives the position of the first fault: 2 for the bytes
+/// `61 62 FF`. An empty range and whole sequences of one to four bytes are
+/// valid. A sequence that the range cuts, a lone byte of continuation, a
+/// surrogate and an overlong form each fault where they start.
+@[runs("cons (Judged (Fault 2u64)) (cons (Judged Valid) (cons (Judged Valid) (cons (Judged Valid) (cons (Judged Valid) (cons (Judged Valid) (cons (Judged (Fault 0u64)) (cons (Judged (Fault 1u64)) (cons (Judged (Fault 0u64)) (cons (Judged (Fault 0u64)) (cons (Judged (Fault 0u64)) nil))))))))))")]
+def the_check_of_utf8_gives_the_first_fault() -> List Checked =
+  let fault = utf8_in #[97u8, 98u8, 255u8]
+  let empty = utf8_in #[]
+  let one = utf8_in #[97u8]
+  let two = utf8_in #[195u8, 169u8]
+  let three = utf8_in #[226u8, 130u8, 172u8]
+  let four = utf8_in #[240u8, 159u8, 152u8, 128u8]
+  let cut = utf8_in #[240u8, 159u8, 152u8]
+  let cut_late = utf8_in #[97u8, 226u8, 130u8]
+  let lone = utf8_in #[128u8]
+  let surrogate = utf8_in #[237u8, 160u8, 128u8]
+  let overlong = utf8_in #[192u8, 128u8]
+  pure #[fault, empty, one, two, three, four, cut, cut_late, lone, surrogate, overlong]
+
+/// A zero byte is found where a C string ends: absent from an empty range and
+/// from a range with no zero, at 0 in one zero byte and in two, and at the
+/// last position of a range whose only zero ends it.
+@[runs("cons (Located Absent) (cons (Located (At 0u64)) (cons (Located (At 0u64)) (cons (Located (At 2u64)) (cons (Located Absent) nil))))")]
+def a_zero_byte_is_found_where_a_c_string_ends() -> List Checked =
+  let empty = zero_in #[]
+  let one = zero_in #[0u8]
+  let two = zero_in #[0u8, 0u8]
+  let last = zero_in #[97u8, 98u8, 0u8]
+  let none = zero_in #[97u8, 98u8, 99u8]
+  pure #[empty, one, two, last, none]
+
+/// Each check reads no byte past a range that ends at the end of the extent:
+/// the bytes `abc` are valid UTF-8 and hold no zero byte.
+@[runs("cons (Judged Valid) (cons (Located Absent) nil)")]
+def a_check_to_the_end_of_the_extent_reads_no_byte_past_it() -> List Checked =
+  let utf8 = utf8_in #[97u8, 98u8, 99u8]
+  let zero = zero_in #[97u8, 98u8, 99u8]
+  pure #[utf8, zero]
