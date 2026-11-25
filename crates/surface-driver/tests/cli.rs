@@ -481,6 +481,498 @@ fn an_unsettled_run_exits_one()
     }
 }
 
+/// Where the permutation rule of a block stands among its other rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Place
+{
+    /// Before each other rule.
+    First,
+    /// After the first of the other rules.
+    Between,
+    /// After each other rule.
+    Last,
+}
+
+/// One block with a rule that permutes the arguments of one symbol, and the
+/// verdict of a run for each place of that rule.
+///
+/// A verdict is `settled`, `refused: ` with the code of the first diagnostic,
+/// or `faulted: ` with the class of the kernel's refusal.
+struct Twin
+{
+    /// The name of the block's sources.
+    name: &'static str,
+    /// The opening line and the members that each block of its kind shares.
+    base: &'static [&'static str],
+    /// The block's own members before its rules.
+    members: &'static [&'static str],
+    /// The rule that permutes the arguments of one symbol.
+    permutation: &'static str,
+    /// Each other rule, in written order.
+    rules: &'static [&'static str],
+    /// The verdict with the permutation rule at each place.
+    verdicts: &'static [(Place, &'static str)],
+}
+
+impl Twin
+{
+    /// The block's source with its permutation rule at `place`.
+    ///
+    /// # Specification
+    /// - requires: [`Place::Between`] only where the block has another rule.
+    /// - ensures: the opening line, then each member and each rule on its own
+    ///   indented line, the permutation rule before the other rule that `place`
+    ///   names or after the last one, then the closing brace.
+    /// - panics: if `place` is past the other rules.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block and its twin differ in their kind alone, and
+    ///   two places of one block differ in the place of one line alone, so two
+    ///   verdicts differ by the kind or by the place.
+    /// - witness: `tests::cli::a_block_beside_a_symmetry_and_its_twins_have_these_verdicts`
+    fn source(
+        &self,
+        place: Place,
+    ) -> String
+    {
+        let at = match place {
+            Place::First => 0,
+            Place::Between => 1,
+            Place::Last => self.rules.len(),
+        };
+        let mut rules = self.rules.to_vec();
+        rules.insert(at, self.permutation);
+        let mut text = String::new();
+        let (opening, shared) = self.base.split_first().expect("a block opens");
+        writeln!(text, "{opening}").expect("a string takes a line");
+        for line in shared.iter().chain(self.members).chain(&rules) {
+            writeln!(text, "  {line}").expect("a string takes a line");
+        }
+        text.push_str("}\n");
+        text
+    }
+}
+
+/// The opening of a `theory` block over `low`, `high` and `pair`.
+const PAIRS_THEORY: &[&str] = &[
+    "theory Flat where {",
+    "sort F : Type;",
+    "oper low : F;",
+    "oper high : F;",
+    "oper pair : (F, F) --> F;",
+];
+
+/// The opening of the `data` twin of [`PAIRS_THEORY`].
+const PAIRS_DATA: &[&str] = &[
+    "data Flat : Type where {",
+    "| Low : Flat",
+    "| High : Flat",
+    "| Pair : (x : Flat, y : Flat) --> Flat",
+];
+
+/// The opening of a `theory` block over `low` and `high`.
+const POINTS_THEORY: &[&str] = &[
+    "theory Flat where {",
+    "sort F : Type;",
+    "oper low : F;",
+    "oper high : F;",
+];
+
+/// The opening of the `data` twin of [`POINTS_THEORY`].
+const POINTS_DATA: &[&str] = &["data Flat : Type where {", "| Low : Flat", "| High : Flat"];
+
+/// The opening of a `theory` block over `z`, `s` and `two`.
+const COUNTS_THEORY: &[&str] = &[
+    "theory Flat where {",
+    "sort F : Type;",
+    "oper z : F;",
+    "oper s : (F) --> F;",
+    "oper two : (F, F) --> F;",
+];
+
+/// The opening of the `data` twin of [`COUNTS_THEORY`].
+const COUNTS_DATA: &[&str] = &[
+    "data Flat : Type where {",
+    "| Z : Flat",
+    "| S : (x : Flat) --> Flat",
+    "| Two : (x : Flat, y : Flat) --> Flat",
+];
+
+/// The symmetry of `pair` in a `theory` block.
+const PAIR_TURNS: &str = "rule pairComm : pair x y <=> pair y x;";
+
+/// The symmetry of `Pair` in a `data` block.
+const PAIR_TURNS_DATA: &str = "rule : Pair x y <=> Pair y x;";
+
+/// What the kernel says of a `theory` block whose rules it does not join.
+const PRESENTATION_PARTS: &str =
+    "faulted: a presentation's rules did not converge as its value states them";
+
+/// What the kernel says of an operation whose rules it does not join.
+const OPERATION_PARTS: &str = "faulted: a definition's operation rules did not converge";
+
+/// Each block beside a symmetry, as a `theory` block and as a `data` block,
+/// then each block beside a permutation that is no swap of two arguments.
+const TWINS: &[Twin] = &[
+    Twin {
+        name: "a-pair-that-needs-the-other-order-theory",
+        base: PAIRS_THEORY,
+        members: &["oper g : (F) --> F;"],
+        permutation: PAIR_TURNS,
+        rules: &[
+            "rule pairLow : pair low x ==> low;",
+            "rule gPair : g (pair low x) ==> pair x low;",
+        ],
+        verdicts: &[
+            (Place::First, PRESENTATION_PARTS),
+            (Place::Between, PRESENTATION_PARTS),
+            (Place::Last, PRESENTATION_PARTS),
+        ],
+    },
+    Twin {
+        name: "a-pair-that-needs-the-other-order-data",
+        base: PAIRS_DATA,
+        members: &["oper g : (x : Flat) --> Flat;"],
+        permutation: PAIR_TURNS_DATA,
+        rules: &[
+            "rule : Pair Low x ==> Low;",
+            "rule : g (Pair Low x) ==> Pair x Low;",
+        ],
+        verdicts: &[
+            (Place::First, "settled"),
+            (Place::Between, "settled"),
+            (Place::Last, "settled"),
+        ],
+    },
+    Twin {
+        name: "an-operation-that-turns-a-pair-theory",
+        base: PAIRS_THEORY,
+        members: &["oper g : (F) --> F;"],
+        permutation: PAIR_TURNS,
+        rules: &[
+            "rule pairLow : pair low x ==> low;",
+            "rule gLow : g low ==> low;",
+            "rule gHigh : g high ==> high;",
+            "rule gPair : g (pair x y) ==> pair y x;",
+        ],
+        verdicts: &[
+            (Place::First, "settled"),
+            (Place::Between, "settled"),
+            (Place::Last, "settled"),
+        ],
+    },
+    Twin {
+        name: "an-operation-that-turns-a-pair-data",
+        base: PAIRS_DATA,
+        members: &["oper g : (x : Flat) --> Flat;"],
+        permutation: PAIR_TURNS_DATA,
+        rules: &[
+            "rule : Pair Low x ==> Low;",
+            "rule : g Low ==> Low;",
+            "rule : g High ==> High;",
+            "rule : g (Pair x y) ==> Pair y x;",
+        ],
+        verdicts: &[
+            (Place::First, OPERATION_PARTS),
+            (Place::Between, OPERATION_PARTS),
+            (Place::Last, OPERATION_PARTS),
+        ],
+    },
+    Twin {
+        name: "two-rules-that-differ-by-a-turn-theory",
+        base: PAIRS_THEORY,
+        members: &["oper wrap : (F) --> F;"],
+        permutation: PAIR_TURNS,
+        rules: &[
+            "rule turn : wrap (pair x y) ==> pair y x;",
+            "rule keep : wrap z ==> z;",
+        ],
+        verdicts: &[
+            (Place::First, "refused: RulesUncompleted"),
+            (Place::Between, "refused: RulesUncompleted"),
+            (Place::Last, "refused: RulesUncompleted"),
+        ],
+    },
+    Twin {
+        name: "two-rules-that-differ-by-a-turn-data",
+        base: PAIRS_DATA,
+        members: &["oper wrap : (x : Flat) --> Flat;"],
+        permutation: PAIR_TURNS_DATA,
+        rules: &[
+            "rule : wrap (Pair x y) ==> Pair y x;",
+            "rule : wrap z ==> z;",
+        ],
+        verdicts: &[
+            (Place::First, "refused: RulesDiverge"),
+            (Place::Between, "refused: RulesDiverge"),
+            (Place::Last, "refused: RulesDiverge"),
+        ],
+    },
+    Twin {
+        name: "two-constants-that-the-symmetry-joins-theory",
+        base: PAIRS_THEORY,
+        members: &["oper mid : F;"],
+        permutation: PAIR_TURNS,
+        rules: &[
+            "rule lowPair : low <=> pair low mid;",
+            "rule highPair : high <=> pair mid low;",
+        ],
+        verdicts: &[
+            (Place::First, "settled"),
+            (Place::Between, "settled"),
+            (Place::Last, "settled"),
+        ],
+    },
+    Twin {
+        name: "two-constants-that-the-symmetry-joins-data",
+        base: PAIRS_DATA,
+        members: &["| Mid : Flat"],
+        permutation: PAIR_TURNS_DATA,
+        rules: &[
+            "rule : Low <=> Pair Low Mid;",
+            "rule : High <=> Pair Mid Low;",
+        ],
+        verdicts: &[
+            (Place::First, "refused: RulesUnoriented"),
+            (Place::Between, "refused: RulesUnoriented"),
+            (Place::Last, "refused: RulesUnoriented"),
+        ],
+    },
+    Twin {
+        name: "a-rule-that-loops-under-the-symmetry-theory",
+        base: COUNTS_THEORY,
+        members: &[],
+        permutation: "rule twoComm : two x y <=> two y x;",
+        rules: &["rule move : two (s x) y ==> two x (s y);"],
+        verdicts: &[
+            (Place::First, "refused: RulesUncompleted"),
+            (Place::Last, "refused: RulesUncompleted"),
+        ],
+    },
+    Twin {
+        name: "a-rule-that-loops-under-the-symmetry-data",
+        base: COUNTS_DATA,
+        members: &[],
+        permutation: "rule : Two x y <=> Two y x;",
+        rules: &["rule : Two (S x) y ==> Two x (S y);"],
+        verdicts: &[
+            (Place::First, "refused: RulesUnoriented"),
+            (Place::Last, "refused: RulesUnoriented"),
+        ],
+    },
+    Twin {
+        name: "a-rule-whose-other-order-the-order-does-not-orient-theory",
+        base: COUNTS_THEORY,
+        members: &[],
+        permutation: "rule twoComm : two x y <=> two y x;",
+        rules: &["rule less : two (s x) y ==> two x y;"],
+        verdicts: &[
+            (Place::First, "refused: RulesUncompleted"),
+            (Place::Last, "refused: RulesUncompleted"),
+        ],
+    },
+    Twin {
+        name: "a-rule-whose-other-order-the-order-does-not-orient-data",
+        base: COUNTS_DATA,
+        members: &[],
+        permutation: "rule : Two x y <=> Two y x;",
+        rules: &["rule : Two (S x) y ==> Two x y;"],
+        verdicts: &[
+            (Place::First, "refused: RulesUncompleted"),
+            (Place::Last, "refused: RulesUncompleted"),
+        ],
+    },
+    Twin {
+        name: "a-swap-of-two-of-three-arguments-theory",
+        base: POINTS_THEORY,
+        members: &["oper fma : (F, F, F) --> F;"],
+        permutation: "rule swap : fma x y z <=> fma y x z;",
+        rules: &["rule zero : fma low y z ==> z;"],
+        verdicts: &[
+            (Place::First, "refused: RulesUnoriented"),
+            (Place::Last, "refused: RulesUnoriented"),
+        ],
+    },
+    Twin {
+        name: "a-swap-of-two-of-three-arguments-data",
+        base: POINTS_DATA,
+        members: &["| Fma : (x : Flat, y : Flat, z : Flat) --> Flat"],
+        permutation: "rule : Fma x y z <=> Fma y x z;",
+        rules: &["rule : Fma Low y z ==> z;"],
+        verdicts: &[
+            (Place::First, "refused: RulesUnoriented"),
+            (Place::Last, "refused: RulesUnoriented"),
+        ],
+    },
+    Twin {
+        name: "a-cycle-of-three-arguments-theory",
+        base: POINTS_THEORY,
+        members: &["oper rot : (F, F, F) --> F;"],
+        permutation: "rule cycle : rot x y z <=> rot y z x;",
+        rules: &[],
+        verdicts: &[(Place::First, "refused: RulesUnoriented")],
+    },
+    Twin {
+        name: "a-cycle-of-three-arguments-data",
+        base: POINTS_DATA,
+        members: &["| Rot : (x : Flat, y : Flat, z : Flat) --> Flat"],
+        permutation: "rule : Rot x y z <=> Rot y z x;",
+        rules: &[],
+        verdicts: &[(Place::First, "refused: RulesUnoriented")],
+    },
+    Twin {
+        name: "each-order-of-three-arguments-theory",
+        base: POINTS_THEORY,
+        members: &["oper tri : (F, F, F) --> F;"],
+        permutation: "rule front : tri x y z <=> tri y x z;",
+        rules: &["rule back : tri x y z <=> tri x z y;"],
+        verdicts: &[
+            (Place::First, "refused: RulesUnoriented"),
+            (Place::Last, "refused: RulesUnoriented"),
+        ],
+    },
+    Twin {
+        name: "each-order-of-three-arguments-data",
+        base: POINTS_DATA,
+        members: &["| Tri : (x : Flat, y : Flat, z : Flat) --> Flat"],
+        permutation: "rule : Tri x y z <=> Tri y x z;",
+        rules: &["rule : Tri x y z <=> Tri x z y;"],
+        verdicts: &[
+            (Place::First, "refused: RulesUnoriented"),
+            (Place::Last, "refused: RulesUnoriented"),
+        ],
+    },
+    Twin {
+        name: "a-swap-over-a-sort-of-two-indices-theory",
+        base: &[
+            "theory Meets where {",
+            "sort Ob : Type;",
+            "sort Hom(a : Ob, b : Ob) : Type;",
+            "oper top : (a : Ob, b : Ob) --> Hom a b;",
+            "oper meet : (f : Hom a b, g : Hom a b) --> Hom a b;",
+        ],
+        members: &[],
+        permutation: "rule meetComm : meet f g <=> meet g f;",
+        rules: &["rule meetTop : meet (top a b) g ==> g;"],
+        verdicts: &[(Place::First, "settled"), (Place::Last, "settled")],
+    },
+];
+
+/// The file name of the source that a diagnostic or a fault names by `path`.
+///
+/// # Specification
+/// trivial.
+fn named(path: &str) -> String
+{
+    Path::new(path)
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .expect("a source has a name")
+        .to_owned()
+}
+
+/// One run of `check --recheck` gives each block of [`TWINS`] the verdict the
+/// table states: a block beside a symmetry as a `theory` block and as a `data`
+/// block, with the symmetry first, between and last.
+///
+/// The check and the kernel judge one block each. A `faulted` row is a block
+/// that the check admits and the kernel refuses. Two rows of one block or of a
+/// block and its twin that differ are a place where the two readers of rules
+/// read a symmetry in two ways.
+#[test]
+fn a_block_beside_a_symmetry_and_its_twins_have_these_verdicts()
+{
+    use alloc::collections::BTreeMap;
+
+    let scratch = Scratch::new(Path::new("symmetry-twins"));
+    let mut stated = Vec::new();
+    for twin in TWINS {
+        for &(place, verdict) in twin.verdicts {
+            let word = match place {
+                Place::First => "first",
+                Place::Between => "between",
+                Place::Last => "last",
+            };
+            let name = format!("{}-{word}.gandr", twin.name);
+            let _source = scratch.file(Path::new(&name), Text::from(twin.source(place).as_str()));
+            stated.push((name, String::from(verdict)));
+        }
+    }
+    let output = ran(gandr(&[
+        Path::new("check"),
+        Path::new("--recheck"),
+        &scratch.0,
+    ]));
+    let mut found: BTreeMap<String, String> = BTreeMap::new();
+    for line in stderr(&output).lines() {
+        let Some((path, fault)) = line.strip_prefix("gandr: ").and_then(|rest| {
+            rest.split_once(": the kernel did not re-derive the declaration at position ")
+        })
+        else {
+            continue;
+        };
+        let refusal = fault
+            .split_once(" the checker accepted: ")
+            .map_or(fault, |(_position, text)| text);
+        let class = refusal
+            .split_once(": ")
+            .map_or(refusal, |(class, _rule)| class);
+        found
+            .entry(named(path))
+            .or_insert_with(|| format!("faulted: {class}"));
+    }
+    let mut code = None;
+    for line in stdout(&output).lines() {
+        if let Some(rest) = line.strip_prefix("error[") {
+            code = rest.split_once(']').map(|(code, _message)| code);
+        }
+        else if let Some(site) = line.trim_start().strip_prefix("╭▸ ")
+            && let Some(code) = code.take()
+        {
+            let path = site.rsplitn(3, ':').nth(2).expect("a site has a line");
+            found
+                .entry(named(path))
+                .or_insert_with(|| format!("refused: {code}"));
+        }
+    }
+    let observed: Vec<(String, String)> = stated
+        .iter()
+        .map(|&(ref name, _)| {
+            (
+                name.clone(),
+                found
+                    .remove(name)
+                    .unwrap_or_else(|| String::from("settled")),
+            )
+        })
+        .collect();
+    assert!(
+        found.is_empty(),
+        "each verdict of the run is of a source of the table: {found:?}"
+    );
+    let differing: Vec<_> = observed
+        .iter()
+        .zip(&stated)
+        .filter(|&(seen, said)| seen != said)
+        .collect();
+    assert!(
+        differing.is_empty(),
+        "each source has the verdict the table states, as (run, table): {differing:#?}\n{}",
+        stderr(&output)
+    );
+    let count = |class: &str| stated.iter().filter(|row| row.1.starts_with(class)).count();
+    let report = stdout(&output);
+    assert!(
+        report.contains(&format!(
+            "\nsources: {} read (",
+            stated.len().saturating_sub(count("faulted"))
+        )) && report.contains(&format!(", {} faulted\n", count("faulted")))
+            && report.contains(&format!(", {} unsettled\n", count("refused"))),
+        "the report counts each source, each fault and each refused block, so a row that is \
+         `settled` holds no refusal: {report}"
+    );
+}
+
 /// #4520: `List` leaves the ambient scope for `std.list`. A list type settles
 /// in a source that lists it from its home. The same type is an unresolved
 /// head in a source that does not, whose help names the listing, and an
