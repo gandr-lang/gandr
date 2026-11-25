@@ -1,5 +1,6 @@
 # The four whole gates of the trunk, on the hosted runners for Linux x86-64.
-# Each gate is one job, and the name of the job is the name of its check.
+# `cargo fmt` and Clippy are one job each. Each test suite is one build and
+# four partitions of its tests (`suite.yml`).
 #
 # The queue of the maintainers lands each pull request of a branch of this
 # repository after its own gates. This workflow runs the four gates on each
@@ -10,8 +11,8 @@
 # The gates restore the Cargo target directory of their own gate. Cargo
 # compares sources by content (`.cargo/config.toml`), so a restored unit whose
 # source did not change stays fresh under the new dates of the checkout. Only
-# a run on `main` saves a cache: a pull request of a fork reads the cache of
-# `main`.
+# a run on `main` saves a cache that a different run reads: a pull request of
+# a fork reads the cache of `main`.
 #
 # kache stands in front of rustc. It gets each unit that the target directory
 # lacks from the OCI repository `ghcr.io/<this repository>/kache`, when a run
@@ -45,6 +46,35 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  plain:
+    name: plain suite
+    if: >-
+      ${{ github.event_name == 'push'
+      || (github.event.pull_request.head.repo.full_name != github.repository
+      && !github.event.pull_request.draft) }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/suite.yml
+    with:
+      slug: plain
+      target: target
+
+  enforcing:
+    name: enforcing suite
+    if: >-
+      ${{ github.event_name == 'push'
+      || (github.event.pull_request.head.repo.full_name != github.repository
+      && !github.event.pull_request.draft) }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/suite.yml
+    with:
+      slug: enforcing
+      target: target/enforcing
+      enforcing: true
+
   gate:
     name: ${{ matrix.gate }}
     # A pull request runs only from a fork, and not as a draft.
@@ -63,24 +93,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - gate: plain suite
-            slug: plain
-            target: target
-            nextest: true
-            run: cargo nextest run --workspace --locked --no-fail-fast
-          # `.config/mise/enforcing` sets the flag that runs each `#[spec]`
-          # clause. The suite has a target directory of its own, with an
-          # absolute path: a test that starts Cargo in the directory of a crate
-          # takes the same directory.
-          - gate: enforcing suite
-            slug: enforcing
-            target: target/enforcing
-            nextest: true
-            run: >-
-              CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/enforcing"
-              CARGO_UNSTABLE_FEATURE_UNIFICATION=true
-              .config/mise/enforcing cargo nextest run --workspace --locked
-              --config 'resolver.feature-unification="workspace"' --no-fail-fast
           - gate: Clippy
             slug: clippy
             target: target
@@ -96,18 +108,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # A sweep test lists the corpus sources that the change touches by a
-      # diff from `GANDR_SWEEP_BASE`. The base is the commit that the event
-      # changes: the head of `main` before the push, or the base of the pull
-      # request. The checkout holds one commit, so the step fetches the base
-      # alone.
-      - name: fetch the sweep base
-        if: ${{ matrix.nextest }}
-        env:
-          BASE: ${{ github.event_name == 'push' && github.event.before || github.event.pull_request.base.sha }}
-        run: |
-          git fetch --no-tags --depth=1 origin "$BASE"
-          echo "GANDR_SWEEP_BASE=$BASE" >> "$GITHUB_ENV"
       # The key hashes the pin file, so a change of the pin is a new cache.
       - name: restore the toolchain
         id: toolchain
@@ -133,10 +133,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends mold
-      # The version of the pin in `mise.toml`.
-      - name: install cargo-nextest
-        if: ${{ matrix.nextest }}
-        run: curl --proto '=https' --tlsv1.2 -fsSL https://get.nexte.st/0.9.150/linux | tar -xzf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
       # The release asset of kache, checked against its pinned digest. The
       # archive has the client and its engine, which work only as a pair.
       - name: install kache
@@ -173,12 +169,6 @@ jobs:
           restore-keys: |
             gate-${{ matrix.slug }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-
             gate-${{ matrix.slug }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
-      # A build fetches the crates of the host alone. A test of the driver
-      # resolves its tree for `wasm32-wasip3` with `--offline`, so the suites
-      # fetch the crates of each target first.
-      - name: fetch the crates of each target
-        if: ${{ matrix.nextest }}
-        run: cargo fetch --locked
       - name: run the gate
         env:
           KACHE_OCI_USERNAME: ${{ github.actor }}
