@@ -29,11 +29,17 @@
 //! root, every rule of a presented type that unifies with a constructor
 //! pattern below the root, and every rule of an operation that unifies with a
 //! call of it below the root; the kernel enumerates them by unification of
-//! linear patterns. Both reducts of each pair normalize under
+//! linear patterns. A symmetry of a presented type, the rule that swaps the two
+//! fields of one constructor, is no rule of a pair and no rule a normalization
+//! rewrites by: the decision reads the other rules under it. A left side
+//! matches, and the second left side of a pair unifies, in each order of the
+//! two fields of each of its nodes under a symmetry, so a rule also overlaps
+//! its own other orders at the root. Both reducts of each pair normalize under
 //! the operation's rules, the rules of every operation they reach and the
 //! rules of every presented type their constructors belong to, and their
-//! normal forms must be one term. Fuel bounds the work, and a pair the fuel
-//! leaves undecided is refused.
+//! normal forms must be one term under the symmetries: equal once the two
+//! fields of each node under a symmetry stand in the lesser order. Fuel bounds
+//! the work, and a pair the fuel leaves undecided is refused.
 
 use alloc::alloc::Global;
 use alloc::boxed::Box;
@@ -522,10 +528,13 @@ impl OperationRules
     ///   definition below `own` at its arity, a results tuple stands only at a
     ///   right side's root, every right-side variable is bound on the left, the
     ///   path order puts each left side above its right, and both reducts of
-    ///   every critical pair normalize to one term within `fuel`. Otherwise the
-    ///   first refused rule, in written order, and its fault; a pair is
-    ///   reported at its later rule, or at the rule holding the call it
-    ///   overlaps.
+    ///   every critical pair normalize to one term under the symmetries of the
+    ///   presented types within `fuel`. A pair's second left side stands in
+    ///   each order of the two fields of its nodes under a symmetry, and a rule
+    ///   overlaps its own other orders at the root. Otherwise the first refused
+    ///   rule, in written order, and its fault; a pair is reported at its later
+    ///   rule, or at the rule holding the call it overlaps, and a presented
+    ///   rule by its position among the rules of its presentation.
     /// - provides: the kernel's own decision that an operation's rules read as
     ///   equations mean what its first-match function computes.
     /// - fails: as `- ensures:`.
@@ -543,7 +552,9 @@ impl OperationRules
     ///   an earlier one converges, a pattern overlapping a presented type's
     ///   rule is decided against it, a law over a call of its own operation or
     ///   an earlier one converges, a law parting from a rule at its call is
-    ///   refused naming that rule, and each malformation is named.
+    ///   refused naming that rule, a pair that joins only under a symmetry
+    ///   converges, a pair that only the other order of a symmetry forms is
+    ///   refused, and each malformation is named.
     /// - witness: `operation_rules::tests::two_overlapping_rules_that_join_converge`
     /// - witness: `operation_rules::tests::two_overlapping_rules_that_part_are_refused_at_the_later`
     /// - witness: `operation_rules::tests::a_growing_rule_is_unoriented`
@@ -553,6 +564,9 @@ impl OperationRules
     /// - witness: `operation_rules::tests::a_law_over_its_own_call_converges_1510`
     /// - witness: `operation_rules::tests::a_law_parting_at_its_call_is_refused_1510`
     /// - witness: `operation_rules::tests::a_law_over_an_earlier_call_is_decided_against_its_rules_1510`
+    /// - witness: `operation_rules::tests::a_pair_that_joins_only_under_a_symmetry_converges`
+    /// - witness: `operation_rules::tests::a_pair_in_the_other_order_of_a_symmetry_is_refused`
+    /// - witness: `operation_rules::tests::a_pair_against_a_presented_step_names_its_position_among_the_rules`
     #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.0.len()))]
     #[inline]
     pub fn converge<S>(
@@ -594,38 +608,43 @@ impl OperationRules
         }
         let system = reader.system(self);
         let mut scratch = Scratch::default();
+        let mut arranged = Arrangement::default();
         for (later, rule) in self.0.iter().enumerate() {
-            for (earlier, other) in self.0.iter().enumerate().take(later) {
-                if reader.root_pair(other, rule, &mut scratch).is_none() {
-                    continue;
-                }
-                reader.join(&system, fuel, &mut scratch).map_err(|joined| {
-                    refusal(
-                        RuleIndex::from(later),
-                        joined.fault(Overlapped::Operation(RuleIndex::from(earlier))),
+            let refused = |overlapped: Overlapped| {
+                move |joined: Unjoined| refusal(RuleIndex::from(later), joined.fault(overlapped))
+            };
+            for (earlier, other) in self.0.iter().enumerate().take(later.saturating_add(1)) {
+                reader
+                    .overlaps(
+                        &system,
+                        (other, rule),
+                        Site::Root {
+                            itself: earlier == later,
+                        },
+                        (&mut arranged, &mut scratch),
+                        fuel,
                     )
-                })?;
+                    .map_err(refused(Overlapped::Operation(RuleIndex::from(earlier))))?;
             }
             for &(family, ref presentation) in &system.presentations {
-                for (index, presented) in presentation.iter().enumerate() {
+                for &(index, ref presented) in presentation {
                     for (at, &node) in rule.left.iter().enumerate().skip(1) {
                         let below = matches!(node, OperationNode::Constructor { family: owner, .. } if owner == family);
-                        if !below
-                            || reader
-                                .interior_pair(rule, presented, Position(at), &mut scratch)
-                                .is_none()
-                        {
+                        if !below {
                             continue;
                         }
-                        reader.join(&system, fuel, &mut scratch).map_err(|joined| {
-                            refusal(
-                                RuleIndex::from(later),
-                                joined.fault(Overlapped::Presented {
-                                    family,
-                                    rule: RuleIndex::from(index),
-                                }),
+                        reader
+                            .overlaps(
+                                &system,
+                                (rule, presented),
+                                Site::Below(Position(at)),
+                                (&mut arranged, &mut scratch),
+                                fuel,
                             )
-                        })?;
+                            .map_err(refused(Overlapped::Presented {
+                                family,
+                                rule: index,
+                            }))?;
                     }
                 }
             }
@@ -645,12 +664,6 @@ impl OperationRules
                     .flat_map(|called| called.0.iter())
                     .enumerate()
                 {
-                    if reader
-                        .interior_pair(rule, other, Position(at), &mut scratch)
-                        .is_none()
-                    {
-                        continue;
-                    }
                     let overlapped = if constant == own {
                         Overlapped::Operation(RuleIndex::from(index))
                     }
@@ -660,9 +673,15 @@ impl OperationRules
                             rule: RuleIndex::from(index),
                         }
                     };
-                    reader.join(&system, fuel, &mut scratch).map_err(|joined| {
-                        refusal(RuleIndex::from(later), joined.fault(overlapped))
-                    })?;
+                    reader
+                        .overlaps(
+                            &system,
+                            (rule, other),
+                            Site::Below(Position(at)),
+                            (&mut arranged, &mut scratch),
+                            fuel,
+                        )
+                        .map_err(refused(overlapped))?;
                 }
             }
         }
@@ -743,6 +762,39 @@ struct Scratch
     first: SmallVec<Binding, 0, Global>,
     /// The second side's variable bindings.
     second: SmallVec<Binding, 0, Global>,
+    /// A left side a normalization matches in another order.
+    arranged: Arrangement,
+}
+
+/// A left side in one order of the two fields of its nodes under a symmetry.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Arrangement
+{
+    /// The positions of the side's nodes under a symmetry, ascending.
+    sites: SmallVec<Position, 0, Global>,
+    /// The side in the order being read.
+    order: SmallVec<OperationNode, 0, Global>,
+}
+
+/// Where the second left side of a pair overlaps the first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Site
+{
+    /// At the root; `itself` when the two are one rule, which overlaps its
+    /// written order by one term and so forms no pair there.
+    Root
+    {
+        /// Whether the two left sides are of one rule.
+        itself: bool,
+    },
+    /// At the pattern node at this position of the first left side.
+    Below(Position),
 }
 
 /// What a variable of one side of a unification is bound to.
@@ -810,8 +862,19 @@ struct System
 {
     /// Every operation rule, each as its two sides.
     rules: SmallVec<OperationRule, 0, Global>,
-    /// Every presented family read, with its rules over operation nodes.
-    presentations: SmallVec<(ConstantIndex, SmallVec<OperationRule, 0, Global>), 0, Global>,
+    /// Every presented family read, with each step of its presentation over
+    /// operation nodes and that step's position among the presentation's
+    /// rules.
+    presentations: SmallVec<
+        (
+            ConstantIndex,
+            SmallVec<(RuleIndex, OperationRule), 0, Global>,
+        ),
+        0,
+        Global,
+    >,
+    /// The constructor of each symmetry of a family read, ascending.
+    symmetric: SmallVec<OperationNode, 0, Global>,
 }
 
 /// One decision's view of the ruled definition and what is admitted below it.
@@ -1095,21 +1158,25 @@ where
     /// - requires: every rule of `rules` validated.
     /// - ensures: `rules`' own rules, the rules of every ruled definition they
     ///   reach through right-side calls, and the presentation of every family a
-    ///   constructor of any of those rules belongs to, each family once. A
-    ///   symmetry of a presentation is no rule of the system, because no reader
-    ///   rewrites by it.
+    ///   constructor of any of those rules belongs to, each family once, each
+    ///   step with its position among the rules of its presentation. A symmetry
+    ///   of a presentation is no rule of the system, because no reader rewrites
+    ///   by it: the system holds its constructor among the symmetric ones, in
+    ///   ascending order.
     /// - panics: none.
     /// - measure: each reached definition once.
     /// - executable: none — the closure is the body's own traversal.
     ///
     /// # Cost
     /// - allocation: the gathered rules, the reached definitions and families,
-    ///   and each family's read presentation, growth within the reached
-    ///   definitions' rules and the families' presentations
+    ///   each family's read presentation and the constructor of each symmetry,
+    ///   growth within the reached definitions' rules and the families'
+    ///   presentations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::an_operation_over_an_earlier_one_converges`
+    /// - witness: `operation_rules::tests::a_pair_against_a_presented_step_names_its_position_among_the_rules`
     fn system(
         &self,
         rules: &OperationRules,
@@ -1121,6 +1188,7 @@ where
         let mut system = System {
             rules: SmallVec::<_, 0, Global>::new(),
             presentations: SmallVec::<_, 0, Global>::new(),
+            symmetric: SmallVec::<_, 0, Global>::new(),
         };
         let mut families: BTreeSet<ConstantIndex> = BTreeSet::new();
         while let Some(next) = pending.pop() {
@@ -1159,26 +1227,98 @@ where
                     })
                     .collect()
             };
-            let rules = presentation
-                .rules()
-                .iter()
-                .filter(|rule| rule.reading() == RuleReading::Step)
-                .map(|rule| OperationRule::new(read(rule.left()), read(rule.right())))
-                .collect();
-            system.presentations.push((family, rules));
+            let mut steps = SmallVec::<_, 0, Global>::new();
+            for (index, rule) in presentation.rules().iter().enumerate() {
+                match rule.reading() {
+                    RuleReading::Step => steps.push((
+                        RuleIndex::from(index),
+                        OperationRule::new(read(rule.left()), read(rule.right())),
+                    )),
+                    RuleReading::Symmetry(tag) => {
+                        system
+                            .symmetric
+                            .push(OperationNode::Constructor { family, tag });
+                    },
+                }
+            }
+            system.presentations.push((family, steps));
         }
+        system.symmetric.sort_unstable();
         system
     }
 
-    /// Write the two reducts of the root overlap of `earlier` and `later` to
-    /// `scratch`, or report that their left sides do not unify.
+    /// Decide each critical pair of `outer` and `inner` at `site`, with
+    /// `inner`'s left side in each order of the two fields of its nodes under
+    /// a symmetry of `system`.
     ///
     /// # Specification
-    /// - requires: both rules validated.
+    /// - requires: `outer` validated; `inner` validated or a presented step;
+    ///   `system` terminates.
+    /// - ensures: `Ok(())` exactly when the two reducts of each order of
+    ///   `inner`'s left side that unifies with `outer`'s at `site` join under
+    ///   `system`, as [`Self::join`] decides. The written order at the root of
+    ///   one rule is no pair. Otherwise the fault of the first pair, in the
+    ///   ascending order of the selections of swaps.
+    /// - panics: none.
+    /// - measure: the orders, two to the count of the nodes under a symmetry;
+    ///   `fuel`.
+    /// - executable: none — the pairs are the body's own enumeration.
+    ///
+    /// # Errors
+    /// As `- ensures:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OperationRules::converge`].
+    /// - witness: `operation_rules::tests::a_pair_in_the_other_order_of_a_symmetry_is_refused`
+    /// - witness: `operation_rules::tests::two_overlapping_rules_that_part_are_refused_at_the_later`
+    fn overlaps(
+        &self,
+        system: &System,
+        (outer, inner): (&OperationRule, &OperationRule),
+        site: Site,
+        (arranged, scratch): (&mut Arrangement, &mut Scratch),
+        fuel: &mut RewriteFuel,
+    ) -> Result<(), Unjoined>
+    {
+        symmetric_sites(&inner.left, &system.symmetric, &mut arranged.sites);
+        for swaps in 0 .. orders(&arranged.sites) {
+            let left: &[OperationNode] = if swaps == 0 {
+                if site == (Site::Root { itself: true }) {
+                    continue;
+                }
+                &inner.left
+            }
+            else {
+                self.reordered(
+                    &inner.left,
+                    (&arranged.sites, swaps),
+                    &mut arranged.order,
+                    fuel,
+                )?;
+                &arranged.order
+            };
+            let paired = match site {
+                Site::Root { .. } => self.root_pair(outer, (left, &inner.right), scratch),
+                Site::Below(at) => self.interior_pair(outer, (left, &inner.right), at, scratch),
+            };
+            if paired.is_some() {
+                self.join(system, fuel, scratch)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Write the two reducts of the root overlap of `earlier` and the later
+    /// rule `(left, right)` to `scratch`, or report that their left sides do
+    /// not unify.
+    ///
+    /// # Specification
+    /// - requires: both rules validated; `left` is the later rule's left side
+    ///   in one order of its nodes under a symmetry.
     /// - ensures: `Some(())` exactly when the two left sides unify;
     ///   `scratch.left` then holds `earlier`'s right side and `scratch.right`
-    ///   `later`'s, each under the most general unifier, `later`'s variables
-    ///   numbered after `earlier`'s.
+    ///   `right`, each under the most general unifier, the later rule's
+    ///   variables numbered after `earlier`'s.
     /// - panics: none.
     /// - executable: none — the unifier lives in `scratch`, which the
     ///   postcondition would have to re-derive.
@@ -1189,28 +1329,24 @@ where
     fn root_pair(
         &self,
         earlier: &OperationRule,
-        later: &OperationRule,
+        (left, right): (&[OperationNode], &[OperationNode]),
         scratch: &mut Scratch,
     ) -> Option<()>
     {
         let offset = variables(&earlier.left);
-        self.unify(
-            (&earlier.left, Position(0)),
-            (&later.left, Position(0)),
-            scratch,
-        )?;
+        self.unify((&earlier.left, Position(0)), (left, Position(0)), scratch)?;
         scratch.left.clear();
         scratch.right.clear();
         let unmoved = Ordinal(0);
         instantiate(
             &earlier.right,
             (&scratch.first, unmoved),
-            &later.left,
+            left,
             offset,
             &mut scratch.left,
         );
         instantiate(
-            &later.right,
+            right,
             (&scratch.second, offset),
             &earlier.left,
             unmoved,
@@ -1219,17 +1355,18 @@ where
         Some(())
     }
 
-    /// Write the two reducts of `other`'s left side overlapping `rule`'s left
-    /// side at the pattern node `at` to `scratch`, or report that they do not
-    /// unify there.
+    /// Write the two reducts of the other rule `(left, right)` overlapping
+    /// `rule`'s left side at the pattern node `at` to `scratch`, or report that
+    /// they do not unify there.
     ///
     /// # Specification
-    /// - requires: `rule` validated; `other` a presented rule over operation
-    ///   nodes, or an operation's rule.
-    /// - ensures: `Some(())` exactly when `other`'s left side unifies with the
-    ///   subterm at `at`; `scratch.left` then holds `rule`'s right side under
-    ///   the unifier, and `scratch.right` its left side with that subterm
-    ///   rewritten by `other`, `other`'s variables numbered after `rule`'s.
+    /// - requires: `rule` validated; the other rule a presented rule over
+    ///   operation nodes, or an operation's rule, with `left` its left side in
+    ///   one order of its nodes under a symmetry.
+    /// - ensures: `Some(())` exactly when `left` unifies with the subterm at
+    ///   `at`; `scratch.left` then holds `rule`'s right side under the unifier,
+    ///   and `scratch.right` its left side with that subterm rewritten to
+    ///   `right`, the other rule's variables numbered after `rule`'s.
     /// - panics: none.
     /// - executable: none — as [`Self::root_pair`].
     ///
@@ -1240,21 +1377,21 @@ where
     fn interior_pair(
         &self,
         rule: &OperationRule,
-        other: &OperationRule,
+        (left, right): (&[OperationNode], &[OperationNode]),
         at: Position,
         scratch: &mut Scratch,
     ) -> Option<()>
     {
         let offset = variables(&rule.left);
         let end = self.extent(&rule.left, at)?;
-        self.unify((&rule.left, at), (&other.left, Position(0)), scratch)?;
+        self.unify((&rule.left, at), (left, Position(0)), scratch)?;
         scratch.left.clear();
         scratch.right.clear();
         let unmoved = Ordinal(0);
         instantiate(
             &rule.right,
             (&scratch.first, unmoved),
-            &other.left,
+            left,
             offset,
             &mut scratch.left,
         );
@@ -1263,12 +1400,12 @@ where
         instantiate(
             before,
             (&scratch.first, unmoved),
-            &other.left,
+            left,
             offset,
             &mut scratch.right,
         );
         instantiate(
-            &other.right,
+            right,
             (&scratch.second, offset),
             &rule.left,
             unmoved,
@@ -1277,7 +1414,7 @@ where
         instantiate(
             after,
             (&scratch.first, unmoved),
-            &other.left,
+            left,
             offset,
             &mut scratch.right,
         );
@@ -1348,11 +1485,13 @@ where
     }
 
     /// Normalize the two reducts `scratch` holds under `system` and compare
-    /// their normal forms.
+    /// their normal forms under its symmetries.
     ///
     /// # Specification
     /// - requires: `system` terminates.
-    /// - ensures: `Ok(())` exactly when both normal forms are one term;
+    /// - ensures: `Ok(())` exactly when both normal forms are one term under
+    ///   the symmetries: equal once [`Self::representative`] puts the two
+    ///   fields of each node under a symmetry in the lesser order;
     ///   [`Unjoined::Apart`] when they differ; [`Unjoined::Exhausted`] when
     ///   `fuel` ran out first.
     /// - panics: none.
@@ -1365,6 +1504,7 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::two_overlapping_rules_that_part_are_refused_at_the_later`
+    /// - witness: `operation_rules::tests::a_pair_that_joins_only_under_a_symmetry_converges`
     fn join(
         &self,
         system: &System,
@@ -1377,10 +1517,13 @@ where
             ref mut right,
             ref mut rewritten,
             ref mut first,
+            ref mut arranged,
             ..
         } = *scratch;
-        self.normalize(system, left, fuel, rewritten, first)?;
-        self.normalize(system, right, fuel, rewritten, first)?;
+        self.normalize(system, left, fuel, (rewritten, first, arranged))?;
+        self.normalize(system, right, fuel, (rewritten, first, arranged))?;
+        self.representative(&system.symmetric, left, fuel)?;
+        self.representative(&system.symmetric, right, fuel)?;
         if left == right {
             Ok(())
         }
@@ -1394,11 +1537,11 @@ where
     /// # Specification
     /// - requires: `system` terminates.
     /// - ensures: on success `term` holds a term no rule of `system` matches
-    ///   anywhere, reached from the input by rewriting at the first redex in
-    ///   pre-order.
+    ///   anywhere in any order of the two fields of its nodes under a symmetry,
+    ///   reached from the input by rewriting at the first redex in pre-order.
     /// - panics: none.
-    /// - fails: [`Exhausted`] when `fuel` runs out, one unit per node scanned
-    ///   or copied.
+    /// - fails: [`Exhausted`] when `fuel` runs out, one unit per node scanned,
+    ///   copied or arranged.
     /// - measure: `fuel`.
     /// - executable: none — irreducibility would rescan the term against every
     ///   rule after each call.
@@ -1413,13 +1556,17 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::an_operation_over_an_earlier_one_converges`
+    /// - witness: `operation_rules::tests::a_pair_that_joins_only_under_a_symmetry_converges`
     fn normalize(
         &self,
         system: &System,
         term: &mut SmallVec<OperationNode, 0, Global>,
         fuel: &mut RewriteFuel,
-        rewritten: &mut SmallVec<OperationNode, 0, Global>,
-        bindings: &mut SmallVec<Binding, 0, Global>,
+        (rewritten, bindings, arranged): (
+            &mut SmallVec<OperationNode, 0, Global>,
+            &mut SmallVec<Binding, 0, Global>,
+            &mut Arrangement,
+        ),
     ) -> Result<(), Exhausted>
     {
         'rewrite: loop {
@@ -1429,10 +1576,16 @@ where
                     system
                         .presentations
                         .iter()
-                        .flat_map(|&(_, ref rules)| rules.iter()),
+                        .flat_map(|&(_, ref rules)| rules.iter().map(|&(_, ref rule)| rule)),
                 );
                 for rule in rules {
-                    let Some(end) = self.matched(&rule.left, term, at, bindings)
+                    let Some(end) = self.matched_under(
+                        &system.symmetric,
+                        &rule.left,
+                        (term, at),
+                        (bindings, arranged),
+                        fuel,
+                    )?
                     else {
                         continue;
                     };
@@ -1461,6 +1614,54 @@ where
             }
             return Ok(());
         }
+    }
+
+    /// Match `pattern` against the subterm of `term` at `at` in the written
+    /// order, then in each other order of the two fields of its nodes under a
+    /// symmetry of `symmetric`, binding its variables in `bindings`.
+    ///
+    /// # Specification
+    /// - requires: `pattern` linear; `symmetric` ascending.
+    /// - ensures: `Ok(Some(end))`, one past the matched subterm, exactly when
+    ///   [`Self::matched`] matches the written order or, where the heads of
+    ///   `pattern` and of the subterm are one node, an order that
+    ///   [`Self::reordered`] writes. A variable keeps its ordinal in each
+    ///   order, so the right side builds from `bindings` as for the written
+    ///   order.
+    /// - fails: [`Exhausted`] when `fuel` runs out while an order is written.
+    /// - panics: none.
+    /// - measure: the orders, two to the count of the nodes under a symmetry;
+    ///   `fuel`.
+    /// - executable: none — as [`Self::matched`].
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OperationRules::converge`].
+    /// - witness: `operation_rules::tests::a_pair_that_joins_only_under_a_symmetry_converges`
+    fn matched_under(
+        &self,
+        symmetric: &[OperationNode],
+        pattern: &[OperationNode],
+        (term, at): (&[OperationNode], Position),
+        (bindings, arranged): (&mut SmallVec<Binding, 0, Global>, &mut Arrangement),
+        fuel: &mut RewriteFuel,
+    ) -> Result<Option<Position>, Exhausted>
+    {
+        let written = self.matched(pattern, term, at, bindings);
+        if written.is_some() || symmetric.is_empty() || pattern.first() != term.get(at.0) {
+            return Ok(written);
+        }
+        symmetric_sites(pattern, symmetric, &mut arranged.sites);
+        for swaps in 1 .. orders(&arranged.sites) {
+            self.reordered(pattern, (&arranged.sites, swaps), &mut arranged.order, fuel)?;
+            let found = self.matched(&arranged.order, term, at, bindings);
+            if found.is_some() {
+                return Ok(found);
+            }
+        }
+        Ok(None)
     }
 
     /// Match `pattern` against the subterm of `term` at `at`, binding its
@@ -1511,6 +1712,179 @@ where
             }
         }
         Some(next)
+    }
+
+    /// Write `side` to `order` with the two fields in the other order at each
+    /// node of `sites` that `swaps` selects.
+    ///
+    /// # Specification
+    /// - requires: `side` is one term by its arities; `sites` are positions of
+    ///   `side`, in ascending order.
+    /// - ensures: on success `order` holds the pre-order of `side` where each
+    ///   node of two fields that stands at `sites[i]`, with bit `i` of `swaps`
+    ///   set, holds its second subterm before its first. Each other node holds
+    ///   its subterms as written, and each variable keeps its ordinal. `order`
+    ///   has the nodes of `side`, so it has its length.
+    /// - fails: [`Exhausted`] when `fuel` runs out; one unit per node copied,
+    ///   and one per node of the two fields of each node turned.
+    /// - panics: none.
+    /// - measure: the nodes of `side`, then the sites.
+    /// - executable: none — the order is the body's own construction.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the arranged side in the reused buffer, growth within the
+    ///   side's nodes
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OperationRules::converge`].
+    /// - witness: `operation_rules::tests::a_pair_in_the_other_order_of_a_symmetry_is_refused`
+    fn reordered(
+        &self,
+        side: &[OperationNode],
+        (sites, swaps): (&[Position], usize),
+        order: &mut SmallVec<OperationNode, 0, Global>,
+        fuel: &mut RewriteFuel,
+    ) -> Result<(), Exhausted>
+    {
+        order.clear();
+        for &node in side {
+            fuel.charge()?;
+            order.push(node);
+        }
+        // A turn moves only the nodes after its site, so the sites from the
+        // last to the first each still stand where `side` has them.
+        for (bit, &site) in sites.iter().enumerate().rev() {
+            let selected = u32::try_from(bit)
+                .ok()
+                .and_then(|bit| swaps.checked_shr(bit))
+                .is_some_and(|rest| rest & 1 == 1);
+            if selected {
+                self.turn(order, site, fuel)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Put the two fields of each node of `term` under a symmetry of
+    /// `symmetric` in the lesser order, from the last node to the first.
+    ///
+    /// # Specification
+    /// - requires: `term` is one term by its arities; `symmetric` ascending.
+    /// - ensures: on success each node of `term` under a symmetry holds its two
+    ///   subterms in ascending order of their pre-order sequences, each subterm
+    ///   itself so arranged. A term is a pre-order sequence with its arities,
+    ///   so no subterm is a prefix of a different one, and the order of two
+    ///   sequences is a total order of subterms. So two terms that share their
+    ///   variables agree under the symmetries exactly when the two results are
+    ///   equal.
+    /// - fails: [`Exhausted`] when `fuel` runs out; one unit per node, and one
+    ///   per node of the two fields of each node turned.
+    /// - panics: none.
+    /// - measure: the positions of `term`, from the last.
+    /// - executable: none — the arrangement is the body's own rewrite of
+    ///   `term`.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OperationRules::converge`].
+    /// - witness: `operation_rules::tests::a_pair_that_joins_only_under_a_symmetry_converges`
+    fn representative(
+        &self,
+        symmetric: &[OperationNode],
+        term: &mut [OperationNode],
+        fuel: &mut RewriteFuel,
+    ) -> Result<(), Exhausted>
+    {
+        if symmetric.is_empty() {
+            return Ok(());
+        }
+        for at in (0 .. term.len()).rev().map(Position) {
+            fuel.charge()?;
+            let under = term
+                .get(at.0)
+                .is_some_and(|node| symmetric.binary_search(node).is_ok());
+            if !under {
+                continue;
+            }
+            let Some((first, second, end)) = self.fields(term, at)
+            else {
+                continue;
+            };
+            let (Some(one), Some(other)) =
+                (term.get(first.0 .. second.0), term.get(second.0 .. end.0))
+            else {
+                continue;
+            };
+            if other < one {
+                self.turn(term, at, fuel)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Write the two fields of the node at `at` of `term` in the other order;
+    /// nothing for a node that does not head two fields.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, where [`Self::fields`] names the two fields of
+    ///   the node at `at`, the second stands before the first, each as it was;
+    ///   each node outside them stays. Otherwise `term` stays.
+    /// - fails: [`Exhausted`] when `fuel` runs out; one unit per node of the
+    ///   two fields.
+    /// - panics: none.
+    /// - executable: none — the turn is the body's own rewrite of `term`.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OperationRules::converge`].
+    /// - witness: `operation_rules::tests::a_pair_in_the_other_order_of_a_symmetry_is_refused`
+    fn turn(
+        &self,
+        term: &mut [OperationNode],
+        at: Position,
+        fuel: &mut RewriteFuel,
+    ) -> Result<(), Exhausted>
+    {
+        let Some((first, second, end)) = self.fields(term, at)
+        else {
+            return Ok(());
+        };
+        for _node in first.0 .. end.0 {
+            fuel.charge()?;
+        }
+        if let Some(span) = term.get_mut(first.0 .. end.0) {
+            span.rotate_left(second.0.saturating_sub(first.0));
+        }
+        Ok(())
+    }
+
+    /// Where the two fields of the node at `at` of `term` start, and one past
+    /// the second; none when the node does not head two fields or the nodes
+    /// run out.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fields(
+        &self,
+        term: &[OperationNode],
+        at: Position,
+    ) -> Option<(Position, Position, Position)>
+    {
+        if usize::from(self.arity(*term.get(at.0)?)?) != 2 {
+            return None;
+        }
+        let first = at.next()?;
+        let second = self.extent(term, first)?;
+        let end = self.extent(term, second)?;
+        Some((first, second, end))
     }
 }
 
@@ -1690,6 +2064,51 @@ impl Children
             _ => &[],
         }
     }
+}
+
+/// Write to `sites` the positions of `side` whose node is a constructor of
+/// `symmetric`, in ascending order.
+///
+/// # Specification
+/// - requires: `symmetric` is in ascending order.
+/// - ensures: `sites` holds each position of `side` whose node `symmetric`
+///   holds, and no other position.
+/// - panics: none.
+/// - executable: none — the positions are the body's own scan.
+///
+/// # Cost
+/// - allocation: one position for each such node in the reused buffer, growth
+///   within the side's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`OperationRules::converge`].
+/// - witness: `operation_rules::tests::a_pair_in_the_other_order_of_a_symmetry_is_refused`
+fn symmetric_sites(
+    side: &[OperationNode],
+    symmetric: &[OperationNode],
+    sites: &mut SmallVec<Position, 0, Global>,
+)
+{
+    sites.clear();
+    sites.extend(
+        side.iter()
+            .enumerate()
+            .filter(|&(_, node)| symmetric.binary_search(node).is_ok())
+            .map(|(at, _)| Position(at)),
+    );
+}
+
+/// One past the last selection of swaps of a side with the nodes `sites` under
+/// a symmetry: the count of its orders, two to the count of the sites.
+///
+/// # Specification
+/// trivial.
+fn orders(sites: &[Position]) -> usize
+{
+    u32::try_from(sites.len())
+        .ok()
+        .and_then(|nodes| 1_usize.checked_shl(nodes))
+        .unwrap_or(usize::MAX)
 }
 
 /// How many variables `side` binds: one past its largest ordinal.

@@ -608,9 +608,6 @@ const PAIR_TURNS_DATA: &str = "rule : Pair x y <=> Pair y x;";
 const PRESENTATION_PARTS: &str =
     "faulted: a presentation's rules did not converge as its value states them";
 
-/// What the kernel says of an operation whose rules it does not join.
-const OPERATION_PARTS: &str = "faulted: a definition's operation rules did not converge";
-
 /// Each block beside a symmetry, as a `theory` block and as a `data` block,
 /// then each block beside a permutation that is no swap of two arguments.
 const TWINS: &[Twin] = &[
@@ -673,9 +670,9 @@ const TWINS: &[Twin] = &[
             "rule : g (Pair x y) ==> Pair y x;",
         ],
         verdicts: &[
-            (Place::First, OPERATION_PARTS),
-            (Place::Between, OPERATION_PARTS),
-            (Place::Last, OPERATION_PARTS),
+            (Place::First, "settled"),
+            (Place::Between, "settled"),
+            (Place::Last, "settled"),
         ],
     },
     Twin {
