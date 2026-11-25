@@ -1033,6 +1033,21 @@ enum PairReading
     Presented,
 }
 
+impl PairReading
+{
+    /// The name of the variant.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn name(self) -> &'static str
+    {
+        match self {
+            Self::Sequent => "Sequent",
+            Self::Presented => "Presented",
+        }
+    }
+}
+
 /// The kind of one cell of a block's rewriting.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum CellKind
@@ -1052,6 +1067,25 @@ enum CellKind
     /// A cell that no written face and no kept derived rule names: a frame or
     /// eta cell, or a rule that completion derived in a block that it refused.
     Unnamed,
+}
+
+impl CellKind
+{
+    /// The name of the variant.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn name(self) -> &'static str
+    {
+        match self {
+            Self::Constructor => "Constructor",
+            Self::Operation => "Operation",
+            Self::Theory => "Theory",
+            Self::Idle => "Idle",
+            Self::Derived => "Derived",
+            Self::Unnamed => "Unnamed",
+        }
+    }
 }
 
 /// The critical pairs of the corpus, by reading and by the kinds of their two
@@ -1284,7 +1318,10 @@ fn the_corpus_critical_pairs_by_the_kinds_of_their_cells()
     for &(reading, first, second, count) in &found {
         let _written = writeln!(
             shown,
-            "    (PairReading::{reading:?}, CellKind::{first:?}, CellKind::{second:?}, {count}),"
+            "    (PairReading::{}, CellKind::{}, CellKind::{}, {count}),",
+            reading.name(),
+            first.name(),
+            second.name()
         );
     }
     assert!(
