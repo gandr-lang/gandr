@@ -1,0 +1,63 @@
+world here;
+world there;
+
+def tick(n : Integer) -> Unit =
+  *{}
+
+def while_laid(n : Integer) -> Integer =
+  while n > 0 do
+    tick n
+    return n
+  0
+
+def while_braced(n : Integer) -> Integer =
+  while n > 0 { tick n; return n };
+  0
+
+def for_laid(xs : List Integer) -> Unit =
+  for x in xs do
+    tick x
+    tick x
+
+def for_braced(xs : List Integer) -> Unit =
+  for x in xs { tick x; tick x }
+
+def loop_laid(n : Integer) -> [Partial] Integer =
+  loop do
+    tick n
+    tick n
+
+def loop_braced(n : Integer) -> [Partial] Integer =
+  loop { tick n; tick n }
+
+def thunk_laid : +U (-F Integer) = thunk do
+  let m = 19 - 7
+  return m
+
+def thunk_braced : +U (-F Integer) = thunk { let m = 19 - 7; return m };
+
+def fun_laid : Integer -> Integer = fun (x : Integer) do
+  let y = x + x
+  y
+
+def fun_braced : Integer -> Integer = fun (x : Integer) { let y = x + x; y };
+
+def fork_laid() -> Unit =
+  let desk = fork (seat : end) do
+    tick 1
+    close seat
+  close desk
+
+def fork_braced() -> Unit =
+  let desk = fork (seat : end) { tick 1; close seat };
+  close desk
+
+@[entry(*{here, there})]
+def migrate_laid() -> Integer =
+  migrate [there] do
+    tick 1
+    pure 1
+
+@[entry(*{here, there})]
+def migrate_braced() -> Integer =
+  migrate [there] { tick 1; pure 1 }

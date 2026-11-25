@@ -5300,6 +5300,58 @@ mod tests
     }
 
     #[test]
+    fn a_laid_out_block_after_do_is_its_braced_block_8063()
+    {
+        let mut arena = CoreArena::new();
+        let source = crate::fixture::listing(include_str!(
+            "lower/fixtures/a-laid-out-block-after-do-is-its-braced-block-8063-module.gandr"
+        ));
+        let module = crate::fixture::listed(&source, &mut arena);
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        for form in ["while", "for", "loop", "thunk", "fun", "fork", "migrate"] {
+            let laid = format!("{form}_laid");
+            let braced = format!("{form}_braced");
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(&laid), body(&braced)),
+                gandr_core_term::CertificateEquality::Equal,
+                "the block of a `{form}` after a line-final `do` lowers as its braced block"
+            );
+        }
+    }
+
+    /// A `do` that does not end its line opens no block, and no form reads
+    /// the word, so the `while` holds a hole where its block stands.
+    #[test]
+    fn a_do_inside_a_line_is_refused_at_the_word_8063()
+    {
+        let pbg = grammar();
+        let source = "def f(n : Integer) -> Integer =\n  while n > 0 do return n\n  0\n";
+        let start = source.find("do").unwrap_or_default();
+        let tree = repaired(&pbg, SourceText::from(source));
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: span(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(2))
+                ),
+                form: FormName::from(NamedKind("while_expression")),
+                fault: FormFault::Repaired(
+                    Repair::Grout(gandr_surface_syntax::GroutShape::Convex,)
+                ),
+            },
+            "a term is missing in the `while` at its `do`"
+        );
+    }
+
+    #[test]
     fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
