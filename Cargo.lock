@@ -1162,6 +1162,7 @@ name = "gandr-boot-io"
 version = "0.0.0"
 dependencies = [
  "gandr-boot-core",
+ "nix",
 ]
 
 [[package]]

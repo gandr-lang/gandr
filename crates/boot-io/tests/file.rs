@@ -1,7 +1,7 @@
 //! The file operations against each subject: a whole file read in steps of
-//! one page, each source of the corpus, a file of no bytes, a path with no
-//! file, and a closed descriptor. The host's `std` is the oracle of the bytes
-//! of a file.
+//! one page, each source of the corpus, a file of no bytes, a read into an
+//! empty place, a path with no file, and a closed descriptor. The host's `std`
+//! is the oracle of the bytes of a file.
 
 use core::num::NonZeroU16;
 
@@ -151,6 +151,38 @@ fn a_file_of_no_bytes_gives_the_count_zero_at_the_first_read()
             "{name}: no byte written"
         );
         assert_eq!(Ok(()), (subject.close)(&io, descriptor), "{name}: close");
+        assert_eq!(Ok(()), (subject.stop)(io), "{name}: stop");
+    }
+}
+
+/// A read into an empty place gives the count 0 and takes no byte of the
+/// file: the next reads give the whole file. After the close, a read into an
+/// empty place is refused under the name `read` with `EBADF`, so the call
+/// reaches the kernel also for an empty place.
+#[test]
+fn a_read_into_an_empty_place_gives_zero_and_takes_no_byte()
+{
+    let text = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+    let expected = std::fs::read(text).expect("the host reads the manifest of the crate");
+    let path = Path::new(Text(text));
+    for subject in &SUBJECTS {
+        let name = subject.name;
+        let io = started(subject);
+        let descriptor = opened(subject, &io, &path);
+        let mut empty: [u8; 0] = [];
+        // SAFETY: the place is empty, so the kernel writes no byte of it.
+        let count = unsafe { (subject.read)(&io, descriptor, Place::from(empty.as_mut_slice())) };
+        assert_eq!(Ok(Length(0)), count, "{name}: the read into an empty place");
+        let Whole(whole) = read_whole(subject, &io, descriptor);
+        assert_eq!(expected, whole, "{name}: the bytes after the empty read");
+        assert_eq!(Ok(()), (subject.close)(&io, descriptor), "{name}: close");
+        // SAFETY: the place is empty, so the kernel writes no byte of it.
+        let closed = unsafe { (subject.read)(&io, descriptor, Place::from(empty.as_mut_slice())) };
+        assert_eq!(
+            Err((Operation::Read, EBADF)),
+            closed.map_err(named),
+            "{name}: the read of a closed descriptor into an empty place"
+        );
         assert_eq!(Ok(()), (subject.stop)(io), "{name}: stop");
     }
 }

@@ -1709,22 +1709,29 @@ default-features = false
 #
 # The store's crash test makes its child not dumpable before the child
 # aborts.
+#
+# The IO core's witness of an interrupted call sets a handler of `SIGUSR1`
+# with no restart, and sends the signal to the thread of a read that waits.
 # features:
 # - term: `pty::openpty`
 # - fs: `sys::statfs::statfs`, the type name of a filesystem on macOS, and
 #   `unistd::mkfifo`, the FIFO of the pool's grant test
 # - process: `sys::prctl::set_dumpable`, on Linux, the child of the store's
 #   crash test
+# - pthread: `sys::pthread::pthread_self` and `sys::pthread::pthread_kill`,
+#   the thread of the read in the IO core's witness
 # - resource: `sys::resource::getrusage`, the CPU and the voluntary switches
 #   of each row of the store's load
+# - signal: `sys::signal::sigaction`, the handler of the IO core's witness
 # consumers:
+# - boot-io (dev, Linux x86-64)
 # - storage-store (dev)
 # - surface-dispatcher (dev)
 # - surface-driver (dev)
 [workspace.dependencies.nix]
 version = "0.31.3"
 default-features = false
-features = ["fs", "process", "resource", "term"]
+features = ["fs", "process", "pthread", "resource", "signal", "term"]
 
 # The operating system's file events: the hub's watch over the files open
 # documents import, for connections whose client watches none, and the

@@ -1,5 +1,5 @@
-//! The witnesses of `gandr-boot-io`: the file operations and the write, each
-//! through the one harness.
+//! The witnesses of `gandr-boot-io`: the file operations, the write and an
+//! interrupted call, each through the one harness.
 //!
 //! One target rather than one per area, so a witness path names the area it
 //! belongs to (`tests::file::…`) instead of a file.
@@ -13,5 +13,7 @@
 mod file;
 #[cfg(test)]
 mod harness;
+#[cfg(test)]
+mod interrupt;
 #[cfg(test)]
 mod write;
