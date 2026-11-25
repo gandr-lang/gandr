@@ -3,8 +3,8 @@ def k(
   b : Type,
   t : a -> b,
   g : b -> a,
-  s : (x : a) -> Path[.A = a](g (t x), x),
+  s : (x : a) -> Path[.A = a] (g (t x)) x,
   h : b -> a,
-  r : (y : b) -> Path[.A = b](t (h y), y),
+  r : (y : b) -> Path[.A = b] (t (h y)) y,
   y : b
-) -> Path[.A = (y : b) -> Path[.A = b](t (h y), y)](r, r) = Path.here r;
+) -> Path[.A = (y : b) -> Path[.A = b] (t (h y)) y] r r = Path.here r;
