@@ -190,27 +190,39 @@ fn a_mode_word_off_a_receiver_is_refused()
 #[test]
 fn a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813()
 {
-    // `x wit` for `x with`: a type variable beside a type reads as a moded
-    // type, so the refusal marks the pair, the misspelt word among it.
+    // A word that names nothing before a type is refused over the pair. A
+    // word that names a binder is the head of an application, `x wit`, so
+    // the misspelt `with` is refused as the type it names.
     let source = include_str!(
         "tests/fixtures/a-mode-variable-off-a-receiver-is-refused-over-its-moded-type-3813.gandr"
     );
     let mut arena = CoreArena::new();
     let source = listing(source);
     let module = listed(&source, &mut arena);
-    for (name, moded) in [("nested", "m Integer"), ("misspelt", "x wit")] {
-        let start = source.find(moded).unwrap_or_default();
-        let end = start.saturating_add(moded.len());
-        let refused = refusal_of(&module, SurfaceName::from(name));
-        assert!(
-            matches!(
-                refused,
-                LoweringRefusal::StrayReceiverMode { span, .. }
-                    if usize::from(span.start()) == start && usize::from(span.end()) == end
-            ),
-            "`{name}` is refused over `{moded}`, at {start}..{end}: {refused:?}"
-        );
-    }
+    let at = |written: &str| {
+        let start = source.find(written).unwrap_or_default();
+        (start, start.saturating_add(written.len()))
+    };
+    let (start, end) = at("m Integer");
+    let refused = refusal_of(&module, SurfaceName::from("nested"));
+    assert!(
+        matches!(
+            refused,
+            LoweringRefusal::StrayReceiverMode { span, .. }
+                if usize::from(span.start()) == start && usize::from(span.end()) == end
+        ),
+        "`nested` is refused over `m Integer`, at {start}..{end}: {refused:?}"
+    );
+    let (start, end) = at("wit");
+    let refused = refusal_of(&module, SurfaceName::from("misspelt"));
+    assert!(
+        matches!(
+            refused,
+            LoweringRefusal::UnresolvedTypeHead { span, .. }
+                if usize::from(span.start()) == start && usize::from(span.end()) == end
+        ),
+        "`misspelt` is refused at `wit`, at {start}..{end}: {refused:?}"
+    );
 }
 
 #[test]

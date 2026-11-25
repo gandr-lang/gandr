@@ -432,6 +432,9 @@ impl FormName
     /// A type former applied to its arguments, `Path a b` or `List A`: the
     /// form a type application has, wherever it is written.
     pub const TYPE_APPLICATION: Self = Self("type_application");
+    /// The descent `[<]`, an operand of its own: the first argument of a
+    /// lowercase head, `el [<] a`, that claims the head's own recursion.
+    pub const DESCENT_TYPE: Self = Self("descent_type");
     /// A boolean literal standing as its own pattern.
     pub const BOOLEAN: Self = Self("boolean");
     /// A number standing as its own pattern.
@@ -1123,7 +1126,8 @@ pub enum Former
     Unadmitted(Unbuilt),
     /// A form admitted at one position only, read where the dispatch reads
     /// forms: the universe of representable sorts, which classifies a
-    /// theory's sort member.
+    /// theory's sort member, and the descent `[<]`, the first argument of a
+    /// lowercase head.
     Misplaced,
 }
 
@@ -1248,7 +1252,7 @@ impl Former
 ///   grammar gains breaks the table rather than silently declining the form.
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 124_usize] = [
+pub const FORMERS: [(&str, Former); 125_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1365,6 +1369,7 @@ pub const FORMERS: [(&str, Former); 124_usize] = [
         "derived_rule_declaration",
         Former::Unadmitted(Unbuilt::DerivedRule),
     ),
+    ("descent_type", Former::Misplaced),
     ("extern_block", Former::Unadmitted(Unbuilt::ExternBlock)),
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
     ("if_expression", Former::If),
@@ -2899,6 +2904,132 @@ fn qualified_head(
     else {
         read.pieces.truncate(mark);
     }
+}
+
+/// The pieces of the call that the moded type at `position` spells off a
+/// method's receiver: `f a b` reads as `f(a, b)`, and `el [<] a` as the
+/// descent `el[<](a)`.
+///
+/// The grammar molds a lowercase word before a type as the moded type `m T`,
+/// whose type runs to the arrow's band: `f a b` is `f` over the moded type `a
+/// b`, and `f A b` is `f` over the juxtaposition `A b`. So each word down the
+/// moded type's right spine is an argument, and so is each operand of a
+/// juxtaposition that ends it. A descent `[<]` that stands first among the
+/// arguments is the bracket the call form writes after its head.
+///
+/// # Specification
+/// - requires: `read` holds no pieces it keeps.
+/// - ensures: when `position` is a moded type whose pieces are a word and an
+///   operand, `read` holds the word as a type variable, the descent's `[`,
+///   `<` and `]` when the first argument is one, `(`, the other arguments
+///   separated by `,`, and `)`, and the answer is `true`. `false` otherwise,
+///   with `read` empty.
+/// - fails: [`LoweringRefusal::UnknownMold`] reading a node of the spine.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Cost
+/// - allocation: the call form's pieces, growth within `read`'s buffer, and a
+///   scratch buffer per call
+///
+/// # Adequacy
+/// - hypothesis: L3 — `twice Integer`, `apply twice Integer`, `both Integer
+///   (twice Integer)` and `el [<] a` lower as their call forms.
+/// - witness: `gandr-surface-lowering::lower::tests::a_lowercase_head_applies_by_juxtaposition`
+pub fn moded_call<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    position: NodeIndex,
+    read: &mut Pieces,
+) -> Result<bool, LoweringRefusal<'source>>
+{
+    let moded = |at: NodeIndex| {
+        tree.node(at).is_some_and(|node| {
+            matches!(
+                shape_of(pbg, node),
+                Ok(Shape::Form {
+                    former: Former::ModedType,
+                    ..
+                })
+            )
+        })
+    };
+    let mut scratch = Pieces::new();
+    read_pieces(pbg, tree, position, &mut scratch)?;
+    read.pieces.clear();
+    let [Piece::Tile { at: head, .. }, Piece::Operand(mut rest)] = *scratch.pieces.as_slice()
+    else {
+        return Ok(false);
+    };
+    if !moded(position) {
+        return Ok(false);
+    }
+    let mut arguments: Vec<Placed> = Vec::new();
+    while moded(rest.node) {
+        read_pieces(pbg, tree, rest.node, &mut scratch)?;
+        let [Piece::Tile { at: word, .. }, Piece::Operand(next)] = *scratch.pieces.as_slice()
+        else {
+            break;
+        };
+        arguments.push(word);
+        rest = next;
+    }
+    // A juxtaposition that ends the spine gives its head and each of its
+    // arguments, `f A b` as `f(A, b)`.
+    let juxtaposed = tree.node(rest.node).is_some_and(|node| {
+        matches!(node.label(), NodeLabel::Meld(mold) if Some(mold) == pbg.application_in(Sort::Type))
+    });
+    scratch.pieces.clear();
+    if juxtaposed {
+        read_pieces(pbg, tree, rest.node, &mut scratch)?;
+    }
+    match scratch.pieces.as_slice() {
+        [first, Piece::Tile { label: open, .. }, spine @ .., Piece::Tile { label: close, .. }]
+            if *open == TileName::PAREN_OPEN && *close == TileName::PAREN_CLOSE =>
+        {
+            arguments.push(first.placed());
+            arguments.extend(spine.iter().filter_map(|piece| match *piece {
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
+            }));
+        },
+        _ => arguments.push(rest),
+    }
+    let descent = arguments.first().is_some_and(|first| {
+        tree.node(first.node)
+            .and_then(|node| shape_of(pbg, node).ok())
+            .is_some_and(|shape| matches!(shape, Shape::Form { name, .. } if name == FormName::DESCENT_TYPE))
+    });
+    read.pieces.push(Piece::Tile {
+        label: TileName::TYPE_VARIABLE,
+        at: head,
+    });
+    let mut written = arguments.iter().copied();
+    if descent && let Some(mark) = written.next() {
+        for label in [TileName::BRACKET_OPEN, TileName::LESS_THAN, TileName::BRACKET_CLOSE] {
+            read.pieces.push(Piece::Tile { label, at: mark });
+        }
+    }
+    read.pieces.push(Piece::Tile {
+        label: TileName::PAREN_OPEN,
+        at: head,
+    });
+    for (index, argument) in written.enumerate() {
+        if index > 0 {
+            read.pieces.push(Piece::Tile {
+                label: TileName::COMMA,
+                at: argument,
+            });
+        }
+        read.pieces.push(Piece::Operand(argument));
+    }
+    read.pieces.push(Piece::Tile {
+        label: TileName::PAREN_CLOSE,
+        at: rest,
+    });
+    Ok(true)
 }
 
 /// Where the form at `position` itself stopped, when the parser closed it,

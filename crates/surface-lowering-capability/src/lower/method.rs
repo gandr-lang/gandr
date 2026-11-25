@@ -343,18 +343,20 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         }
     }
 
-    /// Refuse a mode word or a mode variable written on a parameter of the
-    /// function at `function` that is no receiver.
+    /// Refuse a mode word written on a parameter of the function at
+    /// `function` that is no receiver, and a mode variable on a receiver
+    /// whose method deduces no mode.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the parameter list's `(`;
     ///   `receiver` is the function's receiver mode.
     /// - ensures: `Ok` when every mode word stands on the first parameter of a
-    ///   method, named `self`, and every moded type, `m T`, on that of a method
-    ///   whose mode is deduced.
+    ///   method, named `self`, and every moded type on that parameter, `m T`,
+    ///   on a method whose mode is deduced. A moded type on any other
+    ///   parameter is an application, `f a`, which the type's lowering reads.
     /// - fails: [`LoweringRefusal::StrayReceiverMode`] at the first mode word
-    ///   or mode variable that does not; [`LoweringRefusal::UnknownMold`]
-    ///   reading a parameter's type.
+    ///   or receiver's mode variable that does not;
+    ///   [`LoweringRefusal::UnknownMold`] reading a parameter's type.
     /// - panics: none.
     ///
     /// # Errors
@@ -365,8 +367,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a mode word on a top-level function's parameter and
-    ///   on a method's second parameter, and a mode variable on a top-level
-    ///   function's parameter, each refused at the word.
+    ///   on a method's second parameter, each refused at the word.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_mode_word_off_a_receiver_is_refused`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::UnknownMold { .. })))]
     #[inline]
@@ -400,12 +401,16 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                         receiving && receiver.is_some_and(|mode| mode != ReceiverMode::Deduced);
                     (!receives).then_some(at)
                 },
-                Piece::Operand(declared) if after_colon => match self.moded(declared)? {
-                    Some((written, _)) => {
-                        let receives = receiving && receiver == Some(ReceiverMode::Deduced);
-                        (!receives).then_some(written)
-                    },
-                    None => None,
+                // Off a receiver a moded type is an application, `f a`, which
+                // the type's lowering reads; on a receiver it is a mode only
+                // where the method deduces one.
+                Piece::Operand(declared) if after_colon && receiving => {
+                    match self.moded(declared)? {
+                        Some((written, _)) => {
+                            (receiver != Some(ReceiverMode::Deduced)).then_some(written)
+                        },
+                        None => None,
+                    }
                 },
                 Piece::Tile { label, .. } if label == TileName::COMMA => {
                     position = position.saturating_add(1_usize);
