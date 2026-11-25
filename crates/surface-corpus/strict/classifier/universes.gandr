@@ -1,6 +1,6 @@
 def small : Type = Integer;
 
-def effect : Type[-] = -F Integer;
+def action : Type[-] = -F Integer;
 
 def suspended : Type = +U (-F Integer);
 
@@ -23,6 +23,6 @@ def at_small() -> small = become id small five;
 @[runs("fun (a) { fun (b) { force b } }")]
 def perform(c : Type[-], t : +U c) -> c = become force t;
 
-def performed() -> Integer = become perform effect (thunk { 42 });
+def performed() -> Integer = become perform action (thunk { 42 });
 
 def quoted() -> Integer = become perform (-F Integer) (thunk { 7 });
