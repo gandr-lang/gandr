@@ -1,6 +1,6 @@
 def f(x : Integer) -> -F Integer = {
 let y = inc x
-      ;
+      + 1;
          let z = inc y;
   return z
 };

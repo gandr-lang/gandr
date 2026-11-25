@@ -1,15 +1,27 @@
 //! The source formatter: a parsed gandr source laid out at a page width.
 //!
 //! [`format`] reads the concrete syntax tree, never the core, so every token
-//! and comment the source wrote is kept, in order, and only the layout
-//! between them changes. Each top-level form is laid out on its own: its
-//! brackets nest as groups, a group stays on one line when it fits and
-//! breaks one item per line when it does not. A form the parser repaired, a
-//! string and a hole are copied byte for byte.
+//! and comment the source wrote is kept, in order, but a statement's `;` at a
+//! line's end, and only the layout between them changes. Each top-level form is
+//! laid out on its own: its brackets nest as groups, a group stays on one line
+//! when it fits and breaks one item per line when it does not. A form the
+//! parser repaired, a string and a hole are copied byte for byte.
 //!
-//! The formatted text is parsed again before it is returned: its content
-//! digest must equal the source's, its tokens and comments must be the
-//! source's, and each comment must belong to the node it belonged to, or
+//! # One spelling of a statement's end
+//!
+//! A statement ends at its line's end. Where a block of statements breaks
+//! one statement per line, the `;` that ends a statement before the block's
+//! last one is left out, since the layout pass places the separator at the
+//! line's end. Two cases keep the `;`: two statements on one line, as a block
+//! laid on one line writes them, and the `;` after a block's last statement,
+//! which gives the block the unit value. A block of statements is one that a
+//! line-final `=` opens, or a `{` of a form after no `where` and no `rec`; a
+//! declaration body keeps each `;`, since the layout pass places none there.
+//!
+//! The formatted text is parsed again before it is returned: its tree must
+//! equal the source's, a `;` the layout pass places alike with a written one,
+//! its tokens and comments must be the source's, a statement's `;` left out
+//! aside, and each comment must belong to the node it belonged to, or
 //! [`format`] refuses with [`FormatError::Changed`] and returns nothing.
 //!
 //! # Copied as written
@@ -71,12 +83,12 @@
 //! without lowering its word. The declaration wins over the option, so one
 //! command lays out sources of both spellings.
 //!
-//! [`Form::Source`] keeps every token: the layout is the only change, and
-//! the content digest is its check. Either other form runs the rewrites of
-//! its direction from [`REWRITES`], the table of every pair of spellings the
-//! presentation printer (`gandr-surface-pretty`) tells apart — the eager
-//! product, the sum, the lazy product, the tuple, the value function, the
-//! path composite, the path inverse and a map's action on a path — each
+//! [`Form::Source`] keeps every token but a statement's line-final `;`: the
+//! layout is the only change, and the tree is its check. Either other form runs
+//! the rewrites of its direction from [`REWRITES`], the table of every pair of
+//! spellings the presentation printer (`gandr-surface-pretty`) tells apart —
+//! the eager product, the sum, the lazy product, the tuple, the value function,
+//! the path composite, the path inverse and a map's action on a path — each
 //! moving one form between its two spellings, and the default grade `ω` of a
 //! thunk type, which the printer writes in neither form and both leave
 //! unwritten, so a value function written with it is sugared as one written
@@ -318,8 +330,11 @@ use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::FormRank;
+use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
@@ -336,6 +351,7 @@ use crate::layout::Gap;
 use crate::leaf::Integrity;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
+use crate::leaf::Offside;
 use crate::leaf::Owner;
 use crate::meaning::Agreement;
 pub use crate::meaning::Elaborate;
@@ -2198,21 +2214,109 @@ fn verify(
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
     let digest = |result: &ParseResult<'_>| result.tree().digest();
-    if digest(&reparsed) != digest(parsed) {
+    let same = digest(&reparsed) == digest(parsed);
+    if !same && !alike(grammar, parsed.tree(), reparsed.tree()) {
         return Err(FormatError::Changed(Change::Meaning));
     }
     let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
-    if material(leaves).ne(material(&again.leaves)) {
+    if paired(leaves, &again.leaves).is_none() {
         return Err(FormatError::Changed(Change::Material));
     }
-    let before = comments(parsed.tree());
-    let after = comments(reparsed.tree());
-    if comment_runs(parsed.tree().source(), &before)
-        .ne(&comment_runs(reparsed.tree().source(), &after))
-    {
+    let before = comment_runs(parsed.tree().source(), &comments(parsed.tree()));
+    let after = comment_runs(reparsed.tree().source(), &comments(reparsed.tree()));
+    // A `;` the layout pass places changes the digest of its form, so the
+    // owners are compared by their form's position and their rank there.
+    let attached = if same {
+        before == after
+    }
+    else {
+        ranked(parsed.tree(), before) == ranked(reparsed.tree(), after)
+    };
+    if !attached {
         return Err(FormatError::Changed(Change::Attachment));
     }
     Ok(())
+}
+
+/// Whether `left` and `right` hold the same significant nodes in the same
+/// order, each with its label and its text, a statement's `;` written alike
+/// with one the layout pass places.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the pairs of nodes still to compare
+fn alike(
+    grammar: &Pbg,
+    left: &SyntaxTree<'_>,
+    right: &SyntaxTree<'_>,
+) -> bool
+{
+    let significant = |tree: &SyntaxTree<'_>, at: NodeIndex| {
+        tree.node(at)
+            .is_some_and(|node| bool::from(node.label().significance()))
+    };
+    let mut pending: Vec<(NodeIndex, NodeIndex)> = Vec::from([(left.root(), right.root())]);
+    while let Some((here, there)) = pending.pop() {
+        let (Some(this), Some(that)) = (left.node(here), right.node(there))
+        else {
+            return false;
+        };
+        let label = this.label();
+        if label != that.label() {
+            return false;
+        }
+        let separator = matches!(label, NodeLabel::Tile(mold)
+            if grammar.mold(mold).is_ok_and(|def| def.label == ";"));
+        if bool::from(label.carries_text())
+            && !separator
+            && left.fragment(here) != right.fragment(there)
+        {
+            return false;
+        }
+        let mut these = left.children(here).filter(|&at| significant(left, at));
+        let mut those = right.children(there).filter(|&at| significant(right, at));
+        loop {
+            match (these.next(), those.next()) {
+                (Some(this), Some(that)) => pending.push((this, that)),
+                (None, None) => break,
+                (Some(_), None) | (None, Some(_)) => return false,
+            }
+        }
+    }
+    true
+}
+
+/// The comment runs of `tree`, each owner keyed by its top-level form's
+/// position among the forms and its rank there.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the digests of the forms and the runs
+fn ranked<'source>(
+    tree: &SyntaxTree<'_>,
+    runs: Vec<CommentRun<'source>>,
+) -> Vec<(Option<(usize, FormRank)>, KeptCommentRun<'source>)>
+{
+    let forms: Vec<NodeDigest> = tree
+        .children(tree.root())
+        .filter_map(|top| tree.key(top))
+        .map(|key| key.form())
+        .collect();
+    runs.into_iter()
+        .map(|run| {
+            let owner = run.key.and_then(|key| {
+                forms
+                    .iter()
+                    .position(|&form| form == key.form())
+                    .map(|at| (at, key.rank()))
+            });
+            (owner, KeptCommentRun::from(run))
+        })
+        .collect()
 }
 
 /// The checker's elaboration of a source, once made: none until a rewritten
@@ -2249,7 +2353,7 @@ fn verify_rewritten(
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
     let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
-    if material(written).ne(material(&again.leaves)) {
+    if paired(written, &again.leaves).is_none() {
         return Err(FormatError::Changed(Change::Material));
     }
     let before_comments = comments(parsed.tree());
@@ -2541,21 +2645,40 @@ fn kept_runs<'source>(
         .collect()
 }
 
+/// The material leaves of `written` each beside the leaf of `candidate`
+/// that spells it, in order; none when the two do not spell the same
+/// material. A statement's `;` of `written` that `candidate` leaves out is
+/// passed over: the layout pass places it where it ends a line, and the tree
+/// or the lowering keeps the structure it marks.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the pairs, growth within the leaves
+fn paired<'written, 'candidate, 'source, 'read>(
+    written: &'written [Leaf<'source>],
+    candidate: &'candidate [Leaf<'read>],
+) -> Option<Vec<(&'written Leaf<'source>, &'candidate Leaf<'read>)>>
+{
+    let mut read = material_leaves(candidate).peekable();
+    let mut pairs = Vec::new();
+    for wrote in material_leaves(written) {
+        match read.next_if(|next| {
+            next.material == wrote.material && <&str>::from(next.text) == <&str>::from(wrote.text)
+        }) {
+            Some(next) => pairs.push((wrote, next)),
+            None if wrote.offside == Offside::Ends => {},
+            None => return None,
+        }
+    }
+    read.next().is_none().then_some(pairs)
+}
+
 /// The tokens and block comments of `leaves`, in order. An empty tile, as the
 /// one a juxtaposition holds or a layout block's virtual separator, is no
 /// material: no source writes it, so a rewrite that writes `f a` leaves it to
 /// the parse, and the tree digest and the lowering keep the structure it marks.
-///
-/// # Specification
-/// trivial.
-fn material<'leaves, 'source>(
-    leaves: &'leaves [Leaf<'source>]
-) -> impl Iterator<Item = (Material, SourceFragment<'source>)> + 'leaves
-{
-    material_leaves(leaves).map(|leaf| (leaf.material, leaf.text))
-}
-
-/// The leaves of `leaves` that [`material`] reads, in order.
 ///
 /// # Specification
 /// trivial.

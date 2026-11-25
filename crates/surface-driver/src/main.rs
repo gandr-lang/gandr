@@ -42,7 +42,7 @@
 //! | `gandr stage <programs>` | a line per program — the certificates the kernel readmitted and its families by how they were admitted — then the run's digest and verdict | a certificate the kernel refused, a program that could not be checked, or a family admission that faulted |
 //! | `gandr stage --jobs <threads> <programs>` | as `stage`, each program's stages forked onto that many threads | as `stage` |
 //! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
-//! | `gandr fmt --check <paths>` | the path of each source out of layout; nothing is written | as `fmt`, and any source out of layout |
+//! | `gandr fmt --check <paths>` | `<path>:<line>` for each source out of layout, the line the first that the layout changes; nothing is written | as `fmt`, and any source out of layout |
 //! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
 //! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
@@ -4302,18 +4302,19 @@ fn render(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: each source whose layout changed is its path, as one line on
-///   standard output, in walk order: written back under `fmt`, untouched under
-///   `fmt --check`. A source already in layout prints nothing. Each path that
-///   cannot be read or written back, names no source, or holds a source the
-///   formatter refuses is `gandr: <path>: <fault>` on standard error, and the
-///   formatting continues past it. Each declaration of a laid-out source that
-///   kept its spelling because a rewrite would have changed what it lowers to
-///   is ``gandr: <path>:<line>:<column>: `<name>` keeps its spelling:
-///   <reason>`` on standard error, after the source's path if any, and changes
-///   no exit. The exit is two when any path faulted; otherwise one under `fmt
-///   --check` when any source is out of layout, and zero. Every byte written,
-///   every source rewritten and the exit are the same at every width.
+/// - ensures: each source whose layout changed is one line on standard output,
+///   in walk order: its path, written back under `fmt`; its path and the first
+///   line the layout changes, `<path>:<line>`, untouched under `fmt --check`. A
+///   source already in layout prints nothing. Each path that cannot be read or
+///   written back, names no source, or holds a source the formatter refuses is
+///   `gandr: <path>: <fault>` on standard error, and the formatting continues
+///   past it. Each declaration of a laid-out source that kept its spelling
+///   because a rewrite would have changed what it lowers to is ``gandr:
+///   <path>:<line>:<column>: `<name>` keeps its spelling: <reason>`` on
+///   standard error, after the source's path if any, and changes no exit. The
+///   exit is two when any path faulted; otherwise one under `fmt --check` when
+///   any source is out of layout, and zero. Every byte written, every source
+///   rewritten and the exit are the same at every width.
 /// - provides: `gandr fmt` and `gandr fmt --check`.
 /// - fails: the first write error on either stream, printing nothing after it;
 ///   at one thread no source after it is laid out, and at a wider one every
@@ -4353,9 +4354,17 @@ fn fmt(
     let visited = formatting.visit(pool, |step| {
         let written = match step {
             FormatStep::Unchanged { path, withdrawn } => kept(stderr, path, &withdrawn),
-            FormatStep::Changed { path, withdrawn } => {
+            FormatStep::Changed {
+                path,
+                line,
+                withdrawn,
+            } => {
                 changed = true;
-                writeln!(stdout, "{}", path.display()).and_then(|()| kept(stderr, path, &withdrawn))
+                let printed = match rewrite {
+                    Rewrite::Check => writeln!(stdout, "{}:{line}", path.display()),
+                    Rewrite::InPlace => writeln!(stdout, "{}", path.display()),
+                };
+                printed.and_then(|()| kept(stderr, path, &withdrawn))
             },
             FormatStep::Fault { path, fault } => {
                 faulted = true;

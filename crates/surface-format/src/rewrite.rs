@@ -1685,13 +1685,16 @@ impl<'source> Respelling<'_, 'source>
             };
             return Some((role, spelled.leaves.clone(), extent));
         }
+        // A written tile is the one leaf at its span, so the part it plays is
+        // the source leaf's own; only an empty tile needs its part named.
         let offside = match node.label() {
             NodeLabel::Tile(mold) => self
                 .tree
                 .source()
                 .fragment(node.span())
                 .ok()
-                .map(|text| offside_of(self.grammar, mold, text)),
+                .filter(|text| <&str>::from(*text).is_empty())
+                .map(|text| offside_of(self.grammar, mold, text, None)),
             NodeLabel::Wald
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }

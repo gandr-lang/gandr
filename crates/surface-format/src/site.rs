@@ -26,7 +26,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::leaf::Leaf;
 use crate::leaf::Origin;
-use crate::material_leaves;
+use crate::paired;
 
 /// The map of one pass: each leaf it copies, and each form it respells.
 ///
@@ -88,8 +88,9 @@ impl Sites
         candidate: &[Leaf<'_>],
     ) -> Self
     {
-        let pairs: Vec<(Origin, ByteSpan, ByteSpan)> = material_leaves(written)
-            .zip(material_leaves(candidate))
+        let pairs: Vec<(Origin, ByteSpan, ByteSpan)> = paired(written, candidate)
+            .unwrap_or_default()
+            .into_iter()
             .map(|(wrote, read)| (wrote.origin, wrote.span, read.span))
             .collect();
         let mut copied: Vec<(ByteSpan, ByteSpan)> = pairs

@@ -151,7 +151,9 @@ fn top_level(
         .collect()
 }
 
-/// The tokens of `text`, whitespace and comments left out.
+/// The tokens of `text`, whitespace and comments left out, and the separator
+/// the layout pass places at a statement's line end read as the `;` the
+/// printer writes there.
 ///
 /// # Specification
 /// trivial.
@@ -162,6 +164,9 @@ fn tokens(fragment: SourceFragment<'_>) -> Vec<String>
         .into_iter()
         .filter(|token| token.lexeme != Lexeme::Space)
         .filter_map(|token| {
+            if token.lexeme == Lexeme::LayoutSemi {
+                return Some(String::from(";"));
+            }
             text.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)
                 .map(String::from)
         })

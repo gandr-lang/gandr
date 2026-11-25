@@ -202,6 +202,18 @@ struct Placed<'source>
     /// The part the element's token plays, as the spacing table reads it:
     /// [`space::Context::Plain`] for a group, a break and a comment.
     context: space::Context,
+    /// Whether the element is left out where it ends a line.
+    line_end: LineEnd,
+}
+
+/// Whether an element is left out where it ends a line.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LineEnd
+{
+    /// It is written.
+    Kept,
+    /// It is a statement's `;`, which the layout pass places at a line's end.
+    Placed,
 }
 
 /// Whether documentation starts or ends between an element and the one
@@ -543,6 +555,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             branch: leaf.branch,
                             element: Element::Group(id),
                             context: space::Context::Plain,
+                            line_end: LineEnd::Kept,
                         })?;
                         open.push(id);
                         before = Before::After(here);
@@ -562,6 +575,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             branch: None,
                             element: Element::Break,
                             context: space::Context::Plain,
+                            line_end: LineEnd::Kept,
                         })?;
                         before = Before::After(space::Token {
                             text: leaf.text,
@@ -589,7 +603,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                         });
                         continue;
                     },
-                    Offside::Written => {},
+                    Offside::Written | Offside::Ends => {},
                 }
                 if let Some(&(_, expects)) = BRACKETS.iter().find(|&&(opener, _)| opener == text) {
                     let here = space::Token {
@@ -618,6 +632,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                         branch: leaf.branch,
                         element: Element::Group(id),
                         context: space::Context::Plain,
+                        line_end: LineEnd::Kept,
                     })?;
                     open.push(id);
                     before = Before::After(here);
@@ -703,6 +718,12 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
             },
             element,
             context: leaf.context,
+            line_end: match leaf.offside {
+                Offside::Ends => LineEnd::Placed,
+                Offside::Written | Offside::Opens | Offside::Separates | Offside::Closes => {
+                    LineEnd::Kept
+                },
+            },
         })?;
         before = Before::After(here);
         gap = Gap::Adjacent;
@@ -1060,24 +1081,58 @@ fn group_doc(
 
 /// The items of `placed`, each on a line of its own and indented under the
 /// line that opens them, a continuation further still, a blank line the
-/// source wrote before an item kept as `blank`.
+/// source wrote before an item kept as `blank`. A statement's `;` that ends
+/// an item before the last item that holds code is left out, since the
+/// layout pass places it at the line's end; an item it was all of is left
+/// out too.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Cost
-/// - allocation: the lines of each item, growth within the group's items
-fn item_lines(
+/// - allocation: the lines of each item, an item's elements copied once where
+///   its `;` is left out, growth within the group's items
+fn item_lines<'source>(
     builder: &mut DocBuilder<'_>,
-    placed: &[Placed<'_>],
+    placed: &[Placed<'source>],
     docs: &[Built],
     blank: DocId,
     columns: Columns,
 ) -> Result<DocId, FormatError>
 {
+    let items = items(placed, docs, columns);
+    let last = items.iter().rposition(|item| {
+        item.placed
+            .iter()
+            .any(|current| current.element.kind() == Kind::Code)
+    });
+    let mut kept: Vec<Placed<'source>> = Vec::new();
     let mut lines: Vec<DocId> = Vec::new();
-    for (index, item) in items(placed, docs, columns).into_iter().enumerate() {
-        let Some(&Placed { gap, .. }) = item.placed.first()
+    for (index, item) in items.iter().enumerate() {
+        let left = last
+            .filter(|&last| index < last)
+            .and_then(|_| {
+                item.placed
+                    .iter()
+                    .rposition(|current| current.element.kind() == Kind::Code)
+            })
+            .filter(|&at| {
+                item.placed
+                    .get(at)
+                    .is_some_and(|current| current.line_end == LineEnd::Placed)
+            });
+        if let Some(at) = left {
+            kept.clear();
+            kept.extend(
+                item.placed
+                    .iter()
+                    .enumerate()
+                    .filter(|&(position, _)| position != at)
+                    .map(|(_, &current)| current),
+            );
+        }
+        let shown: &[Placed<'source>] = if left.is_some() { &kept } else { item.placed };
+        let Some(&Placed { gap, .. }) = shown.first()
         else {
             continue;
         };
@@ -1085,7 +1140,7 @@ fn item_lines(
             lines.push(blank);
         }
         let line = builder.hard_line();
-        let content = run(builder, item.placed, docs, (Mode::Best, Held::Free))?;
+        let content = run(builder, shown, docs, (Mode::Best, Held::Free))?;
         let both = builder.concat(line, content)?;
         lines.push(match item.continuation {
             Continuation::Statement => both,

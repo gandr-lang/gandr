@@ -1601,7 +1601,7 @@ fn fmt_rewrites_what_check_reports()
     let scratch = Scratch::new(Path::new("fmt"));
     let loose = scratch.file(
         Path::new("loose.gandr"),
-        Text::from("def  answer =  42 ;\n"),
+        Text::from("def answer() -> Integer {\n  let x = 42;\n  x\n}\n"),
     );
     let tidy = scratch.file(Path::new("tidy.gandr"), Text::from("def copy = 1;\n"));
     let absent = scratch.0.join("absent.gandr");
@@ -1610,7 +1610,7 @@ fn fmt_rewrites_what_check_reports()
 
     let checked = ran(gandr(&[fmt, check, &loose, &tidy]));
     assert_eq!(code(&checked), Code(1_i32), "{}", stderr(&checked));
-    assert_eq!(stdout(&checked), format!("{}\n", loose.display()));
+    assert_eq!(stdout(&checked), format!("{}:2\n", loose.display()));
     let serial = ran(gandr(&[fmt, check, Path::new("--jobs=1"), &loose, &tidy]));
     assert_eq!(
         (code(&serial), serial.stdout.as_slice()),
@@ -1619,7 +1619,7 @@ fn fmt_rewrites_what_check_reports()
     );
     assert_eq!(
         std::fs::read_to_string(&loose).expect("the source is readable"),
-        "def  answer =  42 ;\n",
+        "def answer() -> Integer {\n  let x = 42;\n  x\n}\n",
         "the check writes nothing"
     );
 
@@ -1636,7 +1636,7 @@ fn fmt_rewrites_what_check_reports()
     assert_eq!(stdout(&rewritten), format!("{}\n", loose.display()));
     assert_eq!(
         std::fs::read_to_string(&loose).expect("the source is readable"),
-        "def answer = 42;\n"
+        "def answer() -> Integer {\n  let x = 42\n  x\n}\n"
     );
     assert_eq!(
         std::fs::read_to_string(&tidy).expect("the source is readable"),

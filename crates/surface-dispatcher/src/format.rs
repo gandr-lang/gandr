@@ -53,6 +53,7 @@
 //! beside the mapping and renamed over it ([`Reader::write`]).
 
 use core::cmp::Reverse;
+use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -153,6 +154,8 @@ pub enum FormatStep<'formatting>
     {
         /// The source's path, as the formatting reached it.
         path: &'formatting Path,
+        /// The first line of the source the layout changes, counted from one.
+        line: NonZeroUsize,
         /// Each declaration that kept the source's spelling, and why.
         withdrawn: Vec<Kept>,
     },
@@ -503,7 +506,13 @@ where
     let fault = match reached {
         Reached::Source => match lay() {
             Ok(Laid::Unchanged(withdrawn)) => return FormatStep::Unchanged { path, withdrawn },
-            Ok(Laid::Changed(withdrawn)) => return FormatStep::Changed { path, withdrawn },
+            Ok(Laid::Changed(withdrawn, line)) => {
+                return FormatStep::Changed {
+                    path,
+                    line,
+                    withdrawn,
+                };
+            },
             Err(fault) => fault,
         },
         Reached::Unreadable(error) => FormatFault::Unreadable(error),
@@ -519,8 +528,8 @@ enum Laid
 {
     /// The formatted text is the source's own.
     Unchanged(Vec<Kept>),
-    /// The formatted text differs from the source's.
-    Changed(Vec<Kept>),
+    /// The formatted text differs from the source's, first at this line.
+    Changed(Vec<Kept>, NonZeroUsize),
 }
 
 /// Read the source at `path` through `reader`, format it under `grammar` at
@@ -585,7 +594,27 @@ fn lay_out<'formatting>(
             .write(path, SourceText::from(laid))
             .map_err(FormatFault::Unwritable)?;
     }
-    Ok(Laid::Changed(withdrawn))
+    Ok(Laid::Changed(withdrawn, first_change(text.as_ref(), laid)))
+}
+
+/// The first line, counted from one, at which `laid` differs from `source`.
+///
+/// # Specification
+/// trivial.
+fn first_change(
+    source: &str,
+    laid: &str,
+) -> NonZeroUsize
+{
+    let mut theirs = source.split('\n');
+    let mut ours = laid.split('\n');
+    let mut line = NonZeroUsize::MIN;
+    loop {
+        match (theirs.next(), ours.next()) {
+            (Some(left), Some(right)) if left == right => line = line.saturating_add(1),
+            _ => return line,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -881,7 +910,7 @@ mod tests
             Rewrite::InPlace,
         )
         .expect("the source formats");
-        let super::Laid::Changed(kept) = laid
+        let super::Laid::Changed(kept, _) = laid
         else {
             panic!("the source changes: {laid:?}");
         };

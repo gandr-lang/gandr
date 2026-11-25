@@ -142,6 +142,10 @@ pub enum Offside
     Opens,
     /// The empty separator between two of a block's lines.
     Separates,
+    /// A written `;` that ends a statement of a block: where it ends a line,
+    /// the layout pass places a separator there, so the formatter leaves it
+    /// out.
+    Ends,
     /// The empty close of a block.
     Closes,
 }
@@ -244,6 +248,9 @@ pub fn flatten<'source>(
     // ascending. A form is reached before its target, so each is listed
     // before the walk reaches it.
     let mut glued: Vec<NodeIndex> = Vec::new();
+    // The `;` tiles of the forms whose block is a declaration body,
+    // ascending: a form is reached before its tiles.
+    let mut declared: Vec<NodeIndex> = Vec::new();
     in_order(
         &mut pending,
         tree.children(tree.root())
@@ -271,21 +278,40 @@ pub fn flatten<'source>(
                     // stand in the form's block, each its own branch; the
                     // others stand in the block around the form.
                     let mut inside = Inside::No;
+                    let mut before: Option<LabelText<'static>> = None;
                     in_order(
                         &mut pending,
                         tree.children(at).map(|child| {
-                            let here = match (inside, tile_label(grammar, tree, child)) {
+                            let label = tile_label(grammar, tree, child);
+                            let here = match (inside, label) {
                                 (Inside::No, Some(LabelText("{"))) => {
-                                    inside = Inside::Yes;
+                                    inside = match before {
+                                        Some(LabelText("where" | "rec")) => Inside::Declarations,
+                                        Some(_) | None => Inside::Statements,
+                                    };
                                     branch
                                 },
-                                (Inside::Yes, Some(LabelText("}"))) => {
+                                (
+                                    Inside::Statements | Inside::Declarations,
+                                    Some(LabelText("}")),
+                                ) => {
                                     inside = Inside::No;
                                     branch
                                 },
-                                (Inside::Yes, _) => Some(branch_of(tree, child)),
+                                (Inside::Statements | Inside::Declarations, _) => {
+                                    if inside == Inside::Declarations
+                                        && label == Some(LabelText(";"))
+                                        && let Err(slot) = declared.binary_search(&child)
+                                    {
+                                        declared.insert(slot, child);
+                                    }
+                                    Some(branch_of(tree, child))
+                                },
                                 (Inside::No, _) => branch,
                             };
+                            if label.is_some() {
+                                before = label;
+                            }
                             (child, owner, documentation, here)
                         }),
                     );
@@ -344,7 +370,9 @@ pub fn flatten<'source>(
                         Context::of(rule.name(), text, before)
                     })
                 };
-                (context, offside_of(grammar, mold, text))
+                // A declaration body's `;` ends no statement.
+                let statement = branch.filter(|_| declared.binary_search(&at).is_err());
+                (context, offside_of(grammar, mold, text, statement))
             },
             NodeLabel::Wald
             | NodeLabel::Meld(_)
@@ -410,14 +438,18 @@ fn in_order<T>(
     }
 }
 
-/// Whether the walk stands inside the block a form opens.
+/// Whether the walk stands inside the block a form opens, and which.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Inside
 {
     /// It does not.
     No,
-    /// It does: a `{` of the form opened it and no `}` has closed it.
-    Yes,
+    /// It does: a `{` of the form opened it and no `}` has closed it. A `;`
+    /// of the form there ends a statement.
+    Statements,
+    /// It does, and a `where` or a `rec` stands before its `{`: the block is
+    /// a declaration body, whose `;` the layout pass does not place.
+    Declarations,
 }
 
 /// The label of the tile at `at`, or none for any other node.
@@ -541,7 +573,9 @@ pub fn copied(
 }
 
 /// The part the tile `mold`, written `text`, plays in a layout block: a tile
-/// of a `{`, `;` or `}` written otherwise is the layout pass's.
+/// of a `{`, `;` or `}` written otherwise is the layout pass's, and a written
+/// `;` that stands at `branch` of a statement block, a tile of the form whose
+/// block holds it, ends one of the block's statements.
 ///
 /// # Specification
 /// trivial.
@@ -549,6 +583,7 @@ pub fn offside_of(
     grammar: &Pbg,
     mold: MoldId,
     text: SourceFragment<'_>,
+    branch: Option<Branch>,
 ) -> Offside
 {
     let Ok(label) = grammar.mold(mold).map(|def| def.label)
@@ -559,6 +594,7 @@ pub fn offside_of(
     match (label, text.is_empty()) {
         ("{", _) if text != "{" => Offside::Opens,
         (";", true) => Offside::Separates,
+        (";", false) if branch.is_some_and(|branch| branch.direct == Direct::Yes) => Offside::Ends,
         ("}", true) => Offside::Closes,
         _ => Offside::Written,
     }
