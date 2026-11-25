@@ -2,7 +2,6 @@ use gandr_workflow_twin_census::CensusError;
 use gandr_workflow_twin_census::Workspace;
 use gandr_workflow_twin_census::rustdoc::Surface;
 use gandr_workflow_twin_census::rustdoc::read;
-use gandr_workflow_twin_census::stale;
 
 /// The metadata of a workspace of five crates: the emitter reaches `near` by
 /// a normal edge and `far` by a build edge of `near`; it reaches `tested` by a
@@ -43,7 +42,7 @@ An item is generic when it has a type parameter or a trait bound. An entry under
 
 An export carries a function that is not generic, whose operands are fixed-width integers or addresses, and whose result is one of the two. A fixed-width integer is `u8` to `u64`, `i8` to `i64`, `usize` or `isize`. An address is a reference or a raw pointer to a sized type. The column gives the count of such public functions and methods, of the count of all, and its share.
 
-`twin-census --write` writes this file from `cargo metadata` and from the JSON that rustdoc writes for each library. `twin-census --check` refuses it when it is not the census of the workspace.
+`twin-census` prints this text from `cargo metadata` and from the JSON that rustdoc writes for each library.
 
 | Crate | Under the emitter | Generic items | Export fragment |
 | ----- | ----------------- | ------------- | --------------- |
@@ -225,40 +224,5 @@ fn metadata_with_no_emitter_or_no_json_is_refused_by_name()
         Workspace::read(no_emitter.as_bytes()),
         Err(CensusError::NoEmitter),
         "a workspace with no emitter is refused"
-    );
-}
-
-/// A census with one row changed, one row missing and one row of no crate is
-/// stale, and the refusal names the three crates in order. An equal text
-/// passes, and a text that differs outside the rows names that text.
-#[test]
-fn a_stale_census_is_refused_with_the_rows_that_differ()
-{
-    assert_eq!(stale(CENSUS, CENSUS), Ok(()), "an equal census passes");
-    let committed = CENSUS
-        .replace("| `far` | yes | 2 |", "| `far` | no | 2 |")
-        .replace("| `tested` | no | no library | no library |\n", "")
-        .replace(
-            "| `near` | yes | 1 | 3 of 3 (100 %) |",
-            "| `near` | yes | 1 | 3 of 3 (100 %) |\n| `gone` | no | 0 | 0 of 0 |",
-        );
-    assert_eq!(
-        stale(&committed, CENSUS),
-        Err(CensusError::Stale {
-            rows: vec![
-                String::from("far"),
-                String::from("gone"),
-                String::from("tested")
-            ],
-        }),
-        "the three crates are named in order"
-    );
-    let counted = CENSUS.replace("2 of 5", "3 of 5");
-    assert_eq!(
-        stale(&counted, CENSUS),
-        Err(CensusError::Stale {
-            rows: vec![String::from("the text outside the rows")],
-        }),
-        "a difference outside the rows is named as such"
     );
 }
