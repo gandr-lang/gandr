@@ -119,3 +119,33 @@ fn a_groups_certificate_replays_in_the_kernel()
     );
     assert_eq!(verdict, Ok(()));
 }
+
+#[test]
+fn a_certificate_leaves_out_the_other_order_of_a_rule()
+{
+    for (source, place) in [
+        (
+            include_str!("tests/a-certificate-leaves-out-the-other-order-of-a-rule-first.gandr"),
+            "first",
+        ),
+        (
+            include_str!("tests/a-certificate-leaves-out-the-other-order-of-a-rule-last.gandr"),
+            "last",
+        ),
+    ] {
+        let (described, cells) = celled(SourceText::from(source));
+        let (certificate, verdict) = certified(&described, &cells);
+        let completed = derived(&cells.declarations[0]).len();
+        assert!(
+            !certificate.derived.is_empty() && certificate.derived.len() < completed,
+            "the symmetry written {place}: of the {completed} rules that completion derived, the \
+             certificate holds each rule with a peak and no other order of a rule: \
+             {certificate:?}"
+        );
+        assert_eq!(
+            verdict,
+            Ok(()),
+            "the symmetry written {place}: {certificate:?}"
+        );
+    }
+}

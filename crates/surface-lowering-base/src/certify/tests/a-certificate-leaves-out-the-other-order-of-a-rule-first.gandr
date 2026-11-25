@@ -1,0 +1,10 @@
+theory Flat where {
+  sort F : Type
+  oper low : F
+  oper high : F
+  oper pair : (F, F) --> F
+  oper g : (F) --> F
+  rule pairComm : pair x y <=> pair y x
+  rule pairLow : pair low x ==> low
+  rule gPair : g (pair low x) ==> pair x low
+}

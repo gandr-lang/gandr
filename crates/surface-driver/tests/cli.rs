@@ -604,10 +604,6 @@ const PAIR_TURNS: &str = "rule pairComm : pair x y <=> pair y x;";
 /// The symmetry of `Pair` in a `data` block.
 const PAIR_TURNS_DATA: &str = "rule : Pair x y <=> Pair y x;";
 
-/// What the kernel says of a `theory` block whose rules it does not join.
-const PRESENTATION_PARTS: &str =
-    "faulted: a presentation's rules did not converge as its value states them";
-
 /// Each block beside a symmetry, as a `theory` block and as a `data` block,
 /// then each block beside a permutation that is no swap of two arguments.
 const TWINS: &[Twin] = &[
@@ -621,9 +617,9 @@ const TWINS: &[Twin] = &[
             "rule gPair : g (pair low x) ==> pair x low;",
         ],
         verdicts: &[
-            (Place::First, PRESENTATION_PARTS),
-            (Place::Between, PRESENTATION_PARTS),
-            (Place::Last, PRESENTATION_PARTS),
+            (Place::First, "settled"),
+            (Place::Between, "settled"),
+            (Place::Last, "settled"),
         ],
     },
     Twin {

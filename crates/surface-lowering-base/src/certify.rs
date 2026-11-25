@@ -73,11 +73,15 @@ use crate::description::written::RuleDirection;
 ///   presented reading when it derived any there and the sequent reading's
 ///   otherwise, each with the first peak of the rules before it whose normal
 ///   forms are its sides, a written rule conditioned exactly as the kernel
-///   reads it, stopping before the first rule no peak reaches; and each
-///   operation the rules mention, of a positive rank in the precedence the
-///   oriented rules and the ranking derived rules induce, in declaration order.
-///   Where the presented reading carries indices, the peaks are those of the
-///   written rules read with them
+///   reads it. A derived rule that no peak reaches is left out, and the rules
+///   after it are stated: the kernel reads the other order of a rule beside a
+///   symmetry by its match, so that order is no rule of the kernel. A rule that
+///   is left out is not among the rules a later peak numbers. The rules stop
+///   before the first rule whose search spends its fuel. Then each operation
+///   the rules mention, of a positive rank in the precedence the oriented rules
+///   and the ranking derived rules induce, in declaration order. Where the
+///   presented reading carries indices, the peaks are those of the written
+///   rules read with them
 ///   ([`Indexing::face`](gandr_theory_computads::Indexing::face)) and each
 ///   derived rule is stated stripped of them
 ///   ([`Indexing::strip`](gandr_theory_computads::Indexing::strip)).
@@ -92,8 +96,12 @@ use crate::description::written::RuleDirection;
 ///   its completion derived each at a peak the kernel replays, and ranks its
 ///   operations so the kernel orients every rule; a block with no derived rule
 ///   carries its turns and ranks alone, and a block with no rule carries
-///   nothing.
+///   nothing; beside a symmetry, the other order of a rule that completion
+///   derived is left out and the rule derived after it stands at its peak, so
+///   the kernel decides the block, and stopping at the rule that is left out
+///   leaves a pair that parts.
 /// - witness: `certify::tests::a_groups_certificate_replays_in_the_kernel`
+/// - witness: `certify::tests::a_certificate_leaves_out_the_other_order_of_a_rule`
 #[spec(ensures: |ref ret| ret.turns.len() == cells.directions.len())]
 #[must_use]
 #[inline]
@@ -172,13 +180,16 @@ where
     let mut faces = Vec::with_capacity(derived.len());
     let mut search = PeakSearch::default();
     for (((left, right), _), rule) in derived.into_iter().zip(derived_rules) {
-        let Ok(Some(peak)) = kernel.peak_of(
+        let peak = match kernel.peak_of(
             &rule,
             &mut search,
             &mut RewriteFuel::from(PRESENTATION_FUEL),
-        )
-        else {
-            break;
+        ) {
+            Ok(Some(peak)) => peak,
+            // The two sides of the rule have one normal form under the rules
+            // before it, so the kernel needs no rule for it.
+            Ok(None) => continue,
+            Err(Exhausted) => break,
         };
         faces.push(DerivedFace {
             left: indexing.map_or_else(|| left.clone(), |indexing| indexing.strip(&left)),
