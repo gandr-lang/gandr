@@ -1,11 +1,28 @@
-error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
-   ╭▸ corpus/pathological/desc/rule-symmetry-apart.gandr:40:3
+error[RulesUncompleted]: this rule and an earlier one rewrite `meet(pair(x, y), pair(x', y''))` to two normal forms, `x` and `x'`, and no rule the order can orient joins them, so the block's rules are refused
+   ╭▸ corpus/pathological/desc/rule-symmetry-apart.gandr:23:1
    │
-37 │ ┌ def ordersNotApart(
-38 │ │   e : Path[.A = Terms Pick] (Pick.meet Pick.first Pick.second) (Pick.meet Pick.second Pick.first)
+23 │ ┏ theory Torn where
+24 │ ┃   /// The terms.
+25 │ ┃   sort T : Type;
+26 │ ┃   /// The first constant.
+   ┆ ┇
+35 │ ┃   rule meetPair : meet (pair x y) z <=> x;
+   │ ┃   ─────────────────────────────────────── the rule it overlaps
+36 │ ┃   /// The meet is commutative.
+37 │ ┃   rule meetComm : meet x y <=> meet y x;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ rewrites a term two ways no rule joins
+   │
+   ├ note: `Torn` is refused with RulesUncompleted, as its expectation states
+   ╰ help: add a rule that joins the two normal forms, or remove one of the two rules
+
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/desc/rule-symmetry-apart.gandr:46:3
+   │
+43 │ ┌ def ordersNotApart(
+44 │ │   e : Path[.A = Terms Pick] (Pick.meet Pick.first Pick.second) (Pick.meet Pick.second Pick.first)
    │ │   ─ checked; while checking the body of this function; binds e : Path[.A = Terms Pick] (Pick.meet Pick.first Pick.second) (Pick.meet Pick.second Pick.first)
-39 │ │ ) -> Hollow =
-40 │ │   match e {}
+45 │ │ ) -> Hollow =
+46 │ │   match e {}
    │ │   ┯━━━━━━━━│
    │ └───│────────┤
    │     │        checked; while checking the body of this thunk
@@ -15,13 +32,13 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
    ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
-   ╭▸ corpus/pathological/desc/rule-symmetry-apart.gandr:48:3
+   ╭▸ corpus/pathological/desc/rule-symmetry-apart.gandr:54:3
    │
-47 │   def tornApart(e : Path[.A = Terms Torn] Torn.low Torn.high) -> Hollow =
+53 │   def tornApart(e : Path[.A = Terms Torn] Torn.low Torn.high) -> Hollow =
    │   │             ─ checked against `Path[.A = Terms Torn] Torn.low Torn.high -> -F Hollow`; while checking the body of this function; binds e : Path[.A = Terms Torn] Torn.low Torn.high
    │ ┌─┘
    │ │
-48 │ │   match e {}
+54 │ │   match e {}
    │ │   ┯━━━━━━━━│
    │ └───│────────┤
    │     │        checked against `Path[.A = Terms Torn] Torn.low Torn.high -> Hollow`; while checking the body of this thunk

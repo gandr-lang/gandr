@@ -4,6 +4,9 @@
 //! wrong apartness makes each statement provable. The two orders of a meet
 //! are one term, and a rule that tears under the symmetry decides nothing.
 //!
+//! The check of a block reads each rule in each order of the arguments of a
+//! meet. It refuses a block where the two orders of one rule give two results.
+//!
 //! The checker compares two terms in each order of the arguments of a meet.
 //! It refuses a case with no arm where one order joins the two terms. It
 //! refuses each such case where a pair of rules does not join.
@@ -14,6 +17,9 @@
 import "../../model/desc/rule-symmetry-apart.gandr";
 
 /// The theory of a meet over pairs, with a rule that tears under the symmetry.
+/// The meet of two pairs is the first part of each one, so the rules of the
+/// block do not join.
+@[refuses("RulesUncompleted")]
 theory Torn where
   /// The terms.
   sort T : Type;

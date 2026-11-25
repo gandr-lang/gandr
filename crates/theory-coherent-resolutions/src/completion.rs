@@ -122,6 +122,7 @@
 //! `gandr-theory-computads`, which walks the peak below the seam with no
 //! allocation for each pair.
 
+use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
@@ -150,6 +151,7 @@ use crate::overlap::root_overlaps_between;
 use crate::rewrite::CellApp;
 use crate::rewrite::firing;
 use crate::rewrite::normalize;
+use crate::rewrite::normalize_past;
 use crate::rewrite::replay_at;
 use crate::rewrite::rewrite_at;
 use crate::tracelet::Tracelet;
@@ -1220,9 +1222,9 @@ where
 ///   keeps its cells and their order and only gains cells after them.
 /// - ensures: the certificates of the pairs decided joined since the joining
 ///   began or last answered [`Joinability::Joined`], in order; the position of
-///   the next pair to decide; the count of pairs decided; and the composite
-///   pairs skipped since the joining began or last gave them, each with its
-///   witness.
+///   the next pair to decide; the count of pairs decided; the composite pairs
+///   skipped since the joining began or last gave them, each with its witness;
+///   and the idle cells, which form peaks and normalize nothing.
 /// - executable: none — a datum; [`Self::resume_with`] carries the predicate.
 ///
 /// # Adequacy
@@ -1243,6 +1245,9 @@ pub struct PairJoining<A: CellAlphabet = SequentAlphabet>
     decided: usize,
     /// The composite pairs skipped, each with its witness, in order.
     composites: Vec<CompositePair<A>>,
+    /// The cells that form peaks and normalize nothing: a symmetry of a block
+    /// is one. A pair of two of them is not decided.
+    idle: BTreeSet<CellId>,
 }
 
 impl<A> Default for PairJoining<A>
@@ -1263,6 +1268,7 @@ where
             within: 0,
             decided: 0,
             composites: Vec::new(),
+            idle: BTreeSet::new(),
         }
     }
 }
@@ -1280,6 +1286,29 @@ where
     pub fn new() -> Self
     {
         Self::default()
+    }
+
+    /// A joining that has decided nothing and that normalizes past `idle`.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::new`], with `idle` as the cells that form peaks
+    ///   and normalize nothing.
+    /// - provides: the reading of a rule that no reader rewrites by. A pair of
+    ///   a cell and an idle cell is decided, and its two reducts are normalized
+    ///   by the other cells. A pair of two idle cells is not decided.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::resume_with`] for an idle cell.
+    /// - witness: `completion::tests::an_idle_cell_forms_peaks_and_normalizes_nothing`
+    #[inline]
+    #[must_use]
+    pub fn past(idle: BTreeSet<CellId>) -> Self
+    {
+        Self {
+            idle,
+            ..Self::default()
+        }
     }
 
     /// How many pairs the joining has decided, a pair decided again after its
@@ -1349,7 +1378,9 @@ where
     ///   `scheme` classes [`PairClass::Composite`] is skipped, and its witness
     ///   is kept for [`Self::take_composites`]. A pair that it classes
     ///   [`PairClass::Unclassed`] is joined. Each pair reached adds one to
-    ///   [`Self::decided`].
+    ///   [`Self::decided`]. Each reduct is normalized by [`normalize_past`] the
+    ///   idle cells of [`Self::past`], and a pair of two idle cells is not
+    ///   reached.
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
@@ -1366,18 +1397,22 @@ where
     ///   fresh joining does; deciding every pair again, or skipping the pair
     ///   that parted, changes a count or the verdict. A composite pair carries
     ///   no certificate and its witness replays, and with [`NoScheme`] the same
-    ///   pair is joined.
+    ///   pair is joined. A unit beside a symmetry that is idle parts from it at
+    ///   the other order of the unit, where the same store with no idle cell
+    ///   joins or spends its budget by the order of its two cells; a symmetry
+    ///   alone that is idle has no pair.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
+    /// - witness: `completion::tests::an_idle_cell_forms_peaks_and_normalizes_nothing`
     #[spec(
         captures: before = (self.decided, self.composites.len()),
         ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1 && match output {
             Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
                 certificate.overlap.kind == OverlapKind::Confluence && bool::from(certificate.replay(store))),
             Joinability::Diverges { ref overlap, ref left, ref left_steps, ref right, ref right_steps } => overlap.kind == OverlapKind::Confluence && left != right
-                && overlap.left_reduct(store).is_ok_and(|reduct| normalize(store, &reduct, budget).path == *left_steps)
-                && overlap.right_reduct().is_ok_and(|reduct| normalize(store, &reduct, budget).path == *right_steps),
+                && overlap.left_reduct(store).is_ok_and(|reduct| normalize_past(store, &reduct, budget, &self.idle).path == *left_steps)
+                && overlap.right_reduct().is_ok_and(|reduct| normalize_past(store, &reduct, budget, &self.idle).path == *right_steps),
             Joinability::Undecided(ref overlap) => overlap.kind == OverlapKind::Confluence,
         },
     )]
@@ -1398,6 +1433,11 @@ where
                 else {
                     break;
                 };
+                if self.idle.contains(&earlier.0) && self.idle.contains(&later.0) {
+                    self.earlier = self.earlier.saturating_add(1);
+                    self.within = 0;
+                    continue;
+                }
                 let (root, mirrored) = if self.earlier < self.later {
                     (
                         root_overlaps_between(earlier, later),
@@ -1425,8 +1465,8 @@ where
                         self.within = self.within.saturating_add(1);
                         continue;
                     };
-                    let left = normalize(store, &left_reduct, budget);
-                    let right = normalize(store, &right_reduct, budget);
+                    let left = normalize_past(store, &left_reduct, budget, &self.idle);
+                    let right = normalize_past(store, &right_reduct, budget, &self.idle);
                     if bool::from(left.exhausted) || bool::from(right.exhausted) {
                         return Joinability::Undecided(overlap);
                     }
@@ -1830,6 +1870,84 @@ mod tests
                 budget
             ),
             "cells that never overlap join with nothing to certify"
+        );
+    }
+
+    #[test]
+    fn an_idle_cell_forms_peaks_and_normalizes_nothing()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let store_of = |cells: &[(Toy, Toy)]| {
+            let mut store = CellStore::<ToyAlphabet>::new();
+            for cell in cells {
+                let _id = store.insert(toy_cell(cell.0.clone(), cell.1.clone()));
+            }
+            store
+        };
+        let idle = |cell: usize| BTreeSet::from([CellId::from(cell)]);
+        let unit = (Toy::add(Toy::zero(), Toy::var("y")), Toy::var("y"));
+        let symmetry = (
+            Toy::add(Toy::var("x"), Toy::var("y")),
+            Toy::add(Toy::var("y"), Toy::var("x")),
+        );
+        let last = store_of(&[unit.clone(), symmetry.clone()]);
+        let first = store_of(&[symmetry.clone(), unit]);
+        let one = Toy::succ(Toy::zero());
+        let swapped_only = Toy::add(one.clone(), one.clone());
+        let past = normalize_past(&last, &swapped_only, budget, &idle(1));
+        assert!(
+            past.path.is_empty() && !bool::from(past.exhausted),
+            "a term that the symmetry alone rewrites is normal past it"
+        );
+        assert!(
+            bool::from(normalize(&last, &swapped_only, budget).exhausted),
+            "with no idle cell, the symmetry spends each budget"
+        );
+        assert_eq!(
+            normalize_past(&last, &Toy::add(Toy::zero(), one.clone()), budget, &idle(1)).normal,
+            one,
+            "the unit fires past the symmetry"
+        );
+        for (store, symmetric) in [(&last, 1_usize), (&first, 0_usize)] {
+            let Joinability::Diverges {
+                left,
+                left_steps,
+                right,
+                right_steps,
+                ..
+            } = PairJoining::past(idle(symmetric)).resume(store, budget)
+            else {
+                panic!("the unit parts from the symmetry at its other order");
+            };
+            assert!(
+                left_steps.is_empty() && right_steps.is_empty(),
+                "no reduct takes a step: {left:?} and {right:?}"
+            );
+        }
+        assert!(
+            matches!(
+                PairJoining::new().resume(&last, budget),
+                Joinability::Joined(_)
+            ),
+            "with no idle cell and the unit first, the pair joins through the symmetry"
+        );
+        assert!(
+            matches!(
+                PairJoining::new().resume(&first, budget),
+                Joinability::Undecided(_)
+            ),
+            "with no idle cell and the symmetry first, the pair spends its budget"
+        );
+        let alone = store_of(&[symmetry]);
+        let mut joining = PairJoining::past(idle(0));
+        assert_eq!(
+            Joinability::Joined(Vec::new()),
+            joining.resume(&alone, budget)
+        );
+        assert_eq!(
+            PairDecisions::from(0_usize),
+            joining.decided(),
+            "a symmetry alone that is idle has no pair"
         );
     }
 

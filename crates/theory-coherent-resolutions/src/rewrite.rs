@@ -46,6 +46,7 @@
 //! that command is refused as [`firing::Absent::ForgedSubstitution`]. The
 //! replay then contracts the step as [`rewrite_at`] does.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -329,6 +330,118 @@ where
             continue;
         };
         for (cell_id, cell) in store.iter() {
+            if let Maybe::Present((result, subst)) = contract(cell, term, &at, &redex) {
+                return Maybe::Present(Rewrite {
+                    step: CellApp {
+                        cell: cell_id,
+                        at,
+                        subst,
+                    },
+                    result,
+                });
+            }
+        }
+    }
+    Maybe::Absent(redex_search::Absent::NormalForm)
+}
+
+/// Normalize `term` under the cells of `store` outside `idle`, taking at most
+/// `budget` steps.
+///
+/// # Specification
+/// - requires: as [`normalize`].
+/// - ensures: as [`normalize`] over the cells of `store` outside `idle`. No
+///   step of [`Normalization::path`] is by a cell of `idle`, and
+///   [`Normalization::exhausted`] is negative exactly when no cell outside
+///   `idle` fires in [`Normalization::normal`]. With an empty `idle`, the
+///   result is that of [`normalize`].
+/// - provides: the normal form under a rule that no reader rewrites by. A
+///   symmetry of a block is such a rule: it forms peaks, and it is a step of a
+///   certificate, but it gives no term a normal form.
+/// - panics: none.
+/// - intension: as [`normalize`], with one lookup in `idle` for each cell that
+///   a redex search reaches.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over the toy alphabet, a term that a symmetry alone
+///   rewrites is normal past the symmetry, and the unit beside the symmetry
+///   fires past it; with no idle cell the symmetry spends each budget.
+/// - witness: `completion::tests::an_idle_cell_forms_peaks_and_normalizes_nothing`
+#[inline]
+#[must_use]
+#[spec(ensures: |output| output.path.len() <= usize::from(budget)
+    && output.path.iter().all(|step| !idle.contains(&step.cell))
+    && (!bool::from(output.exhausted) || output.path.len() == usize::from(budget))
+    && (!output.path.is_empty() || output.normal == *term)
+    && bool::from(output.exhausted) == matches!(apply_once_past(store, &output.normal, idle), Maybe::Present(_)))]
+pub fn normalize_past<A>(
+    store: &CellStore<A>,
+    term: &A::Cmd,
+    budget: NormalizationBudget,
+    idle: &BTreeSet<CellId>,
+) -> Normalization<A>
+where
+    A: CellAlphabet,
+{
+    let mut normal = term.clone();
+    let mut path = Vec::new();
+    let mut remaining = usize::from(budget);
+    loop {
+        let Maybe::Present(rewrite) = apply_once_past(store, &normal, idle)
+        else {
+            return Normalization {
+                normal,
+                path,
+                exhausted: BudgetExhaustion::from(false),
+            };
+        };
+        if remaining == 0 {
+            return Normalization {
+                normal,
+                path,
+                exhausted: BudgetExhaustion::from(true),
+            };
+        }
+        path.push(rewrite.step);
+        normal = rewrite.result;
+        remaining = remaining.saturating_sub(1);
+    }
+}
+
+/// Fire the first cell outside `idle` that fires anywhere in `term`.
+///
+/// # Specification
+/// - ensures: as [`apply_once`] over the cells of `store` outside `idle`: the
+///   cell of the rewrite is not in `idle`.
+/// - provides: [`redex_search::Absent::NormalForm`] when no cell outside `idle`
+///   fires at any command position.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`normalize_past`].
+/// - witness: `completion::tests::an_idle_cell_forms_peaks_and_normalizes_nothing`
+#[inline]
+#[spec(ensures: |output| match output {
+    Maybe::Present(ref rewrite) => !idle.contains(&rewrite.step.cell),
+    Maybe::Absent(redex_search::Absent::NormalForm) => true,
+})]
+pub fn apply_once_past<A>(
+    store: &CellStore<A>,
+    term: &A::Cmd,
+    idle: &BTreeSet<CellId>,
+) -> Maybe<Rewrite<A>, redex_search::Absent>
+where
+    A: CellAlphabet,
+{
+    for at in A::command_positions(term) {
+        let Maybe::Present(redex) = A::subterm_cmd_at(term, &at)
+        else {
+            continue;
+        };
+        for (cell_id, cell) in store.iter() {
+            if idle.contains(&cell_id) {
+                continue;
+            }
             if let Maybe::Present((result, subst)) = contract(cell, term, &at, &redex) {
                 return Maybe::Present(Rewrite {
                     step: CellApp {

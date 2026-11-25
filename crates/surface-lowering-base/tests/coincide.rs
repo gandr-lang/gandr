@@ -1028,6 +1028,44 @@ fn a_congruence_is_no_rewrite_of_its_own()
     });
 }
 
+/// A symmetry forms peaks and rewrites nothing, so the place of its rule among
+/// the rules of the block decides nothing. Each rule that overlaps the
+/// symmetry derives its other order: the absorbing rule and the unit rule of
+/// the meet derive one rule each.
+#[test]
+fn a_symmetry_is_no_rewrite_in_either_place()
+{
+    for (source, place) in [
+        (
+            include_str!("coincide/fixtures/a-symmetry-is-no-rewrite-written-last.gandr"),
+            "last",
+        ),
+        (
+            include_str!("coincide/fixtures/a-symmetry-is-no-rewrite-written-first.gandr"),
+            "first",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref cells] = *module.cells().declarations.as_slice()
+            else {
+                panic!("one block")
+            };
+            let Coincidence::Joined(ref certificates) = cells.coincidence
+            else {
+                panic!(
+                    "the block joins with its symmetry written {place}: {:?}",
+                    module.cells().diagnostics
+                )
+            };
+            assert_eq!(
+                certificates.derived_terms.len(),
+                2,
+                "the symmetry written {place}: each rule of the meet derives its other order"
+            );
+        });
+    }
+}
+
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
 /// failure passed for a cut is ill sorted. Over 2-cells a vertical composite

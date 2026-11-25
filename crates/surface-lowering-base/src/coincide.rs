@@ -212,6 +212,7 @@ use gandr_theory_levitation::Name;
 use gandr_theory_levitation::Precedence;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::RuleIndex;
+use gandr_theory_levitation::RuleReading;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::Termination;
@@ -806,6 +807,12 @@ impl fmt::Display for PairTerm
 ///   composite pair's witness and every derived rule otherwise. Each derived
 ///   rule's cell is appended to `store` or to the presented reading's store, in
 ///   derivation order, so the store a reading rewrites with ends with them.
+/// - ensures: a face that is the symmetry of an operation
+///   ([`RuleReading::Symmetry`]) forms peaks and normalizes nothing in each
+///   reading ([`PairJoining::past`]). A rule that overlaps it parts from it at
+///   the other order of the rule, and the reading derives that order as a rule,
+///   so the place of the symmetry among the rules decides nothing. The symmetry
+///   of a constructor is read as each other rule.
 /// - panics: none.
 ///
 /// # Errors
@@ -825,9 +832,12 @@ impl fmt::Display for PairTerm
 ///   flattening its third wrapping completes; scope extrusion and garbage
 ///   collection where a port takes the channel join under the freshness their
 ///   overlap composes, and a restriction of nothing dropped beside extrusion
-///   parts from it under its condition; reporting the earlier rule's span,
+///   parts from it under its condition; a theory with the symmetry of its meet
+///   joins with the other order of each rule of the meet derived, with the
+///   symmetry written last or first; reporting the earlier rule's span,
 ///   deciding joinability first, reading the circle in the sequent store alone,
-///   or deriving a rule between two constructor terms changes one of them.
+///   normalizing by the symmetry, or deriving a rule between two constructor
+///   terms changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -838,6 +848,7 @@ impl fmt::Display for PairTerm
 /// - witness: `tests::coincide::a_second_order_rule_overlapping_another_refuses_the_block`
 /// - witness: `tests::coincide::a_scope_extrusion_family_never_completes`
 /// - witness: `tests::coincide::conditioned_rules_join_under_the_condition_their_overlap_composes_2448`
+/// - witness: `tests::coincide::a_symmetry_is_no_rewrite_in_either_place`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
@@ -869,12 +880,32 @@ pub(crate) fn decide<G>(
         return Err((rule_span(usize::from(index)), CoherenceFault::Unoriented));
     }
     let nameable = naming_port(description).is_some();
+    // A symmetry of an operation forms peaks and normalizes nothing, in each
+    // reading. A rule that overlaps it parts from it at the other order of the
+    // rule, and completion derives that order as a rule. A derived rule has an
+    // operation at the head of its left side, so the symmetry of a constructor
+    // is read as each other rule.
+    let symmetric = |faces: &[(AdmittedFaceIndex, CellId)]| -> BTreeSet<CellId> {
+        faces
+            .iter()
+            .filter(|&&(index, _)| {
+                description
+                    .rules
+                    .get(usize::from(index))
+                    .is_some_and(|face| {
+                        face.reading() == RuleReading::Symmetry
+                            && matches!(face.lhs.view(), TermView::Op { .. })
+                    })
+            })
+            .map(|&(_, cell)| cell)
+            .collect()
+    };
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
     // The sequent reading fires a cell only at a command's root, so the
     // composite criterion's argument does not hold there, and its pairs take
     // no class.
-    let mut joining = PairJoining::new();
+    let mut joining = PairJoining::past(symmetric(faces));
     let (commands, derived_commands) = match joining.resume(&rewriting, budget) {
         Joinability::Joined(certificates) => (certificates, Vec::new()),
         first @ (Joinability::Diverges { .. } | Joinability::Undecided(_)) => {
@@ -910,7 +941,7 @@ pub(crate) fn decide<G>(
                 Maybe::Absent(_) => None,
             };
             let mut criterion = CompositeCriterion::new();
-            let mut joining = PairJoining::new();
+            let mut joining = PairJoining::past(symmetric(&presented.faces));
             let first = joining.resume_with(&presented.store, budget, &mut criterion);
             let reading = Reading {
                 description,
