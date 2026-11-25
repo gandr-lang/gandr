@@ -6596,6 +6596,63 @@ fn a_bare_dash_is_a_path_not_standard_input()
     );
 }
 
+/// A program over `std.io.Io.Eff`, handled by `std.io.Hosted`, reads the
+/// bytes of standard input and writes them to standard output: the bytes 0,
+/// 10 and 255 cross as they are. A write to the file 2, which `Hosted` does
+/// not hold, gets the count `-9`, and the program then writes the byte 9.
+#[test]
+fn a_program_over_io_runs_under_the_hosted_model()
+{
+    let scratch = Scratch::new(Path::new("hosted-io"));
+    let program = scratch.file(
+        Path::new("echo.gandr"),
+        Text::from(
+            "import std.list (List);
+import std.authority (Authority, console);
+import std.io (Io, Returned, Shut, Hosted, Streams, returned, shut);
+
+def echo() -> [
+  io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut
+] Integer =
+  let read = returned (io.read 0 #[0u8, 0u8, 0u8, 0u8])
+  let wrote = returned (io.write 1 read.1 read.0)
+  let refused = returned (io.write 2 #[7u8] 1)
+  let named = if refused.0 == 0 - 9 { returned (io.write 1 #[9u8] 1) } else { returned (io.write 1 #[] 0) }
+  let status = shut (io.close_file 1)
+  pure wrote.0
+
+def main(authority : Authority) -> [std.io.Console.Eff, std.io.Stdin.Eff] Integer = {
+  let program : +U (Streams -> -F [std.io.Console.Eff, std.io.Stdin.Eff] Unit) = handle io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+    let count = echo
+    pure fun (streams) { pure *{} }
+  } with Hosted
+  program (console authority)
+  return 7
+};
+",
+        ),
+    );
+    let mut child = gandr(&[Path::new("run"), program.as_path()])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the driver starts");
+    child
+        .stdin
+        .take()
+        .expect("standard input is piped")
+        .write_all(&[0, 10, 255])
+        .expect("the input is written");
+    let output = child.wait_with_output().expect("the driver runs");
+    assert_eq!(code(&output), Code(7), "{}", stderr(&output));
+    assert_eq!(
+        output.stdout,
+        [0, 10, 255, 9],
+        "the bytes read, then the byte of the refused write"
+    );
+}
+
 #[test]
 fn scratch_ownership_keeps_simultaneous_cases_independent()
 {

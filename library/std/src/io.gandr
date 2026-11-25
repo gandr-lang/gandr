@@ -21,7 +21,9 @@
 // of it. Each operation gives a completion endpoint, and the buffer of a read
 // or a write comes back with its completion. A program over `Io.Eff` names no
 // model: the scope that handles it chooses one. `Scripted` is the model with
-// no kernel: it answers each operation from a tape in the source.
+// no kernel: it answers each operation from a tape in the source. `Hosted` is
+// the model over the standard streams of the host: it answers each operation
+// with `read_bytes` or `write_bytes`.
 //
 // - see: #4523
 // - see: #7844 — the theory, a model and the buffer
@@ -86,12 +88,12 @@ pub theory Io.Eff where
   /// Close `file`.
   oper close_file : (file : F, k : pi+ (done : E). C) --> C;
 
-/// The completion of a read or a write under `Scripted`, as the program holds
-/// it: it gives the count, then the buffer back, and it ends.
+/// The completion of a read or a write under `Scripted` or `Hosted`, as the
+/// program holds it: it gives the count, then the buffer back, and it ends.
 pub type Returned = (Integer * List u8) >? end;
 
-/// The completion of a close under `Scripted`, as the program holds it: it
-/// gives the status, and it ends.
+/// The completion of a close under `Scripted` or `Hosted`, as the program
+/// holds it: it gives the status, and it ends.
 pub type Shut = Integer >? end;
 
 /// The state of the kernel of `Scripted`: the input that no read took yet,
@@ -100,8 +102,8 @@ pub data Tape : Type where
   /// The input still to read, and the output written.
   | Tape : (input : List u8, output : List u8) --> Tape
 
-/// The count of an operation on a file that `Scripted` does not hold: the
-/// error number 9, `EBADF`, as a negative count.
+/// The count of an operation on a file that `Scripted` or `Hosted` does not
+/// hold: the error number 9, `EBADF`, as a negative count.
 def bad_file() -> Integer = 0 - 9;
 
 /// The bytes of `input` placed over the start of `buffer`, as many as both
@@ -202,14 +204,74 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
       after tape
     }
 
-/// The answer of a completion of a read or a write under `Scripted`: the
-/// count, then the buffer.
+/// The capability of the standard streams, through which `Hosted` reads and
+/// writes.
+pub type Streams = Cap { write_bytes, read_bytes };
+
+/// One read of at most `count` bytes of standard input for the file 0. Each
+/// other file gets the count `-9`, `EBADF`, and no byte.
+def taken(streams : Streams, file : Integer, count : Integer) -> [std.io.Stdin.Eff] (Integer * List u8) =
+  if file == 0 { read_bytes streams count } else { pure (bad_file, #[]) }
+
+/// The write of `bytes` to standard output for the file 1. Each other file
+/// gets the count `-9`, `EBADF`.
+def given(streams : Streams, file : Integer, bytes : List u8) -> [std.io.Console.Eff] Integer =
+  if file == 1 { write_bytes streams bytes } else { pure bad_file }
+
+/// The model of `Io.Eff` over the standard streams of the host. The file 0
+/// reads standard input, and the file 1 writes standard output. Each other
+/// file gets the count `-9`, `EBADF`. A close of the file 0 or 1 gives the
+/// status 0 and leaves the stream open. A buffer is a list of bytes. The kernel
+/// of each operation is a forked process that sends the completion and ends.
+pub module Hosted : Model(Io.Eff) with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut where
+  /// The carrier: a run over the capability of the streams.
+  type C = +U (Streams -> -F [std.io.Console.Eff, std.io.Stdin.Eff] Unit);
+  /// A read of the file 0 places at most as many bytes as the buffer holds
+  /// over its start. Its count is the number of those bytes: 0 at the end of
+  /// the input, and `-22`, `EINVAL`, for an empty buffer.
+  def read(file : Integer, buffer : List u8, k : Returned -> C) -> C =
+    fun (streams) {
+      let answer = taken streams file (size buffer)
+      let filled : List u8 = placed buffer answer.1
+      let done = fork (kernel : (Integer * List u8) >! end) {
+        send kernel (answer.0, filled)
+        close kernel
+      }
+      let after = k done
+      after streams
+    }
+  /// A write to the file 1 writes the first `count` bytes of the buffer. Its
+  /// count is the number of those bytes.
+  def write(file : Integer, buffer : List u8, count : Integer, k : Returned -> C) -> C =
+    fun (streams) {
+      let written = given streams file (front buffer count)
+      let done = fork (kernel : (Integer * List u8) >! end) {
+        send kernel (written, buffer)
+        close kernel
+      }
+      let after = k done
+      after streams
+    }
+  /// A close of the file 0 or 1 gives the status 0.
+  def close_file(file : Integer, k : Shut -> C) -> C =
+    fun (streams) {
+      let status : Integer = if file == 0 { 0 } else { if file == 1 { 0 } else { bad_file } }
+      let done = fork (kernel : Integer >! end) {
+        send kernel status
+        close kernel
+      }
+      let after = k done
+      after streams
+    }
+
+/// The answer of a completion of a read or a write: the count, then the
+/// buffer.
 pub def returned(done : Returned) -> Integer * List u8 =
   let answer = recv done
   close done
   pure answer
 
-/// The status of a completion of a close under `Scripted`.
+/// The status of a completion of a close.
 pub def shut(done : Shut) -> Integer =
   let status = recv done
   close done
