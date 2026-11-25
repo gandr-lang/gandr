@@ -31,8 +31,7 @@
 //!
 //! | opener | block | separator |
 //! | --- | --- | --- |
-//! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
-//! | `=` ending any other `def` head | a statement block after the `=` | `;` |
+//! | `=` ending a `def` head | a statement block after the `=` | `;` |
 //! | `=` ending the line of a `let`, a `var` or an assignment in a statement block | a statement block after the `=` | `;` |
 //! | `=>` ending the line of an item that a line-leading `\|` begins: an arm, a clause | a statement block after the `=>` | `;` |
 //! | `where` ending a `match` head or an `offer` head | an arm list | none: a line-leading `\|` separates arms |
@@ -45,7 +44,7 @@
 //! | an explicit `{` | a statement block | `;` |
 //! | an explicit `{` after a declaration's `where` | a declaration body | `;`, and one before the `}` |
 //! | an explicit `{` after `rec`, or after the `where` of `rec` | its declarations, as the source's | `;` after a declaration that a keyword begins, and one before the `}` |
-//! | the source | its declarations | `;` after a declaration that a keyword begins, none at the end |
+//! | the source | its declarations | `;` after a declaration that a keyword begins; at the end, one only after a `def` whose `=` opened a block |
 //!
 //! A `match` or `offer` head that ends its line with no `where` and no `{`
 //! opens its arm list too, with an open of no width, so the parse stays
@@ -53,10 +52,9 @@
 //! with no `where` (`OutOfFragment.BareArms`).
 //!
 //! The pass writes zero-width tokens the molder reads as `{`, `;` and `}`, so
-//! the grammar takes them as the braces it already knows. A body's `=` is
-//! relabeled as the block's `{`, and the body is then the braced body. The
-//! line-final `where` of a `match` head or of an `offer` head is relabeled as
-//! the arms' `{` in the same way, so neither rule has a `where` of its own,
+//! the grammar takes them as the braces it already knows. The line-final
+//! `where` of a `match` head or of an `offer` head is relabeled as the arms'
+//! `{`, so neither rule has a `where` of its own,
 //! and a `where` that does not end the head's line is no part of the form.
 //! The `where` of `rec` keeps its tile, as the `where` of a declaration does,
 //! and its block opens after it. A line-final `do` is relabeled as the `{`
@@ -89,10 +87,10 @@
 //! closes the body by the column rule and continues the handler, as a line
 //! that starts with `else` continues the conditional.
 //!
-//! The `=` of a `def` with no `->` result keeps its tile in the same way, and
-//! the `def` takes its `;` after the block's close. A `;` that ends the last
-//! line of that block ends the `def`: the block closes before it. The lowering
-//! reads a block of one expression there as that expression.
+//! The `=` of a `def` keeps its tile in the same way, with a `->` result or
+//! with none, and the `def` takes its `;` after the block's close. A `;` that
+//! ends the last line of that block ends the `def`: the block closes before
+//! it. The lowering reads a block of one expression there as that expression.
 //!
 //! An item ends with a separator only when it needs one. An item a
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
@@ -117,7 +115,9 @@
 //! stray, so the lowering refuses the stray alone. A `pub` alone on its line
 //! marks the declaration after it, as an attribute does, and takes no
 //! separator. The end of the source ends nothing, so a source cut short stays
-//! open where it stops.
+//! open where it stops, but for a top-level `def` whose `=` opened a block:
+//! the end of the source closes that block, as a word at column zero does,
+//! and the `def` takes its `;`.
 //! No separator is written before a closer or a line-leading `|`, or after an
 //! attribute.
 //!
@@ -179,7 +179,7 @@ enum Kind
     Plain,
 }
 
-/// How far a `def` head has read toward its body's `=`.
+/// Whether a `def` head waits for its body's `=`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum Opener
 {
@@ -189,9 +189,6 @@ enum Opener
     /// A `def` began the item. Its `=` keeps its tile, and a block opens after
     /// it.
     Def,
-    /// The `def` head has met `->` after its parameters. Its `=` is the open
-    /// of its brace body.
-    Arrow,
 }
 
 /// What began an item.
@@ -361,14 +358,6 @@ enum Pending
 {
     /// Nothing waits.
     None,
-    /// A `def` body's `=`, at its index in the stream.
-    Body
-    {
-        /// The `=`'s index.
-        at: usize,
-        /// The indentation of the opener's line.
-        indent: u32,
-    },
     /// The `=` of a `let`, a `var` or an assignment in a statement block, at
     /// its index in the stream. It keeps its tile, and its block opens after
     /// it.
@@ -774,8 +763,7 @@ pub(super) fn lay_out(
             None
         };
         let waiting = match pending {
-            Pending::Body { indent, .. }
-            | Pending::Members { indent, .. }
+            Pending::Members { indent, .. }
             | Pending::Arms { indent, .. }
             | Pending::ArmsWhere { indent, .. }
             | Pending::Do { indent, .. } => Some(Column(indent)),
@@ -827,16 +815,6 @@ pub(super) fn lay_out(
             }
         };
         match pending {
-            Pending::Body { at, indent } => {
-                pending = Pending::None;
-                if line_start {
-                    if let Some(equals) = tokens.get_mut(at) {
-                        equals.lexeme = Lexeme::LayoutOpen;
-                    }
-                    plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
-                    open(&mut frames, &mut plan, indent, Sep::Semi, Ending::Ends);
-                }
-            },
             Pending::Statement { at, indent } => {
                 pending = Pending::None;
                 if line_start
@@ -1115,7 +1093,6 @@ pub(super) fn lay_out(
                             Pending::ArmsWhere { at: index, indent }
                         },
                         Pending::None
-                        | Pending::Body { .. }
                         | Pending::Members { .. }
                         | Pending::Arms { .. }
                         | Pending::Statement { .. }
@@ -1188,27 +1165,12 @@ pub(super) fn lay_out(
         }
         else if token.lexeme == Lexeme::Punct {
             match spelled {
-                // The linear arrow, `⊸` or its ASCII spelling `-o`, heads a
-                // body as `->` does.
-                b"->" | b"-o" | b"\xE2\x8A\xB8" => {
-                    if let Some(frame) = frames.last_mut()
-                        && frame.head.opener == Opener::Def
-                        && matches!(before_arrow, b")" | b"]")
-                    {
-                        frame.head.opener = Opener::Arrow;
-                    }
-                },
                 b"=" => {
                     if let Some(frame) = frames.last_mut() {
-                        if frame.head.opener == Opener::Arrow && opener_allowed {
-                            pending = Pending::Body {
-                                at: index,
-                                indent: line_indent,
-                            };
-                        }
-                        // A `def`'s `=` with no result arrow keeps its tile.
-                        // Its block opens after it, when the `=` ends its line.
-                        else if frame.head.opener == Opener::Def
+                        // A `def`'s `=` keeps its tile, with a result arrow
+                        // or with none. Its block opens after it, when the
+                        // `=` ends its line.
+                        if frame.head.opener == Opener::Def
                             && opener_allowed
                             && pending == Pending::None
                         {
@@ -1300,13 +1262,6 @@ pub(super) fn lay_out(
     // block opens left of its opener's line, so the block closes at once.
     if next == Next::Reset {
         match pending {
-            Pending::Body { at, .. } => {
-                if let Some(opener) = tokens.get_mut(at) {
-                    opener.lexeme = Lexeme::LayoutOpen;
-                }
-                plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
-                plan.shut(Sep::Semi, Ending::Ends);
-            },
             Pending::Do { at, .. } => {
                 if let Some(opener) = tokens.get_mut(at) {
                     opener.lexeme = Lexeme::LayoutOpen;
@@ -1340,15 +1295,20 @@ pub(super) fn lay_out(
     // What follows closes every block. The end of the source ends no
     // top-level item, so a source cut short stays open where it stops, for
     // the closings and the continuations an editor reads there. A reset ends
-    // the item before it as the column rule does.
+    // the item before it as the column rule does. The one exception is the
+    // block a top-level `def`'s `=` opens: the end of the source closes it as
+    // a line at column zero would, and the `def` takes its `;`, as a `def`
+    // whose body follows its `=` on one line does.
+    let mut defined = false;
     while frames.len() > 1
         && let Some(frame) = frames.pop()
     {
         if matches!(frame.kind, Kind::Layout { .. }) {
             plan.close(&frame);
+            defined = frame.defines && frames.len() == 1;
         }
     }
-    if next == Next::Reset
+    if (next == Next::Reset || defined)
         && !after_attribute
         && let Some(base) = frames.first()
         && bool::from(plan.unended(base))
