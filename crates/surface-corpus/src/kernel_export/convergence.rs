@@ -950,13 +950,13 @@ mod sweeps
     ///   `Torn`, which the source refuses: `meet (pair x y) z ==> x` beside the
     ///   symmetry of `meet`. It crosses, and the kernel decides no convergence
     ///   of a presented type at its declaration. The unit
-    ///   `refused-theory-terms-withheld` keeps the type of terms of a refused
+    ///   `refused-block-mints-no-terms` keeps the type of terms of a refused
     ///   theory out of the export.
     pub(super) const PARTING: [(&str, &str, &str); 4] = [
         (
             "corpus/pathological/desc/rule-symmetry-apart.gandr",
             "a declaration with no name",
-            "refused-theory-terms-withheld",
+            "refused-block-mints-no-terms",
         ),
         (
             "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-between.gandr",
