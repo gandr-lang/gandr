@@ -11,30 +11,38 @@ The values that a program computes from the tree and that the tree does not hold
 
 ## Synopsis
 
-**What.** `gandr-workflow-outputs` is a workflow library. An output is a value that is a function of the tree and of the tool, such as the recovery record of a corpus source. This crate holds the writer of each kind of output.
+**What.** `gandr-workflow-outputs` is a workflow library and the `outputs` binary. An output is a value that is a function of the tree and of the tool, such as the recovery record of a corpus source. This crate holds the writer of each kind of output, and a store outside the tree that holds each value by the digest of its tool and its input.
 
-**Why.** A test that compares a value with a file of the tree and the tool that computes the value for a store must write the same value. One writer serves both.
+**Why.** A test that compares a value with a file of the tree and the tool that computes the value for a store must write the same value. One writer serves both. A value that the tree does not hold is computed one time for each tool and each source, not one time for each run.
 
 **How.** `Recorder::new` names each mold of a grammar by its rule, its label and its rank. `Recorder::record` parses a source and writes its record: `W`, the count of the obligations, the count of the positions and the fingerprint of the tree, separated by tabs. The fingerprint is the BLAKE3 digest of the significant nodes in preorder, so a change of the grammar that renumbers the molds does not move it.
+
+The key of a value is the BLAKE3 digest of the tool and the input. The tool is the git tree identifier of each package that builds the writer, with the root manifest, the lock and the toolchain file. The input is the git object identifier of the source. The store holds one file for each key, written beside its place and renamed into it, so two runs need no lock.
 
 ## Provided features
 
 - `Recorder` writes the recovery record of a source, and the fingerprint of a tree.
 - `RecordError` names the refusal of the grammar or of the parser.
+- `Store` reads and writes a value by its kind and its key; `Digest` is a key or a tool.
+- `Tree` reads a commit or the work tree from git: its corpus sources, their contents in one batch, and the tool of a kind.
+- `workspace::closure` gives the packages that build a package, from `cargo metadata`.
+- `compute::recovery` gives the recovery records of a tree: each from the store, or computed on each core and written to the store.
 
 ## Expected features
 
-None.
+`git` on the path. The store is the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs` below the workspace root.
 
 ## Examples
 
 ```sh
 cargo nextest run -p gandr-workflow-outputs
+cargo run -p gandr-workflow-outputs --bin outputs -- compute recovery --cost          # the work tree
+cargo run -p gandr-workflow-outputs --bin outputs -- compute recovery --revision HEAD --print
 ```
 
 ## Dependencies
 
-`blake3` gives the fingerprint; it is already in the build graph for content identities, with default features off.
+`blake3` gives the fingerprint and the key; it is already in the build graph for content identities, with default features off. `serde_json` reads the output of `cargo metadata`; it is already in the build graph of the workflow binaries.
 
 ## License
 

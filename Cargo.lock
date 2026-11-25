@@ -2762,6 +2762,7 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-syntax",
  "quenchant-anodized",
+ "serde_json",
 ]
 
 [[package]]

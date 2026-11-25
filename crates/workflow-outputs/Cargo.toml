@@ -12,14 +12,19 @@ categories = ["development-tools::testing"]
 publish.workspace = true
 
 # The pinned anodized facade supplies the specification attribute, and BLAKE3
-# the fingerprint of a tree. The built-in grammar and the parser give the tree
-# of a source.
+# the fingerprint of a tree and the key of a value. The built-in grammar and
+# the parser give the tree of a source. serde_json reads `cargo metadata`.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-syntax.workspace = true
+serde_json.workspace = true
+
+[[bin]]
+name = "outputs"
+path = "src/main.rs"
 
 [lints]
 workspace = true

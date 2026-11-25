@@ -2180,6 +2180,7 @@ features = ["alloc", "derive"]
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-ledger-tasks
+# - workflow-outputs
 # - workflow-parser-report
 # - workflow-prose
 # - workflow-spec-cost
