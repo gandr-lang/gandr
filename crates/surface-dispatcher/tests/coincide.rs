@@ -13,11 +13,17 @@
 //! second differential witnesses that every corpus block's two families are
 //! one.
 //!
+//! A record counts the same critical pairs by the kinds of their two cells: a
+//! constructor rule, an operation rule, a rule of a `theory` block, a symmetry,
+//! a derived rule, or a cell that none of them names. It has the composite
+//! pairs of the corpus beside them.
+//!
 //! The differentials, in a `cfg(test)` module so the crate's lint wall reads
 //! them as test code rather than as shipping code.
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::fmt::Display;
+use core::fmt::Write as _;
 use std::path::PathBuf;
 
 use anodized::spec;
@@ -35,9 +41,11 @@ use gandr_surface_evaluate::Evaluator;
 use gandr_surface_evaluate::Machine;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::coincide::CallText;
+use gandr_surface_lowering::coincide::Coincidence;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_theory_cell_complexes::CellAlphabet;
+use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_circuit_algebras::Generator;
 use gandr_theory_circuit_algebras::GeneratorLabel;
@@ -58,6 +66,8 @@ use gandr_theory_coherent_resolutions::OverlapKind;
 use gandr_theory_coherent_resolutions::interior_overlaps_between;
 use gandr_theory_coherent_resolutions::overlaps_between;
 use gandr_theory_levitation::FreeTerm;
+use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::RuleReading;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_workflow_sweep::Class;
@@ -1010,5 +1020,312 @@ fn every_blocks_critical_pairs_are_its_left_sides_glued()
     assert!(
         sequent.0 > 0_usize && presented.0 > 0_usize,
         "the corpus holds overlapping rules over calls and over terms: {sequent:?}, {presented:?}"
+    );
+}
+
+/// The reading that holds a block's rules: over commands or over terms.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum PairReading
+{
+    /// The store `DeclarationCells::rewriting` of commands.
+    Sequent,
+    /// The store of the presented reading, over terms.
+    Presented,
+}
+
+impl PairReading
+{
+    /// The name of the variant.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn name(self) -> &'static str
+    {
+        match self {
+            Self::Sequent => "Sequent",
+            Self::Presented => "Presented",
+        }
+    }
+}
+
+/// The kind of one cell of a block's rewriting.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum CellKind
+{
+    /// A written rule of a `data` block whose oriented left side is headed by
+    /// a constructor.
+    Constructor,
+    /// A written rule of a `data` block whose oriented left side is headed by
+    /// an operation.
+    Operation,
+    /// A written rule of a `theory` block.
+    Theory,
+    /// A symmetry: it forms peaks and rewrites nothing.
+    Idle,
+    /// A rule that completion derived, in a block whose rules joined.
+    Derived,
+    /// A cell that no written face and no kept derived rule names: a frame or
+    /// eta cell, or a rule that completion derived in a block that it refused.
+    Unnamed,
+}
+
+impl CellKind
+{
+    /// The name of the variant.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn name(self) -> &'static str
+    {
+        match self {
+            Self::Constructor => "Constructor",
+            Self::Operation => "Operation",
+            Self::Theory => "Theory",
+            Self::Idle => "Idle",
+            Self::Derived => "Derived",
+            Self::Unnamed => "Unnamed",
+        }
+    }
+}
+
+/// The critical pairs of the corpus, by reading and by the kinds of their two
+/// cells, the lesser kind first.
+const STRATUM_PAIRS: &[(PairReading, CellKind, CellKind, usize)] = &[
+    (
+        PairReading::Sequent,
+        CellKind::Operation,
+        CellKind::Operation,
+        8,
+    ),
+    (
+        PairReading::Sequent,
+        CellKind::Operation,
+        CellKind::Derived,
+        2,
+    ),
+    (
+        PairReading::Sequent,
+        CellKind::Operation,
+        CellKind::Unnamed,
+        1,
+    ),
+    (PairReading::Sequent, CellKind::Theory, CellKind::Theory, 1),
+    (
+        PairReading::Presented,
+        CellKind::Constructor,
+        CellKind::Constructor,
+        52,
+    ),
+    (
+        PairReading::Presented,
+        CellKind::Operation,
+        CellKind::Operation,
+        3,
+    ),
+    (
+        PairReading::Presented,
+        CellKind::Theory,
+        CellKind::Theory,
+        138,
+    ),
+    (PairReading::Presented, CellKind::Theory, CellKind::Idle, 5),
+    (
+        PairReading::Presented,
+        CellKind::Theory,
+        CellKind::Derived,
+        168,
+    ),
+    (
+        PairReading::Presented,
+        CellKind::Theory,
+        CellKind::Unnamed,
+        4,
+    ),
+    (PairReading::Presented, CellKind::Idle, CellKind::Derived, 4),
+    (PairReading::Presented, CellKind::Idle, CellKind::Unnamed, 1),
+    (
+        PairReading::Presented,
+        CellKind::Derived,
+        CellKind::Derived,
+        439,
+    ),
+];
+
+/// The critical pairs of the presented reading of the corpus that completion
+/// skips as composite.
+const COMPOSITE_PAIRS: usize = 296;
+
+/// The kind of `cell`, a cell of a store whose written faces are `faces`.
+///
+/// # Specification
+/// - ensures: [`CellKind::Idle`] for a face whose rule is a symmetry;
+///   [`CellKind::Theory`] for another face of a `theory` block; otherwise for a
+///   face, by the head of its oriented left side, the written one where the
+///   block did not orient; [`CellKind::Derived`] for a cell of `derived`; and
+///   [`CellKind::Unnamed`] for each other cell.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the record of the corpus holds pairs of each kind of
+///   written rule, and of a symmetry, apart.
+/// - witness: `tests::coincide::the_corpus_critical_pairs_by_the_kinds_of_their_cells`
+fn cell_kind<I>(
+    (written, oriented, theory): (&[RuleFace], &[RuleFace], bool),
+    faces: &[(I, CellId)],
+    derived: &BTreeSet<CellId>,
+    cell: CellId,
+) -> CellKind
+where
+    I: Copy,
+    usize: From<I>,
+{
+    let Some(index) = faces
+        .iter()
+        .find(|&&(_, face)| face == cell)
+        .map(|&(index, _)| usize::from(index))
+    else {
+        return if derived.contains(&cell) {
+            CellKind::Derived
+        }
+        else {
+            CellKind::Unnamed
+        };
+    };
+    let Some(rule) = written.get(index)
+    else {
+        return CellKind::Unnamed;
+    };
+    if rule.reading() == RuleReading::Symmetry {
+        return CellKind::Idle;
+    }
+    if theory {
+        return CellKind::Theory;
+    }
+    match oriented.get(index).unwrap_or(rule).lhs.to_node().view() {
+        TermView::Op { .. } => CellKind::Operation,
+        TermView::Var(_)
+        | TermView::Ctor { .. }
+        | TermView::Results { .. }
+        | TermView::Inst { .. }
+        | TermView::Abs { .. }
+        | TermView::Atom(_)
+        | TermView::Lam { .. }
+        | TermView::Bound(_) => CellKind::Constructor,
+    }
+}
+
+/// Adds the critical pairs of `store` to `counts`, each under `reading` and the
+/// kinds of its two cells, the lesser kind first.
+///
+/// # Specification
+/// - ensures: the pairs that [`compare_pairs`] counts, the root pair of two
+///   cells once, then the pairs below either cell's root, a cell against itself
+///   once; a key that no pair reaches is not added.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the record of the corpus holds pairs of each kind of
+///   written rule, and of a symmetry, apart.
+/// - witness: `tests::coincide::the_corpus_critical_pairs_by_the_kinds_of_their_cells`
+fn count_pairs<A>(
+    reading: PairReading,
+    store: &CellStore<A>,
+    kind: impl Fn(CellId) -> CellKind,
+    counts: &mut BTreeMap<(PairReading, CellKind, CellKind), usize>,
+) where
+    A: CellAlphabet,
+{
+    let cells: Vec<_> = store.iter().collect();
+    for (index, &left) in cells.iter().enumerate() {
+        for &right in cells.iter().skip(index) {
+            let mut found = overlaps_between(left, right)
+                .into_iter()
+                .filter(|overlap| overlap.kind == OverlapKind::Confluence)
+                .count()
+                .saturating_add(interior_overlaps_between(left, right).len());
+            if left.0 != right.0 {
+                found = found.saturating_add(interior_overlaps_between(right, left).len());
+            }
+            if found == 0 {
+                continue;
+            }
+            let (first, second) = (kind(left.0), kind(right.0));
+            let count = counts
+                .entry((reading, first.min(second), first.max(second)))
+                .or_default();
+            *count = count.saturating_add(found);
+        }
+    }
+}
+
+#[test]
+fn the_corpus_critical_pairs_by_the_kinds_of_their_cells()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let mut lowerings = LoweringCount::default();
+    let mut counts = BTreeMap::new();
+    let mut composite = 0_usize;
+    for path in sources() {
+        let text = std::fs::read_to_string(&path).expect("the source reads");
+        if !text.contains("rule ") {
+            continue;
+        }
+        let shown = path.display();
+        let Lowered::Module { module, .. } =
+            lower_source(&grammar, SourceText::from(text.as_str()), &mut lowerings)
+                .unwrap_or_else(|fault| panic!("{shown}: {fault}"))
+                .into_lowered()
+        else {
+            continue;
+        };
+        for declaration in &module.cells().declarations {
+            let described = module
+                .described()
+                .find(|described| described.at == declaration.at)
+                .unwrap_or_else(|| panic!("{shown}: a store has no description"));
+            let rules = (
+                &*described.description.rules,
+                declaration.oriented.as_slice(),
+                matches!(described.presentation, Maybe::Present(_)),
+            );
+            let (mut derived_commands, mut derived_terms) = (BTreeSet::new(), BTreeSet::new());
+            if let Coincidence::Joined(ref certificates) = declaration.coincidence {
+                composite = composite.saturating_add(certificates.composite_terms.len());
+                derived_commands.extend(certificates.derived_commands.iter().map(|rule| rule.cell));
+                derived_terms.extend(certificates.derived_terms.iter().map(|rule| rule.cell));
+            }
+            count_pairs(
+                PairReading::Sequent,
+                &declaration.rewriting(),
+                |cell| cell_kind(rules, &declaration.faces, &derived_commands, cell),
+                &mut counts,
+            );
+            if let Maybe::Present(ref presented) = declaration.presented {
+                count_pairs(
+                    PairReading::Presented,
+                    &presented.store,
+                    |cell| cell_kind(rules, &presented.faces, &derived_terms, cell),
+                    &mut counts,
+                );
+            }
+        }
+    }
+    let found: Vec<(PairReading, CellKind, CellKind, usize)> = counts
+        .into_iter()
+        .map(|((reading, first, second), count)| (reading, first, second, count))
+        .collect();
+    let mut shown = String::new();
+    for &(reading, first, second, count) in &found {
+        let _written = writeln!(
+            shown,
+            "    (PairReading::{}, CellKind::{}, CellKind::{}, {count}),",
+            reading.name(),
+            first.name(),
+            second.name()
+        );
+    }
+    assert!(
+        found == STRATUM_PAIRS && composite == COMPOSITE_PAIRS,
+        "the record of the critical pairs differs; the corpus holds\n{shown}and {composite} composite pairs"
     );
 }
