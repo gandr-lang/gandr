@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/boot-alloc",
   "crates/boot-core",
+  "crates/boot-data",
   "crates/boot-io",
   "crates/core-checker",
   "crates/core-checker-base",
@@ -420,6 +421,7 @@ default-features = false
 # The kernel's mapping calls with no C library, and a heap of size classes
 # over them.
 # consumers:
+# - boot-data
 # - runtime-emitter
 [workspace.dependencies.gandr-boot-alloc]
 path = "crates/boot-alloc"
@@ -427,6 +429,7 @@ path = "crates/boot-alloc"
 # The operations on a range of bytes that allocate nothing, with the range
 # that a function of the layer `boot` reads and the place that it writes.
 # consumers:
+# - boot-data
 # - boot-io
 [workspace.dependencies.gandr-boot-core]
 path = "crates/boot-core"

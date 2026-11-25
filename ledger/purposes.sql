@@ -82,6 +82,10 @@ INSERT INTO purpose VALUES('boot-core','check::find_zero','function','Finds the 
 INSERT INTO purpose VALUES('boot-core','search','module','Finds a byte or a range of bytes in a range.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-core','search::find_byte','function','Finds the first position of a byte in a range.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-core','search::find_range','function','Finds the first position at which a range holds a whole needle.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-data','','crate','Gives the bootstrap the data that allocates: the `boot` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-data','vector','module','Holds bytes in a block of the heap, with a capacity and a length.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-data','vector::Refusal','enum','A growth that the vector cannot make: past the size of a layout, or refused by the heap.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('boot-data','vector::Vector','struct','A vector of bytes in a block of one heap, the one owner of its bytes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','','crate','Gives the bootstrap the read of a file with no libc: the `boot` layer, outside the integrity and the validity walls.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','Descriptor','struct','The number that the kernel gives for an open file.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('boot-io','ErrorNumber','struct','An error number of the host, which a refusal carries.',NULL,'fits','sound',NULL);

@@ -1150,6 +1150,14 @@ name = "gandr-boot-core"
 version = "0.0.0"
 
 [[package]]
+name = "gandr-boot-data"
+version = "0.0.0"
+dependencies = [
+ "gandr-boot-alloc",
+ "gandr-boot-core",
+]
+
+[[package]]
 name = "gandr-boot-io"
 version = "0.0.0"
 dependencies = [
