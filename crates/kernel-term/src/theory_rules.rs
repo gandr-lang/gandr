@@ -2549,6 +2549,10 @@ const ARRANGEMENTS: [[usize; 2]; 2] = [[0, 1], [1, 0]];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Selection(usize);
 
+/// The two subterms that two occurrences of one variable meet, each as its
+/// representative.
+type Copies = (SmallVec<Flat, 0, Global>, SmallVec<Flat, 0, Global>);
+
 /// The buffers a match under the symmetries reuses from left side to left
 /// side.
 ///
@@ -2565,9 +2569,8 @@ struct MatchBuffers
     order: SmallVec<TheoryNode, 0, Global>,
     /// The subterms of a left side still to write in an arrangement.
     pending: SmallVec<Position, 0, Global>,
-    /// The two subterms that two occurrences of one variable meet, each as its
-    /// representative.
-    spans: (SmallVec<Flat, 0, Global>, SmallVec<Flat, 0, Global>),
+    /// The two subterms that two occurrences of one variable meet.
+    spans: Copies,
 }
 
 /// Where `left` matches `term` at `start` as written or, failing that, in an
@@ -2842,10 +2845,7 @@ fn matched(
     symmetric: &[TheorySymbol],
     (term, start): (&[Flat], Position),
     left: &[TheoryNode],
-    (bindings, spans): (
-        &mut SmallVec<Option<Span>, 0, Global>,
-        &mut (SmallVec<Flat, 0, Global>, SmallVec<Flat, 0, Global>),
-    ),
+    (bindings, spans): (&mut SmallVec<Option<Span>, 0, Global>, &mut Copies),
     fuel: &mut RewriteFuel,
 ) -> Result<Option<Position>, Exhausted>
 {
@@ -2925,7 +2925,7 @@ fn matched(
 fn agree(
     symmetric: &[TheorySymbol],
     (one, other): (&[Flat], &[Flat]),
-    spans: &mut (SmallVec<Flat, 0, Global>, SmallVec<Flat, 0, Global>),
+    spans: &mut Copies,
     fuel: &mut RewriteFuel,
 ) -> Result<Verdict, Exhausted>
 {
