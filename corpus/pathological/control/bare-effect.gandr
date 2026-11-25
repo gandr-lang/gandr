@@ -11,9 +11,9 @@ def bareRow() -> -F [Console] Unit = pure *{};
 /// A scope handling the early exit bare.
 @[refuses("UnresolvedTypeHead")]
 def bareScope() -> Unit =
-  handle c : Proc {
+  effect c : Proc {
     pure *{}
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper exit(code, k) => k *{}
   }

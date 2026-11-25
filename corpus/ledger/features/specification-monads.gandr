@@ -37,11 +37,11 @@ import "../../model/effects/tree.gandr";
 /// unit. A read hands the initial state to what runs after, and a store runs
 /// what follows from the stored value.
 def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
-  handle st : StateLaws with sort S = Integer {
+  effect st : StateLaws with sort S = Integer {
     let n = st.get
     st.put (n + 1)
     pure fun (q) { fun (s) { q (*{}) s } }
-  } with {
+  } handle {
     | pure(w) => pure w
     | oper get(k) => pure fun (q) { fun (s) { let w = k s; w q s } }
     | oper put(s, k) => pure fun (q) { fun (_old) { let w = k (*{}); w q s } }

@@ -37,10 +37,10 @@ def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 
 /// The steps under the counting model.
 def countedSteps() -> (Nat -> Nat) -> Nat =
-  handle cost : Cost.Eff with sort N = Nat -> Nat {
+  effect cost : Cost.Eff with sort N = Nat -> Nat {
     let _answer = threeSteps
     pure counted
-  } with Counting
+  } handle Counting
 
 /// The count of the steps is three.
 def costsThree : Path (countOf countedSteps) (3 : Nat) = Path.here (3 : Nat);
@@ -73,9 +73,9 @@ module Erased : Model(Cost.Eff) with sort N = Nat -> Nat where
 
 /// The steps under the erasing model.
 def erasedSteps() -> Integer =
-  handle cost : Cost.Eff with sort N = Nat -> Nat {
+  effect cost : Cost.Eff with sort N = Nat -> Nat {
     threeSteps
-  } with Erased
+  } handle Erased
 
 /// Erased, the steps answer as the program does with no charge.
 def erasedAnswer : Path erasedSteps 7 = Path.here 7;

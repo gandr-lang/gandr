@@ -79,9 +79,9 @@ pub def outcome(held : Bool) -> String =
 /// `std.reals.Eff` whose reports give the counters of the host.
 @[runs("+{.0 = *{}}")]
 def measuredModelled() -> Bool =
-  handle r : std.reals.Eff {
+  effect r : std.reals.Eff {
     measured witnessed belowThreeHalves
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
     | oper enclose(asked, k) => k "0p0" "1p0"

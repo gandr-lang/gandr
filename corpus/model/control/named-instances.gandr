@@ -26,10 +26,10 @@ pub def say() -> [out : std.io.Console.Eff] Unit = out.print "said";
 /// call passes it.
 @[runs("1")]
 def resolved() -> Integer =
-  handle a : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
     say
     pure 0
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }
@@ -38,15 +38,15 @@ def resolved() -> Integer =
 /// answers.
 @[runs("1")]
 def namedOuter() -> Integer =
-  handle a : std.io.Console.Eff {
-    handle b : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
+    effect b : std.io.Console.Eff {
       say[.out = a]
       pure 0
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
     }
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }
@@ -54,15 +54,15 @@ def namedOuter() -> Integer =
 /// `namedInner` selects the inner console instance.
 @[runs("2")]
 def namedInner() -> Integer =
-  handle a : std.io.Console.Eff {
-    handle b : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
+    effect b : std.io.Console.Eff {
       say[.out = b]
       pure 0
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
     }
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }
@@ -76,10 +76,10 @@ def sayLine(s : String) -> [out : std.io.Console.Eff] Unit = out.print s;
 /// `sayLineRuns` passes its explicit argument and a scope instance.
 @[runs("1")]
 def sayLineRuns() -> Integer =
-  handle a : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
     sayLine "line"
     pure 0
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }
@@ -105,10 +105,10 @@ def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit =
 /// handler answers every level's line.
 @[runs("3")]
 def descendRuns() -> Integer =
-  handle a : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
     descend (Step (Step (Step Ground)))
     pure 0
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => {
       let n = k *{}
@@ -126,15 +126,15 @@ def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit =
 /// answers the first line.
 @[runs("1")]
 def outerFirst() -> Integer =
-  handle a : std.io.Console.Eff {
-    handle b : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
+    effect b : std.io.Console.Eff {
       both[.first = a, .second = b]
       pure 0
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
     }
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }
@@ -143,15 +143,15 @@ def outerFirst() -> Integer =
 /// The inner scope answers the first line.
 @[runs("2")]
 def innerFirst() -> Integer =
-  handle a : std.io.Console.Eff {
-    handle b : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
+    effect b : std.io.Console.Eff {
       both[.first = b, .second = a]
       pure 0
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
     }
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }
@@ -173,15 +173,15 @@ def bothWritten[r : Region, r1 : Region](
 /// `bothWritten` passed the inner scope first: its clause answers.
 @[runs("2")]
 def bothWrittenRuns() -> Integer =
-  handle a : std.io.Console.Eff {
-    handle b : std.io.Console.Eff {
+  effect a : std.io.Console.Eff {
+    effect b : std.io.Console.Eff {
       bothWritten b a
       pure 0
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
     }
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
   }

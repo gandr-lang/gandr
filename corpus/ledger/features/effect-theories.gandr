@@ -98,11 +98,11 @@ theory StateGetGet where
 /// The handler answers four, so the scope runs to eight.
 @[runs("8")]
 def readTwice() -> Integer =
-  handle st : StateGetGet with sort S = Integer {
+  effect st : StateGetGet with sort S = Integer {
     let a = st.get
     let b = st.get
     pure a + b
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
   }
@@ -116,9 +116,9 @@ def readState() -> [st : State.Eff with sort S = Integer] Integer =
 /// read with seven.
 @[runs("7")]
 def readUnderScope() -> Integer =
-  handle s : State.Eff with sort S = Integer {
+  effect s : State.Eff with sort S = Integer {
     readState
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 7
     | oper put(v, k) => k ()
@@ -127,9 +127,9 @@ def readUnderScope() -> Integer =
 /// A scope over `State.Eff` fixes `S` to the parameter `a` and answers a
 /// read with `x`.
 def readGiven[a : Type](x : a) -> a =
-  handle s : State.Eff with sort S = a {
+  effect s : State.Eff with sort S = a {
     s.get
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper get(k) => k x
     | oper put(v, k) => k ()
@@ -149,9 +149,9 @@ def readAt(a : Type) -> [st : State.Eff with sort S = a] a =
 /// answers the read with seven.
 @[runs("7")]
 def readAtUnderScope() -> Integer =
-  handle s : State.Eff with sort S = Integer {
+  effect s : State.Eff with sort S = Integer {
     readAt Integer
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 7
     | oper put(v, k) => k ()
@@ -166,9 +166,9 @@ def readGivenAt[a : Type](x : a) -> [st : State.Eff with sort S = a] a =
 /// the row and answers the read with seven.
 @[runs("7")]
 def readGivenAtUnderScope() -> Integer =
-  handle s : State.Eff with sort S = Integer {
+  effect s : State.Eff with sort S = Integer {
     readGivenAt 0
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 7
     | oper put(v, k) => k ()
@@ -183,9 +183,9 @@ def readSolved[a : Type]() -> [st : State.Eff with sort S = a] a =
 /// read with seven.
 @[runs("7")]
 def readSolvedUnderScope() -> Integer =
-  handle s : State.Eff with sort S = Integer {
+  effect s : State.Eff with sort S = Integer {
     readSolved
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 7
     | oper put(v, k) => k ()

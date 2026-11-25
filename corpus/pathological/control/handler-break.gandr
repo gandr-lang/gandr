@@ -14,9 +14,9 @@ import std.process;
 @[refuses("AcrossHandler")]
 def broke() -> Integer =
   loop {
-    handle c : std.process.Exit.Eff {
+    effect c : std.process.Exit.Eff {
       break(1)
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper exit(code, k) => k *{}
     }
@@ -25,9 +25,9 @@ def broke() -> Integer =
 @[refuses("AcrossHandler")]
 def again() -> Integer =
   loop {
-    handle c : std.process.Exit.Eff {
+    effect c : std.process.Exit.Eff {
       continue
-    } with {
+    } handle {
       | pure(x) => pure x
       | oper exit(code, k) => k *{}
     }

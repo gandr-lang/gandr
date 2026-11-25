@@ -15,10 +15,10 @@ import std.process;
 
 /// `named` gives the scope capability its region type.
 def named() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     let d : Cap { exit } at c = c
     return *{}
-  } with {
+  } handle {
     | pure(x) => x
     | oper exit(code, k) => *{}
   }
@@ -27,25 +27,25 @@ def named() -> Unit =
 /// scope's capability would outlive its scope there.
 @[refuses("CapabilityEscaped")]
 def held() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     let d : Cap { exit } = c
     return *{}
-  } with {
+  } handle {
     | pure(x) => x
     | oper exit(code, k) => *{}
   }
 
 /// Inside a second scope the outer capability still names the outer region.
 def outer() -> Unit =
-  handle c : std.process.Exit.Eff {
-    handle e : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
+    effect e : std.process.Exit.Eff {
       let d : Cap { exit } at c = c
       return *{}
-    } with {
+    } handle {
       | pure(x) => x
       | oper exit(code, k) => *{}
     }
-  } with {
+  } handle {
     | pure(x) => x
     | oper exit(code, k) => *{}
   }
@@ -54,16 +54,16 @@ def outer() -> Unit =
 /// An inner capability cannot enter an outer region.
 @[refuses("CapabilityEscaped")]
 def swapped() -> Unit =
-  handle c : std.process.Exit.Eff {
-    handle e : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
+    effect e : std.process.Exit.Eff {
       let d : Cap { exit } at e = c
       let f : Cap { exit } at c = e
       return *{}
-    } with {
+    } handle {
       | pure(x) => x
       | oper exit(code, k) => *{}
     }
-  } with {
+  } handle {
     | pure(x) => x
     | oper exit(code, k) => *{}
   }
@@ -71,10 +71,10 @@ def swapped() -> Unit =
 /// Only a scope capability names a region.
 @[refuses("UnresolvedName")]
 def unbound(c : Integer) -> Unit =
-  handle e : std.process.Exit.Eff {
+  effect e : std.process.Exit.Eff {
     let d : Cap { exit } at c = e
     return *{}
-  } with {
+  } handle {
     | pure(x) => return x
     | oper exit(code, k) => return *{}
   }
@@ -82,10 +82,10 @@ def unbound(c : Integer) -> Unit =
 /// `plain` keeps an integer until scope `c` ends.
 /// `kept-view.gandr` shows a view in the same region.
 def plain() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     let d : Integer at c = 1
     return *{}
-  } with {
+  } handle {
     | pure(x) => x
     | oper exit(code, k) => *{}
   }

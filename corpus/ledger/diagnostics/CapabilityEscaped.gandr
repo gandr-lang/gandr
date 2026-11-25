@@ -5,9 +5,9 @@ import std.process;
 
 /// A scope that returns its own capability.
 @[refuses("CapabilityEscaped")]
-def leak() -> Cap { exit } = handle c : std.process.Exit.Eff {
+def leak() -> Cap { exit } = effect c : std.process.Exit.Eff {
   return c
-} with {
+} handle {
   | pure(x) => x
   | oper exit(code, k) => k *{}
 };

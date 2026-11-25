@@ -23,10 +23,10 @@ def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 
 /// The steps under the counting model.
 def countedSteps() -> (Nat -> Nat) -> Nat =
-  handle cost : Cost.Eff with sort N = Nat -> Nat {
+  effect cost : Cost.Eff with sort N = Nat -> Nat {
     let _answer = threeSteps
     pure counted
-  } with Counting
+  } handle Counting
 
 /// The bound two is one step too small: the count of the steps is three, so
 /// `Count.le` answers `false`.

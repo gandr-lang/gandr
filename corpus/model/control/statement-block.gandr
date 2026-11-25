@@ -21,10 +21,10 @@ import std.process;
 /// the rest once.
 @[runs("0")]
 def statement() -> Integer =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     let n = { c.exit 1; pure 0 }
     pure n
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper exit(code, k) => k *{}
   }

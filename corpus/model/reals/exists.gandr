@@ -33,9 +33,9 @@ import "./reals-base.gandr";
 /// `std.reals.Eff` that decides each root true.
 @[runs("\"holds\"")]
 def witnessedModelled() -> String =
-  handle r : std.reals.Eff {
+  effect r : std.reals.Eff {
     decided witnessed 32
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
     | oper enclose(asked, k) => k "0p0" "1p0"

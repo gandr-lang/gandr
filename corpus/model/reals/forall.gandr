@@ -33,9 +33,9 @@ pub def covered : String = "4758525001000600000000000000200001000000000000000000
 /// `std.reals.Eff` that decides each root true.
 @[runs("\"holds\"")]
 def coveredModelled() -> String =
-  handle r : std.reals.Eff {
+  effect r : std.reals.Eff {
     decided covered 16
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
     | oper enclose(asked, k) => k "0p0" "1p0"

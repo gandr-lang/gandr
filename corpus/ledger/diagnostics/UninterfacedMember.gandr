@@ -7,9 +7,9 @@ theory Stored where
 
 @[refuses("UninterfacedMember")]
 def unfixed() -> Integer =
-  handle st : Stored {
+  effect st : Stored {
     pure 1
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
   }

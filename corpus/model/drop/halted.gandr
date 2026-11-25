@@ -38,10 +38,10 @@ def halting() -> [h : Halt.Eff with sort R = Integer] Integer =
 @[runs("blame: `afterHalt` is owed its body")]
 def halted() -> Integer =
   var x = 1
-  let r : Integer = handle h : Halt.Eff with sort R = Integer {
+  let r : Integer = effect h : Halt.Eff with sort R = Integer {
     access x as v { let _ = halting; resume v 5 } unwind { afterHalt 1 }
     pure 0
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper halt(code) => pure 7
   }
@@ -51,10 +51,10 @@ def halted() -> Integer =
 @[runs("blame: `afterHalt` is owed its body")]
 def abandoned() -> Integer =
   var x = 1
-  let r : Integer = handle c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff {
     access x as v { let _ = c.exit 1; resume v 5 } unwind { afterHalt 1 }
     pure 0
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper exit(code, k) => { abandon k; pure 7 }
   }
@@ -70,10 +70,10 @@ def pairOf(a : Integer) -> List Integer =
 def haltedKept() -> List Integer =
   let ys = pairOf 1
   var x = 1
-  let r : Integer = handle h : Halt.Eff with sort R = Integer {
+  let r : Integer = effect h : Halt.Eff with sort R = Integer {
     access x as v { let _ = halting; resume v 5 } unwind { let _ = ys; pure *{} }
     pure 0
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper halt(code) => pure 7
   }
@@ -84,10 +84,10 @@ def haltedKept() -> List Integer =
 def abandonedKept() -> List Integer =
   let ys = pairOf 1
   var x = 1
-  let r : Integer = handle c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff {
     access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} }
     pure 0
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper exit(code, k) => { abandon k; pure 7 }
   }

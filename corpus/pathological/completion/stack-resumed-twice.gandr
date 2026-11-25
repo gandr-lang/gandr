@@ -19,7 +19,7 @@ import std.process;
 /// one end, and the second resumption is refused.
 @[refuses("ContinuationUsedTwice")]
 def resumedTwice() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
       let sqe = recv kernel
       send kernel Ring.done
@@ -29,7 +29,7 @@ def resumedTwice() -> Unit =
     c.exit 1
     let cqe = recv ring
     close ring
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper exit(code, k) => { let first = k *{}; k *{} }
   }

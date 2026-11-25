@@ -9,11 +9,11 @@ import "../../model/effects/state.gandr";
 /// continues at four and its right side at the stored value.
 @[refuses("HandlerUnlawful")]
 def forgetful() -> Integer =
-  handle st : StatePutGet with sort S = Integer {
+  effect st : StatePutGet with sort S = Integer {
     st.put 1
     let a = st.get
     pure a
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
     | oper put(s, k) => k *{}
@@ -24,11 +24,11 @@ def forgetful() -> Integer =
 /// right side at the stored value.
 @[refuses("HandlerUnlawful")]
 def accumulating() -> (Integer -> Integer) =
-  handle st : StatePutLaws with sort S = Integer {
+  effect st : StatePutLaws with sort S = Integer {
     st.put 1
     let a = st.get
     pure thunk { fun (s : Integer) { pure a } }
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => pure thunk { fun (s : Integer) { let g = k s; g s } }
     | oper put(s, k) => pure thunk { fun (t : Integer) { let g = k *{}; g (s + t) } }

@@ -64,9 +64,9 @@ pub def bounds() -> [std.reals.Eff] String =
 /// `std.reals.Eff` that decides each root true.
 @[runs("\"holds holds holds holds\"")]
 def boundsModelled() -> String =
-  handle r : std.reals.Eff {
+  effect r : std.reals.Eff {
     bounds
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
     | oper enclose(asked, k) => k "0p0" "1p0"
@@ -81,9 +81,9 @@ def boundsModelled() -> String =
 /// `std.reals.Eff` that answers each enclosure with `0` and `1/2`.
 @[runs("\"0p0 1p-1\"")]
 def angleModelled() -> String =
-  handle r : std.reals.Eff {
+  effect r : std.reals.Eff {
     enclosed betaOne 16
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
     | oper enclose(asked, k) => k "0p0" "1p-1"

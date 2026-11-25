@@ -15,9 +15,9 @@ import std.io;
 /// scope knows, so `S` is the member the scope cannot read.
 @[refuses("UninterfacedMember")]
 def unfixed() -> Integer =
-  handle st : State.Eff {
+  effect st : State.Eff {
     st.get
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
     | oper put(s, k) => k *{}
@@ -27,9 +27,9 @@ def unfixed() -> Integer =
 /// clauses, so a manifest fixing it is refused at `C`.
 @[refuses("UninterfacedMember")]
 def carrierFixed() -> Integer =
-  handle st : State.Eff with sort S = Integer with sort C = Integer {
+  effect st : State.Eff with sort S = Integer with sort C = Integer {
     st.get
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
     | oper put(s, k) => k *{}
@@ -38,9 +38,9 @@ def carrierFixed() -> Integer =
 /// A sort `State.Eff` does not declare, refused by its name.
 @[refuses("UnresolvedName")]
 def undeclared() -> Integer =
-  handle st : State.Eff with sort T = Integer {
+  effect st : State.Eff with sort T = Integer {
     pure 1
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
     | oper put(s, k) => k *{}
@@ -49,32 +49,32 @@ def undeclared() -> Integer =
 /// A model named that no module declares, refused by its name.
 @[refuses("UnresolvedName")]
 def answeredByNothing() -> Integer -> Integer =
-  handle st : State.Eff with sort S = Integer {
+  effect st : State.Eff with sort S = Integer {
     pure fun (s) { pure s }
-  } with Stateless
+  } handle Stateless
 
 /// The subject computing an integer where the scope answers the model's
 /// carrier, a function of the state.
 @[refuses("TypeMismatch")]
 def answeredAtInteger() -> Integer =
-  handle st : State.Eff with sort S = Integer {
+  effect st : State.Eff with sort S = Integer {
     pure 1
-  } with Passing
+  } handle Passing
 
 /// A host interface answered by a module: a host's operations are answered
 /// by clauses alone.
 @[refuses("OutOfFragment.WrongSort")]
 def answeredForConsole() -> Integer =
-  handle c : std.io.Console.Eff {
+  effect c : std.io.Console.Eff {
     pure 1
-  } with Passing
+  } handle Passing
 
 /// The stored sort two-valued: `Passing`, the one model of
 /// `State.Eff` in scope,
 /// stores an integer, so no model answers the scope.
 @[refuses("ModelUnanswered")]
 def unansweredAtTwo() -> Integer -> Integer =
-  handle st : State.Eff with sort S = Unit + Unit {
+  effect st : State.Eff with sort S = Unit + Unit {
     pure fun (s) { pure 1 }
   }
 
@@ -84,7 +84,7 @@ def unansweredAtTwo() -> Integer -> Integer =
 /// carrier as naming it does.
 @[refuses("TypeMismatch")]
 def inScopeAtInteger() -> Integer =
-  handle st : State.Eff with sort S = Integer {
+  effect st : State.Eff with sort S = Integer {
     pure 1
   }
 
@@ -104,7 +104,7 @@ module Forgetting : Model(State.Eff) with sort S = Integer where
 /// neither.
 @[refuses("ModelAmbiguous")]
 def ambiguousInScope() -> Integer -> Integer =
-  handle st : State.Eff with sort S = Integer {
+  effect st : State.Eff with sort S = Integer {
     pure fun (s) { pure s }
   }
 
@@ -112,7 +112,7 @@ def ambiguousInScope() -> Integer -> Integer =
 /// operations, so it writes its clauses.
 @[refuses("MalformedForm")]
 def unansweredForConsole() -> Integer =
-  handle c : std.io.Console.Eff {
+  effect c : std.io.Console.Eff {
     pure 1
   }
 
@@ -125,9 +125,9 @@ def readGivenAt[a : Type](x : a) -> [st : State.Eff with sort S = a] a =
 /// `Integer`, more than the scope at `Bool` grants.
 @[refuses("CapabilityAmplified")]
 def amplifiedAtImplicit() -> Integer =
-  handle s : State.Eff with sort S = Bool {
+  effect s : State.Eff with sort S = Bool {
     readGivenAt 0
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper get(k) => k true
     | oper put(v, k) => k ()

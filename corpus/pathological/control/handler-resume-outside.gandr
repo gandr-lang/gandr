@@ -13,9 +13,9 @@ import std.process;
 
 @[refuses("UnresolvedName")]
 def stray() -> Unit =
-  handle c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff {
     k *{}
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper exit(code, k) => k *{}
   }

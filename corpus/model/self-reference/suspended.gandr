@@ -17,10 +17,10 @@ import std.process;
 @[runs("12")]
 def suspended() -> Integer =
   var x = 5
-  let r : Integer = handle c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff {
     access x as v { c.exit 1; resume v (v + 7) }
     pure 0
-  } with {
+  } handle {
     | pure(y) => pure y
     | oper exit(code, k) => k *{}
   }
