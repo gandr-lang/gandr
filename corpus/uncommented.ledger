@@ -1833,6 +1833,7 @@ sketch/views-and-layouts/snoc.gandr:Snoc:4db3d983101a1886 uncommented
 sketch/web/export.gandr:Summary.Summary:c77506eb6cd47c5b uncommented
 sketch/web/export.gandr:Verdict.Empty:a740f3a8a712370d uncommented
 sketch/web/export.gandr:Verdict.Figures:37383a5b8d8ad270 uncommented
+sketch/web/fetch-list.gandr:Entry.Entry:90366e60177b12a0 uncommented
 surface/arity/function.gandr:<file> uncommented
 surface/arity/function.gandr:dependent:67ce1669e49014e9 uncommented
 surface/arity/function.gandr:none:6197eb57ed236b9c uncommented
