@@ -1898,9 +1898,9 @@ enum Surface
     Type,
     /// As an expression a type encloses: the head and the arguments of a call
     /// that stands where a type is read. They are read as expressions, so a
-    /// type argument there is quoted (#1102), but the grammar reads them in
-    /// the type's sort, which writes a call glued: there `f x` reads as the
-    /// moded type `m T`.
+    /// type argument there is quoted (#1102), but the grammar reads the call
+    /// in the type's sort: `f a b` is the call `f(a, b)`, and it runs to the
+    /// arrow, as a word before a type does.
     Enclosed,
 }
 
@@ -11753,20 +11753,21 @@ impl Walk<'_, '_>
     ///   has the walk's surface set to [`Surface::Enclosed`] over its head and
     ///   its arguments and restored past its join, since a call reads them as
     ///   expressions wherever it stands: a type argument there is quoted
-    ///   (#1102), and the join writes the call glued, `f(a, b)`, as the type's
-    ///   sort reads it. Where the head forces a constant whose telescope
-    ///   ([`Source::implicits`]) names an implicit at the place of an argument
-    ///   the call writes, and the spine is read whole, the join is instead the
-    ///   form `f[.x = a, …](b, …)`: the head, then each such argument after its
-    ///   implicit's name in the telescope's order, then the rest in place, each
-    ///   visited in that order. A forced function literal — a thunk, or a
-    ///   computation nested where a value is read, which a force decides as a
-    ///   thunk — of at least as many abstractions as the call has arguments,
-    ///   whose body then returns, is scheduled instead as the value it returns,
-    ///   and one whose body is itself a call of a forced head as that call,
-    ///   under one binder per argument standing for the argument, the first
-    ///   outermost: the type grammar has no call of a literal, and the reading
-    ///   back compares such a call as what it returns (#675).
+    ///   (#1102), and the join writes the call juxtaposed, `f a b`, binding as
+    ///   an arrow, as the type's sort reads it. Where the head forces a
+    ///   constant whose telescope ([`Source::implicits`]) names an implicit at
+    ///   the place of an argument the call writes, and the spine is read whole,
+    ///   the join is instead the form `f[.x = a, …](b, …)`: the head, then each
+    ///   such argument after its implicit's name in the telescope's order, then
+    ///   the rest in place, each visited in that order. A forced function
+    ///   literal — a thunk, or a computation nested where a value is read,
+    ///   which a force decides as a thunk — of at least as many abstractions as
+    ///   the call has arguments, whose body then returns, is scheduled instead
+    ///   as the value it returns, and one whose body is itself a call of a
+    ///   forced head as that call, under one binder per argument standing for
+    ///   the argument, the first outermost: the type grammar has no call of a
+    ///   literal, and the reading back compares such a call as what it returns
+    ///   (#675).
     /// - provides: the one spelling the surface writes a call in.
     /// - fails: never.
     /// - panics: none.
@@ -14276,8 +14277,9 @@ impl Walk<'_, '_>
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Bracket(bracket) => match bracket.opener(self.surface) { Opener::Parenthesized(_) => Binding::Atom, Opener::Juxtaposed(_) => Binding::Application },
                     // The join juxtaposes an application where an expression
-                    // reads it, and glues it, an atom, where a type reads it.
-                    Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
+                    // reads it, and where a type reads it the application runs
+                    // to the arrow.
+                    Join::Apply(_) if self.surface != Surface::Expression => Binding::Arrow,
                     Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
                     Join::Braced { .. } | Join::Update(_) | Join::Patch(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
                     // A family whose first argument takes parentheses binds
@@ -14807,16 +14809,16 @@ impl Walk<'_, '_>
             Join::Apply(Arity(count)) => {
                 let arguments = self.take(Arity(count))?;
                 let operator = self.pop()?;
-                // Where a type's sort reads the application, it is written
-                // glued: there `f x` reads as the moded type `m T`.
+                // Where a type's sort reads the application, `f a b` is the
+                // call `f(a, b)`: its head is an atom, and the application
+                // runs to the arrow, as a word before a type does.
                 if self.surface == Surface::Expression {
                     let operator = self.bare_up_to(operator, Binding::Application)?;
                     (self.juxtaposed(operator, arguments)?, Binding::Application)
                 }
                 else {
                     let operator = self.bare_up_to(operator, Binding::Atom)?;
-                    let listed = self.listed(&arguments)?;
-                    (self.builder.concat(operator, listed)?, Binding::Atom)
+                    (self.juxtaposed(operator, arguments)?, Binding::Arrow)
                 }
             },
             Join::Bracket(bracket) => {
