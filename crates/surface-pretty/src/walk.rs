@@ -13047,13 +13047,8 @@ impl Walk<'_, '_>
         let mut parts = Parts::default();
         let clauses = |walk: &mut Self, parts: &mut Parts, count: crate::former::Arity| {
             let _ = parts
-<<<<<<< HEAD
-                .text(" handle {")
-                .part(Part::Open)
-=======
-                .text(" with")
+                .text(" handle")
                 .part(Part::Open(BlockOpener::Brace))
->>>>>>> pr/58
                 .barred(Component::from(0_usize))
                 .text("pure(")
                 .part(Part::Binder(0_usize))
@@ -13692,11 +13687,7 @@ impl Walk<'_, '_>
                 }
             },
             Former::Handle { clauses: count, .. } => {
-<<<<<<< HEAD
-                let _ = parts.text("effect {").body();
-=======
-                let _ = parts.text("handle").body(BlockOpener::Brace);
->>>>>>> pr/58
+                let _ = parts.text("effect").body(BlockOpener::Brace);
                 clauses(self, &mut parts, count);
                 writes(Production("handle_expression"), Binding::Prefix)
             },
