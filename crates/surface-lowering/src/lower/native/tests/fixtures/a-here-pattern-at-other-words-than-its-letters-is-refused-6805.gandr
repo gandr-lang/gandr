@@ -18,7 +18,7 @@ pub data Int : Type where {
 }
 
 /// A case over the second circle's words with the first circle's letters.
-def rec crossed(p : Path[.A = C2](B2, B2)) -> Int =
+def rec crossed(p : Path[.A = C2] B2 B2) -> Int =
   match p where
     | here => Z
     | l1 ∷ q => S (crossed[<] q)

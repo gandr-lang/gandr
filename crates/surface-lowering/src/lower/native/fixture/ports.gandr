@@ -9,7 +9,7 @@ def grouped : Expr = (Share (Lit 1)).left;
 
 def both : Expr = Add (Share (Lit 1)).left (Share (Lit 1)).right;
 
-def apart : Path[.A = Expr]((Share (Lit 1)).left, (Share (Lit 1)).right) = Path.here
+def apart : Path[.A = Expr] (Share (Lit 1)).left (Share (Lit 1)).right = Path.here
   (Share (Lit 1)).left;
 
 def whole : *{left : Expr, right : Expr} = Share (Lit 1);
