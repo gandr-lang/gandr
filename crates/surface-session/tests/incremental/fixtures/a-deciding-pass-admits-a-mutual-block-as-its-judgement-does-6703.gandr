@@ -15,7 +15,7 @@ data Ctx : Type where
 /// A variable of type `a` in the context `gamma`.
 data Var : (gamma : Ctx, a : ObjTy) --> Type where
   /// The variable of the last entry.
-  | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
+  | Here : (gamma : Ctx, a : ObjTy) --> Var (Extend gamma a) a
 
 /// The neutral terms and the normal forms, each over the other.
 rec {
@@ -28,7 +28,7 @@ rec {
       gamma : Ctx,
       a : ObjTy,
       b : ObjTy,
-      t : Ne(gamma, Arr a b),
+      t : Ne gamma (Arr a b),
       u : Nf gamma a
     ) --> Ne gamma b
   }
