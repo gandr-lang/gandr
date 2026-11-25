@@ -1497,7 +1497,7 @@ pub fn reconcile_lock(
         None if lock.0.is_empty() => Ok(Reconciled::Unchanged),
         None => {
             let _absent = tables.insert(member, lock.clone());
-            std::fs::write(&path, shared_render(&tables))
+            super::published(&path, &shared_render(&tables))
                 .map(|()| Reconciled::Written)
                 .map_err(LockFault::Io)
         },
@@ -1584,7 +1584,7 @@ pub fn relock(
         Some(_) => Reconciled::Rewritten,
         None => Reconciled::Written,
     };
-    std::fs::write(&path, rendered)
+    super::published(&path, &rendered)
         .map(|()| reconciled)
         .map_err(LockFault::Io)
 }
