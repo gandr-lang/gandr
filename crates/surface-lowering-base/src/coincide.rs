@@ -851,10 +851,10 @@ impl fmt::Display for PairTerm
 ///   two rules is joined with each other order in the store. Thus the place of
 ///   the symmetry among the rules decides nothing. A pair with a redex of a
 ///   symmetry below its seam, and no redex of a rule before it, is joined and
-///   not skipped as a composite pair. A pair of a rule and a symmetry joins
-///   also where steps of the symmetry take one of its normal forms to the
-///   other, and its certificate holds those steps. A pair of two rules is
-///   compared as written.
+///   not skipped as a composite pair. A pair joins also where steps of the
+///   symmetry take one of its normal forms to the other, and its certificate
+///   holds those steps: a pair of a rule and a symmetry, and a pair of two
+///   rules.
 /// - panics: none.
 ///
 /// # Errors
@@ -885,16 +885,16 @@ impl fmt::Display for PairTerm
 ///   seam is uncompleted, in a `data` block and in a `theory` block; a rule
 ///   whose two orders give the two orders of one term joins the symmetry by a
 ///   step of it, in a `data` block and in a `theory` block, and two rules that
-///   give the two orders of one term are uncompleted; a rule that turned beside
-///   a symmetry joins it, two turned rules that give two constructors under the
-///   symmetry of a constructor diverge, and under the symmetry of an operation
-///   they complete to one normal form; reporting the earlier rule's span,
-///   deciding joinability first, reading the circle in the sequent store alone,
-///   normalizing by the symmetry, deciding a pair of two rules before the pairs
-///   of the symmetry, skipping a pair as composite by a redex of a symmetry,
-///   comparing the two normal forms of a pair with the symmetry as written, or
-///   deriving a rule between two constructor terms that are not the two orders
-///   of one rule changes one of them.
+///   give the two orders of one term join by a step of it; a rule that turned
+///   beside a symmetry joins it, two turned rules that give two constructors
+///   under the symmetry of a constructor diverge, and under the symmetry of an
+///   operation they complete to one normal form; reporting the earlier rule's
+///   span, deciding joinability first, reading the circle in the sequent store
+///   alone, normalizing by the symmetry, deciding a pair of two rules before
+///   the pairs of the symmetry, skipping a pair as composite by a redex of a
+///   symmetry, comparing the two normal forms of a pair as written beside a
+///   symmetry, or deriving a rule between two constructor terms that are not
+///   the two orders of one rule changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -911,7 +911,7 @@ impl fmt::Display for PairTerm
 /// - witness: `tests::coincide::a_pair_that_needs_the_other_order_of_a_rule_joins_in_each_place_of_the_symmetry`
 /// - witness: `tests::coincide::a_pair_above_a_redex_of_a_symmetry_is_decided`
 /// - witness: `tests::coincide::a_pair_with_a_symmetry_joins_under_the_symmetry`
-/// - witness: `tests::coincide::a_pair_of_two_rules_is_compared_as_written_beside_a_symmetry`
+/// - witness: `tests::coincide::two_rules_that_give_the_two_orders_of_one_term_join_beside_a_symmetry`
 /// - witness: `tests::coincide::a_rule_written_backwards_turns_beside_a_symmetry`
 /// - witness: `tests::coincide::two_turned_rules_that_tear_under_the_symmetry_of_a_constructor_diverge`
 /// - witness: `tests::coincide::two_turned_rules_that_tear_under_the_symmetry_of_an_operation_complete`

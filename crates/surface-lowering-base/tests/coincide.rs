@@ -1647,42 +1647,43 @@ fn a_pair_with_a_symmetry_joins_under_the_symmetry()
     }
 }
 
-/// A pair of two rules is compared as written beside a symmetry. One rule
-/// takes a wrapped pair to the pair in the other order, and one rule takes a
-/// wrapped term to the term. Their two normal forms are the two orders of one
-/// pair, and the block is refused in each place of the symmetry.
+/// Two rules whose normal forms are the two orders of one pair join beside a
+/// symmetry. One rule takes a wrapped pair to the pair in the other order, and
+/// one rule takes a wrapped term to the term. A step of the symmetry takes one
+/// normal form of their pair to the other, and the block is admitted in each
+/// place of the symmetry.
 #[test]
-fn a_pair_of_two_rules_is_compared_as_written_beside_a_symmetry()
+fn two_rules_that_give_the_two_orders_of_one_term_join_beside_a_symmetry()
 {
     for (source, place) in [
         (
             include_str!(
-                "coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-first.gandr"
+                "coincide/fixtures/two-rules-that-give-the-two-orders-of-one-term-join-beside-a-symmetry-first.gandr"
             ),
             "first",
         ),
         (
             include_str!(
-                "coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-last.gandr"
+                "coincide/fixtures/two-rules-that-give-the-two-orders-of-one-term-join-beside-a-symmetry-last.gandr"
             ),
             "last",
         ),
     ] {
         lowered(SourceText::from(source), |module| {
-            let [ref diagnostic] = *module.cells().diagnostics.as_slice()
-            else {
-                panic!(
-                    "one cell diagnostic with the symmetry written {place}: {:?}",
-                    module.cells().diagnostics
-                )
-            };
             assert!(
-                matches!(
-                    diagnostic.fault,
-                    CellFault::Coherence(CoherenceFault::Uncompleted { .. })
-                ),
-                "the symmetry written {place}: the two rules give two orders of one pair: {:?}",
-                diagnostic.fault
+                module.cells().diagnostics.is_empty(),
+                "the symmetry written {place}: {:?}",
+                module.cells().diagnostics
+            );
+            let family = module.declarations().iter().next().unwrap();
+            let normal = module
+                .normal_form(family, CallText::from("wrap(pair(low, high))"))
+                .map(|form| form.normal.to_string());
+            assert!(
+                normal == Ok(String::from("pair(low, high)"))
+                    || normal == Ok(String::from("pair(high, low)")),
+                "the symmetry written {place}: the normal form is the pair in one of its two \
+                 orders: {normal:?}"
             );
         });
     }

@@ -1419,12 +1419,13 @@ where
     ///   joining has not decided. So a completion derives each rule that an
     ///   idle cell gives before it joins a pair that needs that rule, and the
     ///   place of the idle cell in the store does not decide the verdict of
-    ///   such a pair. A pair of an idle cell and another cell joins also where
-    ///   steps of the idle cells take its left normal form to its right one
-    ///   ([`path_by_idle`]): the left path of its certificate ends with those
-    ///   steps. Such a pair is [`Joinability::Undecided`] when that search
-    ///   spends `budget`. A pair of two other cells joins where its two normal
-    ///   forms are one term.
+    ///   such a pair. A pair joins also where steps of the idle cells take its
+    ///   left normal form to its right one ([`path_by_idle`]): the left path of
+    ///   its certificate ends with those steps. Such a pair is
+    ///   [`Joinability::Undecided`] when that search spends `budget`. So two
+    ///   rules whose normal forms are one term in two orders of the arguments
+    ///   of a symmetry join, as a rule and the symmetry do. With no idle cell a
+    ///   pair joins where its two normal forms are one term.
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
@@ -1452,7 +1453,7 @@ where
     ///   with no idle cell skips that pair as a composite one. A rule whose
     ///   reduct by an idle symmetry is a redex of the rule again joins the
     ///   symmetry by one step of it, in each place of the symmetry, and two
-    ///   rules that give the two orders of one sum part.
+    ///   rules that give the two orders of one sum join by one step of it.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
@@ -1597,17 +1598,14 @@ where
                         return Some(Joinability::Undecided(overlap));
                     }
                     if left.normal != right.normal {
-                        // The two normal forms of a pair with an idle cell
-                        // join where steps of the idle cells take one to the
-                        // other. A pair of two other cells joins as written.
-                        let between = match sweep {
-                            Sweep::BesideIdle => path_by_idle(
-                                store,
-                                (&left.normal, &right.normal),
-                                &self.idle,
-                                budget,
-                            ),
-                            Sweep::Others => Maybe::Absent(idle_path::Absent::Apart),
+                        // The two normal forms of a pair join where steps of
+                        // the idle cells take one to the other. With no idle
+                        // cell no step does.
+                        let between = if self.idle.is_empty() {
+                            Maybe::Absent(idle_path::Absent::Apart)
+                        }
+                        else {
+                            path_by_idle(store, (&left.normal, &right.normal), &self.idle, budget)
                         };
                         match between {
                             Maybe::Present(steps) => {
@@ -2187,8 +2185,8 @@ mod tests
                 "one step of the symmetry forms the peak, and one joins the two normal forms"
             );
         }
-        // Two rules give the two orders of one sum. Their pair holds no idle
-        // cell, so it is compared as written.
+        // Two rules give the two orders of one sum. One step of the symmetry
+        // takes one normal form of their pair to the other.
         let two_rules = store_of(&[
             (
                 Toy::succ(Toy::add(Toy::var("x"), Toy::var("y"))),
@@ -2197,15 +2195,33 @@ mod tests
             (Toy::succ(Toy::var("z")), Toy::var("z")),
             symmetry,
         ]);
-        let Joinability::Diverges { overlap, .. } =
-            PairJoining::past(BTreeSet::from([CellId::from(2_usize)])).resume(&two_rules, budget)
+        let symmetric = CellId::from(2_usize);
+        let Joinability::Joined(certificates) =
+            PairJoining::past(BTreeSet::from([symmetric])).resume(&two_rules, budget)
         else {
-            panic!("the pair of the two rules parts");
+            panic!("the two normal forms of the pair of the two rules are two orders of one sum");
         };
+        let between: Vec<_> = certificates
+            .iter()
+            .filter(|certificate| {
+                (certificate.overlap.left, certificate.overlap.right)
+                    == (CellId::from(0_usize), CellId::from(1_usize))
+            })
+            .collect();
+        let [certificate] = *between.as_slice()
+        else {
+            panic!("the two rules overlap at the root alone: {certificates:?}");
+        };
+        assert!(bool::from(certificate.replay(&two_rules)));
         assert_eq!(
-            (overlap.left, overlap.right),
-            (CellId::from(0_usize), CellId::from(1_usize)),
-            "the pair of each rule and the symmetry joins, and the pair of the two rules parts"
+            certificate
+                .path_a
+                .iter()
+                .chain(&certificate.path_b)
+                .filter(|step| step.cell == symmetric)
+                .count(),
+            1,
+            "one step of the symmetry joins the two normal forms"
         );
     }
 
