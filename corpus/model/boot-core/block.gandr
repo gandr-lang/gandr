@@ -1,0 +1,371 @@
+//! The block operations of `boot-core` over `Ptr.Eff`: a copy between two
+//! ranges that share no byte, a move between two ranges that can share bytes,
+//! a fill, and the order of two ranges.
+//!
+//! `copy`, `move_bytes`, `fill` and `compare` give the answers of the Rust
+//! functions of `crates/boot-core/src/block.rs`. They name no model of memory:
+//! the scope that handles `Ptr.Eff` chooses one. Each reads and writes one
+//! byte at a time with `load8` and `store8`, and it touches no byte outside
+//! its ranges. An empty range can have any address, and no operation reads it.
+//! Each operation descends on the length of a range, as `ranges.gandr` states.
+//!
+//! The `runs` items run the cases of `crates/boot-core/tests/block.rs` under
+//! `Extent`. A range that ends at the end of a page in the Rust tests ends at
+//! the end of the extent here, so an access past it ends the run with
+//! `Outside`. An empty range at the address 0 is the null address of the Rust
+//! tests: an access there ends the run with `Outside`.
+//!
+//! - see: `ranges.gandr` — `Range` and `Length`
+//! - see: `../../../library/std/src/ptr.gandr` — `Ptr.Eff` and `Extent`
+//! - see: `../../../crates/boot-core/src/block.rs` — the Rust functions
+
+// The bytes of a memory of `Extent`.
+import std.list (List);
+// The interface of memory, and its model in the source.
+import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent);
+// The ranges, and the lists of bytes of a run.
+import "./ranges.gandr";
+
+/// The answer of a copy and of a move, as the `Result` of `boot-core`.
+pub data Written : Type where
+  /// The place holds the bytes of the source.
+  | Done : Written
+  /// The place is shorter than the source, and no byte changes.
+  | Short : Written
+
+/// The order of two ranges, as `Ordering` of `core`.
+pub data Order : Type where
+  /// The left range comes first.
+  | Less : Order
+  /// The two ranges hold the same bytes.
+  | Equal : Order
+  /// The right range comes first.
+  | Greater : Order
+
+/// `true` when the length `left` is less than the length `right`.
+def rec shorter(right : Length, left : Length) -> Bool =
+  match left where
+    | Zero => match right where
+      | Zero => false
+      | Next(rest) => true
+    | Next(left_rest) => match right where
+      | Zero => false
+      | Next(right_rest) => shorter[<] right_rest left_rest
+
+/// The address `count` bytes after `address`, for a count of one step a byte.
+def rec after(address : u64, count : Length) -> u64 =
+  match count where
+    | Zero => address
+    | Next(rest) => after[<] (u64.wrapping_add address 1u64) rest
+
+/// Copy `left` bytes from `from` on to `to` on, the first byte first.
+def rec forward(to : u64, from : u64, left : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Unit =
+  match left where
+    | Zero => pure *{}
+    | Next(rest) => {
+      let byte = p.load8 from
+      p.store8 to byte
+      forward[<] (u64.wrapping_add to 1u64) (u64.wrapping_add from 1u64) rest
+    }
+
+/// Copy the `left` bytes before `from_end` to the `left` bytes before
+/// `to_end`, the last byte first.
+def rec backward(to_end : u64, from_end : u64, left : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Unit =
+  match left where
+    | Zero => pure *{}
+    | Next(rest) => {
+      let to = u64.wrapping_sub to_end 1u64
+      let from = u64.wrapping_sub from_end 1u64
+      let byte = p.load8 from
+      p.store8 to byte
+      backward[<] to from rest
+    }
+
+/// Write `byte` to `left` bytes from `to` on.
+def rec spread(to : u64, byte : u8, left : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Unit =
+  match left where
+    | Zero => pure *{}
+    | Next(rest) => {
+      p.store8 to byte
+      spread[<] (u64.wrapping_add to 1u64) byte rest
+    }
+
+/// The order of the `left_length` bytes from `left` on and the `right_length`
+/// bytes from `right` on.
+def rec ordered(left : u64, right : u64, right_length : Length, left_length : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Order =
+  match left_length where
+    | Zero => match right_length where
+      | Zero => pure Equal
+      | Next(right_rest) => pure Less
+    | Next(left_rest) => match right_length where
+      | Zero => pure Greater
+      | Next(right_rest) => {
+        let one = p.load8 left
+        let two = p.load8 right
+        if u8.to_integer one < u8.to_integer two {
+          pure Less
+        } else {
+          if u8.to_integer two < u8.to_integer one {
+            pure Greater
+          } else {
+            ordered[<]
+              (u64.wrapping_add left 1u64)
+              (u64.wrapping_add right 1u64)
+              right_rest
+              left_rest
+          }
+        }
+      }
+
+/// Copy the bytes of `from` into the first bytes of `to`. The two ranges
+/// share no byte. The answer is `Short` when `to` is shorter than `from`,
+/// with no byte written.
+pub def copy(to : Range, from : Range) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Written =
+  match to where
+    | Range(place, room) => match from where
+      | Range(source, length) => if shorter length room {
+        pure Short
+      } else {
+        forward place source length
+        pure Done
+      }
+
+/// Move the bytes of `from` into the first bytes of `to`. The two ranges can
+/// share bytes, so a move to a higher address goes backward, and `to` then
+/// holds the bytes that `from` held before the move. The answer is `Short`
+/// when `to` is shorter than `from`, with no byte written.
+pub def move_bytes(to : Range, from : Range) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Written =
+  match to where
+    | Range(place, room) => match from where
+      | Range(source, length) => if shorter length room {
+        pure Short
+      } else {
+        if u64.to_integer source < u64.to_integer place {
+          backward (after place length) (after source length) length
+          pure Done
+        } else {
+          forward place source length
+          pure Done
+        }
+      }
+
+/// Write `byte` to each byte of `to`.
+pub def fill(to : Range, byte : u8) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Unit =
+  match to where
+    | Range(place, length) => spread place byte length
+
+/// The order of `left` and `right` as sequences of bytes: the order of the
+/// first byte where they differ, as unsigned numbers, or of their lengths when
+/// one is the start of the other.
+pub def compare(left : Range, right : Range) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Order =
+  match left where
+    | Range(first, left_length) => match right where
+      | Range(second, right_length) => ordered first second right_length left_length
+
+/// The answer of a run under `Extent`.
+data Shown : Type where
+  /// A copy or a move gives `written`, and the extent holds `bytes` after it.
+  | Wrote : (written : Written, bytes : List u8) --> Shown
+  /// A fill ends, and the extent holds `bytes` after it.
+  | Filled : (bytes : List u8) --> Shown
+  /// A comparison gives `order`.
+  | Ordered : (order : Order) --> Shown
+  /// The member `member` reaches outside the extent at `address`.
+  | Faulted : (member : String, address : u64) --> Shown
+
+/// The word that a run gives for `written`: 0 for `Done`, and 1 for `Short`.
+def written_word(written : Written) -> u64 =
+  match written where
+    | Done => 0u64
+    | Short => 1u64
+
+/// The word that a run gives for `order`: 0 for `Less`, 1 for `Equal`, and 2
+/// for `Greater`.
+def order_word(order : Order) -> u64 =
+  match order where
+    | Less => 0u64
+    | Equal => 1u64
+    | Greater => 2u64
+
+/// The bytes of `memory`.
+def bytes_of(memory : Memory) -> List u8 =
+  match memory where
+    | Memory(base, bytes) => bytes
+
+/// The outcome of a copy or a move that ends with `ended`.
+def wrote(ended : Ended) -> Shown =
+  match ended where
+    | Gave(word, memory) => if u64.to_integer word == 0 {
+      pure Wrote Done (bytes_of memory)
+    } else {
+      pure Wrote Short (bytes_of memory)
+    }
+    | Kept(memory) => pure Filled (bytes_of memory)
+    | Outside(member, address) => pure Faulted member address
+
+/// The outcome of a fill that ends with `ended`.
+def filled(ended : Ended) -> Shown =
+  match ended where
+    | Gave(word, memory) => pure Filled (bytes_of memory)
+    | Kept(memory) => pure Filled (bytes_of memory)
+    | Outside(member, address) => pure Faulted member address
+
+/// The outcome of a comparison that ends with `ended`.
+def ordered_by(ended : Ended) -> Shown =
+  match ended where
+    | Gave(word, memory) => if u64.to_integer word == 0 {
+      pure Ordered Less
+    } else {
+      if u64.to_integer word == 1 { pure Ordered Equal } else { pure Ordered Greater }
+    }
+    | Kept(memory) => pure Filled (bytes_of memory)
+    | Outside(member, address) => pure Faulted member address
+
+/// The range of `count` bytes from the position `start` of the extent.
+def within(start : Integer, count : List u8) -> Range = Range
+  (u64.from_integer (4096 + start))
+  (counted count)
+
+/// The empty range at the address 0, the null address of the Rust tests.
+def nowhere : Range = Range 0u64 Zero;
+
+/// A copy from `from` to `to` over the extent `bytes` at the address 4096.
+def copy_in(bytes : List u8, to : Range, from : Range) -> Shown =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let written = copy to from
+    pure fun (memory) { pure Gave (written_word written) memory }
+  } with Extent
+  wrote (program (Memory 4096u64 bytes))
+
+/// A move from `from` to `to` over the extent `bytes` at the address 4096.
+def move_in(bytes : List u8, to : Range, from : Range) -> Shown =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let written = move_bytes to from
+    pure fun (memory) { pure Gave (written_word written) memory }
+  } with Extent
+  wrote (program (Memory 4096u64 bytes))
+
+/// A fill of `to` with `byte` over the extent `bytes` at the address 4096.
+def fill_in(bytes : List u8, to : Range, byte : u8) -> Shown =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    fill to byte
+    pure fun (memory) { pure Kept memory }
+  } with Extent
+  filled (program (Memory 4096u64 bytes))
+
+/// The order of `left` and `right` over the extent `bytes` at the address
+/// 4096.
+def compare_in(bytes : List u8, left : Range, right : Range) -> Shown =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let order = compare left right
+    pure fun (memory) { pure Gave (order_word order) memory }
+  } with Extent
+  ordered_by (program (Memory 4096u64 bytes))
+
+/// A copy writes the source into the start of the place and keeps each other
+/// byte: from an empty range at the null address, of two empty ranges at it,
+/// and from one byte. A place one byte too short takes `Short`, and no byte
+/// changes. A copy into a place at the end of the extent, and from a source
+/// at the end of the extent, read and write no byte past it.
+@[runs("cons (Wrote Done (cons 9u8 (cons 9u8 nil))) (cons (Wrote Done nil) (cons (Wrote Done (cons 7u8 (cons 9u8 (cons 9u8 (cons 7u8 nil))))) (cons (Wrote Short (cons 9u8 (cons 1u8 (cons 2u8 nil)))) (cons (Wrote Done (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 (cons 5u8 (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 (cons 5u8 nil))))))))))) (cons (Wrote Done (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 (cons 5u8 (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 (cons 5u8 nil))))))))))) nil)))))")]
+def a_copy_writes_the_source_and_keeps_the_rest() -> List Shown =
+  let empty = copy_in #[9u8, 9u8] (within 0 #[9u8, 9u8]) nowhere
+  let none = copy_in #[] nowhere nowhere
+  let one = copy_in #[9u8, 9u8, 9u8, 7u8] (within 0 #[9u8, 9u8, 9u8]) (within 3 #[7u8])
+  let short = copy_in #[9u8, 1u8, 2u8] (within 0 #[9u8]) (within 1 #[1u8, 2u8])
+  let into_the_end = copy_in
+    #[1u8, 2u8, 3u8, 4u8, 5u8, 0u8, 0u8, 0u8, 0u8, 0u8]
+    (within 5 #[0u8, 0u8, 0u8, 0u8, 0u8])
+    (within 0 #[1u8, 2u8, 3u8, 4u8, 5u8])
+  let from_the_end = copy_in
+    #[0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 2u8, 3u8, 4u8, 5u8]
+    (within 0 #[0u8, 0u8, 0u8, 0u8, 0u8])
+    (within 5 #[1u8, 2u8, 3u8, 4u8, 5u8])
+  pure #[empty, none, one, short, into_the_end, from_the_end]
+
+/// A move over shared bytes gives the bytes of the source as they were before
+/// the move: forward and backward within one extent, one byte, two empty
+/// ranges at the null address, a place too short, which takes `Short` with no
+/// byte changed, and a move whose place ends at the end of the extent.
+@[runs("cons (Wrote Done (cons 1u8 (cons 2u8 (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 (cons 5u8 (cons 6u8 nil))))))))) (cons (Wrote Done (cons 3u8 (cons 4u8 (cons 5u8 (cons 6u8 (cons 7u8 (cons 8u8 (cons 7u8 (cons 8u8 nil))))))))) (cons (Wrote Done (cons 1u8 (cons 1u8 nil))) (cons (Wrote Done nil) (cons (Wrote Short (cons 1u8 (cons 2u8 (cons 3u8 nil)))) (cons (Wrote Done (cons 1u8 (cons 1u8 (cons 2u8 (cons 3u8 nil))))) nil)))))")]
+def a_move_over_shared_bytes_gives_the_source_as_it_was() -> List Shown =
+  let six : List u8 = #[0u8, 0u8, 0u8, 0u8, 0u8, 0u8]
+  let eight : List u8 = #[1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]
+  let forward = move_in eight (within 2 six) (within 0 six)
+  let backward = move_in eight (within 0 six) (within 2 six)
+  let one = move_in #[1u8, 2u8] (within 1 #[0u8]) (within 0 #[0u8])
+  let none = move_in #[] nowhere nowhere
+  let short = move_in #[1u8, 2u8, 3u8] (within 1 #[0u8, 0u8]) (within 0 #[0u8, 0u8, 0u8])
+  let at_the_end = move_in
+    #[1u8, 2u8, 3u8, 4u8]
+    (within 1 #[0u8, 0u8, 0u8])
+    (within 0 #[0u8, 0u8, 0u8])
+  pure #[forward, backward, one, none, short, at_the_end]
+
+/// A fill writes its byte to each byte of the place and to no byte beside
+/// it: an empty place at the null address, four bytes inside six, one byte
+/// inside three, and a place that ends at the end of the extent.
+@[runs("cons (Filled nil) (cons (Filled (cons 0u8 (cons 7u8 (cons 7u8 (cons 7u8 (cons 7u8 (cons 0u8 nil))))))) (cons (Filled (cons 0u8 (cons 255u8 (cons 0u8 nil)))) (cons (Filled (cons 5u8 (cons 5u8 (cons 5u8 nil)))) nil)))")]
+def a_fill_writes_each_byte_of_the_place_alone() -> List Shown =
+  let none = fill_in #[] nowhere 7u8
+  let four = fill_in #[0u8, 0u8, 0u8, 0u8, 0u8, 0u8] (within 1 #[0u8, 0u8, 0u8, 0u8]) 7u8
+  let one = fill_in #[0u8, 0u8, 0u8] (within 1 #[0u8]) 255u8
+  let at_the_end = fill_in #[0u8, 0u8, 0u8] (within 0 #[0u8, 0u8, 0u8]) 5u8
+  pure #[none, four, one, at_the_end]
+
+/// Two empty ranges compare equal at any address, the null address included,
+/// and an empty range comes before one byte.
+@[runs("cons (Ordered Equal) (cons (Ordered Less) nil)")]
+def an_empty_range_compares_equal_at_any_address() -> List Shown =
+  let empty = compare_in #[] nowhere (Range 1u64 Zero)
+  let shorter = compare_in #[0u8] nowhere (within 0 #[0u8])
+  pure #[empty, shorter]
+
+/// A comparison orders by the first byte where two ranges differ, as unsigned
+/// numbers, and by the length when one range is the start of the other. A
+/// range that ends at the end of the extent compares with no read past it.
+@[runs("cons (Ordered Less) (cons (Ordered Greater) (cons (Ordered Less) (cons (Ordered Greater) (cons (Ordered Equal) (cons (Ordered Equal) (cons (Ordered Equal) (cons (Ordered Less) nil)))))))")]
+def a_comparison_orders_by_the_first_unequal_byte() -> List Shown =
+  let last_less = compare_in
+    #[1u8, 2u8, 3u8, 1u8, 2u8, 4u8]
+    (within 0 #[1u8, 2u8, 3u8])
+    (within 3 #[1u8, 2u8, 4u8])
+  let last_greater = compare_in
+    #[1u8, 2u8, 4u8, 1u8, 2u8, 3u8]
+    (within 0 #[1u8, 2u8, 4u8])
+    (within 3 #[1u8, 2u8, 3u8])
+  let start = compare_in
+    #[1u8, 2u8, 1u8, 2u8, 3u8]
+    (within 0 #[1u8, 2u8])
+    (within 2 #[1u8, 2u8, 3u8])
+  let unsigned = compare_in #[128u8, 127u8] (within 0 #[128u8]) (within 1 #[127u8])
+  let one = compare_in #[5u8, 5u8] (within 0 #[5u8]) (within 1 #[5u8])
+  let three = compare_in
+    #[1u8, 2u8, 3u8, 1u8, 2u8, 3u8]
+    (within 0 #[1u8, 2u8, 3u8])
+    (within 3 #[1u8, 2u8, 3u8])
+  let same = compare_in
+    #[5u8, 6u8, 7u8, 5u8, 6u8, 7u8]
+    (within 3 #[5u8, 6u8, 7u8])
+    (within 0 #[5u8, 6u8, 7u8])
+  let longer = compare_in
+    #[5u8, 6u8, 7u8, 0u8, 5u8, 6u8, 7u8]
+    (within 4 #[5u8, 6u8, 7u8])
+    (within 0 #[5u8, 6u8, 7u8, 0u8])
+  pure #[last_less, last_greater, start, unsigned, one, three, same, longer]
