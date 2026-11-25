@@ -1520,18 +1520,23 @@ where
             CheckRefusalOf::NotADataType(constant) => write!(f,"declaration {} is not an admitted datatype",usize::from(constant)),
             CheckRefusalOf::DataKindNotUniverse(_) => f.write_str("a datatype kind must be a value universe"),
             CheckRefusalOf::DataFieldLevel {..} => f.write_str("a constructor field exceeds the declared universe"),
-            CheckRefusalOf::RuleNotPresentable { refusal, .. } => write!(f, "rule {} does not present its datatype: {}", usize::from(refusal.rule), match refusal.fault {
-                gandr_kernel_term::RuleFault::VariableHeaded => "its left side is a bare variable",
-                gandr_kernel_term::RuleFault::UnknownConstructor => "it names a constructor the datatype does not declare",
-                gandr_kernel_term::RuleFault::Arity => "a constructor in it has the wrong number of fields",
-                gandr_kernel_term::RuleFault::NotOwnPosition => "a constructor in it stands at a field of another type",
-                gandr_kernel_term::RuleFault::NonLinear => "its left side repeats or skips a variable",
-                gandr_kernel_term::RuleFault::Unbound => "its right side names a variable the left side does not bind",
-                gandr_kernel_term::RuleFault::Duplicated => "its right side names a variable twice",
-                gandr_kernel_term::RuleFault::SlotMismatch => "its right side moves a variable to a field of another type",
-                gandr_kernel_term::RuleFault::NotDecreasing => "its right side is not smaller than its left",
-                gandr_kernel_term::RuleFault::DependentSlot => "it binds a variable at a field, after its constructor's first, whose type is open",
-            }),
+            CheckRefusalOf::RuleNotPresentable { refusal, .. } => {
+                write!(f, "rule {} does not present its datatype: ", usize::from(refusal.rule))?;
+                match refusal.fault {
+                    gandr_kernel_term::RuleFault::VariableHeaded => f.write_str("its left side is a bare variable"),
+                    gandr_kernel_term::RuleFault::UnknownConstructor => f.write_str("it names a constructor the datatype does not declare"),
+                    gandr_kernel_term::RuleFault::Arity => f.write_str("a constructor in it has the wrong number of fields"),
+                    gandr_kernel_term::RuleFault::NotOwnPosition => f.write_str("a constructor in it stands at a field of another type"),
+                    gandr_kernel_term::RuleFault::NonLinear => f.write_str("its left side repeats or skips a variable"),
+                    gandr_kernel_term::RuleFault::Unbound => f.write_str("its right side names a variable the left side does not bind"),
+                    gandr_kernel_term::RuleFault::Duplicated => f.write_str("its right side names a variable twice"),
+                    gandr_kernel_term::RuleFault::SlotMismatch => f.write_str("its right side moves a variable to a field of another type"),
+                    gandr_kernel_term::RuleFault::NotDecreasing => f.write_str("its right side is not smaller than its left"),
+                    gandr_kernel_term::RuleFault::DependentSlot => f.write_str("it binds a variable at a field, after its constructor's first, whose type is open"),
+                    gandr_kernel_term::RuleFault::Diverges { with } => write!(f, "it and rule {} rewrite one term to two normal forms", usize::from(with)),
+                    gandr_kernel_term::RuleFault::Undecided => f.write_str("the rules were not shown to converge within the rewrite budget"),
+                }
+            },
             CheckRefusalOf::RuleNotRespected { rule, .. } => write!(f, "the match is not shown to respect rule {} of its datatype", usize::from(rule)),
             CheckRefusalOf::NotApart { reason, .. } => match reason {
                 gandr_kernel_term::Apartness::Apart => f.write_str("the path's endpoints are apart"),

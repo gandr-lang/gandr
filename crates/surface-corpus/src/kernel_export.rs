@@ -2660,8 +2660,8 @@ mod kernel_presented_readmission
         );
 
         // The twin presents the integers by two rules rewriting one redex
-        // apart: admission takes them, each linear and decreasing, and the
-        // apartness rule refuses to read their normal forms as elements.
+        // apart: each is linear and decreasing, and admission joins the
+        // critical pairs and refuses the type at the pair that does not join.
         let x = RuleNode::Variable(RuleVariable::from(0_u32));
         let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
         let divergent = Presentation::new(gandr_kernel_data::SmallVec::from_iter([
@@ -2678,15 +2678,17 @@ mod kernel_presented_readmission
             marked.declaration().clone().presented(divergent),
         );
         let refusal = Environment::replay(arena, &twin)
-            .expect_err("divergent rules give no normal form to compare");
-        assert_eq!(usize::from(refusal.position()), not_zero);
+            .expect_err("divergent rules give a term two normal forms");
+        assert_eq!(usize::from(refusal.position()), integers);
         assert_eq!(
             *refusal.error(),
-            KernelError::NotApart(Apartness::Diverges {
-                outer: RuleIndex::from(0_usize),
-                inner: RuleIndex::from(1_usize),
+            KernelError::RuleNotPresentable(RuleRefusal {
+                rule: RuleIndex::from(0_usize),
+                fault: RuleFault::Diverges {
+                    with: RuleIndex::from(1_usize),
+                },
             }),
-            "the kernel joins the critical pairs itself and names the pair that does not join"
+            "the kernel joins the critical pairs at admission and names the pair that does not join"
         );
     }
 

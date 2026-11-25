@@ -1408,8 +1408,8 @@ fn a_law_states_its_path_behind_one_parameter_per_rule_variable()
             ),
         ))
     };
-    // A point and a loop around it, presented by one rule sending loops
-    // back to the point: closed, or over the inner loop's field.
+    // A point and a loop around it, presented by one rule sending a loop back
+    // to the point: closed, or over the loop's field.
     let pointed = |environment: &mut Environment, left: &[RuleNode]| {
         let position = ConstantIndex::from(environment.entries().len());
         let mut staging = environment.stage();
@@ -1436,7 +1436,7 @@ fn a_law_states_its_path_behind_one_parameter_per_rule_variable()
     };
     let mut environment = Environment::new();
     let closed_rule = pointed(&mut environment, &[around, base]);
-    let open_rule = pointed(&mut environment, &[around, around, x]);
+    let open_rule = pointed(&mut environment, &[around, x]);
     let turn = assume(&mut environment, |arena| {
         let integer = integer(arena);
         let returner = arena.comp_type_returner(integer);
