@@ -133,6 +133,7 @@ digraph crates {
     "workflow-spec-cost";
     "workflow-sweep";
     "workflow-test-timing";
+    "workflow-twin-census";
   }
   "boot-io" -> "boot-core";
   "core-checker" -> "core-checker-base";

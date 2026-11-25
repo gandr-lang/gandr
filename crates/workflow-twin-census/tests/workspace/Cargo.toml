@@ -1,0 +1,6 @@
+# A workspace of two crates, for the test of a stale census: the emitter
+# depends on `near`, and the committed census marks `near` as no crate under
+# it.
+[workspace]
+members = ["crates/near", "crates/runtime-emitter"]
+resolver = "3"
