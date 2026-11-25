@@ -1,6 +1,11 @@
 //! A file that has the descriptor 0 reads as each other file. The test closes
 //! the standard input of the whole process, so this target holds this one test
 //! alone.
+//!
+//! The test calls the system calls of Linux on x86-64. On each other target
+//! this test target is empty.
+
+#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 
 #[cfg(test)]
 mod harness;

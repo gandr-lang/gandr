@@ -37,7 +37,7 @@ The IO core of the bootstrap, with no libc: open a file, read it and close it, e
 
 - **A path with a zero byte after it.** No byte of the path is zero. The byte after its last byte is zero.
 - **A live place.** The bytes of the place of a read are writable. No other access to them happens during the call.
-- **A host of Linux on x86-64.** On each other target the build stops with an error that names the target.
+- **A host of Linux on x86-64.** On each other target the crate compiles, and each use of one of its five functions is one error of the compiler that names the target.
 
 ## Examples
 
@@ -49,7 +49,7 @@ cargo test -p gandr-boot-io
 
 ## Where the detail lives
 
-`src/lib.rs` states the face and the refusals; `src/sys.rs` the three file calls; `src/sys/x86_64.rs` the system call instruction.
+`src/lib.rs` states the face and the refusals; `src/sys.rs` the three file calls; `src/sys/x86_64.rs` the system call instruction; `src/target.rs` the face on a target with no system call of the crate.
 
 ## License
 

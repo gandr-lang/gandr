@@ -26,8 +26,9 @@
 //! # Boundaries
 //!
 //! The crate has the system calls of Linux on x86-64 alone. On each other
-//! target the build stops with an error that names the target. A write, a
-//! seek and the walk of a directory are not in the crate.
+//! target the crate compiles, and each use of [`start`], [`open`], [`read`],
+//! [`close`] or [`stop`] is one error of the compiler that names the target.
+//! A write, a seek and the walk of a directory are not in the crate.
 //!
 //! # References
 //!
@@ -40,33 +41,24 @@
 
 #![no_std]
 
-#[cfg(all(target_os = "linux", target_arch = "riscv64"))]
-compile_error!(
-    "gandr-boot-io has no system call for the target riscv64gc-unknown-linux-gnu: it has the \
-     calls of x86_64-unknown-linux-gnu alone"
-);
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-compile_error!(
-    "gandr-boot-io has no system call for the target aarch64-apple-darwin: it has the calls of \
-     x86_64-unknown-linux-gnu alone"
-);
-
-#[cfg(not(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "linux", target_arch = "riscv64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-)))]
-compile_error!(
-    "gandr-boot-io has no system call for this target: it has the calls of \
-     x86_64-unknown-linux-gnu alone"
-);
-
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod sys;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+mod target;
 
 use core::fmt;
 use core::num::NonZeroU16;
+
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+pub use target::close;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+pub use target::open;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+pub use target::read;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+pub use target::start;
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+pub use target::stop;
 
 /// The handle of the IO core, from [`start`] to [`stop`].
 ///
@@ -223,6 +215,7 @@ impl core::error::Error for Refused
 /// # Errors
 /// None. A form that reads through a ring refuses under the name `start` when
 /// the kernel gives it no ring.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[inline]
 pub const fn start() -> Result<Io, Refused>
 {
@@ -347,6 +340,7 @@ pub fn close(
 /// # Errors
 /// None. A form that reads through a ring refuses under the name `stop` when
 /// the kernel refuses to end its ring.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[expect(
     clippy::needless_pass_by_value,
     reason = "taking the handle by value ends it, so no operation can name it after the stop"
