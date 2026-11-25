@@ -1389,7 +1389,7 @@ fn handled(
 ) -> String
 {
     format!(
-        "handle {binder} : std.io.Console.Eff {{ {body} }} with {{ | pure(v) => pure v | oper print(line, k) => pure 1 }}"
+        "handle {binder} : std.io.Console.Eff {{ {body} }} with {{ | pure(v) => pure v | oper print(line, k) => pure 1 | oper write_bytes(bytes, k) => pure 1 }}"
     )
 }
 

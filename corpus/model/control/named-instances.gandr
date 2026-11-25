@@ -175,8 +175,8 @@ def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.E
 /// `bothWritten` writes region binders and capabilities explicitly.
 /// Each row label names one binder.
 def bothWritten[r : Region, r1 : Region](
-  first : Cap { print } at r,
-  second : Cap { print } at r1
+  first : Cap { print, write_bytes } at r,
+  second : Cap { print, write_bytes } at r1
 ) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit =
   say[.out = first]
   say[.out = second]
