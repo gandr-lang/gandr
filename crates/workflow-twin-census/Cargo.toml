@@ -1,0 +1,35 @@
+[package]
+name = "gandr-workflow-twin-census"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The census of the crates that the emitter depends on, read from `cargo metadata` and written to `ledger/twin-census.md` by the `twin-census` binary"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "ledger", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "twin-census"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# serde and serde_json read the metadata of Cargo. The binary reads its flags
+# through clap. The pinned anodized facade supplies the executable
+# specifications.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

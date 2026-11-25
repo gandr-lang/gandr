@@ -167,7 +167,8 @@ crates/
 ├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger and the merge base
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
 ├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, all of it nightly
-└── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
+├── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
+└── workflow-twin-census/          the `twin-census` binary: the census of the crates that the emitter depends on, from `cargo metadata`
 ```
 
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins. `runtime-rust-reader` is not a member either: it links rustc's own libraries, so it is a workspace of its own, and `check:rust-record` builds it.
