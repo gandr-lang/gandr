@@ -1,6 +1,6 @@
 # gandr-runtime-mlir
 
-The Rust side of the MLIR shim. It compiles MLIR text for a target triple into the bytes of an object, and it reads the facts of a machine body.
+The Rust side of the MLIR shim. It compiles MLIR text for a target triple into the bytes of an object, and it reads the facts of a machine body. It prints a term of a signature as MLIR text, and it reads the facts of a body back into a term.
 
 <!-- toc -->
 
@@ -16,7 +16,7 @@ The Rust side of the MLIR shim. It compiles MLIR text for a target triple into t
 
 ## Synopsis
 
-**What.** `compile` takes MLIR text in the `llvm` and `gandr` dialects and a target triple. It gives an `Object` with the bytes of a relocatable object file, or a `CompileError` that names the step that refused the text. `read` gives the facts of a machine body. The C++ shim in `cxx/` does the work of both, through one C entry for each.
+**What.** `compile` takes MLIR text in the `llvm` and `gandr` dialects and a target triple. It gives an `Object` with the bytes of a relocatable object file, or a `CompileError` that names the step that refused the text. `read` gives the facts of a machine body. The C++ shim in `cxx/` does the work of both, through one C entry for each. `print_term` writes a term of a signature, such as the block `Llvm` of `std.llvm`, as MLIR text in the generic form. `read_term` reads the facts of a body into a term of that signature, and its print is the body.
 
 **Why.** gandr writes native code through MLIR. One small C entry keeps the C++ of the pin out of the Rust build. The verifier runs before the translation. Thus a wrong text gives a diagnostic and not a crash of the code generator. The `gandr` dialect writes each transition of the machine one time, as one operation with one lowering.
 
@@ -34,6 +34,9 @@ The Rust side of the MLIR shim. It compiles MLIR text for a target triple into t
 - The targets of the pin: x86-64, aarch64 and riscv64.
 - `read`, under `full`: the facts of a machine body and its `Hole`s, with one `Operation` for each operation of the body. An `Operation` has its name, its `Operand`s, its attributes and its result types.
 - `ReadError`: each `Diagnostic` of a refused body, at its line and column in the body.
+- `print_term` and `TermPrinter`: a `BindingTerm` and the table of its signature in, a `Printed` out, with one operation on each line and the type of each result. A `Place` puts the body inside a function. A `PrintError` names the port that has no print.
+- `read_term`: the `Operation`s of a body, the table of a signature and a `Naming` in, a `BindingTerm` out. A `TermReadError` names the operation or the port that does not read.
+- `Naming`: the MLIR names of a block where they are not the names of the block. `Naming::LLVM` is the table of `std.llvm`, and `Naming::NONE` keeps each name.
 - The `gandr` dialect in `cxx/src/gandr.td`. Each operation lowers to the `llvm` dialect:
 
 | Operation | Transition | Lowering |
@@ -72,7 +75,7 @@ assert!(object.as_ref().starts_with(b"\x7fELF"));
 # fn main() {}
 ```
 
-The tests of the crate read the MLIR files of the C++ tests in `cxx/tests/`. They run under the feature:
+The tests of the crate read the MLIR files of the C++ tests in `cxx/tests/`, and the tests of the read of a term and of the agreement read the block of `library/std/src/llvm.gandr` through the lowering. They run under the feature:
 
 ```sh
 GANDR_MLIR_TOOLCHAIN=<root> cargo nextest run -p gandr-runtime-mlir --features full
@@ -89,6 +92,9 @@ GANDR_MLIR_TOOLCHAIN=<root> cargo nextest run -p gandr-runtime-mlir --features f
 | The operations of the `gandr` dialect | [`cxx/src/gandr.td`](cxx/src/gandr.td) |
 | The verifiers and the lowering of the dialect | [`cxx/src/dialect.cpp`](cxx/src/dialect.cpp) |
 | The read entry, and the form of its facts | [`src/read.rs`](src/read.rs) |
+| The print of a term, port by port | [`src/print.rs`](src/print.rs) |
+| The read of the facts into a term | [`src/term.rs`](src/term.rs) |
+| The MLIR names of a block | [`src/naming.rs`](src/naming.rs) |
 | The body inside its function, and the facts | [`cxx/src/read.cpp`](cxx/src/read.cpp) |
 
 ## License

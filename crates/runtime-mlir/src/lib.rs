@@ -1,5 +1,5 @@
 //! The Rust side of the MLIR shim of `cxx/`: two entries over one C
-//! interface.
+//! interface, and the print and the read of a term of a signature.
 //!
 //! # Items
 //!
@@ -10,13 +10,19 @@
 //!   verifier runs. The facts of each operation come out, or the diagnostics
 //!   with their line and column in the body. The module `read` has the form of
 //!   a body.
+//! - [`print_term`]: a term of a signature goes in, with its table. MLIR text
+//!   in the generic form comes out, one operation on each line.
+//! - [`read_term`]: the facts of a body go in, with the table of a signature
+//!   and a [`Naming`]. A term of that signature comes out, and its print is the
+//!   body.
 //!
 //! # Boundaries
 //!
 //! The two entries, `Object`, `Text` and `Triple` exist under the feature
 //! `full` alone. The feature builds the shim of `cxx/` and links it.
 //! Without the feature the crate holds the types of the answers,
-//! [`CompileError`] and the facts of a body, and the build compiles no C++.
+//! [`CompileError`] and the facts of a body, the print and the read of a
+//! term, and the build compiles no C++.
 //!
 //! The `gandr` dialect has one operation for each transition of the machine
 //! that the lowering uses. The shim lowers each one to the `llvm` dialect, by
@@ -36,14 +42,29 @@
 //!   the boundary of MLIR text, one C entry, and the verifier first; and §
 //!   mojo-library-bottom, the check of a machine body by the shim.
 
+extern crate alloc;
+
 #[cfg(feature = "full")]
 mod ffi;
+mod naming;
+mod print;
 mod read;
+mod term;
 
 use core::fmt;
 
 #[cfg(feature = "full")]
 use anodized::spec;
+pub use naming::Naming;
+pub use print::Parameter;
+pub use print::Place;
+pub use print::PrintError;
+pub use print::Printed;
+pub use print::Spelling;
+pub use print::TermPrinter;
+pub use print::Terminator;
+pub use print::ValueName;
+pub use print::print_term;
 pub use read::Diagnostic;
 pub use read::Hole;
 pub use read::Operand;
@@ -51,6 +72,8 @@ pub use read::Operation;
 pub use read::ReadError;
 #[cfg(feature = "full")]
 pub use read::read;
+pub use term::TermReadError;
+pub use term::read_term;
 
 /// An object file from the code generator, in the format of the target.
 ///
