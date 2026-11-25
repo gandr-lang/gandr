@@ -602,9 +602,16 @@ struct Occurrence(usize);
 /// How a rule's critical pairs are decided.
 ///
 /// # Specification
-/// trivial.
+/// - provides: the three answers of [`TheoryRule::reading`].
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryRule::reading`].
+/// - witness: `theory_rules::tests::a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291`
+/// - witness: `theory_rules::tests::a_rule_reads_second_order_when_it_instantiates_is_conditioned_or_states_a_row`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Reading
+pub enum TheoryRuleReading
 {
     /// The rule rewrites first-order terms; its pairs with another such rule
     /// are decided first-order.
@@ -863,23 +870,28 @@ impl TheoryRule
     /// at all when it is a symmetry of one symbol.
     ///
     /// # Specification
-    /// - ensures: [`Reading::SecondOrder`] when the rule instantiates a
-    ///   variable, is conditioned or states a row. Otherwise
-    ///   [`Reading::Symmetry`] exactly when the left side is one symbol over
-    ///   the variables `0` and `1` and the right side is that symbol over `1`
-    ///   and `0`. Otherwise [`Reading::FirstOrder`].
+    /// - ensures: [`TheoryRuleReading::SecondOrder`] when the rule instantiates
+    ///   a variable, is conditioned or states a row. Otherwise
+    ///   [`TheoryRuleReading::Symmetry`] exactly when the left side is one
+    ///   symbol over the variables `0` and `1` and the right side is that
+    ///   symbol over `1` and `0`. Otherwise [`TheoryRuleReading::FirstOrder`].
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a rule that swaps the two arguments of one operation
-    ///   is a symmetry; the same rule over two symbols is first-order.
+    ///   is a symmetry; the same rule over two symbols is first-order; a rule
+    ///   that instantiates a variable, is conditioned or states a row is
+    ///   second-order.
     /// - witness: `theory_rules::tests::a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291`
-    #[spec(ensures: |ret| (ret == Reading::SecondOrder)
+    /// - witness: `theory_rules::tests::a_rule_reads_second_order_when_it_instantiates_is_conditioned_or_states_a_row`
+    #[spec(ensures: |ret| (ret == TheoryRuleReading::SecondOrder)
         == (self.instantiates || self.conditioned || self.row != RuleRow::default()))]
-    fn reading(&self) -> Reading
+    #[inline]
+    #[must_use]
+    pub fn reading(&self) -> TheoryRuleReading
     {
         if self.instantiates || self.conditioned || self.row != RuleRow::default() {
-            return Reading::SecondOrder;
+            return TheoryRuleReading::SecondOrder;
         }
         let (first, second) = (
             TheoryNode::Variable(RuleVariable::from(0_u32)),
@@ -895,9 +907,9 @@ impl TheoryRule
                 && right_first == second
                 && right_second == first =>
             {
-                Reading::Symmetry
+                TheoryRuleReading::Symmetry
             },
-            _ => Reading::FirstOrder,
+            _ => TheoryRuleReading::FirstOrder,
         }
     }
 
@@ -1313,7 +1325,7 @@ impl TheoryRules
         }
         let mut order = OrderBuffers::default();
         for (index, rule) in self.rules.iter().enumerate() {
-            if rule.reading() != Reading::Symmetry
+            if rule.reading() != TheoryRuleReading::Symmetry
                 && self.path_greater(rule, &mut order) == Verdict::Fails
             {
                 return Err(refuse(index, TheoryRuleFault::Unoriented));
@@ -1350,8 +1362,9 @@ impl TheoryRules
                         inner: RuleIndex::from(inner),
                     };
                     let other = decided.get(inner);
-                    if rule.reading() != Reading::FirstOrder
-                        || other.is_some_and(|other| other.reading() != Reading::FirstOrder)
+                    if rule.reading() != TheoryRuleReading::FirstOrder
+                        || other
+                            .is_some_and(|other| other.reading() != TheoryRuleReading::FirstOrder)
                     {
                         continue;
                     }
@@ -1426,7 +1439,7 @@ impl TheoryRules
         if !self
             .rules
             .iter()
-            .any(|rule| rule.reading() == Reading::SecondOrder)
+            .any(|rule| rule.reading() == TheoryRuleReading::SecondOrder)
         {
             return Ok(());
         }
@@ -1438,10 +1451,10 @@ impl TheoryRules
                 }
                 for (inner, other) in self.rules.iter().enumerate() {
                     let apart = (position == 0 && inner == outer)
-                        || rule.reading() == Reading::Symmetry
-                        || other.reading() == Reading::Symmetry
-                        || (rule.reading() == Reading::FirstOrder
-                            && other.reading() == Reading::FirstOrder);
+                        || rule.reading() == TheoryRuleReading::Symmetry
+                        || other.reading() == TheoryRuleReading::Symmetry
+                        || (rule.reading() == TheoryRuleReading::FirstOrder
+                            && other.reading() == TheoryRuleReading::FirstOrder);
                     if apart {
                         continue;
                     }
@@ -2019,8 +2032,8 @@ impl TheoryRules
         else {
             return Ok(Verdict::Fails);
         };
-        if outer.reading() != Reading::FirstOrder
-            || inner.reading() != Reading::FirstOrder
+        if outer.reading() != TheoryRuleReading::FirstOrder
+            || inner.reading() != TheoryRuleReading::FirstOrder
             || self.overlap(rules, peak, work, fuel)? == Verdict::Fails
         {
             return Ok(Verdict::Fails);
@@ -2164,7 +2177,7 @@ where
             }
             for rule in rules
                 .iter()
-                .filter(|rule| rule.reading() == Reading::FirstOrder)
+                .filter(|rule| rule.reading() == TheoryRuleReading::FirstOrder)
             {
                 let Some(end) = matched(term, Position(start), rule.left(), bindings, fuel)?
                 else {

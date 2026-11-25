@@ -252,7 +252,7 @@ impl Higher
                 .rules
                 .iter()
                 .map(|rule| {
-                    if rule.reading() == super::Reading::Symmetry {
+                    if rule.reading() == super::TheoryRuleReading::Symmetry {
                         None
                     }
                     else {

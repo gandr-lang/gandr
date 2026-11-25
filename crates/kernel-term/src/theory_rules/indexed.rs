@@ -91,10 +91,10 @@ use crate::theory_rules::Ordinal;
 use crate::theory_rules::PRESENTATION_FUEL;
 use crate::theory_rules::Position;
 use crate::theory_rules::Reader;
-use crate::theory_rules::Reading;
 use crate::theory_rules::Span;
 use crate::theory_rules::TheoryNode;
 use crate::theory_rules::TheoryRule;
+use crate::theory_rules::TheoryRuleReading;
 use crate::theory_rules::TheorySymbol;
 use crate::theory_rules::Verdict;
 use crate::theory_rules::first_seen;
@@ -1020,7 +1020,7 @@ impl<'arena> Reader<'arena>
         if self
             .rules
             .iter()
-            .any(|rule| rule.reading() != Reading::FirstOrder)
+            .any(|rule| rule.reading() != TheoryRuleReading::FirstOrder)
         {
             return None;
         }

@@ -534,6 +534,7 @@ pub use crate::theory_rules::SymbolKind;
 pub use crate::theory_rules::TheoryNode;
 pub use crate::theory_rules::TheoryRule;
 pub use crate::theory_rules::TheoryRuleFault;
+pub use crate::theory_rules::TheoryRuleReading;
 pub use crate::theory_rules::TheoryRuleRefusal;
 pub use crate::theory_rules::TheoryRules;
 pub use crate::theory_rules::TheorySymbol;

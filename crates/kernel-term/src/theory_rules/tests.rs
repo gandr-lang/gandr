@@ -293,6 +293,36 @@ fn a_symmetry_is_oriented_by_no_order_and_stands_in_no_pair_8291()
 }
 
 #[test]
+fn a_rule_reads_second_order_when_it_instantiates_is_conditioned_or_states_a_row()
+{
+    let plain = rule(&[s!(0), s!(1), v!(0)], &[v!(0)]);
+    assert_eq!(plain.reading(), super::TheoryRuleReading::FirstOrder);
+    assert_eq!(
+        rule(&[s!(0), v!(0), v!(1)], &[s!(0), v!(1), v!(0)]).reading(),
+        super::TheoryRuleReading::Symmetry
+    );
+    assert_eq!(
+        rule(&[s!(0), v!(0), v!(1)], &[i!(0, 1), v!(1)]).reading(),
+        super::TheoryRuleReading::SecondOrder,
+        "an instantiation"
+    );
+    assert_eq!(
+        plain.clone().conditioned().reading(),
+        super::TheoryRuleReading::SecondOrder,
+        "a condition"
+    );
+    let row = super::row::RuleRow::new(
+        [<super::row::RowLabel as From<u32>>::from(0_u32)],
+        super::row::RowExtent::Exactly,
+    );
+    assert_eq!(
+        plain.under(row).reading(),
+        super::TheoryRuleReading::SecondOrder,
+        "a row"
+    );
+}
+
+#[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {
     let symbols = SmallVec::<_, 0, Global>::from_iter([
