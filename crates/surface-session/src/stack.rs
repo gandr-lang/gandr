@@ -30,6 +30,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::Sort;
 use gandr_surface_syntax::ByteLength;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -476,14 +477,19 @@ impl Walk<'_, '_>
     ) -> Option<Spine>
     {
         let tree = self.tree;
-        let application = self.grammar.application()?;
+        let Some(NodeLabel::Meld(application)) = tree.node(at).map(Node::label)
+        else {
+            return None;
+        };
+        if Some(application) != self.grammar.application()
+            && Some(application) != self.grammar.application_in(Sort::Type)
+        {
+            return None;
+        }
         let applied = |position: NodeIndex| {
             tree.node(position)
                 .is_some_and(|node| node.label() == NodeLabel::Meld(application))
         };
-        if !applied(at) {
-            return None;
-        }
         let close = tree.node(at)?.span().end();
         // The arguments are met last to first, then reversed.
         self.parts.clear();
