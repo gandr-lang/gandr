@@ -4567,32 +4567,34 @@ impl<'pbg> Molder<'pbg>
     ///
     /// The call form's head reads only before a glued opener: `f(x)` is a
     /// call, and `f (x)` applies `f` to a group. So a head before a spaced
-    /// `(` is refused. In `Vec a plus(m, k)` a name follows `a`, and the `(`
-    /// of `plus` stands in the window of `a`. So `a` is refused too, reads as
-    /// an atom, and the melder pushes the application tile after it. A line
+    /// `(` is refused, and a head before a spaced `[` too: `el [<] a` applies
+    /// `el` to the descent. In `Vec a plus(m, k)` a name follows `a`, and the
+    /// `(` of `plus` stands in the window of `a`. So `a` is refused too, reads
+    /// as an atom, and the melder pushes the application tile after it. A line
     /// break between `a` and the name keeps that reading, since the printer
     /// breaks a long application between its operands. A head before any
-    /// other token keeps its admission: a glued `(` or `[`, a spaced `[`, a
-    /// symbol, or a name with no `(` after it on the name's line in the
-    /// window. There the molder repairs a missing opener, and the repair
-    /// keeps its one obligation at the gap.
+    /// other token keeps its admission: a glued `(` or `[`, a symbol, or a
+    /// name with no `(` after it on the name's line in the window. There the
+    /// molder repairs a missing opener, and the repair keeps its one
+    /// obligation at the gap.
     ///
     /// # Specification
     /// - requires: `tokens` labels `source`, and `index` names the current
     ///   head.
     /// - ensures: refuses an admitted `type_application` head exactly when the
-    ///   next significant token is a spaced `(`, or a name with a `(` among the
-    ///   next [`LOOKAHEAD`] significant tokens before a line break after the
-    ///   name. It keeps every other admission.
+    ///   next significant token is a spaced `(` or `[`, or a name with a `(`
+    ///   among the next [`LOOKAHEAD`] significant tokens before a line break
+    ///   after the name. It keeps every other admission.
     /// - provides: the admission of a type-call head.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a spaced operand, a glued call, a glued descent
-    ///   marker and a dropped opener distinguish a head from an operand and
-    ///   from a repair.
+    ///   marker, a spaced descent and a dropped opener distinguish a head
+    ///   from an operand and from a repair.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    /// - witness: `tests::grammar::a_descent_is_an_operand_of_its_own`
     #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
     fn type_call_head_admits(
         &self,
@@ -4615,7 +4617,7 @@ impl<'pbg> Molder<'pbg>
             return admitted;
         };
         let opener = |token: Token| <&str>::from(token.text(source)) == "(";
-        let refused = if opener(next) {
+        let refused = if opener(next) || <&str>::from(next.text(source)) == "[" {
             spacing(tokens, index) == Spacing::Spaced
         }
         else if matches!(next.lexeme, Lexeme::LowerWord | Lexeme::UpperWord) {
