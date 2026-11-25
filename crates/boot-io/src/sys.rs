@@ -10,8 +10,14 @@ use gandr_boot_core::Range;
 use crate::Descriptor;
 use crate::ErrorNumber;
 
+#[cfg(target_arch = "riscv64")]
+mod riscv64;
+#[cfg(target_arch = "x86_64")]
 mod x86_64;
 
+#[cfg(target_arch = "riscv64")]
+use riscv64 as arch;
+#[cfg(target_arch = "x86_64")]
 use x86_64 as arch;
 
 /// The number of a system call.

@@ -25,15 +25,15 @@ name = "descriptor"
 path = "tests/descriptor.rs"
 
 # The one dependency is `boot-core`, for the range of a path and of a write,
-# and the place of a read. On Linux x86-64 each operation is a system call by
-# the crate's own function in assembly.
+# and the place of a read. On Linux x86-64 and Linux riscv64 each operation is
+# a system call by the crate's own function in assembly.
 [dependencies]
 gandr-boot-core.workspace = true
 
 # The witnesses of an interrupted call set the handler of a signal and send
 # the signal to the thread of a read or of a write. The crate makes no use of
 # `nix`.
-[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dev-dependencies]
+[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "riscv64")))'.dev-dependencies]
 nix.workspace = true
 
 [lints]

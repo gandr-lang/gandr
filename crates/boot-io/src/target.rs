@@ -26,29 +26,18 @@ use crate::Refused;
 /// # Specification
 /// trivial.
 #[cfg_attr(
-    all(target_os = "linux", target_arch = "riscv64"),
-    diagnostic::on_unimplemented(
-        message = "gandr-boot-io has no system call for the target riscv64gc-unknown-linux-gnu: it \
-                   has the calls of x86_64-unknown-linux-gnu alone",
-        label = "this function needs a system call of the target"
-    )
-)]
-#[cfg_attr(
     all(target_os = "macos", target_arch = "aarch64"),
     diagnostic::on_unimplemented(
         message = "gandr-boot-io has no system call for the target aarch64-apple-darwin: it has \
-                   the calls of x86_64-unknown-linux-gnu alone",
+                   the calls of x86_64-unknown-linux-gnu and riscv64gc-unknown-linux-gnu alone",
         label = "this function needs a system call of the target"
     )
 )]
 #[cfg_attr(
-    not(any(
-        all(target_os = "linux", target_arch = "riscv64"),
-        all(target_os = "macos", target_arch = "aarch64"),
-    )),
+    not(all(target_os = "macos", target_arch = "aarch64")),
     diagnostic::on_unimplemented(
         message = "gandr-boot-io has no system call for this target: it has the calls of \
-                   x86_64-unknown-linux-gnu alone",
+                   x86_64-unknown-linux-gnu and riscv64gc-unknown-linux-gnu alone",
         label = "this function needs a system call of the target"
     )
 )]

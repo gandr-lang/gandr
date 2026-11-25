@@ -18,7 +18,7 @@ The IO core of the bootstrap, with no libc: open a file, read it, write to a des
 
 **Why.** The tool chain reads each source through Rust's `std`, which links libc. The bootstrap needs a read with no libc before gandr states it itself. A crate of the layer `boot` is a stage of the bootstrap, and a twin in gandr replaces it.
 
-**How.** On Linux x86-64, `open`, `read`, `write` and `close` each make one system call by the crate's own function in assembly. No function repeats a call, so an interrupted call is a refusal with `EINTR`, and a write that the kernel takes in part gives its short count. The crate has no ring, so `start` and `stop` make no system call. A form that reads through a ring keeps the address of the page of its ring in its `Io`. A path is the bytes of a `Range` with a zero byte after its last byte. No function allocates or panics, and the crate is `no_std`.
+**How.** On Linux x86-64 and on Linux riscv64, `open`, `read`, `write` and `close` each make one system call by the crate's own function in assembly. No function repeats a call, so an interrupted call is a refusal with `EINTR`, and a write that the kernel takes in part gives its short count. The crate has no ring, so `start` and `stop` make no system call. A form that reads through a ring keeps the address of the page of its ring in its `Io`. A path is the bytes of a `Range` with a zero byte after its last byte. No function allocates or panics, and the crate is `no_std`.
 
 ## References
 
@@ -39,7 +39,7 @@ The IO core of the bootstrap, with no libc: open a file, read it, write to a des
 - **A path with a zero byte after it.** No byte of the path is zero. The byte after its last byte is zero.
 - **A live place.** The bytes of the place of a read are writable. No other access to them happens during the call.
 - **A live range.** The bytes of the range of a write are readable. No other access writes them during the call.
-- **A host of Linux on x86-64.** On each other target the crate compiles, and each use of one of its six functions is one error of the compiler that names the target.
+- **A host of Linux on x86-64 or on riscv64.** On each other target the crate compiles, and each use of one of its six functions is one error of the compiler that names the target.
 
 ## Examples
 
@@ -51,7 +51,7 @@ cargo test -p gandr-boot-io
 
 ## Where the detail lives
 
-`src/lib.rs` states the face and the refusals; `src/sys.rs` the four file calls; `src/sys/x86_64.rs` the system call instruction; `src/target.rs` the face on a target with no system call of the crate.
+`src/lib.rs` states the face and the refusals; `src/sys.rs` the four file calls; `src/sys/x86_64.rs` and `src/sys/riscv64.rs` the system call instruction of each target; `src/target.rs` the face on a target with no system call of the crate.
 
 ## License
 

@@ -28,10 +28,11 @@
 //!
 //! # Boundaries
 //!
-//! The crate has the system calls of Linux on x86-64 alone. On each other
-//! target the crate compiles, and each use of [`start`], [`open`], [`read`],
-//! [`write()`], [`close`] or [`stop`] is one error of the compiler that names
-//! the target. A seek and the walk of a directory are not in the crate.
+//! The crate has the system calls of Linux on x86-64 and on riscv64 alone.
+//! On each other target the crate compiles, and each use of [`start`],
+//! [`open`], [`read`], [`write()`], [`close`] or [`stop`] is one error of the
+//! compiler that names the target. A seek and the walk of a directory are not
+//! in the crate.
 //!
 //! # References
 //!
@@ -44,25 +45,49 @@
 
 #![no_std]
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 mod sys;
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+)))]
 mod target;
 
 use core::fmt;
 use core::num::NonZeroU16;
 
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+)))]
 pub use target::close;
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+)))]
 pub use target::open;
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+)))]
 pub use target::read;
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+)))]
 pub use target::start;
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+)))]
 pub use target::stop;
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+)))]
 pub use target::write;
 
 /// The handle of the IO core, from [`start`] to [`stop`].
@@ -155,7 +180,10 @@ impl Refused
     ///
     /// # Specification
     /// trivial.
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "riscv64")
+    ))]
     const fn new(
         operation: Operation,
         number: ErrorNumber,
@@ -223,7 +251,10 @@ impl core::error::Error for Refused
 /// # Errors
 /// None. A form that reads through a ring refuses under the name `start` when
 /// the kernel gives it no ring.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 #[inline]
 pub const fn start() -> Result<Io, Refused>
 {
@@ -254,7 +285,10 @@ pub const fn start() -> Result<Io, Refused>
 ///
 /// # Errors
 /// The kernel's error number under the name `open`.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 #[inline]
 pub unsafe fn open(
     io: &Io,
@@ -302,7 +336,10 @@ pub unsafe fn open(
 ///
 /// # Errors
 /// The kernel's error number under the name `read`.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 #[inline]
 pub unsafe fn read(
     io: &Io,
@@ -352,7 +389,10 @@ pub unsafe fn read(
 ///
 /// # Errors
 /// The kernel's error number under the name `write`.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 #[inline]
 pub unsafe fn write(
     io: &Io,
@@ -381,7 +421,10 @@ pub unsafe fn write(
 ///
 /// # Errors
 /// The kernel's error number under the name `close`.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 #[inline]
 pub fn close(
     io: &Io,
@@ -407,7 +450,10 @@ pub fn close(
 /// # Errors
 /// None. A form that reads through a ring refuses under the name `stop` when
 /// the kernel refuses to end its ring.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 #[expect(
     clippy::needless_pass_by_value,
     reason = "taking the handle by value ends it, so no operation can name it after the stop"
