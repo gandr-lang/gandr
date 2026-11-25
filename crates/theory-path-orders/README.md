@@ -34,6 +34,7 @@ Path orders over the terms of second-order algebraic theories, each returning ev
 - Ambrus Kaposi and Szumi Xie. "Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics." In _9th International Conference on Formal Structures for Computation and Deduction (FSCD 2024)_, Leibniz International Proceedings in Informatics 299, pages 10:1–10:24, 2024. `doi:10.4230/LIPIcs.FSCD.2024.10` — the second-order reading of a term the five formers follow.
 - Vincent van Oostrom. "Confluence by Decreasing Diagrams." _Theoretical Computer Science_ 126(2), pages 259–280, 1994. `doi:10.1016/0304-3975(92)00023-K` — the decreasing shape of a labelled peak, and confluence with no termination.
 - Mariane Youssef. "Coherence of Algebraic Rewriting Systems by Decreasingness." Thesis, Université Claude Bernard Lyon 1, 2025. `doi:10.70675/ac84f832z1632z49d3za008zba5df4cfed2e` — the shape as five conditions (3.4.5), and the labelled diagrams of the tests of `decreasing`.
+- Stéphane Gaussent, Zuan Liu and Philippe Malbos. "Diagrammatic Bases from Stratified Normalization." Preprint, 2026. `arXiv:2609.36020` — the termination function, one weighted function for each stratum, and termination modulo the equations (3.1.2 to 3.1.5).
 
 ## Provided features
 
@@ -43,6 +44,7 @@ Path orders over the terms of second-order algebraic theories, each returning ev
 - `Evidence`, `Derivation`, `Step`, `Clause`, `Cover`, `Relation`, `Argument`, `CoverIndex`: the evidence every ordering returns, one step per subterm pair it uses, each naming its clause and the covers its premises rely on.
 - `lpo::orient`, `lpo::check`: the lexicographic path order with status and its checker, over `lpo::Buffers` a caller reuses across comparisons; `lpo::Orientation`, `lpo::Replay` and `lpo::Refusal` their results.
 - `decreasing::decide`, `decreasing::check`: the decreasing shape of a labelled peak and its two closing paths, over a `LabelOrder` that the caller gives; `Diagram`, `Decreasing`, `Shape`, `Parts`, `Middle`, `Steps`, and `Break`, which names the side and the first step that break the shape.
+- `strata::check`: the evidence of a termination function, the `Layer` of each rule, replayed against one measure for each stratum that the caller gives as `Measures`; `Weighing`, `Stratum`, `RuleIndex`, and `Breach`, which names the rule, the measure and the `Condition` that the evidence breaks.
 
 ## Expected features
 
@@ -94,6 +96,7 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-path-orders
 | `evidence` | the derivation, its steps, clauses and covers |
 | `lpo` | the order's clauses in the order they are tried, the table fill, the derivation's extraction and its replay |
 | `decreasing` | the three parts of a closing path, their decision, and their replay |
+| `strata` | the three conditions of a termination function and their replay |
 
 ## License
 

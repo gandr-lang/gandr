@@ -31,6 +31,9 @@
 //! - [`lpo`]: the lexicographic path order with status, read at an
 //!   instantiation as the computability path order reads a variable applied to
 //!   terms; [`lpo::orient`] and [`lpo::check`].
+//! - [`strata`]: the evidence of a termination function, one measure for each
+//!   stratum of the rules, over measures the caller gives; [`strata::check`]
+//!   replays its three conditions.
 //!
 //! # References
 //!
@@ -45,6 +48,7 @@ pub mod decreasing;
 pub mod evidence;
 pub mod lpo;
 pub mod precedence;
+pub mod strata;
 pub mod term;
 
 pub use crate::decreasing::Break;
@@ -69,6 +73,13 @@ pub use crate::precedence::Place;
 pub use crate::precedence::Precedence;
 pub use crate::precedence::Rank;
 pub use crate::precedence::Status;
+pub use crate::strata::Breach;
+pub use crate::strata::Condition;
+pub use crate::strata::Layer;
+pub use crate::strata::Measures;
+pub use crate::strata::RuleIndex;
+pub use crate::strata::Stratum;
+pub use crate::strata::Weighing;
 pub use crate::term::Former;
 pub use crate::term::Node;
 pub use crate::term::Term;
