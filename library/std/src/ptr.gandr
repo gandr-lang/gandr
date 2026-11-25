@@ -1,0 +1,232 @@
+//! `std.ptr`: a load and a store of a word at an address, as an effect.
+//!
+//! `Ptr.Eff` has the ten members of the block `Ptr`: a load and a store for
+//! each width of 8, 16, 32 and 64 bits, `offset` and `byte_word`. An address
+//! is a `u64`, and a word of each width is the fixed-width integer of that
+//! width. A program over `Ptr.Eff` names no model of memory: the scope that
+//! handles it chooses one.
+//!
+//! `Extent` is the model of memory in the source: a list of bytes from a
+//! base address, which the run carries as a `Memory`. A word of more than one
+//! byte is little-endian, as on each target of the tree. A load or a store
+//! that reaches a byte outside the extent ends the run with `Outside`, which
+//! names the member and the address, and the run does not resume.
+//!
+//! When the block form is in the tree, the block `Ptr` declares the same
+//! interface, and a program over `Ptr.Eff` runs on the memory of the process.
+//!
+//! - see: #7838 — the effect, and the model that refuses an access outside a
+//!   mapped extent
+//! - see: #7836 — a source handler shadows a block
+
+// The bytes of the memory of `Extent`.
+import std.list (List);
+
+/// A load and a store of a word at an address. Each member is a member of
+/// the block `Ptr`.
+pub theory Ptr.Eff where
+  /// An address.
+  sort A : Type+;
+  /// A word of 8 bits.
+  sort W8 : Type+;
+  /// A word of 16 bits.
+  sort W16 : Type+;
+  /// A word of 32 bits.
+  sort W32 : Type+;
+  /// A word of 64 bits.
+  sort W64 : Type+;
+  /// The carrier, the answer of the handler.
+  sort C : Type;
+  /// The byte at `address`.
+  oper load8 : (address : A, k : pi+ (word : W8). C) --> C;
+  /// The word of 16 bits at `address`.
+  oper load16 : (address : A, k : pi+ (word : W16). C) --> C;
+  /// The word of 32 bits at `address`.
+  oper load32 : (address : A, k : pi+ (word : W32). C) --> C;
+  /// The word of 64 bits at `address`.
+  oper load64 : (address : A, k : pi+ (word : W64). C) --> C;
+  /// Put the byte `word` at `address`.
+  oper store8 : (address : A, word : W8, k : C) --> C;
+  /// Put the word `word` of 16 bits at `address`.
+  oper store16 : (address : A, word : W16, k : C) --> C;
+  /// Put the word `word` of 32 bits at `address`.
+  oper store32 : (address : A, word : W32, k : C) --> C;
+  /// Put the word `word` of 64 bits at `address`.
+  oper store64 : (address : A, word : W64, k : C) --> C;
+  /// The address `distance` bytes after `address`.
+  oper offset : (address : A, distance : W32, k : pi+ (place : A). C) --> C;
+  /// The word of 64 bits whose low byte is `byte`, with zeros above it.
+  oper byte_word : (byte : W8, k : pi+ (word : W64). C) --> C;
+
+/// The memory of `Extent`: the address of its first byte, and its bytes.
+pub data Memory : Type where
+  /// The bytes `bytes`, the first of them at the address `base`.
+  | Memory : (base : u64, bytes : List u8) --> Memory
+
+/// How a run under `Extent` ends.
+pub data Ended : Type where
+  /// The run ends with the memory after it.
+  | Kept : (memory : Memory) --> Ended
+  /// The run ends with the word `word`, the answer of the program, and the
+  /// memory after it.
+  | Gave : (word : u64, memory : Memory) --> Ended
+  /// The member `member` reaches a byte outside the extent at `address`, so
+  /// the run ends there.
+  | Outside : (member : String, address : u64) --> Ended
+
+/// The count of the bytes of `bytes`.
+def rec size(bytes : List u8) -> Integer =
+  match bytes where
+    | #[] => 0
+    | #[b, ..rest] => { let n = size[<] rest; n + 1 }
+
+/// The position in `bytes`, from `base`, of the `width` bytes at `address`,
+/// or `-1` when one of them is outside the bytes.
+def place(base : u64, bytes : List u8, address : u64, width : Integer) -> Integer =
+  let position = u64.to_integer address - u64.to_integer base
+  let inside = position >= 0 && position + width <= size bytes
+  if inside { pure position } else { pure 0 - 1 }
+
+/// The little-endian value of the `width` bytes of `bytes` from the position
+/// `skip`.
+def rec fetch(bytes : List u8, skip : Integer, width : Integer) -> Integer =
+  match bytes where
+    | #[] => 0
+    | #[b, ..rest] => if skip > 0 {
+      fetch[<] rest (skip - 1) width
+    } else {
+      if width > 0 {
+        let above = fetch[<] rest 0 (width - 1)
+        pure u8.to_integer b + 256 * above
+      } else {
+        pure 0
+      }
+    }
+
+/// `bytes` with the `width` bytes from the position `skip` replaced by the
+/// little-endian bytes of `value`.
+def rec put(bytes : List u8, skip : Integer, width : Integer, value : Integer) -> List u8 =
+  match bytes where
+    | #[] => bytes
+    | #[b, ..rest] => if skip > 0 {
+      cons b (put[<] rest (skip - 1) width value)
+    } else {
+      if width > 0 {
+        let low = u8.from_integer (int.mod value 256)
+        cons low (put[<] rest 0 (width - 1) (int.div value 256))
+      } else {
+        bytes
+      }
+    }
+
+/// The value of the `width` bytes at `address` in `memory`, given to `k`, or
+/// `Outside` with the name `member` when one byte is outside the extent.
+def load(
+  member : String,
+  width : Integer,
+  address : u64,
+  k : Integer -> (Memory -> Ended),
+  memory : Memory
+) -> Ended =
+  match memory where
+    | Memory(base, bytes) => {
+      let position = place base bytes address width
+      if position >= 0 {
+        let after = k (fetch bytes position width)
+        after memory
+      } else {
+        pure Outside member address
+      }
+    }
+
+/// `memory` with the `width` bytes at `address` set to `value`, given to `k`,
+/// or `Outside` with the name `member` when one byte is outside the extent.
+def store(
+  member : String,
+  width : Integer,
+  address : u64,
+  value : Integer,
+  k : Memory -> Ended,
+  memory : Memory
+) -> Ended =
+  match memory where
+    | Memory(base, bytes) => {
+      let position = place base bytes address width
+      if position >= 0 {
+        k (Memory base (put bytes position width value))
+      } else {
+        pure Outside member address
+      }
+    }
+
+/// The model of memory in the source: `Ptr.Eff` over a list of bytes from a
+/// base address. A load or a store outside the extent ends the run with
+/// `Outside`, and no access changes a byte outside the one it names.
+pub module Extent : Model(Ptr.Eff) with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 where
+  /// The carrier: a run from the memory before to its end.
+  type C = Memory -> Ended;
+  /// The byte at `address`.
+  def load8(address : u64, k : u8 -> (Memory -> Ended)) -> Memory -> Ended =
+    fun (memory) { load "load8" 1 address (fun (v) { k (u8.from_integer v) }) memory }
+  /// The word of 16 bits at `address`.
+  def load16(address : u64, k : u16 -> (Memory -> Ended)) -> Memory -> Ended =
+    fun (memory) { load "load16" 2 address (fun (v) { k (u16.from_integer v) }) memory }
+  /// The word of 32 bits at `address`.
+  def load32(address : u64, k : u32 -> (Memory -> Ended)) -> Memory -> Ended =
+    fun (memory) { load "load32" 4 address (fun (v) { k (u32.from_integer v) }) memory }
+  /// The word of 64 bits at `address`.
+  def load64(address : u64, k : u64 -> (Memory -> Ended)) -> Memory -> Ended =
+    fun (memory) { load "load64" 8 address (fun (v) { k (u64.from_integer v) }) memory }
+  /// Put the byte `word` at `address`.
+  def store8(address : u64, word : u8, k : Memory -> Ended) -> Memory -> Ended =
+    fun (memory) { store "store8" 1 address (u8.to_integer word) k memory }
+  /// Put the word `word` of 16 bits at `address`.
+  def store16(address : u64, word : u16, k : Memory -> Ended) -> Memory -> Ended =
+    fun (memory) { store "store16" 2 address (u16.to_integer word) k memory }
+  /// Put the word `word` of 32 bits at `address`.
+  def store32(address : u64, word : u32, k : Memory -> Ended) -> Memory -> Ended =
+    fun (memory) { store "store32" 4 address (u32.to_integer word) k memory }
+  /// Put the word `word` of 64 bits at `address`.
+  def store64(address : u64, word : u64, k : Memory -> Ended) -> Memory -> Ended =
+    fun (memory) { store "store64" 8 address (u64.to_integer word) k memory }
+  /// The address `distance` bytes after `address`, modulo 2 to the 64.
+  def offset(address : u64, distance : u32, k : u64 -> (Memory -> Ended)) -> Memory -> Ended =
+    k (u64.wrapping_add address (u64.from_integer (u32.to_integer distance)))
+  /// The word of 64 bits whose low byte is `byte`.
+  def byte_word(byte : u8, k : u64 -> (Memory -> Ended)) -> Memory -> Ended =
+    k (u64.from_integer (u8.to_integer byte))
+
+/// A store of a word of 64 bits, a load of 16 bits from its third byte, and
+/// the store of that word after it. The word is little-endian, so the third
+/// and the fourth byte are `6` and `5`.
+@[runs("Kept (Memory 4096u64 (cons 8u8 (cons 7u8 (cons 6u8 (cons 5u8 (cons 4u8 (cons 3u8 (cons 2u8 (cons 1u8 (cons 6u8 (cons 5u8 nil)))))))))))")]
+def stored_and_loaded() -> Ended =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    p.store64 4096u64 72623859790382856u64
+    let third = p.offset 4096u64 2u32
+    let half = p.load16 third
+    let ninth = p.offset 4096u64 8u32
+    p.store16 ninth half
+    pure fun (memory) { pure Kept memory }
+  } with Extent
+  program (Memory 4096u64 #[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
+
+/// A load of 32 bits whose last byte is one past the extent is refused by
+/// name, and the run does not resume.
+@[runs("Outside \"load32\" 4103u64")]
+def one_past_the_end() -> Ended =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let word = p.load32 4103u64
+    p.store32 4096u64 word
+    pure fun (memory) { pure Kept memory }
+  } with Extent
+  program (Memory 4096u64 #[1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8, 9u8, 10u8])
+
+/// A store of a byte below the base is refused by name.
+@[runs("Outside \"store8\" 4095u64")]
+def below_the_base() -> Ended =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    p.store8 4095u64 1u8
+    pure fun (memory) { pure Kept memory }
+  } with Extent
+  program (Memory 4096u64 #[0u8])

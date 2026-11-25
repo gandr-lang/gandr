@@ -1,0 +1,49 @@
+//! The ranges of `boot-core` over `Ptr.Eff`, the answer of a search, and the
+//! lists of bytes that the `runs` items put in a memory of `Extent`.
+//!
+//! A range is the address of its first byte and its length. The length counts
+//! the bytes one step at a time, so a function over a range descends on its
+//! length. A loop that counts down a word holds its counter across a load or
+//! a store, which a handler may resume other than once.
+//!
+//! - see: `../../../crates/boot-core/src/lib.rs` — the Rust types
+
+// The bytes of a memory of `Extent`.
+import std.list (List);
+
+/// The length of a range: one step for each byte.
+pub data Length : Type where
+  /// No byte.
+  | Zero : Length
+  /// One byte, then the rest.
+  | Next : (rest : Length) --> Length
+
+/// A range of bytes: the address of its first byte, and its length.
+pub data Range : Type where
+  /// The `length` bytes from `start` on.
+  | Range : (start : u64, length : Length) --> Range
+
+/// The answer of a search, as `Found` of `boot-core`.
+pub data Found : Type where
+  /// The first match is at `position`.
+  | At : (position : u64) --> Found
+  /// No position matches.
+  | Absent : Found
+
+/// The length of `bytes`.
+pub def rec counted(bytes : List u8) -> Length =
+  match bytes where
+    | #[] => Zero
+    | #[b, ..rest] => Next (counted[<] rest)
+
+/// The count of the bytes of `bytes`.
+pub def rec size(bytes : List u8) -> u64 =
+  match bytes where
+    | #[] => 0u64
+    | #[b, ..rest] => u64.wrapping_add (size[<] rest) 1u64
+
+/// The bytes of `front`, then the bytes of `back`.
+pub def rec joined(back : List u8, front : List u8) -> List u8 =
+  match front where
+    | #[] => back
+    | #[b, ..rest] => cons b (joined[<] back rest)

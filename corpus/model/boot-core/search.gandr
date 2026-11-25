@@ -1,0 +1,200 @@
+//! The two searches of `boot-core` over `Ptr.Eff`: the first position of a
+//! byte in a range, and the first position of a range in a range.
+//!
+//! `find_byte` and `find_range` give the answers of the Rust functions of
+//! `crates/boot-core/src/search.rs`. They name no model of memory: the scope
+//! that handles `Ptr.Eff` chooses one. Each reads one byte at a time with
+//! `load8`, and it reads no byte outside its ranges. An empty range can have
+//! any address, and no search reads it.
+//!
+//! Each search descends on the length of its range, as `ranges.gandr` states.
+//!
+//! The `runs` items run the cases of `crates/boot-core/tests/search.rs` under
+//! `Extent`. Each range ends at the end of the extent, so a read past it ends
+//! the run with `Outside`, as a read past a page with no access faults.
+//!
+//! - see: `ranges.gandr` — `Range`, `Length` and `Found`
+//! - see: `../../../library/std/src/ptr.gandr` — `Ptr.Eff` and `Extent`
+//! - see: `../../../crates/boot-core/src/search.rs` — the Rust functions
+
+// The bytes of a memory of `Extent`.
+import std.list (List);
+// The interface of memory, and its model in the source.
+import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent);
+// The ranges, the answer of a search, and the lists of bytes of a run.
+import "./ranges.gandr";
+
+/// `true` when the byte `left` is the byte `right`.
+def same(left : u8, right : u8) -> Bool = u8.to_integer left == u8.to_integer right;
+
+/// The position of the first byte `byte` in the `left` bytes from `here` on,
+/// counted from `position`.
+def rec seek(here : u64, byte : u8, position : u64, left : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Found =
+  match left where
+    | Zero => pure Absent
+    | Next(rest) => {
+      let each = p.load8 here
+      if same each byte {
+        pure At position
+      } else {
+        seek[<] (u64.wrapping_add here 1u64) byte (u64.wrapping_add position 1u64) rest
+      }
+    }
+
+/// `true` when the `left` bytes from `here` on are the `left` bytes from
+/// `needle` on.
+def rec matches(here : u64, needle : u64, left : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Bool =
+  match left where
+    | Zero => pure true
+    | Next(rest) => {
+      let one = p.load8 here
+      let two = p.load8 needle
+      if same one two {
+        matches[<] (u64.wrapping_add here 1u64) (u64.wrapping_add needle 1u64) rest
+      } else {
+        pure false
+      }
+    }
+
+/// The first of `tries` positions from `here` on where the bytes of `needle`
+/// start, counted from `position`. Each position has the bytes of the needle
+/// after it in the range.
+def rec scan(here : u64, needle : Range, position : u64, tries : Length) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Found =
+  match tries where
+    | Zero => pure Absent
+    | Next(rest) => match needle where
+      | Range(start, length) => {
+        let hit = matches here start length
+        if hit {
+          pure At position
+        } else {
+          scan[<] (u64.wrapping_add here 1u64) needle (u64.wrapping_add position 1u64) rest
+        }
+      }
+
+/// The count of the positions where a needle of the length `needle` starts in
+/// a range of the length `range` and ends in it: one more than the difference,
+/// or none when the needle is longer.
+def rec tries(needle : Length, range : Length) -> Length =
+  match needle where
+    | Zero => Next range
+    | Next(shorter) => match range where
+      | Zero => Zero
+      | Next(rest) => tries[<] shorter rest
+
+/// The first position of `byte` in `range`: `At` the least position whose
+/// byte is `byte`, and `Absent` when no byte of the range is `byte`, an empty
+/// range included.
+pub def find_byte(range : Range, byte : u8) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Found =
+  match range where
+    | Range(start, length) => seek start byte 0u64 length
+
+/// The first position of `needle` in `range`: `At` the least position where
+/// the bytes of the range start with the bytes of the needle, `At 0u64` for
+/// an empty needle, and `Absent` when no position matches and for a needle
+/// longer than the range.
+pub def find_range(range : Range, needle : Range) -> [
+  p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
+] Found =
+  match range where
+    | Range(start, length) => match needle where
+      | Range(first, width) => match width where
+        | Zero => pure At 0u64
+        | Next(rest) => scan start needle 0u64 (tries width length)
+
+/// The answer of a run under `Extent`.
+data Outcome : Type where
+  /// The search gives `found`.
+  | Answered : (found : Found) --> Outcome
+  /// The member `member` reads outside the extent at `address`.
+  | Faulted : (member : String, address : u64) --> Outcome
+  /// The run gives no word.
+  | Silent : Outcome
+
+/// The word that a run gives for `found`: its position, or the word with each
+/// bit set for `Absent`.
+def word(found : Found) -> u64 =
+  match found where
+    | At(position) => position
+    | Absent => u64.not 0u64
+
+/// The outcome of a run that ends with `ended`.
+def outcome(ended : Ended) -> Outcome =
+  match ended where
+    | Gave(word, memory) => if u64.to_integer word == u64.to_integer (u64.not 0u64) {
+      pure Answered Absent
+    } else {
+      pure Answered (At word)
+    }
+    | Kept(memory) => pure Silent
+    | Outside(member, address) => pure Faulted member address
+
+/// The answer of `find_byte` for `byte` in `bytes`, under `Extent`. The
+/// extent holds the bytes alone, from the address 4096.
+def byte_in(bytes : List u8, byte : u8) -> Outcome =
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let found = find_byte (Range 4096u64 (counted bytes)) byte
+    pure fun (memory) { pure Gave (word found) memory }
+  } with Extent
+  outcome (program (Memory 4096u64 bytes))
+
+/// The answer of `find_range` for `needle` in `bytes`, under `Extent`. The
+/// extent holds the needle from the address 4096, then the bytes, so the
+/// range ends at the end of the extent.
+def range_in(bytes : List u8, needle : List u8) -> Outcome =
+  let start = u64.wrapping_add 4096u64 (size needle)
+  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+    let found = find_range (Range start (counted bytes)) (Range 4096u64 (counted needle))
+    pure fun (memory) { pure Gave (word found) memory }
+  } with Extent
+  outcome (program (Memory 4096u64 (joined bytes needle)))
+
+/// A byte is found at its first position: absent from an empty range, at 0
+/// in one byte that matches, absent from one byte that does not match, at
+/// its first of two positions, at the last position, and absent from a range
+/// that holds it nowhere.
+@[runs("cons (Answered Absent) (cons (Answered (At 0u64)) (cons (Answered Absent) (cons (Answered (At 1u64)) (cons (Answered (At 2u64)) (cons (Answered Absent) nil)))))")]
+def a_byte_is_found_at_its_first_position() -> List Outcome =
+  let empty = byte_in #[] 0u8
+  let one = byte_in #[3u8] 3u8
+  let other = byte_in #[3u8] 4u8
+  let first = byte_in #[1u8, 2u8, 3u8, 2u8] 2u8
+  let last = byte_in #[1u8, 2u8, 3u8] 3u8
+  let nowhere = byte_in #[1u8, 2u8, 3u8] 9u8
+  pure #[empty, one, other, first, last, nowhere]
+
+/// Each search reads no byte past a range that ends at the end of the extent,
+/// over the bytes `abc`: `z` is absent, `c` is at 2, the needle `c` is at 2,
+/// and the needle `bcd` is absent.
+@[runs("cons (Answered Absent) (cons (Answered (At 2u64)) (cons (Answered (At 2u64)) (cons (Answered Absent) nil)))")]
+def a_search_to_the_end_of_the_extent_reads_no_byte_past_it() -> List Outcome =
+  let absent = byte_in #[97u8, 98u8, 99u8] 122u8
+  let last = byte_in #[97u8, 98u8, 99u8] 99u8
+  let needle = range_in #[97u8, 98u8, 99u8] #[99u8]
+  let past = range_in #[97u8, 98u8, 99u8] #[98u8, 99u8, 100u8]
+  pure #[absent, last, needle, past]
+
+/// A range is found at its first whole match: an empty needle at 0, in an
+/// empty range too; a needle of one byte, absent from an empty range; a
+/// needle of one byte; a needle that matches in part before its whole match;
+/// a needle at the first of two positions; a needle at the last position;
+/// and a needle longer than the range, which is absent.
+@[runs("cons (Answered (At 0u64)) (cons (Answered Absent) (cons (Answered (At 0u64)) (cons (Answered (At 1u64)) (cons (Answered (At 1u64)) (cons (Answered (At 0u64)) (cons (Answered (At 2u64)) (cons (Answered Absent) nil)))))))")]
+def a_range_is_found_at_its_first_whole_match() -> List Outcome =
+  let empty = range_in #[] #[]
+  let one_in_empty = range_in #[] #[97u8]
+  let no_needle = range_in #[97u8, 98u8, 99u8] #[]
+  let one = range_in #[97u8, 98u8, 99u8] #[98u8]
+  let in_part = range_in #[97u8, 97u8, 97u8, 98u8] #[97u8, 97u8, 98u8]
+  let twice = range_in #[97u8, 98u8, 99u8, 97u8, 98u8] #[97u8, 98u8]
+  let at_last = range_in #[97u8, 98u8, 99u8, 100u8] #[99u8, 100u8]
+  let longer = range_in #[97u8, 98u8] #[97u8, 98u8, 99u8]
+  pure #[empty, one_in_empty, no_needle, one, in_part, twice, at_last, longer]
