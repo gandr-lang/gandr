@@ -35,6 +35,7 @@ The code universe of gandr's levitated descriptions: codes, the declaration tabl
 - `check_desc`, `WfDiagnostic`, `WfKind`, `diagnostic_span`, `RESERVED_DERIVED_MARKERS`: the well-formedness pass over a whole declaration table.
 - `Representability`, `first_order`, `TranslationError`: a sort that may be bound, the `pi+` binder over it, an atom sort an operation takes and never returns and the `bind` abstraction of its atoms over a port, and the fold of a signature into its single-substitution first-order model.
 - `SimplySorted`, `BindingTerm`, `BindingJudgement`, `FirstOrderJudgement`, `Evaluation`, `AdmissionError`, `BindingError`, `VariableIndex`: binding syntax over a simply-sorted signature, identified with the generated model's canonical terms and evaluated into a value domain and read back, from the declarations alone.
+- `BindingNode`, `BindingView`, `BindingArgs`: a borrowed node of a binding term, its head, and its arguments, so a crate outside this one reads a term.
 - `PatternContext`, `TypedRuleFace`, `pattern_variable`: a face refined with a context decoded by the caller's decoder.
 - The boundary wrappers (`NameRef`, `ConstructorTag`, `NominalSerial`, `CircuitNodeBudget`, `GenericEquality`, `SerializedValueBytes`, `LeafBytes`, …): every count, verdict, text and byte string a signature here crosses.
 

@@ -26,6 +26,7 @@ use gandr_theory_levitation::AdmissionError;
 use gandr_theory_levitation::BindingError;
 use gandr_theory_levitation::BindingJudgement;
 use gandr_theory_levitation::BindingTerm;
+use gandr_theory_levitation::BindingView;
 use gandr_theory_levitation::FirstOrderJudgement;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
@@ -532,6 +533,80 @@ fn identification()
                 .expect("the binding view");
             assert_eq!(binding, case.binding);
             assert_eq!(semantics.to_first_order(&binding), Ok(case.first_order));
+        }
+    }
+}
+
+/// A term built again from the views of its nodes alone, with no recursion
+/// on the host stack.
+///
+/// # Specification
+/// trivial.
+fn rebuilt(term: &BindingTerm) -> BindingTerm
+{
+    /// Work for the walk.
+    enum Step<'term>
+    {
+        /// Read one node.
+        Read(BindingView<'term>),
+        /// Build an operation from its last built arguments.
+        Close(&'term Name, usize),
+    }
+    let mut work = vec![Step::Read(term.view())];
+    let mut built: Vec<BindingTerm> = Vec::new();
+    while let Some(step) = work.pop() {
+        match step {
+            Step::Read(BindingView::Variable(index)) => built.push(BindingTerm::variable(index)),
+            Step::Read(BindingView::Operation { name, args }) => {
+                work.push(Step::Close(name, args.len()));
+                // The first argument is read first, so it goes on top.
+                let first = work.len();
+                work.extend(args.map(|argument| Step::Read(argument.view())));
+                work[first ..].reverse();
+            },
+            Step::Close(name, count) => {
+                let start = built.len().saturating_sub(count);
+                let operation = BindingTerm::operation(name.clone(), built.drain(start ..));
+                built.push(operation);
+            },
+        }
+    }
+    built.pop().expect("one built root")
+}
+
+/// A reader outside the crate sees each node of a term: the head, the name,
+/// the arguments in declaration order, and their exact count.
+#[test]
+fn a_term_reads_through_its_view()
+{
+    let term = t("app", [v::<1>(), t("lam", [v::<0>()])]);
+    let BindingView::Operation { name, mut args } = term.view()
+    else {
+        panic!("an operation reads as an operation");
+    };
+    assert_eq!(*name, Name::from("app"));
+    assert_eq!(args.len(), 2);
+    let BindingView::Variable(index) = args.next().expect("a first argument").view()
+    else {
+        panic!("a variable reads as a variable");
+    };
+    assert_eq!(index, VariableIndex::from(1));
+    assert_eq!(args.len(), 1);
+    let BindingView::Operation {
+        name: inner,
+        args: inner_args,
+    } = args.next().expect("a second argument").view()
+    else {
+        panic!("an operation reads as an operation");
+    };
+    assert_eq!(*inner, Name::from("lam"));
+    assert_eq!(inner_args.len(), 1);
+    assert!(args.next().is_none());
+    // Each generated term is built again from its views alone.
+    let mut choices = Choices(0x5649_4557_5245_4144);
+    for source in signatures() {
+        for case in cases(&source, &mut choices) {
+            assert_eq!(rebuilt(&case.binding.term), case.binding.term);
         }
     }
 }

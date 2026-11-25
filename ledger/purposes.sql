@@ -5966,9 +5966,12 @@ INSERT INTO purpose VALUES('theory-graphs','walk::WalkSymbolKey','struct','A sym
 INSERT INTO purpose VALUES('theory-levitation','arity::BridgeArity','struct','Holds the multi-output arity of an operation, so its input, output and factor maps are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','arity::SortRef','struct','Holds a named port of an operation''s input or output tuple, so the port''s sort and bindings are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','binding::AdmissionError','enum','Names why a signature cannot generate simply-sorted binding semantics, so the admission''s refusal is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','binding::BindingArgs','struct','Holds a binding node''s arguments, so the arguments'' count is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','binding::BindingError','enum','Names a typing, scoping or canonical-presentation refusal, so the error''s cause is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','binding::BindingJudgement','struct','Holds a typed observation of binding syntax, so the judgement''s context and term are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','binding::BindingNode','struct','Holds one node of a binding term, so the node''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','binding::BindingTerm','struct','Holds a finite term whose argument binders are determined by its signature, so the term''s nodes are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','binding::BindingView','enum','Names the view of a binding term, so the term''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','binding::SimplySorted','struct','Holds an admitted simply-sorted signature, so both its first-order and internal views are served.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','binding::first_order::FirstOrderJudgement','struct','Holds a first-order judgement, so the judgement''s canonical term is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','binding::semantics::Evaluation','struct','Holds an evaluated value under a reflected environment, so the value''s readback is read.',NULL,'fits','sound',NULL);
