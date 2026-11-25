@@ -7,19 +7,19 @@ def predecessor(n : Nat) -> Nat = {
   let m = match n {
     | Zero => return n
     | Succ(p) => pure p
-  };
+  }
   m
 };
 
 def first(n : Nat) -> Nat = {
-  let k = loop { break(Succ n) };
+  let k = loop { break(Succ n) }
   Succ k
 };
 
 def same(n : Nat) -> Nat = n;
 
 def unused(n : Nat) -> Nat = {
-  let u = same n;
-  let _ = same n;
+  let u = same n
+  let _ = same n
   n
 };

@@ -38,14 +38,14 @@ def t1 = *{.l = t0, .r = t0};
 
 /// The let spine: each level is a binder that the next level reads twice.
 def pair9() -> T9 =
-  let s0 = pure *{};
-  let s1 = pure *{.l = s0, .r = s0};
-  let s2 = pure *{.l = s1, .r = s1};
-  let s3 = pure *{.l = s2, .r = s2};
-  let s4 = pure *{.l = s3, .r = s3};
-  let s5 = pure *{.l = s4, .r = s4};
-  let s6 = pure *{.l = s5, .r = s5};
-  let s7 = pure *{.l = s6, .r = s6};
-  let s8 = pure *{.l = s7, .r = s7};
-  let s9 = pure *{.l = s8, .r = s8};
+  let s0 = pure *{}
+  let s1 = pure *{.l = s0, .r = s0}
+  let s2 = pure *{.l = s1, .r = s1}
+  let s3 = pure *{.l = s2, .r = s2}
+  let s4 = pure *{.l = s3, .r = s3}
+  let s5 = pure *{.l = s4, .r = s4}
+  let s6 = pure *{.l = s5, .r = s5}
+  let s7 = pure *{.l = s6, .r = s6}
+  let s8 = pure *{.l = s7, .r = s7}
+  let s9 = pure *{.l = s8, .r = s8}
   s9

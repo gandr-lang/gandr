@@ -1,13 +1,13 @@
 def beacon(seat : rec open => Integer >! open) -> Unit =
   loop {
-    send seat 1;
+    send seat 1
     continue
   }
 
 def asking(seat : rec open => +{more : Integer >? open, done : end}) -> Unit =
   loop {
-    select seat more;
-    let heard = recv seat;
+    select seat more
+    let heard = recv seat
     continue
   }
 
