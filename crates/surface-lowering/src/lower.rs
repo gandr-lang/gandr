@@ -5066,8 +5066,7 @@ mod tests
     fn a_lowercase_head_applies_by_juxtaposition()
     {
         let mut arena = CoreArena::new();
-        let source =
-            include_str!("lower/fixtures/a-lowercase-head-applies-by-juxtaposition.gandr");
+        let source = include_str!("lower/fixtures/a-lowercase-head-applies-by-juxtaposition.gandr");
         let module = lowered(SourceText::from(source), &mut arena);
         let outcome = |name: &str| {
             module

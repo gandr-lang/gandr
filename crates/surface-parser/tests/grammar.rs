@@ -346,8 +346,16 @@ fn a_descent_is_an_operand_of_its_own() -> Result<(), Failure>
                 })
                 .count()
         };
-        assert_eq!(count("descent_type"), descents, "`{source}`: the descents it reads");
-        assert_eq!(count("staged_type"), stages, "`{source}`: the stages it reads");
+        assert_eq!(
+            count("descent_type"),
+            descents,
+            "`{source}`: the descents it reads"
+        );
+        assert_eq!(
+            count("staged_type"),
+            stages,
+            "`{source}`: the stages it reads"
+        );
         assert_parses_clean(CaseName(source), SourceText::from(source))?;
     }
     Ok(())

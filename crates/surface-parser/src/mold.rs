@@ -4365,7 +4365,8 @@ impl<'pbg> Molder<'pbg>
                     let admitted = self
                         .direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source);
                     let admitted = MoldAdmissibility::from(bool::from(admitted));
-                    let admitted = self.type_call_head_admits(mold, admitted, tokens, index, source);
+                    let admitted =
+                        self.type_call_head_admits(mold, admitted, tokens, index, source);
                     bool::from(self.descent_admits(mold, admitted, tokens, index, source))
                 },
                 None => bool::from(admitted),
@@ -4591,8 +4592,8 @@ impl<'pbg> Molder<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a spaced operand, a glued call, a glued descent
-    ///   marker, a spaced descent and a dropped opener distinguish a head
-    ///   from an operand and from a repair.
+    ///   marker, a spaced descent and a dropped opener distinguish a head from
+    ///   an operand and from a repair.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
     /// - witness: `tests::grammar::a_descent_is_an_operand_of_its_own`
     #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
@@ -4656,8 +4657,7 @@ impl<'pbg> Molder<'pbg>
     /// and `]`, where a stage would name its size.
     ///
     /// # Specification
-    /// - requires: `tokens` labels `source`, and `index` names the current
-    ///   `[`.
+    /// - requires: `tokens` labels `source`, and `index` names the current `[`.
     /// - ensures: refuses an admitted `descent_type` start exactly when no
     ///   space stands before the token, and an admitted `staged_type` `[`
     ///   exactly when a space stands before it and the next two significant
@@ -4667,8 +4667,8 @@ impl<'pbg> Molder<'pbg>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `el [<] a` against `Nat[< i]` and `el[<](a)` tell
-    ///   the operand from the stage and from the glued head.
+    /// - hypothesis: L3 — `el [<] a` against `Nat[< i]` and `el[<](a)` tell the
+    ///   operand from the stage and from the glued head.
     /// - witness: `tests::grammar::a_descent_is_an_operand_of_its_own`
     #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
     fn descent_admits(
@@ -4680,12 +4680,13 @@ impl<'pbg> Molder<'pbg>
         source: &SourceFragment<'_>,
     ) -> MoldAdmissibility
     {
-        if !bool::from(admitted)
-            || self.pbg.mold(mold).map_or(true, |def| def.label != "[")
-        {
+        if !bool::from(admitted) || self.pbg.mold(mold).map_or(true, |def| def.label != "[") {
             return admitted;
         }
-        let Ok(rule) = self.pbg.rule_of(mold).map(|rule| rule.name())
+        let Ok(rule) = self
+            .pbg
+            .rule_of(mold)
+            .map(gandr_surface_grammar::Rule::name)
         else {
             return admitted;
         };
