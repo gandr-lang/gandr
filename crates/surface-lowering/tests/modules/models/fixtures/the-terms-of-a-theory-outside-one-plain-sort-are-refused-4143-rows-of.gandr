@@ -4,4 +4,4 @@ theory Pair where {
   oper origin : P;
   oper pair : (x : P, y : P) --> Q;
 }
-def paired : Terms(Pair) = Pair.origin;
+def paired : Terms Pair = Pair.origin;

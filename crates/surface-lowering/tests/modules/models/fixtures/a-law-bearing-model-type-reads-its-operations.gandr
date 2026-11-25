@@ -9,5 +9,5 @@ def written : *{
   m : Type,
   e : m,
   mul : +U (m -> m -> -F m),
-  unitL : +U ((x : m) -> -F Path[.A = m](mul e x, x))
+  unitL : +U ((x : m) -> -F (Path[.A = m] (mul e x) x))
 };
