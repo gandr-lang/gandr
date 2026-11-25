@@ -1,0 +1,2 @@
+@[ checkz ] module M where { def x = 1 ; }
+def y = 2 ;

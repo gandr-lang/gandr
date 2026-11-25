@@ -1,0 +1,5 @@
+/// `application_expression`: a call written by juxtaposition.
+def max(a : Integer, b : Integer) -> Integer =
+  b
+def larger() -> Integer =
+  max 1 2

@@ -1,0 +1,5 @@
+/// `literal_pattern`: a literal pattern.
+def sign(n : Integer) -> Integer =
+  match n where
+    | 0 => 0
+    | _ => 1

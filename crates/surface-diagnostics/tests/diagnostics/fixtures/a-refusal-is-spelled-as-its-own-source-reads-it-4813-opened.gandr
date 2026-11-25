@@ -1,0 +1,3 @@
+import "./base.gandr";
+def other : Integer;
+def other = 2;

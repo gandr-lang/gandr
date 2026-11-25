@@ -1,0 +1,27 @@
+// `std.io`: the standard streams, which a program writes and reads through
+// the console's root capability. `std.authority`'s `console` opens that
+// capability from the authority `main` receives. A program reaches the
+// streams only through a capability that `main` passes on, never through the
+// ambient interfaces. So it prints or reads only what `main` holds.
+//
+// Each stream is an interface of its own, `std.io.Console.Eff`,
+// `std.io.Stderr.Eff` and `std.io.Stdin.Eff`, as `cap-std` holds three
+// handles. A function's row names the streams it touches. The ring's
+// interface, `std.io.Ring.Eff`, lives here too. A source names these
+// interfaces where it imports this module, `import std.io;`, and this module
+// names its own.
+//
+// - see: #4523
+
+/// One line, written to standard output through `console`.
+pub def print(console : Cap { print }, line : String) -> [std.io.Console.Eff] Unit =
+  console.print line
+
+/// One line, written to standard error through `console`.
+pub def eprint(console : Cap { eprint }, line : String) -> [std.io.Stderr.Eff] Unit =
+  console.eprint line
+
+/// The next line of standard input through `console`, with its newline. It
+/// answers the empty string once the input runs out.
+pub def read_line(console : Cap { read_line }) -> [std.io.Stdin.Eff] String =
+  console.read_line

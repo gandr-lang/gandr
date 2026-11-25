@@ -1,0 +1,43 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/fold-over-family.gandr:25:3
+   │
+24 │    def rec flat(w : Width, t : Gate w) -> Gate w =
+   │    │            ┬          ─ checked against `Gate w -> -F Gate w`; while checking the body of this function; binds t : Gate w
+   │    │            │
+   │ ┌──┘            checked against `(a : Width) -> Gate a -> -F Gate a`; while checking the body of this function; binds w : Width
+   │ │
+25 │ │┏   match t where
+26 │ │┃     | Dark => Dark
+27 │ │┃     | Lit => Lit
+28 │ │┃     | Nil => Nil
+29 │ │┃     | Swap(x) => Nil
+30 │ │┃     | Hold(c, x) => Hold (flat[<] Bit c) (flat[<] Word x)
+   │ │┃                                                         ╿
+   │ └┃─────────────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(w : Width, Gate w) -> Gate w`; while checking the body of this function; binds flat : (a : Width, Gate a) -> Gate a
+   │                                                            a case its datatype's rules do not admit
+   │
+   ├ note: `flat` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies
+
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/fold-over-family.gandr:38:3
+   │
+37 │    def rec turned(w : Width, t : Gate w) -> Gate w =
+   │    │              ┬          ─ checked against `Gate w -> -F Gate w`; while checking the body of this function; binds t : Gate w
+   │    │              │
+   │ ┌──┘              checked against `(a : Width) -> Gate a -> -F Gate a`; while checking the body of this function; binds w : Width
+   │ │
+38 │ │┏   match t where
+39 │ │┃     | Dark => Lit
+40 │ │┃     | Lit => Dark
+41 │ │┃     | Nil => Nil
+42 │ │┃     | Swap(x) => Swap (turned[<] Word x)
+43 │ │┃     | Hold(c, x) => Hold (turned[<] Bit c) (turned[<] Word x)
+   │ │┃                                                             ╿
+   │ └┃─────────────────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(w : Width, Gate w) -> Gate w`; while checking the body of this function; binds turned : (a : Width, Gate a) -> Gate a
+   │                                                                a case its datatype's rules do not admit
+   │
+   ├ note: `turned` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

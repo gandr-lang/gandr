@@ -1,0 +1,41 @@
+//! `held-within` keeps a view past the hold that lends it.
+//!
+//! Each view escapes its hold. The checker refuses both programs as
+//! `ViewEscaped`.
+//!
+//! The source keeps each view at a handler region. The binding of a handler
+//! opens no region of its own. Rust rejects a block reference after its local
+//! ends. The source imports the early exit host interface.
+//!
+//! - see: #1494 — `keptPastHold`, `keptPastNestedHold`
+import std.process;
+
+/// `keptPastHold` forces a view after its hold ends.
+@[refuses("ViewEscaped")]
+def keptPastHold() -> Integer =
+  handle inner : std.process.Exit.Eff {
+    var l = 42;
+    let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } };
+    force q
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
+  }
+
+/// `keptPastNestedHold` does the same with nested handlers.
+@[refuses("ViewEscaped")]
+def keptPastNestedHold() -> Integer =
+  handle outer : std.process.Exit.Eff {
+    let x : Integer = handle inner : std.process.Exit.Eff {
+      var l = 42;
+      let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } };
+      force q
+    } with {
+      | pure(y) => pure y
+      | oper exit(code, k) => pure 0
+    };
+    pure x
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
+  }

@@ -1,0 +1,2 @@
+import "./base.gandr";
+pub def wide : Band = *{.low = 1, .high = 2};

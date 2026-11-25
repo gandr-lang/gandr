@@ -1,0 +1,12 @@
+def kept(n : Integer) -> -F Integer = return n;
+def kept_elided(n : Integer) -> -F Integer = n;
+def kept_printed(a : Integer) -> -F Integer = a;
+def called(n : Integer) -> -F Integer = become kept n;
+def called_elided(n : Integer) -> -F Integer = kept n;
+def called_printed(a : Integer) -> -F Integer = kept a;
+def sequenced(n : Integer) -> -F Integer = { let m = kept n; become kept m };
+def sequenced_elided(n : Integer) -> -F Integer = { let m = kept n; kept m };
+def sequenced_printed(a : Integer) -> -F Integer = { let b = kept a; kept b };
+def suspended(n : Integer) -> -F (+U (-F Integer)) = return thunk { become kept n };
+def suspended_elided(n : Integer) -> -F (+U (-F Integer)) = thunk { kept n };
+def suspended_printed(a : Integer) -> -F (+U (-F Integer)) = thunk { kept a };

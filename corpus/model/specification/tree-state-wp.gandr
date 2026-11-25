@@ -1,0 +1,86 @@
+//! `tree-state-wp` gives a state weakest-precondition observation over data.
+//!
+//! It represents increment as a tree in the state row. It folds the tree into a
+//! type. The normaliser computes a program's precondition. The kernel
+//! replays each declaration.
+//!
+//! A Dijkstra monad pairs a program with evidence below a specification.
+//! `incrSpecified` gives evidence at `isOne`. `incrSpecifiedEverywhere` gives
+//! evidence at every postcondition. `incrSpecBare` keeps the unpaired evidence.
+//! `doneSpecified` gives return evidence at every postcondition.
+//!
+//! - see: #2773 — `incrSpecifiedEverywhere`, `incrSpecBare`
+//! - see: #2751 — `doneSpecified`
+//! - cites: [Maillard-2019-dijkstra_monads_all]
+//! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
+
+// The import gives Either, StateOp and Prog.
+import "../effects/tree.gandr";
+
+/// The increment as a tree: read the counter, store one more, and answer the
+/// unit.
+pub def incrTree : Prog (Either StateOp Void) Unit = Op (Left Get) (fun (n) {
+  (Op (Left (Put (n + 1))) (fun (_u) {
+    (Done (*{}) : Prog (Either StateOp Void) Unit)
+  }) : Prog (Either StateOp Void) Unit)
+});
+
+/// The observation as a fold: a program, a postcondition on its answer and
+/// the final state, and an initial state, to the precondition. A read
+/// continues at the current state, and a store continues from the stored
+/// value.
+pub def rec wp(
+  p : Prog (Either StateOp Void) Unit,
+  post : (Unit, Integer) -> Type,
+  s : Integer
+) -> Type =
+  match p where
+    | Done(x) => post x s
+    | Op(o, k) => match o where
+      | Left(Get) => wp[<] (k s) post s
+      | Left(Put(t)) => wp[<] (k 0) post t
+      | Right(none) => match none {}
+
+/// The increment's specification: the postcondition at the unit and the
+/// successor of the initial state.
+pub def incrSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) (s + 1);
+
+/// The counter ends at one.
+pub def isOne(_x : Unit, s : Integer) -> Type = return Path s 1;
+
+/// `incrSpecified` pairs the increment with evidence
+/// below `incrSpec(isOne, s)`.
+/// Both sides unfold to `Path[.A = Integer](s + 1, 1)`.
+def incrSpecified : *{
+  m : Prog (Either StateOp Void) Unit,
+  meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
+} = *{incrTree, fun (s) { fun (h) { h } }};
+
+/// `incrSpecifiedEverywhere` pairs the increment with evidence
+/// at every postcondition.
+/// The fold and specification pass the successor to `post`.
+def incrSpecifiedEverywhere : *{
+  m : Prog (Either StateOp Void) Unit,
+  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
+} = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }};
+
+/// `incrSpecBare` gives the unpaired increment evidence.
+/// The fold and specification call `post` on the held successor.
+def incrSpecBare(
+  post : (Unit, Integer) -> Type,
+  s : Integer,
+  h : incrSpec(post, s)
+) -> wp(incrTree, post, s) = h;
+
+/// The return specification: the postcondition at the unit and the initial
+/// state.
+def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) s;
+
+/// `doneSpecified` pairs the stopped program with evidence
+/// at every postcondition.
+/// Both sides unfold to `post(*{}, s)`, and a definition that unfolds to a
+/// variable's call converts with that call.
+def doneSpecified : *{
+  m : Prog (Either StateOp Void) Unit,
+  meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
+} = *{(Done (*{}) : Prog (Either StateOp Void) Unit), fun (post) { fun (s) { fun (h) { h } } }};

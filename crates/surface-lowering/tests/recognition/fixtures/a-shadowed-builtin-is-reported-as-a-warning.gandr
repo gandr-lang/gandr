@@ -1,0 +1,2 @@
+def list = 1;
+def used = list;

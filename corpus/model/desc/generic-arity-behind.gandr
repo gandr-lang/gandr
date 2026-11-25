@@ -1,0 +1,24 @@
+// A generic program can read a presentation from another source.
+//
+// `magma-base.gandr` starts this closure. `generic-arity.gandr` does not import
+// that source.
+//
+// The `Magma` block keeps the code that its source minted.
+// A unit holds one `Theory`. The order of source files does not change that
+// value.
+//
+// - see: #1078 — `counted_behind`, `counted_across`
+
+// This import provides the presentation that `generic-arity.gandr`
+// does not import.
+import "../higher-cells/magma-base.gandr";
+// This import provides the generic program over presentations.
+import "./generic-arity.gandr";
+
+/// `arity` counts `Monoid` through `Magma`'s presentation.
+@[runs("2")]
+def counted_behind() -> Integer = arity Monoid;
+
+/// `arity` counts `Magma` through the generic program.
+@[runs("2")]
+def counted_across() -> Integer = arity Magma;

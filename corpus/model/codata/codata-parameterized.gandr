@@ -1,0 +1,24 @@
+//! `codata-parameterized` is an earlier rejected source with a parameter.
+//!
+//! The checker refuses this declaration because its result is `Type`.
+//! It also refuses a bare copattern after a parameter list.
+//!
+//! The source defines a scaled observation and reads its rejected call.
+//!
+//! - see: #1106 — `observed`
+//! - see: streams.gandr — the current surface spelling
+/// Scaled exposes an integer observation named doubled.
+@[refuses("CodataKindNotUniverse")]
+codata Scaled : Type where
+  doubled : Integer;
+
+/// The rejected definition doubles its integer argument with a bare copattern.
+@[refuses("MalformedForm")]
+def rec scaled(n : Integer) -> Scaled =
+  .doubled => n + n
+
+/// `observed` is the doubled projection of the rejected scaled call.
+/// The result of `scaled` names no codata to observe, so the projection stays
+/// unadmitted.
+@[refuses("OutOfFragment.projection_expression")]
+def observed = (scaled 21).doubled;

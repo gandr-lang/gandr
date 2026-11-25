@@ -1,0 +1,39 @@
+//! The lowering refuses an attribute before a theory member outside its places.
+//!
+//! A block before a sort, an operation or a rule of a theory reads through the
+//! general reader of attributes. The registry gives each name the set of
+//! places where it stands. A mark of the presentation must stand at the
+//! member that it shapes.
+//!
+//! The lowering refuses each name at another place as `MisplacedAttribute`.
+//! The refusal names the places that the name takes. The theory around it is
+//! refused with it.
+//!
+//! - see: #6404
+
+/// `deprecated` stands before a declaration, and not before an operation.
+@[refuses("MisplacedAttribute")]
+theory Deprecated where
+  /// The carrier.
+  sort M : Type;
+  /// The unit, marked as a declaration is.
+  @[deprecated]
+  oper unit : M;
+
+/// `inert` stands before a declaration or an operation, and not before a sort.
+@[refuses("MisplacedAttribute")]
+theory InertSort where
+  /// The carrier, marked as an operation is.
+  @[inert]
+  sort M : Type;
+  /// The unit.
+  oper unit : M;
+
+/// `frobenius` stands before a sort, and not before an operation.
+@[refuses("MisplacedAttribute")]
+theory FrobeniusOperation where
+  /// The carrier.
+  sort M : Type;
+  /// The unit, marked as a sort is.
+  @[frobenius]
+  oper unit : M;

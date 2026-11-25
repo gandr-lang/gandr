@@ -1,0 +1,18 @@
+error[FootprintsOverlap]: both halves of this fork may use the authority found here, and one of them may change it
+   ╭▸ corpus/ledger/diagnostics/FootprintsOverlap.gandr:20:3
+   │
+19 │   def racing(c : Cap { read, write }) -> [std.fs.Eff] Unit =
+   │   │          ─ checked against `Cap {read, write} -> -F [std.fs.Eff] Unit`; while checking the body of this function; binds c : Cap {read, write}
+   │ ┌─┘
+   │ │
+20 │ │   let found = fork (task : end) {
+   │ │   ━━━ authority both halves of a fork hold, one to change: found `Cap {read, write}`
+21 │ │     c.write "notes" "task";
+22 │ │     close task
+23 │ │   };
+24 │ │   c.write "notes" "parent"
+25 │ │   close found
+   │ └─────────────┘ checked against `+U (Cap {read, write} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
+   │
+   ├ note: `racing` is refused with FootprintsOverlap, as its expectation states
+   ╰ help: give each fork half separate authority

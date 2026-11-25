@@ -1,0 +1,73 @@
+//! A rule of a theory that answers a stuck call.
+//!
+//! The unit rule `band one x <=> x` answers its second argument. Where that
+//! argument is `encode b` for a variable `b`, the call does not reduce. The
+//! normal form of the term is then that call. A path between the call and
+//! the term must hold by reflexivity.
+//!
+//! The checker takes the normal form of the term by the rules first. The
+//! kernel does the same. Each then compares the call that the rule answers
+//! with the call on the other side.
+//!
+//! - see: #8278
+
+/// The theory of a truth value.
+theory Truth where
+  /// The sort of truth values.
+  sort T : Type;
+  /// The false value.
+  oper no : T;
+  /// The true value.
+  oper yes : T;
+
+/// The fragment of the `llvm` dialect at one bit.
+theory BitWord where
+  /// A word of one bit.
+  sort I1 : Type;
+  /// The constant zero.
+  oper zero : I1;
+  /// The constant one.
+  oper one : I1;
+  /// The conjunction of two bits.
+  oper band : (x : I1, y : I1) --> I1;
+  /// Zero on the left absorbs.
+  rule bandZero : band zero x <=> zero;
+  /// One on the left is the unit.
+  rule bandOne : band one x <=> x;
+
+/// The bit of a truth value.
+def encode(t : Terms Truth) -> Terms BitWord =
+  match t where
+    | Truth.no => BitWord.zero
+    | Truth.yes => BitWord.one
+
+/// The conjunction of two truth values.
+def conj(a : Terms Truth, b : Terms Truth) -> Terms Truth =
+  match a where
+    | Truth.no => Truth.no
+    | Truth.yes => b
+
+/// The unit rule answers a stuck call, and the point is that call.
+///
+/// - see: #8278
+def unitWritten(b : Terms Truth) -> Path (encode
+  b) (BitWord.band BitWord.one (encode b)) = Path.here
+  (encode b);
+
+/// The same path, where the point is the term that the rule reads.
+def unitAtTheTerm(b : Terms Truth) -> Path (encode
+  b) (BitWord.band BitWord.one (encode b)) = Path.here
+  (BitWord.band BitWord.one (encode b));
+
+/// The unit rule answers a stuck call, where the unit is the result of a call.
+def unitCalled(b : Terms Truth) -> Path (encode
+  b) (BitWord.band (encode Truth.yes) (encode b)) = Path.here
+  (encode b);
+
+/// The encoder carries a conjunction to `band`, by the rules alone.
+def homomorphism(a : Terms Truth, b : Terms Truth) -> Path (encode (conj a b)) (
+  BitWord.band (encode a) (encode b)
+) =
+  match a where
+    | Truth.no => Path.here BitWord.zero
+    | Truth.yes => Path.here (encode b)

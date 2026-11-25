@@ -1,0 +1,10 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+def sugared(a : Circle) -> Circle = a;
+def explicit(a : Circle) -> Circle = a;
+def overSugared : Path[.A = Path[.A = Circle](Base, Base)](Path.ap sugared loop, loop) = Path.here
+  loop;
+def overExplicit : Path[.A = Path[.A = Circle](Base, Base)](Path.ap explicit loop, loop) = Path.here
+  loop;

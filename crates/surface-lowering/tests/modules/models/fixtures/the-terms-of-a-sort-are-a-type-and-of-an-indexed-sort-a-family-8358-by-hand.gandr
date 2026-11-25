@@ -1,0 +1,12 @@
+data Width : Type where {
+  | Bit : Width
+  | Word : Width
+}
+data Fragment : Width -> Type where {
+  | Low : Fragment Bit
+  | High : Fragment Bit
+  | Zero : Fragment Word
+  | One : Fragment Word
+  | Choose : (c : Fragment Bit, x : Fragment Word, y : Fragment Word) --> Fragment Word
+  rule : Choose High x y <=> x;
+}

@@ -1,0 +1,7 @@
+theory StatePutPut where {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putPut : put s (put u k) <=> put u k;
+}

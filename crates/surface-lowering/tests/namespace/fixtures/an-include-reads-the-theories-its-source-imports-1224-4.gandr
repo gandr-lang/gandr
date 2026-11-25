@@ -1,0 +1,5 @@
+import "./magma.gandr";
+import "./other.gandr";
+theory Both where {
+  include Mag;
+}

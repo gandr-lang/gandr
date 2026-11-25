@@ -1,0 +1,63 @@
+//! This module defines shared data declarations.
+//!
+//! Other data sources import these declarations.
+//! The universe checks the naturals and branches declared here.
+//!
+//! It defines naturals, integers, colours, binary nodes and polymorphic lists.
+//! A data block defines an inductive type.
+//! A rule between constructor terms quotients that type.
+//!
+//! - cites: [Altenkirch-2018-quotient_inductive_inductive_types]
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [Altenkirch-2018-quotient_inductive_inductive_types]: https://doi.org/10.1007/978-3-319-89366-2_16 "Altenkirch et al., Quotient inductive-inductive types"
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
+
+/// Natural numbers, free: every constructor term is its own value.
+pub data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+/// Addition by recursion on the second argument, the recursive call nested
+/// in the successor it returns.
+pub def rec plus(n : Nat, m : Nat) -> Nat =
+  match m where
+    | Zero => n
+    | Succ(p) => Succ (plus[<] n p)
+
+/// Two.
+@[runs("Succ (Succ Zero)")]
+pub def two : Nat = Succ (Succ Zero);
+
+/// Three.
+@[runs("Succ (Succ (Succ Zero))")]
+pub def three : Nat = Succ two;
+
+/// The integers as a presented type: a successor and a predecessor that
+/// cancel, each rule invertible.
+@[normalizes("S(P(S(Z))) ~> S(Z)")]
+pub data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S (P x) <=> x;
+  rule : P (S x) <=> x;
+}
+
+/// Three colours: an enumeration, a data type whose constructors take no
+/// field.
+pub data Color : Type where
+  | Red : Color
+  | Green : Color
+  | Blue : Color
+
+/// The two branches of a binary node.
+pub data Two : Type where
+  | L : Two
+  | R : Two
+
+/// Lists of elements of a type `a`. The element stands only where a list
+/// holds it, strictly positive, so a family nests through it.
+pub data List(a : Type) : Type where
+  | Nil : List a
+  | Cons : (head : a, tail : List a) --> List a

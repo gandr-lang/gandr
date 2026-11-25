@@ -1,0 +1,10 @@
+theory Answering where {
+  oper answer : Integer;
+}
+theory Faceted where {
+  oper inner : Model Answering;
+}
+module Facts : Model(Faceted) where {
+  module inner : Model(Answering) where { def answer = 41; }
+}
+def packed : Model Faceted = pack Facts at Model Faceted;

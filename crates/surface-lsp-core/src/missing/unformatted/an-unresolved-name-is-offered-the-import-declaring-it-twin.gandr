@@ -1,0 +1,4 @@
+pub def faraway : Integer ;
+def faraway = 8 ;
+pub def Shape : Integer ;
+def Shape = 1 ;

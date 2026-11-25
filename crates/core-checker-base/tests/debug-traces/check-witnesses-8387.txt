@@ -1,0 +1,10 @@
+command: mise run check:witnesses
+issue: #8387
+before: 0a069ee177
+exit: 1
+crates/core-checker-base/src/context.rs:1717: unresolved-witness `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`: gandr-surface-dispatcher does not depend on gandr-core-checker-base, so no test of it witnesses an item of gandr-core-checker-base
+crates/core-checker-base/src/context.rs:1775: unresolved-witness `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`: gandr-surface-dispatcher does not depend on gandr-core-checker-base, so no test of it witnesses an item of gandr-core-checker-base
+crates/core-checker-base/src/judgement.rs:6253: unresolved-witness `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`: gandr-surface-dispatcher does not depend on gandr-core-checker-base, so no test of it witnesses an item of gandr-core-checker-base
+crates/core-checker-base/src/module.rs:1834: unresolved-witness `gandr-surface-dispatcher::annotate::tests::the_join_reads_each_field_and_binder_at_its_occurrence_8161`: gandr-surface-dispatcher does not depend on gandr-core-checker-base, so no test of it witnesses an item of gandr-core-checker-base
+after: d252fd05b9
+exit: 0

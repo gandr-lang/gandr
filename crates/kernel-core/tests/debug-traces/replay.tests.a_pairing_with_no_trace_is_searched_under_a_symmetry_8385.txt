@@ -1,0 +1,58 @@
+test: replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385
+package: gandr-kernel-core
+command: mise run debug:test gandr-kernel-core replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385
+
+(lldb) target create "target/debug-trace/debug/build/gandr-kernel-core/b2653b0067ecaf6a/out/gandr_kernel_core-b2653b0067ecaf6a"
+Current executable set to 'target/debug-trace/debug/build/gandr-kernel-core/b2653b0067ecaf6a/out/gandr_kernel_core-b2653b0067ecaf6a' (x86_64).
+(lldb) settings set -- target.run-args  "replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_kernel_core-b2653b0067ecaf6a`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x0000000001870638
+(lldb) run
+
+running 1 test
+test replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385 ... 
+thread 'replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385' (1331737) panicked at crates/kernel-core/src/replay/tests.rs:6051:5:
+assertion `left == right` failed: under the symmetry, the search joins the two orders at each depth and no other pair
+  left: [false, false, false, true]
+ right: [true, true, false, true]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1329901 launched: 'target/debug-trace/debug/build/gandr-kernel-core/b2653b0067ecaf6a/out/gandr_kernel_core-b2653b0067ecaf6a' (x86_64)
+Process 1329901 stopped
+* thread #2, name = 'replay::tests::', stop reason = breakpoint 1.1
+       frame #0: 0x0000555556dc4638 gandr_kernel_core-b2653b0067ecaf6a`__rustc::rust_panic at panicking.rs:883:16
+(lldb) bt 24
+* thread #2, name = 'replay::tests::', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555556dc4638 gandr_kernel_core-b2653b0067ecaf6a`__rustc::rust_panic at panicking.rs:883:16
+     frame #1: 0x0000555556de0ba5 gandr_kernel_core-b2653b0067ecaf6a`std::panicking::panic_with_hook at panicking.rs:836:5
+     frame #2: 0x0000555556dc3be2 gandr_kernel_core-b2653b0067ecaf6a`std::panicking::panic_handler::{closure#0} at panicking.rs:685:13
+     frame #3: 0x0000555556dbd9d9 gandr_kernel_core-b2653b0067ecaf6a`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555556dc47ed gandr_kernel_core-b2653b0067ecaf6a`__rustc::rust_begin_unwind at panicking.rs:676:5
+     frame #5: 0x0000555556dfe07c gandr_kernel_core-b2653b0067ecaf6a`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555556dfdf73 gandr_kernel_core-b2653b0067ecaf6a`core::panicking::assert_failed_inner at panicking.rs:447:23
+     frame #7: 0x000055555616e58c gandr_kernel_core-b2653b0067ecaf6a`core::panicking::assert_failed::<[bool; 4], [bool; 4]>(kind=Eq, left=0x00007ffff79fe457, right=0x0000555555a8ac04, args=Some({template:{pointer:"under the symmetry, the search joins the two orders at each depth and no other pairwith no symmetry, the written pairing alone joins two termsthe points read to one normal formover a free circle the points stay apartand no rule relates loop(x) to unloop(x)`looped ∘ unlooped` is the identity under the rules, so the chain is its patha continuation transporting along another patha continuation transporting another value than reflexivitya chain that does not fuse is still itself, closed before its transport is readover a free circle `loop(unloop(y))` is not `y`a chain composing to `looped ∘ looped` is not its paththe first componentthe call itselfgandr_kernel_core::replay::tests::the_environment_reduction_agrees_with_the_substituting_oneprograma returned transport along a held run along a reflexivity reads ona held path along a reflexivity at a returned endpoint stays heldthe held call reads as the call it runs toa relation's reading compares the stuck endpoints by structurea call reading to another definitio"...}, args:{pointer:{ty:{0:(…)}}}})) at panicking.rs:407:5
+     frame #8: 0x000055555613bf98 gandr_kernel_core-b2653b0067ecaf6a`gandr_kernel_core::replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385 at tests.rs:6051:5
+     frame #9: 0x0000555556103677 gandr_kernel_core-b2653b0067ecaf6a`gandr_kernel_core::replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385::{closure#0}((null)={}) at tests.rs:5978:63
+     frame #10: 0x0000555555e34a56 gandr_kernel_core-b2653b0067ecaf6a`<gandr_kernel_core::replay::tests::a_pairing_with_no_trace_is_searched_under_a_symmetry_8385::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x00005555562b1f8b gandr_kernel_core-b2653b0067ecaf6a`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x00005555562b1f89 gandr_kernel_core-b2653b0067ecaf6a`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #13: 0x00005555562bf165 gandr_kernel_core-b2653b0067ecaf6a`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #14: 0x00005555562bf160 gandr_kernel_core-b2653b0067ecaf6a`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x00005555562bf160 gandr_kernel_core-b2653b0067ecaf6a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #16: 0x00005555562bf14b gandr_kernel_core-b2653b0067ecaf6a`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #17: 0x00005555562bf14b gandr_kernel_core-b2653b0067ecaf6a`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x00005555562bf14b gandr_kernel_core-b2653b0067ecaf6a`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #19: 0x00005555562bf136 gandr_kernel_core-b2653b0067ecaf6a`test::run_test::{closure#0} at lib.rs:645:43
+     frame #20: 0x00005555562b9b54 gandr_kernel_core-b2653b0067ecaf6a`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #21: 0x00005555562b9ad9 gandr_kernel_core-b2653b0067ecaf6a`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x00005555562c21f2 gandr_kernel_core-b2653b0067ecaf6a`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x00005555562c21e3 gandr_kernel_core-b2653b0067ecaf6a`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

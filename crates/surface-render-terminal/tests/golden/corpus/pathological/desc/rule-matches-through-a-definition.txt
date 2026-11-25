@@ -1,0 +1,18 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/desc/rule-matches-through-a-definition.gandr:31:83
+   │
+31 │    def absorbAny(y : Terms Lamp, x : Terms Lamp) -> Path (Lamp.both y x) Lamp.dark = Path.here
+   │ ┏━━│━━━━━━━━━━━━━┬━━━━━━━━━━━━━━━┬━━━━━━━━━━━━━━━━━━━━━━━━┬────────────━━┬────────━━━┛
+   │ ┃  │             │               │                        │              │
+   │ ┃  │             │               │                        │              an endpoint the point does not convert to
+   │ ┃  │             │               │                        an endpoint the point does not convert to
+   │ ┃  │             │               checked against `(a : Terms Lamp) -> -F (Path[.A = Terms Lamp] (Lamp.both y a) Lamp.dark)`; while checking the body of this function; binds x : Terms Lamp
+   │ ┃┌─┘             checked against `(a : Terms Lamp) -> (b : Terms Lamp) -> -F (Path[.A = Terms Lamp] (Lamp.both a b) Lamp.dark)`; while checking the body of this function; binds y : Terms Lamp
+   │ ┃│
+32 │ ┃│   Lamp.dark;
+   │ ┃└───────────╿┘ checked against `(a : Terms Lamp, b : Terms Lamp) -> Path[.A = Terms Lamp] (Lamp.both a b) Lamp.dark`; while checking the body of this thunk
+   │ ┗━━━━━━━━━━━━┥
+   │              not both endpoints of the path
+   │
+   ├ note: `absorbAny` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

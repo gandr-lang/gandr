@@ -1,0 +1,8 @@
+error[OutOfFragment.Unannotated]: the labelled sum expression needs a type annotation
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Unannotated.gandr:4:16
+  │
+4 │ def unstated = +{.err = "no"};
+  │                ━━━━━━━━━━━━━━ needs a stated type
+  │
+  ├ note: `unstated` is refused with OutOfFragment.Unannotated, as its expectation states
+  ╰ help: write a type annotation for the form

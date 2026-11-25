@@ -1,0 +1,9 @@
+data Scalar : Type where { | U32 : Scalar | U64 : Scalar | I32 : Scalar | I64 : Scalar }
+data Code : Type where { | Plain : (s : Scalar) --> Code }
+data Coded : Type where { | NoCoded : Coded | Coded : (name : String, c : Code, rest : Coded) --> Coded }
+data Signature : Type where { | Signature : (params : Coded, result : Code) --> Signature }
+data Signatures : Type where { | NoSignature : Signatures | Member : (s : Signature, rest : Signatures) --> Signatures }
+data Row : Type where { | Row : (result : Code) --> Row }
+data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }
+data Admission : Type where { | Admitted : Admission }
+def addRow : Row = Row (Plain U32);

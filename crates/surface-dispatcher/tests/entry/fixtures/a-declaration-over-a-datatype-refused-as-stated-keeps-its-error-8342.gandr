@@ -1,0 +1,6 @@
+@[refuses("DataKindNotUniverse")]
+data Odd : Integer where
+  | Z : Odd
+
+def held(x : Odd) -> Integer =
+  1

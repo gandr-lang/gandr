@@ -1,0 +1,2 @@
+import "./base.gandr" as base;
+def aliased : Integer = base.seven;

@@ -1,0 +1,205 @@
+[
+  {
+    "name": "#2528: an open issue naming the rule admits its lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": "#1501",
+          "admission": "reserved",
+          "now": "implemented"
+        }
+      ],
+      "issues": {
+        "1501": {
+          "state": "OPEN",
+          "body": "## Design\n\n`dup_expression` reads `dup (e)` as a shared copy."
+        }
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#2528: an open issue naming the rule's kind admits its lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "instantiation.explicit",
+          "kind": "instantiation",
+          "issue": "#1497",
+          "admission": "reserved",
+          "now": "implemented"
+        }
+      ],
+      "issues": {
+        "1497": {
+          "state": "OPEN",
+          "body": "Lower the comma `instantiation` form."
+        }
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#2528: a closed issue refuses the lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": "#1501",
+          "admission": "reserved",
+          "now": "implemented"
+        }
+      ],
+      "issues": {
+        "1501": {
+          "state": "CLOSED",
+          "body": "`dup_expression`"
+        }
+      }
+    },
+    "output": "`dup_expression` is reserved and this change lowers it; its row cites #1501, which is closed: name the rule in an open issue's design and cite it, or decline the rule\n  row: {\"name\":\"dup_expression\",\"kind\":\"dup_expression\",\"issue\":\"#1501\",\"admission\":\"reserved\"}"
+  },
+  {
+    "name": "#2528: an open issue naming neither refuses the lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "instantiation.explicit",
+          "kind": "instantiation",
+          "issue": "#1497",
+          "admission": "reserved",
+          "now": "implemented"
+        }
+      ],
+      "issues": {
+        "1497": {
+          "state": "OPEN",
+          "body": "Shared sessions."
+        }
+      }
+    },
+    "output": "`instantiation.explicit` is reserved and this change lowers it; its row cites #1497, whose body names neither `instantiation.explicit` nor `instantiation`: name the rule in an open issue's design and cite it, or decline the rule\n  row: {\"name\":\"instantiation.explicit\",\"kind\":\"instantiation\",\"issue\":\"#1497\",\"admission\":\"reserved\"}"
+  },
+  {
+    "name": "#2528: an issue gh could not read refuses the lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": "#1501",
+          "admission": "reserved",
+          "now": "implemented"
+        }
+      ],
+      "issues": {}
+    },
+    "output": "`dup_expression` is reserved and this change lowers it; its row cites #1501, which gh could not read: name the rule in an open issue's design and cite it, or decline the rule\n  row: {\"name\":\"dup_expression\",\"kind\":\"dup_expression\",\"issue\":\"#1501\",\"admission\":\"reserved\"}"
+  },
+  {
+    "name": "#2528: a row citing no issue refuses the lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": null,
+          "admission": "reserved",
+          "now": "implemented"
+        }
+      ],
+      "issues": {}
+    },
+    "output": "`dup_expression` is reserved and this change lowers it; its row cites no issue: name the rule in an open issue's design and cite it, or decline the rule\n  row: {\"name\":\"dup_expression\",\"kind\":\"dup_expression\",\"issue\":null,\"admission\":\"reserved\"}"
+  },
+  {
+    "name": "#2528: a rule still reserved is not lowered",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": "#1501",
+          "admission": "reserved",
+          "now": "reserved"
+        }
+      ],
+      "issues": {}
+    },
+    "output": ""
+  },
+  {
+    "name": "#2528: a rule the head declines is a decision, not a lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": "#1501",
+          "admission": "reserved",
+          "now": "declined"
+        }
+      ],
+      "issues": {}
+    },
+    "output": ""
+  },
+  {
+    "name": "#2528: a rule the head deletes is a decision, not a lowering",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": "#1501",
+          "admission": "reserved",
+          "now": null
+        }
+      ],
+      "issues": {}
+    },
+    "output": ""
+  },
+  {
+    "name": "#2528: each lowered rule is refused on its own",
+    "input": {
+      "rows": [
+        {
+          "name": "dup_expression",
+          "kind": "dup_expression",
+          "issue": "#1501",
+          "admission": "reserved",
+          "now": "implemented"
+        },
+        {
+          "name": "instantiation.explicit",
+          "kind": "instantiation",
+          "issue": "#1497",
+          "admission": "reserved",
+          "now": "implemented"
+        },
+        {
+          "name": "instantiation.tail",
+          "kind": "instantiation",
+          "issue": "#1497",
+          "admission": "reserved",
+          "now": "reserved"
+        }
+      ],
+      "issues": {
+        "1501": {
+          "state": "OPEN",
+          "body": "none"
+        },
+        "1497": {
+          "state": "CLOSED",
+          "body": "`instantiation`"
+        }
+      }
+    },
+    "output": "`dup_expression` is reserved and this change lowers it; its row cites #1501, whose body does not name `dup_expression`: name the rule in an open issue's design and cite it, or decline the rule\n  row: {\"name\":\"dup_expression\",\"kind\":\"dup_expression\",\"issue\":\"#1501\",\"admission\":\"reserved\"}\n`instantiation.explicit` is reserved and this change lowers it; its row cites #1497, which is closed: name the rule in an open issue's design and cite it, or decline the rule\n  row: {\"name\":\"instantiation.explicit\",\"kind\":\"instantiation\",\"issue\":\"#1497\",\"admission\":\"reserved\"}"
+  }
+]

@@ -1,0 +1,26 @@
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/specification/niche-realizability.gandr:32:26
+   │
+29 │     def derefMeets(w : Nat, h : Heap) -> vOpt(vInt, w, h) -> derefWp(w, keptOpt, h) =
+   │     │              ┬        ─ checked against `(h : Heap) -> -F (vOpt(vInt, w, h) -> derefWp(w, keptOpt, h))`; while checking the body of this function; binds h : Heap
+   │     │              │
+   │ ┌───┘              checked against `(w : Nat) -> (h : Heap) -> -F (vOpt(vInt, w, h) -> derefWp(w, keptOpt, h))`; while checking the body of this function; binds w : Nat
+   │ │
+30 │ │┌    match w where
+31 │ ││      | Zero => match h where
+   │ ││┌───────────────┘
+32 │ │││       | Emp => fun (e) { e }
+   │ │││                ┬─────────┯──
+   │ │││                │         │
+   │ │││                │         its type does not convert: expected `derefWp(Zero, keptOpt, Emp)`, found `vOpt(vInt, Zero, Emp)`
+   │ │││                checked against `-F (vOpt(vInt, Zero, Emp) -> derefWp(Zero, keptOpt, Emp))`; while checking the body of this function; binds e : vOpt(vInt, Zero, Emp)
+33 │ │││       | Cell(_l, _v, _rest) => fun (e) { e }
+   │ ││└────────────────────────────────────────────┘ checked against `-F (vOpt(vInt, Zero, h) -> derefWp(Zero, keptOpt, h))`; while checking the next premise of this
+34 │ ││      | Succ(n) => fun (r) { derefOrSome n Zero h r }
+   │ ││                                                    │
+   │ └│────────────────────────────────────────────────────│
+   │  └────────────────────────────────────────────────────checked against `(w : Nat, h : Heap) -> (vOpt(vInt, w, h) -> derefWp(w, keptOpt, h))`; while checking the body of this thunk
+   │                                                       checked against `-F (vOpt(vInt, w, h) -> derefWp(w, keptOpt, h))`; while checking the next premise of this
+   │
+   ├ note: `derefMeets` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

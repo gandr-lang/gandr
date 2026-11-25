@@ -1,0 +1,25 @@
+/// `UnknownGenerator`: a translator record naming a generator its description
+/// does not declare.
+theory Magma where
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+
+def exchange(b : Bool) -> Bool =
+  match b where
+    | true => +{.1 = *{}}
+    | false => +{.0 = *{}}
+
+def keep(e : +{Unit}) -> +{Unit} =
+  e
+
+def raised = ua[
+  2,
+  4
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+@[refuses("UnknownGenerator")]
+def misspelt = ua[
+  1,
+  4
+] Magma Magma (*{.mul = exchange, .zero = keep}) (*{.mul = exchange, .one = keep});

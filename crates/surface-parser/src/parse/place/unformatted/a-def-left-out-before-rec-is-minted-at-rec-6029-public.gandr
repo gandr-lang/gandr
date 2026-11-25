@@ -1,0 +1,8 @@
+/// The sum of two numbers, by recursion on the second.
+pub rec plus(n : Nat, m : Nat) -> Nat =
+  match m where
+    | Zero => n
+    | Succ(p) => Succ (plus[<] n p)
+
+/// The sum of two and three.
+def five : () -> Nat = plus two three;

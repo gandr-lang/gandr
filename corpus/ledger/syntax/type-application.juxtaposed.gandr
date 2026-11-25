@@ -1,0 +1,7 @@
+/// `type_application.juxtaposed`: a type family applied by juxtaposition.
+
+// The native finite lists.
+import std.list (List);
+
+/// One integer in a list.
+def numbers : List Integer = cons 1 nil;

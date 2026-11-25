@@ -1,0 +1,33 @@
+theory Two where
+  sort Width : Type;
+  oper bit : Width;
+  oper word : Width;
+
+data Fragment : Terms Two -> Type where {
+  | Piece : (w : Terms Two) --> Fragment w
+}
+
+data Size : Type where { | Word : Size | Byte : Size }
+
+data Frag : Size -> Type where {
+  | FPiece : (w : Size) --> Frag w
+}
+
+data Sized : Integer -> Type where {
+  | SPiece : (n : Integer) --> Sized n
+}
+
+module Inner where
+  def three : Integer = 3;
+
+def wordWidth : Terms Two = Two.word;
+
+def named(x : Fragment wordWidth) -> Fragment (wordWidth) = x;
+
+def operation(x : Fragment Two.word) -> Fragment (Two.word) = x;
+
+def constructor(x : Frag Size.Word) -> Frag (Size.Word) = x;
+
+def member(x : Sized Inner.three) -> Sized (Inner.three) = x;
+
+def literal(x : Sized 3) -> Sized (3) = x;

@@ -1,0 +1,2 @@
+{closure}def four : Integer ; def four = 4 ;
+def five : Integer ; def five = two ;

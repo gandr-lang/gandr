@@ -1,0 +1,2 @@
+{SAME}def named : +U (Integer -> -F Integer) ;
+def named = same ;

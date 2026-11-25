@@ -1,0 +1,6 @@
+theory Let where
+  sort Tm : Type+;
+  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
+  oper let2 : (u : Tm, v : Tm, t : (x : Tm) -> (y : Tm) -> Tm) --> Tm;
+  rule zeta : let u t <=> t u;
+  rule zeta2 : let2 u v t <=> t u v;

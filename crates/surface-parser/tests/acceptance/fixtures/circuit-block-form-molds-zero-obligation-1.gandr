@@ -1,0 +1,17 @@
+theory Nat where {
+  sort Nat : Type;
+  data Zero : Nat;
+  data Succ : Nat --> Nat;
+  oper add : (Nat, Nat) --> Nat;
+
+  rule cong2 : (
+    rule p : Nat ==> Nat,
+    rule q : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) ==> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : q(y) ==> (y′);
+    node : add(x′, y′) --> (z);
+  };
+}

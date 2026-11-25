@@ -1,0 +1,6 @@
+{
+  "workspace": ["Cargo.lock", "Cargo.toml", "missing.toml"],
+  "outside": {
+    "a": ["extra/data.txt"]
+  }
+}

@@ -1,0 +1,156 @@
+// A record face is a named set of record labels.
+//
+// A `where` block declares faces after a record type. The reader `.#{` fixes
+// fields by label, by face or by a system of faces. In a system, the checker
+// converts the value of each later face with the value of the first face on
+// their meet.
+//
+// The checker checks each fixed value at its field type. A patched value keeps
+// its free fields. A selection returns a fixed value. A record type ends at
+// `}` and keeps its labels as its boundary without a block. `|->` spells `↦`
+// in ASCII.
+// - record label
+// - record face
+// - record system
+// - theory boundary
+// - lazy record
+// - codata
+//
+// - see: `pathological/desc/record-faces.gandr` — a face past the labels, a
+//   face named twice, a reader naming a field or a face the type lacks, a
+//   literal stating a fixed field at another value, and two faces that
+//   disagree on their meet, refused
+// - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
+//   faces
+// - owes: #6504 — a lazy record and a codata declaration hold faces.
+
+/// A server's configuration: the faces `secure` and `addr` meet at the port.
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = {port, tls};
+  face addr = {host, port};
+
+/// A record by label fixes the secure fields.
+def record_by_label : Config.#{.port = 443, .tls = true} = *{.host = "localhost"};
+
+/// A record by face fixes the secure fields.
+def record_by_face : Config.#{secure ↦ *{.port = 443, .tls = true}} = *{.host = "localhost"};
+
+/// A record by a system of faces fixes their meet.
+def record_by_system : Config.#{
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 443}
+} = *{};
+
+/// A square with a far face.
+theory Sq where
+  /// Square has four boundary points.
+  boundary Square {a, b, c, d};
+  /// `far` names its two points.
+  face far = {b, c};
+
+/// A configuration states the record whatever faces it names.
+def local : Config = *{.host = "localhost", .port = 443, .tls = true};
+
+/// A configuration on the secure port, by its fields: the host alone is free.
+def secured : Config.#{.port = 443, .tls = true} = *{.host = "localhost"};
+
+/// The same configuration, whose literal states each fixed field at the value
+/// the reader fixes.
+def secured_stated : Config.#{
+  .port = 443,
+  .tls = true
+} = *{.host = "localhost", .port = 443, .tls = true};
+
+/// `local` stands at the secure port by the coercion in. Its port and its
+/// `tls` convert with the values that the reader fixes.
+def secured_local : Config.#{.port = 443, .tls = true} = local;
+
+/// The host a configuration fixes to a name.
+def home : String = "localhost";
+
+/// The port of a configuration whose host is the name `home`.
+def home_port(c : Config.#{.host = home}) -> Integer = c.port;
+
+/// The coercion gives `local` the host `home`. The kernel reads the name
+/// `home` as its value when it replays the coercion.
+///
+/// - see: #5683
+@[runs("443")]
+def local_port : Integer = home_port (local);
+
+/// The same configuration by its face.
+def faced : Config.#{secure ↦ *{.port = 443, .tls = true}} = *{.host = "localhost"};
+
+/// The port a configuration on the secure port fixes: 443.
+def port_of(c : Config.#{.port = 443, .tls = true}) -> Integer = c.port;
+
+/// The host of a configuration on the secure face, written in ASCII.
+def host_of(c : Config.#{secure |-> *{.port = 443, .tls = true}}) -> String = c.host;
+
+/// The port of the configuration by its fields.
+def secured_port : Integer = port_of (secured);
+
+/// The host of `local`, coerced in where the call reads it.
+def local_host : String = host_of (local);
+
+/// The port of any configuration.
+def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer = c.port;
+
+/// `secured` stands at `Config` as its whole record, which holds the fixed
+/// port.
+@[runs("443")]
+def secured_at_base : Integer = any_port (secured);
+
+/// `secured` as a definition at `Config`. Its run builds the whole record.
+@[runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}")]
+def secured_whole : Config = secured;
+
+/// The port a configuration fixes to a name.
+def default_port : Integer = 443;
+
+/// A selection of a fixed field reads the name the reader fixes.
+def named_port(c : Config.#{.port = default_port}) -> Integer = c.port;
+
+/// A configuration on the default port, by its free fields.
+def defaulted : Config.#{.port = default_port} = *{.host = "localhost", .tls = true};
+
+/// The port of `defaulted`: the value of `default_port`.
+@[runs("443")]
+def defaulted_port : Integer = named_port (defaulted);
+
+/// Both faces in one system: they meet at the port and agree there, so the
+/// system fixes every field of `Config`.
+def both_port(c : Config.#{
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 443}
+}) -> Integer = c.port;
+
+/// `local` stands at the system by the coercion in: each of its fields
+/// converts with the value that the system fixes.
+@[runs("443")]
+def local_both_port : Integer = both_port (local);
+
+/// A reader that fixes every field has one element, the record of no fields:
+/// `*{}`. Its host is the name `local_host`.
+///
+/// - see: #5680
+def fixed_fields : Config.#{.host = local_host, .port = 443, .tls = true} = *{};
+
+/// The system that fixes every field holds `*{}` the same way.
+def fixed_faces : Config.#{
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 443}
+} = *{};
+
+/// `fixed_faces` at `Config`. Its run builds the whole record from the values
+/// that the system fixes.
+@[runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}")]
+def fixed_faces_whole : Config = fixed_faces;
+
+/// The port of `fixed_faces`, read where `both_port` takes the system.
+@[runs("443")]
+def fixed_faces_port : Integer = both_port (fixed_faces);
+
+/// `fixed_fields` at `Config`.
+@[runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}")]
+def fixed_fields_whole : Config = fixed_fields;

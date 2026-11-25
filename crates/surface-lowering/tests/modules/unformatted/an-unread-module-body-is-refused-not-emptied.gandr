@@ -1,0 +1,7 @@
+module M : *{
+  sort x : Integer
+} where {
+  def x = 1;
+}
+
+def after = 1;

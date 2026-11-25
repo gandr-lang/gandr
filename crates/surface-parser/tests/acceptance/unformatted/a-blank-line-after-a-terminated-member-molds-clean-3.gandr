@@ -1,0 +1,10 @@
+theory S where {
+
+  sort S : Type;
+
+  // a comment between members
+
+  sort T : Type;
+
+}
+

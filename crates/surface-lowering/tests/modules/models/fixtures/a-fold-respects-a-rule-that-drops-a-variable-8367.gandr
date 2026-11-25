@@ -1,0 +1,35 @@
+data Width : Type where
+  | Bit : Width
+  | Word : Width
+
+data Fragment : Width -> Type where {
+  | Low : Fragment Bit
+  | High : Fragment Bit
+  | Zero : Fragment Word
+  | One : Fragment Word
+  | Choose : (c : Fragment Bit, x : Fragment Word, y : Fragment Word) --> Fragment Word
+  rule : Choose High x y <=> x;
+  rule : Choose Low x y <=> y;
+}
+
+def rec copy(w : Width, t : Fragment w) -> Fragment w =
+  match t where
+    | Low => Low
+    | High => High
+    | Zero => Zero
+    | One => One
+    | Choose(c, x, y) => Choose (copy[<] Bit c) (copy[<] Word x) (copy[<] Word y)
+
+def rec crossed(w : Width, t : Fragment w) -> Fragment w =
+  match t where
+    | Low => Low
+    | High => High
+    | Zero => Zero
+    | One => One
+    | Choose(c, x, y) => Choose (crossed[<] Bit c) (crossed[<] Word y) (crossed[<] Word x)
+
+def rec under(t : Fragment Word, d : Fragment Word) -> Fragment Word =
+  match t where
+    | Zero => d
+    | One => One
+    | Choose(c, x, y) => Choose c (under[<] x d) (under[<] y d)

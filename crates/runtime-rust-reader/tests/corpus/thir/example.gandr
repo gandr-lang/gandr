@@ -1,0 +1,36 @@
+//! Corten's running example with its two bodies staged from `example.rs`,
+//! the crate beside this source. The model writes the same bodies by hand.
+//! Each staged body meets its specification by the model's own proof. So
+//! the normaliser reads each staged body as the body that the model writes.
+//!
+//! - see: corpus/model/interop/thir/example.gandr — the bodies written by hand
+
+// `Item`, the specifications and the proofs over the bodies written by hand.
+import "../../../../../corpus/model/interop/thir/example.gandr";
+
+// The values, the expressions and the transformers.
+import std.thir (Value, Expr, wpFn);
+
+/// `identity`'s body, staged from the crate.
+@[thir(("example.rs", "identity"))]
+pub def stagedIdentity : Expr Item;
+
+/// `example`'s body, staged from the crate.
+@[thir(("example.rs", "example"))]
+pub def stagedExample : Expr Item;
+
+/// The staged `identity` meets its specification under every table, by the
+/// proof of the body written by hand.
+pub def stagedIdentityMeets(
+  spec : (Item, Value, Value -> Type) -> Type,
+  v : Value,
+  k : Value -> Type,
+  h : identitySpec(Identity, v, k)
+) -> wpFn(Item, spec, stagedIdentity, v, k) = identityMeets spec v k h;
+
+/// The staged `example` meets its specification at every value and
+/// postcondition, by the proof of the body written by hand.
+pub def stagedExampleMeets(b : Value, post : Value -> Type) -> exampleSpec(
+  b,
+  post
+) -> wpFn(Item, identitySpec, stagedExample, b, post) = exampleMeets b post;

@@ -1,0 +1,6 @@
+/// `UndescribedMember.NoOutput`: a member the description does not read: an
+/// operation with no output port, so its result goes nowhere.
+@[refuses("UndescribedMember.NoOutput")]
+theory Drain where
+  sort M : Type;
+  oper drain : (m : M) --> ();

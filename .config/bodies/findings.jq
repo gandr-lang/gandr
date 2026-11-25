@@ -1,0 +1,256 @@
+# What a unit issue lacks before work may start on it (#2532): `findings`
+# gives one line per missing or malformed section of the body it is applied
+# to, or nothing; its arguments are the issue's labels, read by the sections
+# only some kinds of unit carry, and its number, read by `## Concerns`.
+# `unit:check` prints them (`unit.jq`); `claim:next` prints them as the
+# pick's sections due (`next.jq`, #3134), and `pr:open` refuses a landing on
+# an issue that has any (`signed.jq`).
+#
+# A unit issue carries, each with content (`units.md` § units-issue):
+#
+# - `## Sources`: a table with the columns Source, Role and What it gives
+#   (#3594), one row per source. The Source cell names the source in
+#   backquotes. The Role is `primary`, `secondary`, `oracle` for the system a
+#   shallow embedding is compared with (#3964), or `not read` for an owner
+#   the term map routes to and the unit declines (#3158). A `not read` row
+#   gives its reason in What it gives. A list item is refused;
+# - `## Embedding owes`, on a unit with an `oracle` row (#3964): one
+#   `- #n — <the operation>` per operation the oracle has and gandr lacks,
+#   each its own issue, or `none — <why nothing is owed>`;
+# - `## Readings`: a table answering each of the ten axes `yes — <what it
+#   gives this unit>` or `no — <why it does not reach it>`, a reason on both
+#   (#2955); a refused row quotes the axis's question. The `general` row
+#   (#5951) names the level of the unit's result, `yes — general: <level>`,
+#   or a shadow of it, `yes — shadow: <what>, general form in `<key>`, owed
+#   by #<n>`, or says `no — <reason>`. A `yes` in another form, or a shadow
+#   with no backquoted source key or no issue, is refused. A signed issue is
+#   read so too, at the frame now (#7018): a unit signed before the axis
+#   meets the refusal at its next `pr:open`. A signed issue with no row for
+#   an axis of `noted_axes` gets a `note:` line instead (#7350);
+# - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
+#   `yes` or `no` (#2795). A concern that the ledger gains after the issue
+#   asks no row of it (#5308): the issue's number is at or below the
+#   concern's issue, or the coordinator signed the issue. A body read with no
+#   number, as a template is, owes a row for every concern. A row the issue
+#   writes is judged whatever its concern's age;
+# - `## Ledger` and `## Not in this slice`;
+# - `## After`: `none`, or one `- #n — <what it waits for>` per issue the
+#   unit waits on (#2902). The section is the record; `unit:check` sets each
+#   one as the issue's GitHub `blocked by` dependency, and a dependency stated
+#   in prose, a line `after: …`, is refused;
+# - `## Surface`, on a `kind:feature` labelled `area:surface` or `area:theory`
+#   (#4637; a `std` feature carries `area:surface`): its first line is
+#   `tier <0–4> — <why the tier below does not read well enough>`, or
+#   `none — <why the feature has no surface>`. The tiers are the owner's
+#   scale: 0 names and combinators, 1 a user notation, 2 a reader
+#   `#name{ … }`, 3 an attribute `@[…]`, 4 a clause position bound to a `std`
+#   interface;
+# - `## Engineering` (#5038): a table with one row for each of `change`,
+#   `complexity`, `latency`, `parallelism`, `memory`, `failure` and
+#   `streaming` (#6884), the row's name in its first cell and its answer in
+#   its last: a bound, a budget or a measured number, or `n/a — <reason>`
+#   where the change has no such path (`units.md` § units-engineering). An
+#   empty answer and a bare `n/a` are refused, and a message on `streaming`
+#   quotes its question. A `change` answer other than `n/a — <reason>` holds
+#   two parts (#5850): `unchanged:`, the work when no input of the result
+#   changes, and `edit:`, the work an edit costs. One that lacks either is
+#   refused, by the part it lacks. An issue the coordinator signed is not
+#   judged, so no unit signed before the rule becomes unclaimable;
+# - `## The shape` and `## Try first`, when the body says it is new
+#   territory;
+# - `## Observed at`, on an issue labelled `view` (#6873): the table
+#   `| Surface | How to reach it | Test |`, the editor extension first, each
+#   row naming a shipped surface of `surfaces.json` (`views.jq`). An issue
+#   the coordinator signed is not judged, as for `## Surface`.
+#
+# A `## Sources` row citing a paper dated before the citation window's cutoff
+# (`.config/references/window.toml`, #4708) names the newer work that
+# supersedes it in What it gives, `superseded by `<key>``, its key dated at or
+# after the cutoff, or opens that cell `exemplar: <why no newer work states
+# what the unit builds>`, as a `[[site]]` entry of the window does. A paper's
+# date is its key's: a library key's year, `Author-YYYY-…`, or an arXiv
+# identifier's, as `window.sql` reads them; a key carrying none is not judged.
+# The cutoff is the named argument `cutoff` (`cutoff.jq`), and a reading given
+# none judges no date. A `not read` row, and an issue the coordinator signed,
+# is not judged, so no unit signed before the rule becomes unclaimable.
+#
+# A section's HTML comments are not content, so a hint left in a section
+# leaves it unanswered until it is written. The unit form
+# (`.github/ISSUE_TEMPLATE/unit.yml`, #3113) writes its fields as these
+# sections through the issues workflow.
+
+include "sections";
+include "views";
+
+def need($name):
+  (section($name) // null) as $lines
+  | if $lines == null then "`## \($name)` is missing"
+    elif ($lines | filled | not) then "`## \($name)` is empty"
+    else empty
+    end;
+
+# Whether the labels ask for `## Surface` (#4637). An issue the coordinator
+# signed is never judged for it again, so no unit signed before the rule, or
+# in flight, becomes unclaimable.
+def surfaced($labels):
+  ($labels | index("kind:feature")) != null and ($labels | index("shape:signed")) == null
+  and any($labels[]; . == "area:surface" or . == "area:theory");
+
+def surface($labels):
+  if surfaced($labels) | not then empty
+  else
+    "`tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)" as $form
+    | (section("Surface") // null) as $lines
+    | if $lines == null then "`## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, \($form)"
+      elif ($lines | filled | not) then "`## Surface` is empty: write \($form)"
+      else ($lines | join("\n") | gsub("(?s)<!--.*?-->"; "") | split("\n") | map(select(test("\\S"))) | first | sub("^[-*]\\s+"; "")) as $first
+      | if $first | test("^(tier [0-4]|none) —\\s*\\S") then empty
+        else "`## Surface` opens `\($first)`, not \($form)"
+        end
+      end
+  end;
+
+# What `## Engineering` lacks: the section, a row of the seven, a row's
+# answer, or a reason beside an `n/a`. The check skips an issue that the
+# coordinator signs. A message on the `streaming` row quotes its question.
+# - see: #5038, #6884
+def engineering_findings($labels):
+  if ($labels | index("shape:signed")) != null then empty
+  else
+    "a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)" as $form
+    | (section("Engineering") // null) as $lines
+    | if $lines == null then
+        "`## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory`, `failure` and `streaming`, each \($form)"
+      else [$lines | engineering] as $rows
+      | engineering_rows[] as $row
+      | (if $row == "streaming" then "; the row asks \(streaming_question)" else "" end) as $asks
+      | [$rows[] | select(.row == $row) | .answer] as $answers
+      | if ($answers | length) == 0 then "`## Engineering` has no row for `\($row)`: write \($form)\($asks)"
+        elif all($answers[]; . == "") then "`## Engineering` leaves `\($row)` empty: write \($form)\($asks)"
+        elif all($answers[]; test("^n/?a\\.?$"; "i")) then "`## Engineering` answers `\($row)` with a bare `n/a`: write `n/a — <reason>`"
+        elif $row == "change"
+          and all($answers[]; (test("^n/?a\\b"; "i") | not)
+            and ((test("(^|[^a-z])unchanged:"; "i") and test("(^|[^a-z])edit:"; "i")) | not))
+        then
+          ([if any($answers[]; test("(^|[^a-z])unchanged:"; "i")) then empty else "`unchanged:`" end,
+            if any($answers[]; test("(^|[^a-z])edit:"; "i")) then empty else "`edit:`" end] | join(" and ")) as $lacks
+          | "`## Engineering` answers `change` without \($lacks): write `unchanged: <the work when no input of the result changes>; edit: <the work an edit costs, in what the edit changes>`, or `n/a — <reason>` (`units.md` § units-engineering)"
+        else empty
+        end
+      end
+  end;
+
+# The year a source's key carries (#4708), or null: a library key's,
+# `Author-YYYY-…`, or an arXiv identifier's, new style `arXiv:YYMM.…` or old
+# style `arXiv:archive/YYMM…`, as `window.sql` reads them. A DOI, a vault page,
+# a path and an issue carry none.
+def paper_year:
+  if test("^arXiv:[0-9]{4}\\.") then 2000 + (.[6:8] | tonumber)
+  elif test("^arXiv:[^/]+/[0-9]{2}") then (capture("/(?<yy>[0-9]{2})").yy | tonumber) as $yy | (if $yy >= 90 then 1900 else 2000 end) + $yy
+  elif test("^(doi|arXiv):") then null
+  elif test("^[^-\\s/]+-[12][0-9]{3}-") then capture("^[^-]+-(?<year>[0-9]{4})-").year | tonumber
+  else null
+  end;
+
+def window($labels):
+  ($ARGS.named.cutoff // null) as $cutoff
+  | if $cutoff == null or ($labels | index("shape:signed")) != null then empty
+    else source_rows
+    | select(.role != "not read")
+    | . as $row
+    | ([.text | match("superseded by `([^`]+)`"; "g") | .captures[0].string | paper_year | select(. != null and . >= $cutoff)] | length > 0) as $superseded
+    | ($row.text | test("^exemplar:\\s*\\S")) as $exemplar
+    | select(($superseded or $exemplar) | not)
+    | .keys[]
+    | (paper_year // empty) as $year
+    | select($year < $cutoff)
+    | "`## Sources` row `\($row.line)` cites `\(.)` from \($year), before the citation window opens in \($cutoff): read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from \($cutoff) on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
+    end;
+
+# Whether an issue owes a `## Concerns` row for a concern of the ledger. The
+# sign-off reads every row that the ledger holds at that time. Thus a signed
+# issue owes no row that it lacks. An issue with a number at or below the
+# concern's issue comes before the concern, and owes no row for it. Thus a new
+# concern does not refuse a unit that passes.
+#
+# A body with no number owes every row.
+# - see: #5308
+def owes_row($row; $labels; $number):
+  ($labels | index("shape:signed")) == null
+  and ($number == null or $row.issue == null or $number > ($row.issue | ltrimstr("#") | tonumber));
+
+def findings($labels; $number):
+  . as $body
+  | need("Sources"),
+    # A refactor states what it takes out of the tree, which the architect
+    # reads before the coordinator signs it (#6817): `none` or one row each.
+    (if ($labels | index("kind:refactor")) != null and ($labels | index("collector")) == null and section("Deletes") == null then
+       "`## Deletes` is missing: a `kind:refactor` unit writes one row for each item, test, ledger row or file it takes out, or `none` (#6817)"
+     else empty end),
+    ((section("Sources") // []) as $lines
+      | [source_rows] as $rows
+      | ($lines | items | "`## Sources` line `\(.)` is a list item: write it as a row of the table `| Source | Role | What it gives |`"),
+        (if ($rows | length) == 0 and ([$lines | items] | length) == 0 and ($lines | filled)
+         then "`## Sources` holds no table: write `| Source | Role | What it gives |` and one row per source" else empty end),
+        ($rows[]
+          | if (.keys | length) == 0 then "`## Sources` row `\(.line)` names no source in backquotes"
+            elif IN(.role; source_roles[]) | not then "`## Sources` row `\(.line)` gives the role `\(.role)`: write `primary`, `secondary`, `oracle` or `not read`"
+            elif .role == "not read" and .text == "" then "`## Sources` row `\(.line)` declines its source with no reason in What it gives"
+            else empty
+            end)),
+    (if any(source_rows; .role == "oracle") then
+       owes as $owes
+       | "one `- #n — <the operation>` per operation the oracle has and gandr lacks, each its own issue, or `none — <why nothing is owed>`" as $form
+       | if $owes == null then "`## Embedding owes` is missing: the unit names an `oracle` in `## Sources`, so write \($form)"
+         elif $owes.empty then "`## Embedding owes` is empty: write \($form)"
+         else ($owes.malformed[] | "`## Embedding owes` line `\(.)` is not \($form)"),
+           (if $owes.none and ($owes.numbers | length) > 0 then "`## Embedding owes` says `none` and lists issues: keep the issues, or `none` and its reason alone" else empty end)
+         end
+     else empty end),
+    (if section("Readings") == null then "`## Readings` is missing"
+     else [marks] as $marks
+     | (axes[] | . as $axis
+         | [$marks[] | select(.axis == $axis)] as $rows
+         | if ($rows | length) == 0 then
+             "`## Readings` has no row for `\($axis)`; the axis asks \(questions[$axis])"
+             | if IN($axis; noted_axes[]) and ($labels | index("shape:signed")) != null then "note: \(.); the issue was signed before the axis landed, so it is not refused" else . end
+           elif ([$rows[] | select(.mark != null)] | length) == 0 then "`## Readings` marks `\($axis)` neither `yes` nor `no`; the axis asks \(questions[$axis])"
+           elif ([$rows[] | select(.mark != null and .reason != null)] | length) == 0 then
+             "`## Readings` marks `\($axis)` `\(first($rows[] | select(.mark != null)).mark)` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks \(questions[$axis])"
+           else empty
+           end),
+       ($marks[]
+         | select(.axis == "general" and .mark == "yes")
+         | "write `yes — shadow: <what>, general form in `<source key>`, owed by #<n>`; the axis asks \(questions.general)" as $form
+         | if .reason // "" | test("^general:") then empty
+           elif .reason // "" | test("^shadow:") then
+             (if .reason | test("`[^`]+`") then empty else "`## Readings` answers `general` as a shadow with no source key in backquotes: \($form)" end),
+             (if .reason | test("#[0-9]+") then empty else "`## Readings` answers `general` as a shadow with no issue that owes the general form: \($form)" end)
+           else "`## Readings` answers `general` `yes` in neither form: write `yes — general: <the form>`, or `yes — shadow: <what>, general form in `<source key>`, owed by #<n>`; the axis asks \(questions.general)"
+           end)
+     end),
+    (if section("Concerns") == null then "`## Concerns` is missing"
+     else [concern_marks] as $marks
+     | (concern_rows[] | . as $row | .id as $concern
+         | if ([$marks[] | select(.concern == $concern)] | length) == 0 then
+             (if owes_row($row; $labels; $number) then "`## Concerns` has no row for `\($concern)`" else empty end)
+           elif ([$marks[] | select(.concern == $concern and .mark != null)] | length) == 0 then "`## Concerns` marks `\($concern)` neither `yes` nor `no`"
+           else empty
+           end)
+     end),
+    need("Ledger"),
+    need("Not in this slice"),
+    (after as $after
+     | "`none`, or one `- #n — <what it waits for>` per issue the unit waits on" as $form
+     | if $after == null then "`## After` is missing: write \($form)"
+       elif $after.empty then "`## After` is empty: write \($form)"
+       else ($after.malformed[] | "`## After` line `\(.)` is not \($form)"),
+         (if $after.none and ($after.numbers | length) > 0 then "`## After` says `none` and lists issues: keep the issues, or `none` alone" else empty end)
+       end),
+    ($body | lines[] | select(test("^after:\\s"; "i"))
+      | "the line `\(.)` states a dependency in prose: list each issue in `## After` as `- #n — <what it waits for>`, and `unit:check --fix` sets it on GitHub"),
+    (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end),
+    surface($labels),
+    observed_findings($labels),
+    engineering_findings($labels),
+    window($labels);

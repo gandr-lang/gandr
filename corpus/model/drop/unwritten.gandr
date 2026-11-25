@@ -1,0 +1,29 @@
+//! `unwritten` models an access that abandonment ends before its write-back.
+//!
+//! The handler does not resume its continuation.
+//! The held value stays unchanged.
+//!
+//! The example exits from an access view.
+//! Its handler abandons the continuation.
+//!
+//! - see: #1334 — `unwritten`
+//! - cites: [Plotkin-2013-handling_algebraic_effects]
+//!
+//! [Plotkin-2013-handling_algebraic_effects]: https://doi.org/10.2168/LMCS-9(4:23)2013 "Plotkin and Pretnar, Handling Algebraic Effects"
+
+// The import provides the early-exit host interface.
+import std.process;
+
+/// The handler abandons the access continuation before it writes back the held
+/// value.
+@[runs("1")]
+def unwritten() -> Integer =
+  var x = 1
+  let r : Integer = handle c : std.process.Exit.Eff {
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { pure *{} };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  };
+  pure x

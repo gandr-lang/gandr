@@ -1,0 +1,16 @@
+# Written by `gandr check` from the workspace's `Workspace` model: edit the model, not this file.
+# blake3: 8f22477bbaae9a95bdaaa39f2d8b44d775400424a17b5efe7f0d1c3a1d5d99ff
+
+[workspace]
+version = "0.1.0"
+members = [
+  "hello",
+  "tools",
+]
+
+[toolchain]
+gandr = ">= 0.0"
+features = [
+  "project-manifest",
+]
+systems = []

@@ -1,0 +1,27 @@
+/// The type with no element.
+pub data Empty : Type where {}
+
+/// The circle.
+pub data Circle : Type where
+  | Base : Circle
+  | loop : Base <-> Base
+
+/// The integers, each successor cancelled by a predecessor.
+pub data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S (P x) <=> x;
+  rule : P (S x) <=> x;
+}
+
+/// The winding of the circle's words.
+def rec wind(p : Path[.A = Circle] Base Base) -> Int =
+  match p where
+    | here => Z
+    | loop ∷ q => S (wind[<] q)
+    | back(loop) ∷ q => P (wind[<] q)
+
+/// The loop is not the empty word.
+def apart(e : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)) -> Empty =
+  match e {}

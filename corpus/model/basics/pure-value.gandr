@@ -1,0 +1,37 @@
+// This source shows pure calls in definition values.
+//
+// A definition value has no computation around a call.
+// A pure call remains its returned value.
+// Each read runs the call.
+// Types convert through the call.
+//
+// The checker refuses an effectful definition-value call.
+//
+// - see: #4812 — `odd`, `flipped`, `sameOdd`
+// - see: `basics/literal-in-value.gandr` — a literal a reader reads
+// - see: `ledger/diagnostics/UnenclosedRun.gandr` — effectful-call refusal.
+
+/// The two parities.
+data Parity : Type where
+  /// Even.
+  | Even : Parity
+  /// Odd.
+  | Odd : Parity
+
+/// The other parity.
+def flip(p : Parity) -> Parity =
+  match p where
+    | Even => Odd
+    | Odd => Even
+
+/// A call as the definition's own value.
+@[runs("Odd")]
+def odd : Parity = flip Even;
+
+/// This definition value pairs two calls.
+/// Each call runs before the pair.
+@[runs("*{Odd, Even}")]
+def flipped : Parity * Parity = *{flip Even, flip Odd};
+
+/// The definition identified with the constructor its call computes.
+def sameOdd : Path[.A = Parity] odd Odd = Path.here Odd;

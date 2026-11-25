@@ -1,0 +1,54 @@
+[package]
+name = "gandr-runtime-uring"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The kernel's io_uring: the ring, its submission and completion queues, its registrar and its operations"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "io-uring", "linux"]
+categories = ["filesystem", "network-programming", "os::linux-apis"]
+publish.workspace = true
+
+# The build script makes the kernel's declarations only with the `bindgen`
+# feature on, so the build dependency is optional with it.
+[build-dependencies]
+bindgen = { workspace = true, default-features = true, features = ["experimental"], optional = true }
+
+# On riscv64 the liburing crate makes its bindings with the bindgen command.
+# The library form of bindgen 0.71.1 gives the floating-point state of
+# `ucontext_t` 16 bytes against 528, so the layout checks refuse the build.
+# The command reads that state whole. A cross build on an x86-64 host names
+# the command in `BINDGEN_PATH`. A native build on the riscv64 host runs the
+# `bindgen` of the host's mise tools.
+#
+# The C compiler of the riscv64 host makes no position-independent code by
+# default. So the host's profile sets `LIBURING_CFLAGS=-fPIC`, and liburing's
+# static library links into the ring's position-independent test binary.
+# - see: #7720, `.config/riscv64/cross.bash`
+[target.'cfg(all(target_os = "linux", target_arch = "riscv64"))'.dependencies]
+axboe-liburing = { workspace = true, features = ["bindgen-cli"] }
+
+# The ring is the Linux kernel's, so the crate's dependencies are Linux's
+# alone. On another system the crate compiles empty.
+[target.'cfg(target_os = "linux")'.dependencies]
+axboe-liburing = { workspace = true }
+bon = { workspace = true, features = ["implied-bounds"] }
+libc = { workspace = true }
+rustix = { workspace = true, features = ["net"] }
+socket2 = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+assert_fs = { workspace = true }
+notify = { workspace = true }
+num_cpus = { workspace = true }
+predicates = { workspace = true }
+static_assertions_next = { workspace = true }
+
+[features]
+bindgen = ["dep:bindgen"]
+debug = []
+
+[lints]
+workspace = true

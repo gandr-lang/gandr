@@ -1,0 +1,7 @@
+def typeSelf : Type ≃ Type = *{
+  fun (x) { x },
+  *{
+    *{fun (x) { x }, fun (x) { Path.here (x) }},
+    *{fun (y) { y }, fun (y) { Path.here (y) }}
+  }
+};

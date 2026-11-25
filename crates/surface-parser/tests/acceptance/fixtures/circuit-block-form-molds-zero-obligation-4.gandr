@@ -1,0 +1,6 @@
+theory L where {
+  rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
+    node w1 : p(x) ==> (m);
+    node w2 : step(m) --> (o);
+  };
+}

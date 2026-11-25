@@ -1,0 +1,81 @@
+test: code::tests::a_declined_pair_is_undecided_6544
+package: gandr-core-checker
+command: mise run debug:test gandr-core-checker code::tests::a_declined_pair_is_undecided_6544 --break convert_terms
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-checker/2b5a2cbf8e3c8264/out/gandr_core_checker-2b5a2cbf8e3c8264"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-checker/2b5a2cbf8e3c8264/out/gandr_core_checker-2b5a2cbf8e3c8264' (x86_64).
+(lldb) settings set -- target.run-args  "code::tests::a_declined_pair_is_undecided_6544" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex convert_terms
+Breakpoint 1: 7 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_checker-2b5a2cbf8e3c8264`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000020d6dc8
+(lldb) run
+
+running 1 test
+test code::tests::a_declined_pair_is_undecided_6544 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1640583 launched: 'target/debug-trace/debug/build/gandr-core-checker/2b5a2cbf8e3c8264/out/gandr_core_checker-2b5a2cbf8e3c8264' (x86_64)
+Process 1640583 stopped
+* thread #2, name = 'code::tests::a_', stop reason = breakpoint 1.7
+       frame #0: 0x00005555565ae499 gandr_core_checker-2b5a2cbf8e3c8264`<gandr_core_checker::code::CodeDefinitions>::convert_terms(self={bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, core={values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, left={0:0}, right={0:1}) at code.rs:1573:5
+   1570	    ///   a type comparison report it as a mismatch.
+   1571	    /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
+   1572	    /// - witness: `code::tests::a_declined_pair_is_undecided_6544`
+-> 1573	    #[spec(ensures: |ret| (ret.is_ok() && !matches!(ret, Ok(MachineVerdict::Declined(_))))
+    	    ^
+   1574	        || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
+   1575	        || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+   1576	    #[inline]
+(lldb) bt 24
+* thread #2, name = 'code::tests::a_', stop reason = breakpoint 1.7
+   * frame #0: 0x00005555565ae499 gandr_core_checker-2b5a2cbf8e3c8264`<gandr_core_checker::code::CodeDefinitions>::convert_terms(self={bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, core={values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, left={0:0}, right={0:1}) at code.rs:1573:5
+     frame #1: 0x00005555560b2e5c gandr_core_checker-2b5a2cbf8e3c8264`gandr_core_checker::code::tests::a_declined_pair_is_undecided_6544 at tests.rs:336:21
+     frame #2: 0x000055555607cd37 gandr_core_checker-2b5a2cbf8e3c8264`gandr_core_checker::code::tests::a_declined_pair_is_undecided_6544::{closure#0}((null)={}) at tests.rs:329:39
+     frame #3: 0x0000555556b380d6 gandr_core_checker-2b5a2cbf8e3c8264`<gandr_core_checker::code::tests::a_declined_pair_is_undecided_6544::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000555556daf2cb gandr_core_checker-2b5a2cbf8e3c8264`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x0000555556daf2c9 gandr_core_checker-2b5a2cbf8e3c8264`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #6: 0x0000555556dbc815 gandr_core_checker-2b5a2cbf8e3c8264`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #7: 0x0000555556dbc810 gandr_core_checker-2b5a2cbf8e3c8264`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555556dbc810 gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #9: 0x0000555556dbc7fb gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #10: 0x0000555556dbc7fb gandr_core_checker-2b5a2cbf8e3c8264`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x0000555556dbc7fb gandr_core_checker-2b5a2cbf8e3c8264`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #12: 0x0000555556dbc7e6 gandr_core_checker-2b5a2cbf8e3c8264`test::run_test::{closure#0} at lib.rs:677:43
+     frame #13: 0x0000555556db71d4 gandr_core_checker-2b5a2cbf8e3c8264`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #14: 0x0000555556db7159 gandr_core_checker-2b5a2cbf8e3c8264`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x0000555556dbf972 gandr_core_checker-2b5a2cbf8e3c8264`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x0000555556dbf963 gandr_core_checker-2b5a2cbf8e3c8264`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x0000555556dbf963 gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #18: 0x0000555556dbf953 gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x0000555556dbf953 gandr_core_checker-2b5a2cbf8e3c8264`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x0000555556dbf953 gandr_core_checker-2b5a2cbf8e3c8264`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x0000555556dbf944 gandr_core_checker-2b5a2cbf8e3c8264`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555764e94f gandr_core_checker-2b5a2cbf8e3c8264`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #23: 0x000055555764e948 gandr_core_checker-2b5a2cbf8e3c8264`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+(lldb) frame variable --depth 3
+(gandr_core_checker::code::CodeDefinitions *) self = 0x00007ffff7bfe310 {bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}
+(gandr_core_term::arena::CoreArena *) core = 0x00007ffff7bfe218 {values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}
+(gandr_core_term::arena::ValueId) left = {0:0}
+(gandr_core_term::arena::ValueId) right = {0:1}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x00005555560b2e5c gandr_core_checker-2b5a2cbf8e3c8264`gandr_core_checker::code::tests::a_declined_pair_is_undecided_6544 at tests.rs:336:21
+   333 	    let hole = arena.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+   334 	    let zero = arena.value_literal(crate::fixture::integer_literal());
+   335 	    assert_eq!(
+-> 336 	        definitions.convert_terms(&arena, hole, zero),
+    	                    ^
+   337 	        Err(super::CheckRefusal::Undecided { at: hole }),
+   338 	        "a pair the machine declines is undecided, not a verdict a caller reads as apart"
+   339 	    );
+(lldb) frame variable --depth 3
+(gandr_core_term::arena::CoreArena) arena = {values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}
+(gandr_core_checker::code::CodeDefinitions) definitions = {bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}
+(gandr_core_term::arena::ValueId) hole = {0:0}
+(gandr_core_term::arena::ValueId) zero = {0:1}

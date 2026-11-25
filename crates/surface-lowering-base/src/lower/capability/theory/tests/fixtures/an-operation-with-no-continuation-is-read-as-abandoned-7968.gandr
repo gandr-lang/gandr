@@ -1,0 +1,5 @@
+theory Overflow where {
+  sort R : Type+;
+  sort C : Type;
+  oper overflow : (reason : R) --> C;
+}

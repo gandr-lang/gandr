@@ -1,0 +1,5 @@
+theory Older where { oper answer : Integer ; oper tag : Integer ; }
+theory Newer where { oper reply : Integer ; oper label : Integer ; }
+flow renamed : Newer ~~> Older where { def answer = reply ; def tag = label ; }
+flow computed : Newer ~~> Older where { def answer = reply ; def tag = 9 ; }
+module Replying : Model(Newer) where { def reply = 42 ; def label = 7 ; }

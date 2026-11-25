@@ -1,0 +1,44 @@
+# Written by `gandr check` from the package's `Package` model: edit the model, not this file.
+# blake3: 3f1c37d08f6b76731ae55d4d83523d732b8cb05bcf19ef9c225a7709e82447a1
+
+[package]
+name = "std"
+version = "0.1.0"
+authors = "The gandr authors"
+licence = "MIT OR Apache-2.0"
+documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std"
+endpoint = "https://github.com/gandr-lang/gandr"
+modules = [
+  "authority",
+  "boundary",
+  "buffer",
+  "build",
+  "cost",
+  "crypto",
+  "env",
+  "fs",
+  "grade",
+  "hash",
+  "io",
+  "ir",
+  "layout",
+  "list",
+  "manifold",
+  "math.cylinder",
+  "math.path",
+  "net",
+  "overflow",
+  "process",
+  "quantum",
+  "rand",
+  "reals",
+  "secret",
+  "session",
+  "string",
+  "thir",
+]
+
+[toolchain]
+gandr = ">= 0.0"
+features = []
+systems = []

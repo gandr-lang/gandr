@@ -1,0 +1,71 @@
+//! The terms of a sort of a theory, where the slice of the sorts ends.
+//!
+//! `Terms S s` is the type of the closed terms of one sort of a theory. The
+//! tree derives that type for some sorts alone, and an author must know them.
+//!
+//! The slice reads sorts in two layers. The first is a plain sort whose
+//! operations take terms of that sort alone. The second is a sort over plain
+//! sorts whose ports state closed indices. A sort outside the slice is refused
+//! at the type that asks for its terms.
+//!
+//! - see: #8358
+//! - see: `model/desc/terms-of-a-sort.gandr` — the fragment at two widths
+//! - owes: #4150 — an operation across two plain sorts, and an index with a
+//!   variable
+
+/// A signature of two plain sorts, a point and a pair of them.
+theory Pair where
+  /// The points.
+  sort P : Type;
+  /// The pairs.
+  sort Q : Type;
+  /// The one point.
+  oper origin : P;
+  /// A pair of two points.
+  oper pair : (x : P, y : P) --> Q;
+
+/// The terms of the points are a type: their one operation takes no input.
+def start() -> Terms Pair P = Pair.origin;
+
+/// A pair takes two points, so the terms of the pairs stand outside the slice.
+@[refuses("OutOfFragment.terms_type.sorted")]
+def paired : Terms Pair Q = Pair.pair Pair.origin Pair.origin;
+
+/// A fragment whose one operation keeps the width of its input.
+theory Open where
+  /// The widths.
+  sort Width : Type;
+  /// The terms at a width.
+  sort Term(w : Width) : Type;
+  /// One bit.
+  oper bit : Width;
+  /// The low bit.
+  oper low : Term bit;
+  /// The same term, at the width of its input.
+  oper same : (x : Term w) --> Term w;
+
+/// A width as it is. The terms of the widths are a type.
+def openWidth(w : Terms Open Width) -> Terms Open Width = w;
+
+/// A port of `same` states a variable, so the terms stand outside the slice.
+@[refuses("OutOfFragment.terms_type.sorted")]
+def kept : Terms Open Term Open.bit = Open.low;
+
+/// A fragment whose widths no type of the source asks for.
+theory Bare where
+  /// The widths.
+  sort Width : Type;
+  /// The terms at a width.
+  sort Term(w : Width) : Type;
+  /// One bit.
+  oper bit : Width;
+  /// The low bit.
+  oper low : Term bit;
+
+/// No type writes the terms of the widths before this one, so it is refused.
+@[refuses("OutOfFragment.terms_type.sorted")]
+def alone(w : Type) -> Terms Bare Term w = Bare.low;
+
+/// A name that no sort of the theory has.
+@[refuses("OutOfFragment.terms_type.sorted")]
+def absent : Terms Bare Height = Bare.bit;

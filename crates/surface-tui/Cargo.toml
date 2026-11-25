@@ -1,0 +1,50 @@
+[package]
+name = "gandr-surface-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The gandr terminal face: the read-evaluate loop's transcript, an input pane and a status line, painted full-screen"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "transcript", "tui"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The face drives the read-evaluate loop, which needs its grammar to start and
+# renders refusals plainly; it paints the loop's transcript rows over the
+# renderer seam's highlight roles and line kinds through ratatui, on the
+# terminal through ratatui's crossterm backend and off it on ratatui's test
+# backend. The loop's lines are offered as syntax source text. The side view
+# reads the render bus's frames, the seam's serde image, as JSON lines. The
+# loop molds on the driver's pool, which the dispatcher holds.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+gandr-surface-render-terminal.workspace = true
+gandr-surface-repl.workspace = true
+gandr-surface-syntax.workspace = true
+ratatui.workspace = true
+serde_json.workspace = true
+
+# The golden spells types through the loop's renderer. The captures compare
+# the view's SVG with the committed files.
+[dev-dependencies]
+expect-test.workspace = true
+gandr-core-content.workspace = true
+gandr-core-incremental.workspace = true
+gandr-kernel-term.workspace = true
+
+[lints]
+workspace = true

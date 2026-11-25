@@ -1,0 +1,72 @@
+/// This source states rotation group laws for the circle.
+///
+/// Rotation has four inverse laws and a universal property.
+/// It follows cubical Agda's
+/// `Cubical/HITs/S1/Base.agda` and `S1/Properties.agda`.
+///
+/// The checker computes rotation by the loop and checks each path over words.
+///
+/// Limits: `rotIsEquiv` needs equivalences as structure. `invS¹Equiv` and
+/// `invS¹Path` need univalence as well.
+///
+/// - see: corpus/model/identity/circle-group.gandr
+import "./circle-base.gandr";
+// The loop is not the empty word.
+import "./circle-apart.gandr";
+
+/// The square of the unit has reflexivity at the circle point.
+def unitSquared : Path (mul Base Base) (mul Base Base) = Path.here Base;
+
+/// The `rotInv1` cases prove rotation by `b` then its inverse returns `a`.
+/// The proof owes no square of the two loops, because the circle's paths are
+/// its words, which form a set.
+def rotInv1(a : Circle, b : Circle) -> Path[.A = Circle] (mul (mul b a) (invLooper b)) a =
+  match a where
+    | Base => match b where
+      | Base => Path.here Base
+
+/// The `rotInv2` cases prove inverse rotation then rotation returns `a`.
+def rotInv2(a : Circle, b : Circle) -> Path[.A = Circle] (mul (mul (invLooper b) a) b) a =
+  match a where
+    | Base => match b where
+      | Base => Path.here Base
+
+/// The `rotInv3` cases prove division after rotation returns `a`.
+def rotInv3(a : Circle, b : Circle) -> Path[.A = Circle] (
+  mul b (invLooper (mul (invLooper a) b))
+) a =
+  match a where
+    | Base => match b where
+      | Base => Path.here Base
+
+/// The `rotInv4` cases prove division before rotation returns `a`.
+def rotInv4(a : Circle, b : Circle) -> Path[.A = Circle] (
+  mul (invLooper (mul b (invLooper a))) b
+) a =
+  match a where
+    | Base => match b where
+      | Base => Path.here Base
+
+/// The `atBase` function evaluates a point loop at `Base`.
+def atBase(f : (x : Circle) -> Path[.A = Circle] x x) -> Path[.A = Circle] Base Base =
+  f Base
+
+/// The `distinct` proof turns an equality of `selfloop` and `selfrefl`
+/// into loop apart.
+def distinct(e : Path selfloop selfrefl) -> Empty =
+  loop_apart (Path.ap atBase e)
+
+/// The `toLoop` record gets a map point and loop image with the image type
+/// at that point.
+def toLoop(f : Circle -> Int) -> *{point : Int, around : Path[.A = Int] point point} =
+  *{f Base, Path.ap f loop}
+
+/// The `fromLoopAt` case makes a circle map from one point and one loop.
+pub def fromLoopAt(x : Int, p : Path x x, c : Circle) -> Int =
+  match c where
+    | Base => x
+    | loop => p
+
+/// The `fromLoop` function curries a point and loop into a circle map.
+def fromLoop(x : Int, p : Path x x) -> Circle -> Int =
+  fun (c) { fromLoopAt x p c }

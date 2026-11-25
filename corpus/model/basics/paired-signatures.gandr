@@ -1,0 +1,30 @@
+// This source shows paired signatures and definitions.
+//
+// A pair may join one item or remain separate.
+// The checker checks a definition against its signature type.
+//
+// Block comments nest as grammar extras.
+// They do not change the prose semantics.
+//
+// - see: #1112 — `plus_two`
+
+/* Block comments are also grammar extras, and they can nest:
+   /* inner note */
+   the program below is unchanged by this prose. */
+
+/// The seed, through two primitive calls. The calls are pure, so the
+/// definition's value stands as what they return.
+@[runs("40")]
+def seed : Integer = prim.const 40 (prim.id 999);
+
+/// `plus_two` adds two at thunk grade one.
+/// The lowering accepts no grade other than `ω`.
+@[refuses("GradedBridge")]
+def plus_two : +U[1] (Integer -> -F Integer);
+def plus_two(x : Integer) -> Integer =
+  return (x + 2)
+
+/// `seeded` applies `plus_two`, which the checker refuses above, to `seed`.
+/// The unknown declaration type refuses the call.
+@[refuses("UnknownConstant")]
+def seeded() -> Integer = plus_two seed;

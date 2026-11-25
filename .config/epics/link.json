@@ -1,0 +1,144 @@
+[
+  {
+    "name": "#3398: an issue whose body names the epic, and one the epic's body names, open or closed, are its members",
+    "input": {
+      "issues": [
+        {
+          "number": 1,
+          "state": "open",
+          "labels": ["kind:epic"],
+          "body": "Units: #2 and #9."
+        },
+        {
+          "number": 2,
+          "state": "closed",
+          "labels": ["kind:gap"],
+          "body": "Lands the first rung."
+        },
+        {
+          "number": 3,
+          "state": "open",
+          "labels": ["kind:feature"],
+          "body": "Advances #1"
+        }
+      ]
+    },
+    "output": [
+      {
+        "epic": 1,
+        "members": [2, 3]
+      }
+    ]
+  },
+  {
+    "name": "#3398: an epic naming another is no member of it, so two epics never wait on each other",
+    "input": {
+      "issues": [
+        {
+          "number": 1,
+          "state": "open",
+          "labels": ["kind:epic"],
+          "body": "Split from #4; its units: #3."
+        },
+        {
+          "number": 3,
+          "state": "open",
+          "labels": ["kind:gap"],
+          "body": "Part of #1"
+        },
+        {
+          "number": 4,
+          "state": "open",
+          "labels": ["kind:epic"],
+          "body": "Continues in #1."
+        }
+      ]
+    },
+    "output": [
+      {
+        "epic": 1,
+        "members": [3]
+      },
+      {
+        "epic": 4,
+        "members": []
+      }
+    ]
+  },
+  {
+    "name": "#3398: a collector naming the epic is no member: it names the issues its rows are about",
+    "input": {
+      "issues": [
+        {
+          "number": 1,
+          "state": "open",
+          "labels": ["kind:epic"],
+          "body": "The programme."
+        },
+        {
+          "number": 5,
+          "state": "open",
+          "labels": ["collector", "kind:defect"],
+          "body": "| #1 | open |"
+        }
+      ]
+    },
+    "output": [
+      {
+        "epic": 1,
+        "members": []
+      }
+    ]
+  },
+  {
+    "name": "#3398: a reference into another repository, a path or a longer number is no reference",
+    "input": {
+      "issues": [
+        {
+          "number": 1,
+          "state": "open",
+          "labels": ["kind:epic"],
+          "body": "See other/repo#6 and docs/#6."
+        },
+        {
+          "number": 6,
+          "state": "open",
+          "labels": ["kind:gap"],
+          "body": "#1x and #12"
+        },
+        {
+          "number": 7,
+          "state": "open",
+          "labels": ["kind:gap"],
+          "body": "Named nowhere."
+        }
+      ]
+    },
+    "output": [
+      {
+        "epic": 1,
+        "members": []
+      }
+    ]
+  },
+  {
+    "name": "#3398: a closed epic is not backfilled",
+    "input": {
+      "issues": [
+        {
+          "number": 1,
+          "state": "closed",
+          "labels": ["kind:epic"],
+          "body": "Units: #2."
+        },
+        {
+          "number": 2,
+          "state": "open",
+          "labels": ["kind:gap"],
+          "body": "Advances #1"
+        }
+      ]
+    },
+    "output": []
+  }
+]

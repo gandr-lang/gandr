@@ -1,0 +1,8 @@
+theory CircleShape where {
+  sort Pt : Type;
+  oper base : Pt;
+  oper turn : (x : Pt) --> Pt;
+  oper unturn : (x : Pt) --> Pt;
+  rule turnUnturn : turn (unturn x) ==> x;
+  rule unturnTurn : unturn (turn x) ==> x;
+}

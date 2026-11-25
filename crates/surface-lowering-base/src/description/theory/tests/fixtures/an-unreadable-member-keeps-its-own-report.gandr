@@ -1,0 +1,5 @@
+theory Adder where {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+  rule ident ==> add;
+}

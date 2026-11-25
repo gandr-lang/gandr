@@ -1,0 +1,3 @@
+pub theory M.Shape where {
+  oper a : String;
+}

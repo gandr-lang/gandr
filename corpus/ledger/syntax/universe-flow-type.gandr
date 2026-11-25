@@ -1,0 +1,12 @@
+/// `universe_flow_type`: a flow between universe codes, written with its glyph
+/// and in ASCII.
+module Schema where {
+  type Old = String * Integer;
+  type New = Integer * String;
+  @[checks]
+  def toNew(old : Old) -> New =
+    match old where
+      | *{name, age} => *{age, name}
+}
+def shift : Schema.Old ⇝ Schema.New = Flow.into Schema.toNew;
+def shiftAscii : Schema.Old ~~> Schema.New = Flow.into Schema.toNew;

@@ -1,0 +1,8 @@
+error[OutOfFragment.View]: `resume` and `abort` end a view: the name an `access` binds after `as`
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.View.gandr:5:9
+  │
+5 │   abort n
+  │         ━ not a view an access binds
+  │
+  ├ note: `aborted` is refused with OutOfFragment.View, as its expectation states
+  ╰ help: open a view with `access` before resuming or aborting it

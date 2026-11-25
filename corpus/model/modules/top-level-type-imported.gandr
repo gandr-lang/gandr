@@ -1,0 +1,20 @@
+// This source shows an imported top-level type member.
+//
+// `Band` and `Twice` come from `top-level-type.gandr`.
+//
+// The checker resolves each imported type without qualification.
+//
+// - see: #2917
+
+// This import provides the band, the width and the pair family.
+import "./top-level-type.gandr";
+
+/// `innerBand` uses imported type `Band`.
+def innerBand : Band = *{.low = 400000, .high = 600000};
+
+/// `innerWidth` reads the imported width.
+@[runs("200000")]
+def innerWidth() -> Integer = width innerBand;
+
+/// `innerBounds` applies imported family `Twice`.
+def innerBounds : Twice Integer = *{400000, 600000};

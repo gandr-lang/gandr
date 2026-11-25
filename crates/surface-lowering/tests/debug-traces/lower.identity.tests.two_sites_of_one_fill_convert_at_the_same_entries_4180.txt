@@ -1,0 +1,87 @@
+test: lower::identity::tests::two_sites_of_one_fill_convert_at_the_same_entries_4180
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::identity::tests::two_sites_of_one_fill_convert_at_the_same_entries_4180 --break identity::one_body$
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lowering-a0000ae193279eaa"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lowering-a0000ae193279eaa' (x86_64).
+(lldb) settings set -- target.run-args  "lower::identity::tests::two_sites_of_one_fill_convert_at_the_same_entries_4180" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex identity::one_body$
+Breakpoint 1: where = gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::identity::one_body + 31 at identity.rs:551:5, address = 0x00000000025f40bf
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lowering-a0000ae193279eaa`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000002b44cc8
+(lldb) run
+
+running 1 test
+test lower::identity::tests::two_sites_of_one_fill_convert_at_the_same_entries_4180 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3474070 launched: 'target/debug-trace/debug/deps/gandr_surface_lowering-a0000ae193279eaa' (x86_64)
+Process 3474070 stopped
+* thread #2, name = 'lower::identity', stop reason = breakpoint 1.1
+       frame #0: 0x0000555557b480bf gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::identity::one_body(core={values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, one=ValueType({0:127}), other=ValueType({0:310})) at identity.rs:551:5
+   548 	    other: crate::ValueBody,
+   549 	) -> bool
+   550 	{
+-> 551 	    one == other
+    	    ^
+   552 	        || match (one, other) {
+   553 	            (crate::ValueBody::ValueType(one), crate::ValueBody::ValueType(other)) => {
+   554 	                gandr_core_term::equal_type_syntax(core, one, other) == CertificateEquality::Equal
+(lldb) bt 24
+* thread #2, name = 'lower::identity', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555557b480bf gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::identity::one_body(core={values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, one=ValueType({0:127}), other=ValueType({0:310})) at identity.rs:551:5
+     frame #1: 0x0000555557b41800 gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::identity::motives::{closure#0} at identity.rs:520:9
+     frame #2: 0x0000555557b00c39 gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::identity::Motives, gandr_core_nbe::arena::DomainFault>, gandr_core_nbe::identity::motives::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x0000555557b47fd9 gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::identity::motives(core={values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, left={0:2}, right={0:1}) at identity.rs:499:1
+     frame #4: 0x0000555557bc022f gandr_surface_lowering-a0000ae193279eaa`<gandr_core_nbe::conv::Walk>::neutrals::{closure#0} at conv.rs:1665:28
+     frame #5: 0x0000555557b000f8 gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Local, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::conv::Walk>::neutrals::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #6: 0x0000555557bc7ea8 gandr_surface_lowering-a0000ae193279eaa`<gandr_core_nbe::conv::Walk>::neutrals(self={core:{values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, outstanding:Nothing}, left={0:34}, right={0:23}, context=Flexible(Indeterminate)) at conv.rs:1538:5
+     frame #7: 0x0000555557bbb4f8 gandr_surface_lowering-a0000ae193279eaa`<gandr_core_nbe::conv::Walk>::run::{closure#1} at conv.rs:678:38
+     frame #8: 0x0000555557b00126 gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Walked, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::conv::Walk>::run::{closure#1}>(closure={_ref__self:{core:{values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({…}), length:4, alloc:{value:{…}}, _marker:{}}}, outstanding:Nothing}}) at __.rs:22:5
+     frame #9: 0x0000555557bc771c gandr_surface_lowering-a0000ae193279eaa`<gandr_core_nbe::conv::Walk>::run(self={core:{values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, outstanding:Nothing}) at conv.rs:657:5
+     frame #10: 0x0000555557bbc120 gandr_surface_lowering-a0000ae193279eaa`<gandr_core_nbe::conv::Walk>::settle::{closure#0} at conv.rs:627:27
+     frame #11: 0x0000555557affe6a gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Settlement, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::conv::Walk>::settle::{closure#0}>(closure={_ref__self:{core:{values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({…}), length:4, alloc:{value:{…}}, _marker:{}}}, outstanding:Nothing}, _ref__root:Values({0:22}, {0:15}, Rigid)}) at __.rs:22:5
+     frame #12: 0x0000555557bc7a19 gandr_surface_lowering-a0000ae193279eaa`<gandr_core_nbe::conv::Walk>::settle(self=<unavailable>, root=<unavailable>) at conv.rs:615:5
+     frame #13: 0x0000555557bc244d gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::conv::convert_values::{closure#0} at conv.rs:518:48
+     frame #14: 0x0000555557affde9 gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Settlement, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::conv::convert_values::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #15: 0x0000555557bc8785 gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::conv::convert_values(core={values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, left={0:22}, right={0:15}) at conv.rs:501:1
+     frame #16: 0x0000555557b400ee gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::rules::whole::{closure#0} at rules.rs:1905:38
+     frame #17: 0x0000555557aff25a gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<core::option::Option<gandr_core_nbe::rules::Plan>, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::rules::whole::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #18: 0x0000555557b4767f gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::rules::whole(core={values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, heads=(Neutral({0:35}, Held), Neutral({0:24}, Held)), term=Values({0:22}, {0:15})) at rules.rs:1880:1
+     frame #19: 0x0000555557b366da gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::rules::plan_values::{closure#0} at rules.rs:2510:28
+     frame #20: 0x0000555557b008cc gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::rules::Plan, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::rules::plan_values::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #21: 0x0000555557b45acc gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::rules::plan_values(core={values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}, definitions=<unavailable>, frozen={left:size=0, right:size=0}, left={0:22}, right={0:15}) at rules.rs:2469:1
+     frame #22: 0x0000555557b3fe98 gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::rules::plan::{closure#0} at rules.rs:1362:13
+     frame #23: 0x0000555557b0090c gandr_surface_lowering-a0000ae193279eaa`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::rules::Plan, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::rules::plan::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+(lldb) frame variable --depth 3
+(gandr_core_term::arena::CoreArena *) core = 0x00007ffff79fd938 {values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}
+(gandr_core_nbe::closure::ValueBody) one = ValueType({0:127}) {
+  0 = {0:127}
+}
+(gandr_core_nbe::closure::ValueBody) other = ValueType({0:310}) {
+  0 = {0:310}
+}
+(lldb) up
+frame #1: 0x0000555557b41800 gandr_surface_lowering-a0000ae193279eaa`gandr_core_nbe::identity::motives::{closure#0} at identity.rs:520:9
+   517 	    let shaped = zones
+   518 	        .iter()
+   519 	        .all(|&zone| one.environment().depth(zone) == other.environment().depth(zone));
+-> 520 	    if !one_body(core, one.body(), other.body()) || !shaped {
+    	        ^
+   521 	        return Ok(Motives::Unlike);
+   522 	    }
+   523 	    let mut bindings = Vec::new();
+(lldb) frame variable --depth 3
+(gandr_core_nbe::arena::DomainArena) domain = {values:size=23, value_guards:size=23, computations:size=35, comp_guards:size=35, neutrals:size=36, neutral_guards:size=36, value_closures:size=3, comp_closures:size=16, levels:size=0, fields:size=0, branches:size=0}
+(gandr_core_nbe::arena::ValueClosureId) left = {0:2}
+(gandr_core_nbe::arena::ValueClosureId) right = {0:1}
+(gandr_core_term::arena::CoreArena) core = {values:{frozen:None, own:size=1019}, computations:{frozen:None, own:size=324}, value_types:{frozen:None, own:size=769}, comp_types:{frozen:None, own:size=259}, words:{words:{0:size=0}}, region_binders_from:None}
+(gandr_core_nbe::closure::ValueClosure *) one = 0x00007ffff0122b90 {body:ValueType({0:127}), environment:{intuitionistic:size=6, linear:size=0}}
+(gandr_core_nbe::closure::ValueClosure *) other = 0x00007ffff0122b58 {body:ValueType({0:310}), environment:{intuitionistic:size=10, linear:size=0}}
+(gandr_core_term::syntax::Zone[2]) zones = ([0] = Intuitionistic, [1] = Linear)
+(bool) shaped = false

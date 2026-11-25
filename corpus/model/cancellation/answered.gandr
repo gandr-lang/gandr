@@ -1,0 +1,24 @@
+//! `answered` gives a cancellation that returns nine.
+//!
+//! The exit clause answers its scope. The abandoned subject does not run. The
+//! `pure` clause does not run.
+//!
+//! The handler invokes the exit operation. The exit clause abandons the
+//! continuation. The clause returns nine.
+//!
+//! - see: #1334 — `answered`
+// The import gives the shared declarations.
+import "./cancel-base.gandr";
+// The import gives the early-exit host interface.
+import std.process;
+
+/// A scope cancelled at its exit answers nine, not one hundred and one.
+@[runs("9")]
+def answered() -> Integer =
+  handle c : std.process.Exit.Eff {
+    c.exit 1;
+    pure 1
+  } with {
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => { abandon k; pure 9 }
+  }

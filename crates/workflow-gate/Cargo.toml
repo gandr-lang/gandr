@@ -1,0 +1,42 @@
+[package]
+name = "gandr-workflow-gate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The bookkeeping of a landing's gate as one program: the inputs of each check at each commit, and their digests, in one run"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "gandr", "gate", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "gate"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# clap reads the command line. gandr-workflow-github declares the site of
+# each call of `gh`, so the check of the API budget prices it. serde reads
+# the tables of the gate and the answers of Cargo and of mise.
+#
+# sha2 gives the digest of the inputs of a check and the name of the ref of
+# each record of a verdict. Each record on the remote stands under a name of
+# a SHA-256, so sha2 stays while that name holds one. A change of the name to
+# another digest must state how a reader finds a record under an old name.
+# sha2 leaves the crate in that change.
+[dependencies]
+clap.workspace = true
+gandr-workflow-github.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "#5498: a module doc rewritten in `//!` lines changes only comments",
+    "input": "diff --git a/crates/p/benches/hotpath.rs b/crates/p/benches/hotpath.rs\nindex 683b5636d..af1c6d5cd 100644\n--- a/crates/p/benches/hotpath.rs\n+++ b/crates/p/benches/hotpath.rs\n@@ -28,3 +28,5 @@\n-//! runs it twice\n-//! and uploads it\n-//! as two reports.\n+//! runs it three times\n+//! and uploads it\n+//! as three reports.\n+//!\n+//! The third measures bytes.\n",
+    "output": ["crates/p/benches/hotpath.rs"]
+  },
+  {
+    "name": "#5498: one changed line of code makes the file a change of code",
+    "input": "diff --git a/crates/p/src/lib.rs b/crates/p/src/lib.rs\nindex 1111111..2222222 100644\n--- a/crates/p/src/lib.rs\n+++ b/crates/p/src/lib.rs\n@@ -1,2 +1,2 @@\n-/// One.\n-pub const N: u8 = 1;\n+/// Two.\n+pub const N: u8 = 2;\n",
+    "output": []
+  },
+  {
+    "name": "#5498: a removed line of code is a change of code, and a file of blank lines and `//` comments beside it changes only comments",
+    "input": "diff --git a/crates/p/src/a.rs b/crates/p/src/a.rs\nindex 1111111..2222222 100644\n--- a/crates/p/src/a.rs\n+++ b/crates/p/src/a.rs\n@@ -4 +4,2 @@\n-    // old note\n+    // new note\n+\ndiff --git a/crates/p/src/b.rs b/crates/p/src/b.rs\nindex 3333333..4444444 100644\n--- a/crates/p/src/b.rs\n+++ b/crates/p/src/b.rs\n@@ -9 +8,0 @@\n-    let unused = 0;\n",
+    "output": ["crates/p/src/a.rs"]
+  },
+  {
+    "name": "#5498: code before a trailing comment is a change of code",
+    "input": "diff --git a/crates/p/src/lib.rs b/crates/p/src/lib.rs\nindex 1111111..2222222 100644\n--- a/crates/p/src/lib.rs\n+++ b/crates/p/src/lib.rs\n@@ -3 +3 @@\n-let n = 1; // one\n+let n = 2; // two\n",
+    "output": []
+  },
+  {
+    "name": "#5498: a Rust file added whole is a change of code, its header lines read as no change",
+    "input": "diff --git a/crates/p/src/new.rs b/crates/p/src/new.rs\nnew file mode 100644\nindex 0000000..5555555\n--- /dev/null\n+++ b/crates/p/src/new.rs\n@@ -0,0 +1,2 @@\n+//! New.\n+pub fn f() {}\n",
+    "output": []
+  },
+  {
+    "name": "#5498: a change with no Rust file names no file",
+    "input": "",
+    "output": []
+  }
+]

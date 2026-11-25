@@ -1,0 +1,142 @@
+test: entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210 --break entries::spine
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/0471e81b637eb2e9/out/tests-0471e81b637eb2e9"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/0471e81b637eb2e9/out/tests-0471e81b637eb2e9' (arm64).
+(lldb) settings set -- target.run-args  "entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex entries::spine
+Breakpoint 1: 13 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-0471e81b637eb2e9`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000103f69f68
+(lldb) run
+
+running 1 test
+test entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 9511 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/0471e81b637eb2e9/out/tests-0471e81b637eb2e9' (arm64)
+Process 9511 stopped
+* thread #2, name = 'entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood', stop reason = breakpoint 1.7
+       frame #0: 0x000000010012697c tests-0471e81b637eb2e9`tests::entries::spine(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}, tree={source:{0:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}, grammar:{0:11544002206173084391}, nodes:size=335, starts:size=7, roots:size=1, index:{forms:size=6, digests:size=6, ranges:size=6, ranks:size=335, digest:Some({0:"\x87+ \\\xd1\xe9\U0000001b<K\xf1{,'\U0000001bǶ\xbe\xf0\xc1\x9d\x8c:\U00000011D\xc9\0L\xe6\xc9y\U00000006\x81"})}}, position={0:80}, arguments=size=0) at entries.rs:350:22
+   347 	    arguments: &mut Vec<NodeIndex>,
+   348 	) -> Option<NodeIndex>
+   349 	{
+-> 350 	    let juxtaposed = |at: NodeIndex| {
+    	                     ^
+   351 	        matches!(tree.node(at).map(Node::label), Some(NodeLabel::Meld(mold))
+   352 	            if grammar
+   353 	                .mold(mold)
+(lldb) bt 24
+* thread #2, name = 'entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood', stop reason = breakpoint 1.7
+   * frame #0: 0x000000010012697c tests-0471e81b637eb2e9`tests::entries::spine(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}, tree={source:{0:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}, grammar:{0:11544002206173084391}, nodes:size=335, starts:size=7, roots:size=1, index:{forms:size=6, digests:size=6, ranges:size=6, ranks:size=335, digest:Some({0:"\x87+ \\\xd1\xe9\U0000001b<K\xf1{,'\U0000001bǶ\xbe\xf0\xc1\x9d\x8c:\U00000011D\xc9\0L\xe6\xc9y\U00000006\x81"})}}, position={0:80}, arguments=size=0) at entries.rs:350:22
+     frame #1: 0x0000000100123a28 tests-0471e81b637eb2e9`tests::entries::gated(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}, tree={source:{0:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}, grammar:{0:11544002206173084391}, nodes:size=335, starts:size=7, roots:size=1, index:{forms:size=6, digests:size=6, ranges:size=6, ranks:size=335, digest:Some({0:"\x87+ \\\xd1\xe9\U0000001b<K\xf1{,'\U0000001bǶ\xbe\xf0\xc1\x9d\x8c:\U00000011D\xc9\0L\xe6\xc9y\U00000006\x81"})}}, refused={map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, models={implicits:size=0, modules:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, theories:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}}) at entries.rs:837:26
+     frame #2: 0x00000001001274a8 tests-0471e81b637eb2e9`tests::entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210 at entries.rs:1375:9
+     frame #3: 0x000000010011c62c tests-0471e81b637eb2e9`tests::entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210::{closure#0}((null)={}) at entries.rs:1361:65
+     frame #4: 0x00000001001db8ac tests-0471e81b637eb2e9`<tests::entries::the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x000000010038b058 tests-0471e81b637eb2e9`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #6: 0x000000010038b050 tests-0471e81b637eb2e9`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #7: 0x0000000100396574 tests-0471e81b637eb2e9`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #8: 0x0000000100396568 tests-0471e81b637eb2e9`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #9: 0x0000000100396568 tests-0471e81b637eb2e9`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #10: 0x0000000100396564 tests-0471e81b637eb2e9`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #11: 0x0000000100396564 tests-0471e81b637eb2e9`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #12: 0x0000000100396564 tests-0471e81b637eb2e9`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #13: 0x0000000100396558 tests-0471e81b637eb2e9`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #14: 0x0000000100390f68 tests-0471e81b637eb2e9`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #15: 0x0000000100390f04 tests-0471e81b637eb2e9`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #16: 0x0000000100398a38 tests-0471e81b637eb2e9`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #17: 0x0000000100398a28 tests-0471e81b637eb2e9`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #18: 0x0000000100398a28 tests-0471e81b637eb2e9`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #19: 0x0000000100398a24 tests-0471e81b637eb2e9`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #20: 0x0000000100398a24 tests-0471e81b637eb2e9`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #21: 0x0000000100398a24 tests-0471e81b637eb2e9`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #22: 0x0000000100398a14 tests-0471e81b637eb2e9`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #23: 0x0000000103f00278 tests-0471e81b637eb2e9`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) grammar = 0x0000000170005750 {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}
+(gandr_surface_syntax::tree::SyntaxTree *) tree = 0x0000000170005de0 {source:{0:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}, grammar:{0:11544002206173084391}, nodes:size=335, starts:size=7, roots:size=1, index:{forms:size=6, digests:size=6, ranges:size=6, ranks:size=335, digest:Some({0:"\x87+ \\\xd1\xe9\U0000001b<K\xf1{,'\U0000001bǶ\xbe\xf0\xc1\x9d\x8c:\U00000011D\xc9\0L\xe6\xc9y\U00000006\x81"})}}
+(gandr_surface_syntax::tree::NodeIndex) position = {0:80}
+(alloc::vec::Vec<gandr_surface_syntax::tree::NodeIndex, alloc::alloc::Global> *) arguments = 0x00000001700049e8 size=0
+(lldb) up
+frame #1: 0x0000000100123a28 tests-0471e81b637eb2e9`tests::entries::gated(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}, tree={source:{0:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}, grammar:{0:11544002206173084391}, nodes:size=335, starts:size=7, roots:size=1, index:{forms:size=6, digests:size=6, ranges:size=6, ranks:size=335, digest:Some({0:"\x87+ \\\xd1\xe9\U0000001b<K\xf1{,'\U0000001bǶ\xbe\xf0\xc1\x9d\x8c:\U00000011D\xc9\0L\xe6\xc9y\U00000006\x81"})}}, refused={map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, models={implicits:size=0, modules:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, theories:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}}) at entries.rs:837:26
+   834 	        else {
+   835 	            continue;
+   836 	        };
+-> 837 	        let Some(head) = spine(grammar, tree, position, &mut arguments)
+    	                         ^
+   838 	        else {
+   839 	            continue;
+   840 	        };
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) grammar = 0x0000000170005750 {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3016, rctxs:size=3016, bounds:size=3016, owners:size=3016, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3016, adjacencies:size=7198, successor_starts:size=3017, has_pred:size=3016, has_succ:size=3016, form_first:size=206, is_first:size=3016, form_last:size=272, complete_last:size=233, is_complete_last:size=3016, required_tail:size=39, is_required_tail:size=3016, closing:size=3016, twins:size=3016, fingerprint:{0:11544002206173084391}}, automaton:{kinds:size=3016, observations:size=3016, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2243}), flat:size=3}
+(gandr_surface_syntax::tree::SyntaxTree *) tree = 0x0000000170005de0 {source:{0:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}, grammar:{0:11544002206173084391}, nodes:size=335, starts:size=7, roots:size=1, index:{forms:size=6, digests:size=6, ranges:size=6, ranks:size=335, digest:Some({0:"\x87+ \\\xd1\xe9\U0000001b<K\xf1{,'\U0000001bǶ\xbe\xf0\xc1\x9d\x8c:\U00000011D\xc9\0L\xe6\xc9y\U00000006\x81"})}}
+(alloc::collections::btree::set::BTreeSet<gandr_surface_syntax::key::NodeKey, alloc::alloc::Global> *) refused = 0x0000000170006148 {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(tests::entries::Models *) models = 0x0000000170006160 {implicits:size=0, modules:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, theories:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}}
+(&str) source = "theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n" {
+  [0] = 't'
+  [1] = 'h'
+  [2] = 'e'
+  [3] = 'o'
+  [4] = 'r'
+  [5] = 'y'
+  [6] = ' '
+  [7] = 'C'
+  [8] = 'o'
+  [9] = 'u'
+  [10] = 'n'
+  [11] = 't'
+  [12] = 'e'
+  [13] = 'r'
+  [14] = '.'
+  [15] = 'E'
+  ...
+}
+(alloc::collections::btree::set::BTreeSet<&str, alloc::alloc::Global>) namespaces = {map:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:21, alloc:{value:{0:{}}}, _marker:{}}}
+(tests::entries::gated::{closure_env#2}) word = {_ref__source:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}
+(alloc::collections::btree::set::BTreeSet<&str, alloc::alloc::Global>) modules = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::collections::btree::set::BTreeSet<&str, alloc::alloc::Global>) stages = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(tests::entries::gated::{closure_env#8}) named = {}
+(alloc::collections::btree::set::BTreeSet<alloc::string::String, alloc::alloc::Global>) binding = {map:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::collections::btree::set::BTreeSet<alloc::string::String, alloc::alloc::Global>) regions = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::collections::btree::set::BTreeSet<&str, alloc::alloc::Global>) slots = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::vec::Vec<(usize, usize), alloc::alloc::Global>) rules = size=1 {
+  [0] = (243, 305)
+}
+(alloc::vec::Vec<(usize, usize), alloc::alloc::Global>) unders = size=0
+(alloc::vec::Vec<(usize, usize), alloc::alloc::Global>) pastings = size=0
+(tests::entries::gated::{closure_env#19}) parts = {_ref__source:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}
+(tests::entries::gated::{closure_env#20}) ports = {_ref__source:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n", _ref__parts:{_ref__source:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}}
+(tests::entries::gated::{closure_env#21}) spelled = {_ref__tree:{source:{0:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}, grammar:{0:11544002206173084391}, nodes:size=335, starts:size=7, roots:size=1, index:{forms:size=6, digests:size=6, ranges:size=6, ranks:size=335, digest:Some({0:"\x87+ \\\xd1\xe9\U0000001b<K\xf1{,'\U0000001bǶ\xbe\xf0\xc1\x9d\x8c:\U00000011D\xc9\0L\xe6\xc9y\U00000006\x81"})}}, _ref__source:"theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure 0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n"}
+(alloc::collections::btree::set::BTreeSet<unsigned long, alloc::alloc::Global>) bare = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::vec::Vec<gandr_surface_syntax::tree::NodeIndex, alloc::alloc::Global>) arguments = size=0
+(alloc::vec::Vec<gandr_surface_syntax::tree::NodeIndex, alloc::alloc::Global>) pending = size=79 {
+  [0] = {0:1}
+  [1] = {0:2}
+  [2] = {0:3}
+  [3] = {0:4}
+  [4] = {0:5}
+  [5] = {0:6}
+  [6] = {0:7}
+  [7] = {0:8}
+  [8] = {0:9}
+  [9] = {0:10}
+  [10] = {0:11}
+  [11] = {0:12}
+  [12] = {0:13}
+  [13] = {0:14}
+  [14] = {0:15}
+  [15] = {0:16}
+  ...
+}
+(gandr_surface_syntax::tree::NodeIndex) position = {0:80}
+(gandr_surface_syntax::tree::Node *) node = 0x0000000756048c80 {label:Space, span:{start:{0:301}, end:{0:302}}, first_child:{0:17179869184}, child_count:{0:0}}
+(unsigned long) start = 301
+(unsigned long) end = 302
+(unsigned long) rule = 243
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.

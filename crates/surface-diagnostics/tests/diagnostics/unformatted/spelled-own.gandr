@@ -1,0 +1,3 @@
+import "./base.gandr" ;
+{BOUND}def worse : Integer ;
+def worse = "worse" ;

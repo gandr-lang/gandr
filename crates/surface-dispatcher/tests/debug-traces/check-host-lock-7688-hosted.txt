@@ -1,0 +1,11 @@
+command: mise run check:host-lock
+issue: #7688
+before: a723a91e0
+exit: 1
+[check:host-lock] $ .config/mise/host-lock-cases.bash
+host-lock: #7688: the gate does not draw on the counter of a build whose tokens runs a command: -j2 --jobserver-auth=fifo:/tmp/gandr-gate-jobs.lCL6Lz
+2
+none
+[check:host-lock] ERROR task failed
+after: 025c4b549
+exit: 0

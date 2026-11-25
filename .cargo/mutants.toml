@@ -1,0 +1,5 @@
+#:tombi toml-version = "v1.0.0"
+
+# A replacement body that returns `Default::default()` has no witness value.
+# cargo-mutants omits that replacement from every listing (#3211).
+exclude_re = [" -> .* with Default::default\\(\\)$"]

@@ -1,0 +1,43 @@
+//! A fold that crosses the two words of a choice is refused.
+//!
+//! A choice under the high bit is its first word. The check reads the call of
+//! a fold at a variable of the rule as one value. That reading must admit no
+//! fold that gives the two sides of the rule two answers.
+//!
+//! A fold that crosses the two words of a choice gives the value of the second
+//! word for the first. A fold with a parameter after the term gives a function
+//! for each term and no value, so its call stays as it is.
+//!
+//! - see: #8367
+//! - see: `model/desc/fold-drops-variable.gandr` — the fold that respects each
+//!   rule
+
+// `Width` and `Fragment`.
+import "../../model/desc/family-with-rules.gandr";
+
+/// The arm of a choice crosses its two words. A choice under the high bit is
+/// its first word, and the fold gives the value of its second word.
+///
+/// - see: #8367
+@[refuses("RuleNotRespected")]
+def rec crossed(w : Width, t : Fragment w) -> Fragment w =
+  match t where
+    | Low => Low
+    | High => High
+    | And(a, b) => And (crossed[<] Bit a) (crossed[<] Bit b)
+    | Zero => Zero
+    | One => One
+    | Zext(b) => Zext (crossed[<] Bit b)
+    | Choose(c, x, y) => Choose (crossed[<] Bit c) (crossed[<] Word y) (crossed[<] Word x)
+
+/// A fold with a parameter after the term. Its call at a variable is a
+/// function, and the check reads no value for it.
+///
+/// - see: #8367
+@[refuses("RuleNotRespected")]
+def rec under(t : Fragment Word, d : Fragment Word) -> Fragment Word =
+  match t where
+    | Zero => d
+    | One => One
+    | Zext(b) => Zext b
+    | Choose(c, x, y) => Choose c (under[<] x d) (under[<] y d)

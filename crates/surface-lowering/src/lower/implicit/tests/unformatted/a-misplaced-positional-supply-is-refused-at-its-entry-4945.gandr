@@ -1,0 +1,10 @@
+{FIRST}def after : () -> Integer ;
+def after = thunk {{ become first[.b = Unit, Integer] 5 *{{}} }} ;
+def past : () -> Integer ;
+def past = thunk {{ become first[Integer, Unit, Unit] 5 *{{}} }} ;
+def twice : () -> Integer ;
+def twice = thunk {{ become first[Integer, .a = Integer] 5 *{{}} }} ;
+def renamed : () -> Integer ;
+def renamed = thunk {{ become first[.a = Integer, .a = Integer] 5 *{{}} }} ;
+def compound : () -> Integer ;
+def compound = thunk {{ become first[Integer, Unit * Unit] 5 *{{*{{}}, *{{}}}} }} ;

@@ -1,0 +1,41 @@
+/// `rule-symmetry` states that an operation is commutative, by a rule that
+/// swaps its two arguments.
+///
+/// The rule is admitted, and no reader rewrites by it. A model owes the law
+/// as a member, and a case on the terms owes its respect. Each rule of the
+/// operation fires in the two orders of its arguments. Two terms that differ
+/// by the order of two arguments convert. Two distinct closed terms are apart.
+///
+/// The kernel replays each rewriting by the match that the checker uses. It
+/// replays the crossed pairing of two arguments only where its own rules hold
+/// the symmetry. It decides each apartness again.
+///
+/// - see: corpus/model/desc/rule-symmetry.gandr
+
+// `Vote`, `Tally`, `TallyInVote` and `poll`.
+import "../../model/desc/rule-symmetry.gandr";
+// `Hollow` and `Pick`.
+import "../../model/desc/rule-symmetry-apart.gandr";
+
+/// The fold reads a meet with the empty tally on the left to the vote against.
+@[runs("Vote.nay")]
+def leftEmpty() -> Terms Vote = poll (Tally.meet Tally.none Tally.all);
+
+/// The fold reads the other order of that meet to the same vote.
+@[runs("Vote.nay")]
+def rightEmpty() -> Terms Vote = poll (Tally.meet Tally.all Tally.none);
+
+/// The empty tally absorbs as the second argument, by the rule that states it
+/// as the first argument.
+def emptySecond(x : Terms Tally) -> Path (Tally.meet x Tally.none) Tally.none = Path.here
+  Tally.none;
+
+/// The two orders of a meet of two variables are one term.
+def bothOrders(x : Terms Tally, y : Terms Tally) -> Path (Tally.meet x y) (Tally.meet
+  y
+  x) = Path.here
+  (Tally.meet x y);
+
+/// Two distinct picks are apart under the symmetry of their meet.
+def twoPicksApart(e : Path[.A = Terms Pick] Pick.first Pick.second) -> Hollow =
+  match e {}

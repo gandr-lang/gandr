@@ -1,0 +1,141 @@
+# A function whose signature names `'r`, with no generic parameters, takes
+# `<'r>` after its name. A method of an impl that names `'r` in its header
+# reads the impl's brand and takes none of its own.
+id: fn-takes-brand
+language: Rust
+severity: hint
+message: the function takes the region's brand
+utils:
+  signature-names-brand:
+    any:
+      - has:
+          field: parameters
+          kind: parameters
+          has:
+            kind: lifetime
+            regex: ^'r$
+            stopBy: end
+      - has:
+          field: return_type
+          regex: .
+          has:
+            kind: lifetime
+            regex: ^'r$
+            stopBy: end
+  in-branded-impl:
+    inside:
+      kind: impl_item
+      stopBy: end
+      any:
+        - has:
+            field: type
+            regex: .
+            has:
+              kind: lifetime
+              regex: ^'r$
+              stopBy: end
+        - has:
+            field: trait
+            regex: .
+            has:
+              kind: lifetime
+              regex: ^'r$
+              stopBy: end
+        - has:
+            field: type_parameters
+            kind: type_parameters
+            has:
+              kind: lifetime
+              regex: ^'r$
+              stopBy: end
+rule:
+  pattern: $NAME
+  kind: identifier
+  inside:
+    field: name
+    all:
+      - any:
+          - kind: function_item
+          - kind: function_signature_item
+      - matches: signature-names-brand
+      - not:
+          has:
+            field: type_parameters
+            kind: type_parameters
+      - not:
+          matches: in-branded-impl
+fix: $NAME<'r>
+---
+# A function whose signature names `'r`, with generic parameters that lack
+# it, takes `'r` first among them.
+id: fn-parameters-take-brand
+language: Rust
+severity: hint
+message: the function takes the region's brand
+utils:
+  signature-names-brand:
+    any:
+      - has:
+          field: parameters
+          kind: parameters
+          has:
+            kind: lifetime
+            regex: ^'r$
+            stopBy: end
+      - has:
+          field: return_type
+          regex: .
+          has:
+            kind: lifetime
+            regex: ^'r$
+            stopBy: end
+  in-branded-impl:
+    inside:
+      kind: impl_item
+      stopBy: end
+      any:
+        - has:
+            field: type
+            regex: .
+            has:
+              kind: lifetime
+              regex: ^'r$
+              stopBy: end
+        - has:
+            field: trait
+            regex: .
+            has:
+              kind: lifetime
+              regex: ^'r$
+              stopBy: end
+        - has:
+            field: type_parameters
+            kind: type_parameters
+            has:
+              kind: lifetime
+              regex: ^'r$
+              stopBy: end
+rule:
+  pattern: $PARAMETERS
+  kind: type_parameters
+  inside:
+    field: type_parameters
+    all:
+      - any:
+          - kind: function_item
+          - kind: function_signature_item
+      - matches: signature-names-brand
+      - not:
+          matches: in-branded-impl
+  not:
+    has:
+      kind: lifetime
+      regex: ^'r$
+      stopBy: end
+transform:
+  BRANDED:
+    replace:
+      source: $PARAMETERS
+      replace: ^<
+      by: "<'r, "
+fix: $BRANDED

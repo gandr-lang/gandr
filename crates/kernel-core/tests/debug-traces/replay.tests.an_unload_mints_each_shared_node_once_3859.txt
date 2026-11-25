@@ -1,0 +1,233 @@
+test: replay::tests::an_unload_mints_each_shared_node_once_3859
+package: gandr-kernel-core
+command: mise run debug:test gandr-kernel-core replay::tests::an_unload_mints_each_shared_node_once_3859 --break gandr_kernel_core::rewrite::remember_rewrite
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_kernel_core-3b00be31eb2d7b85"
+Current executable set to 'target/debug-trace/debug/deps/gandr_kernel_core-3b00be31eb2d7b85' (arm64).
+(lldb) settings set -- target.run-args  "replay::tests::an_unload_mints_each_shared_node_once_3859" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex gandr_kernel_core::rewrite::remember_rewrite
+Breakpoint 1: 6 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_kernel_core-3b00be31eb2d7b85`__rustc::rust_panic + 12 at panicking.rs:875:25, address = 0x0000000100bb9c6c
+(lldb) run
+
+running 1 test
+test replay::tests::an_unload_mints_each_shared_node_once_3859 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 58993 launched: 'target/debug-trace/debug/deps/gandr_kernel_core-3b00be31eb2d7b85' (arm64)
+Process 58993 stopped
+* thread #2, name = 'replay::tests::an_unload_mints_each_shared_node_once_3859', stop reason = breakpoint 1.4
+       frame #0: 0x0000000100380584 gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::rewrite::remember_rewrite::<gandr_kernel_check_memo::memo::NullMemo>((null)=({stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}, {values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, {}), local={entries:size=0, index:{slots:size=0, len:0}}, (null)=(Value({0:27}), {0:0}, Unload{environment:{0:34}, width:{0:1}}), outcome=Value({0:32})) at rewrite.rs:1817:1
+   1814	///   goals.
+   1815	/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+   1816	/// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+-> 1817	#[spec(ensures: (matches!(M::ACTIVITY, MemoActivity::Active)
+    	^
+   1818	    && matches!(step.goal(node, depth), Maybe::Present(_)))
+   1819	    || local.get(&(node, depth, step)) == Maybe::Present(&outcome))]
+   1820	fn remember_rewrite<M>(
+(lldb) bt 24
+* thread #2, name = 'replay::tests::an_unload_mints_each_shared_node_once_3859', stop reason = breakpoint 1.4
+   * frame #0: 0x0000000100380584 gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::rewrite::remember_rewrite::<gandr_kernel_check_memo::memo::NullMemo>((null)=({stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}, {values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, {}), local={entries:size=0, index:{slots:size=0, len:0}}, (null)=(Value({0:27}), {0:0}, Unload{environment:{0:34}, width:{0:1}}), outcome=Value({0:32})) at rewrite.rs:1817:1
+     frame #1: 0x0000000100387bb0 gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::rewrite::run_rewrite::<gandr_kernel_check_memo::memo::NullMemo>::{closure#0} at rewrite.rs:1694:17
+     frame #2: 0x0000000100244c9c gandr_kernel_core-3b00be31eb2d7b85`anodized::__::eval_once::<gandr_kernel_core::rewrite::RewriteOutcome, gandr_kernel_core::rewrite::run_rewrite<gandr_kernel_check_memo::memo::NullMemo>::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x000000010037fec0 gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::rewrite::run_rewrite::<gandr_kernel_check_memo::memo::NullMemo>(arena={values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, table={stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}, memo={}, rewrite=Unload{environment:{0:34}, width:{0:1}}, root=Computation({0:21}), initial_depth={0:0}) at rewrite.rs:1520:1
+     frame #4: 0x0000000100388d5c gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::rewrite::unload_computation::<gandr_kernel_check_memo::memo::NullMemo>::{closure#0} at rewrite.rs:1363:5
+     frame #5: 0x0000000100242d80 gandr_kernel_core-3b00be31eb2d7b85`anodized::__::eval_once::<gandr_kernel_term::arena::ComputationId, gandr_kernel_core::rewrite::unload_computation<gandr_kernel_check_memo::memo::NullMemo>::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #6: 0x0000000100380b4c gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::rewrite::unload_computation::<gandr_kernel_check_memo::memo::NullMemo>(arena={values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, table={stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}, memo={}, (null)=({0:21}, {0:34}), (null)=({0:1}, {0:0})) at rewrite.rs:1351:1
+     frame #7: 0x00000001004974f0 gandr_kernel_core-3b00be31eb2d7b85`<gandr_kernel_core::replay::environment::Environments>::unload_computation(self={cells:size=1, rebuilt:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, (null)=<unavailable>, computation={node:{0:21}, environment:{0:Some({0:0})}}, depth={0:0}) at environment.rs:451:9
+     frame #8: 0x0000000100083bec gandr_kernel_core-3b00be31eb2d7b85`<gandr_kernel_core::replay::Replay<core::iter::sources::empty::Empty<gandr_kernel_conversion_trace::decision::ConversionDecision<gandr_kernel_core::replay::ReplayNode>>>>::unload(self={arena:{values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, unfoldings:{bodies:size=0, presentations:{0:None}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, evaluator:{bodies:size=0, presentations:{0:None}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, trace:{iter:{0:{}}, peeked:None}, reading:Recorded, position:0, spent:3, budget:384, table:{stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}, memo:{}, owed:size=0}, cells={cells:size=1, rebuilt:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, focus=<unavailable>) at replay.rs:7401:15
+     frame #9: 0x000000010007e03c gandr_kernel_core-3b00be31eb2d7b85`<gandr_kernel_core::replay::Replay<core::iter::sources::empty::Empty<gandr_kernel_conversion_trace::decision::ConversionDecision<gandr_kernel_core::replay::ReplayNode>>>>::reduce(self={arena:{values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, unfoldings:{bodies:size=0, presentations:{0:None}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, evaluator:{bodies:size=0, presentations:{0:None}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, trace:{iter:{0:{}}, peeked:None}, reading:Recorded, position:0, spent:3, budget:384, table:{stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}, memo:{}, owed:size=0}, term=Computation({0:23}), reduction=Plain, unloading=AtTheHead) at replay.rs:6435:48
+     frame #10: 0x00000001004b1bf4 gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::replay::tests::reduced(arena={values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, term={0:23}, reduction=Plain, unloading=AtTheHead) at tests.rs:4169:10
+     frame #11: 0x00000001004b4b3c gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::replay::tests::an_unload_mints_each_shared_node_once_3859 at tests.rs:4275:27
+     frame #12: 0x000000010048f228 gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::replay::tests::an_unload_mints_each_shared_node_once_3859::{closure#0}((null)={}) at tests.rs:4242:48
+     frame #13: 0x00000001003762c8 gandr_kernel_core-3b00be31eb2d7b85`<gandr_kernel_core::replay::tests::an_unload_mints_each_shared_node_once_3859::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #14: 0x00000001005f2720 gandr_kernel_core-3b00be31eb2d7b85`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #15: 0x00000001005f2718 gandr_kernel_core-3b00be31eb2d7b85`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18 [opt]
+     frame #16: 0x00000001005fd9d4 gandr_kernel_core-3b00be31eb2d7b85`test::run_test_in_process::{closure#0} at lib.rs:747:74 [opt] [inlined]
+     frame #17: 0x00000001005fd9c8 gandr_kernel_core-3b00be31eb2d7b85`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #18: 0x00000001005fd9c8 gandr_kernel_core-3b00be31eb2d7b85`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [opt] [inlined]
+     frame #19: 0x00000001005fd9c4 gandr_kernel_core-3b00be31eb2d7b85`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [opt] [inlined]
+     frame #20: 0x00000001005fd9c4 gandr_kernel_core-3b00be31eb2d7b85`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #21: 0x00000001005fd9c4 gandr_kernel_core-3b00be31eb2d7b85`test::run_test_in_process at lib.rs:747:27 [opt] [inlined]
+     frame #22: 0x00000001005fd9b8 gandr_kernel_core-3b00be31eb2d7b85`test::run_test::{closure#0} at lib.rs:668:43 [opt]
+     frame #23: 0x00000001005f885c gandr_kernel_core-3b00be31eb2d7b85`test::run_test::{closure#1} at lib.rs:698:41 [opt] [inlined]
+(lldb) frame variable --depth 3
+((&mut gandr_kernel_core::encoding::ContentTable, &gandr_kernel_term::arena::TermArena, &mut gandr_kernel_check_memo::memo::NullMemo))  = ({stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}, {values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, {})
+(gandr_kernel_core::hashed::HashedMap<(gandr_kernel_term::arena::AnyNode, gandr_kernel_core::rewrite::BinderDepth, gandr_kernel_core::rewrite::Rewrite), gandr_kernel_core::rewrite::RewriteOutcome> *) local = 0x0000000170002188 {entries:size=0, index:{slots:size=0, len:0}}
+((gandr_kernel_term::arena::AnyNode, gandr_kernel_core::rewrite::BinderDepth, gandr_kernel_core::rewrite::Rewrite))  = (Value({0:27}), {0:0}, Unload{environment:{0:34}, width:{0:1}})
+(gandr_kernel_core::rewrite::RewriteOutcome) outcome = Value({0:32}) {
+  0 = {0:32}
+}
+(gandr_kernel_term::arena::AnyNode) node = Computation({0:3915584}) {
+  0 = {0:3915584}
+}
+(gandr_kernel_core::rewrite::BinderDepth) depth = {0:1}
+(gandr_kernel_core::rewrite::Rewrite) step = Shift{cutoff:{0:1}, amount:{0:1879056100}} {
+  cutoff = {0:1}
+  amount = {0:1879056100}
+}
+(gandr_kernel_core::encoding::ContentTable *) table = 0x0000000170002170 {stream:{0:size=4}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:<len 0x100000001 past mapped memory>}, comp_types:{pages:<len 0x100000001 past mapped memory>}, count:{0:1}}, seen:{0:8589934591}, records:4294967295, scratch:{0:<len 0x1b00000000 past mapped memory>}, members:<len 0x100000001 past mapped memory>, tasks:<len 0x1b past mapped memory>, constants:<len 0x1000000000000 past mapped memory>}
+(gandr_kernel_term::arena::TermArena *) arena = 0x0000000001b63b00 {values:{frozen:{}, own:{}}, value_supports:{frozen:{}, own:{}}, computations:{frozen:{}, own:{}}, computation_supports:{frozen:{}, own:{}}, value_types:{frozen:{}, own:{}}, value_type_supports:{frozen:{}, own:{}}, comp_types:{frozen:{}, own:{}}, comp_type_supports:{frozen:{}, own:{}}, unrelated:{data:{left:{buf:{inner:{…}, _marker:(…)}, len:()}, right:{buf:{inner:{…}, _marker:(…)}, len:()}}}, truncations:{stamp:(0), values:({}), computations:({}), value_types:({}), comp_types:({})}}
+(gandr_kernel_check_memo::memo::NullMemo *) memo = 0x0100000000000020 {}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000000100387bb0 gandr_kernel_core-3b00be31eb2d7b85`gandr_kernel_core::rewrite::run_rewrite::<gandr_kernel_check_memo::memo::NullMemo>::{closure#0} at rewrite.rs:1694:17
+   1691	                let outcome = close_rewrite(arena, step, node, depth, &mut results);
+   1692	                // A memo at its ceiling declines to record. The walk proceeds
+   1693	                // unmemoized from there, which costs reuse and never the answer.
+-> 1694	                remember_rewrite(
+    	                ^
+   1695	                    (table, arena, memo),
+   1696	                    &mut local,
+   1697	                    (node, depth, step),
+(lldb) frame variable --depth 3
+(gandr_kernel_check_memo::memo::NullMemo) memo = {}
+(gandr_kernel_core::encoding::ContentTable) table = {stream:{0:size=0}, spans:size=0, interned:{slots:size=0, len:0}, placed:{values:{pages:size=0}, computations:{pages:size=0}, value_types:{pages:size=0}, comp_types:{pages:size=0}, count:{0:0}}, seen:{0:0}, records:0, scratch:{0:size=0}, members:size=0, tasks:size=0, constants:size=0}
+(gandr_kernel_core::rewrite::BinderDepth) initial_depth = {0:0}
+(gandr_kernel_term::arena::TermArena) arena = {values:{frozen:None, own:size=35}, value_supports:{frozen:None, own:size=35}, computations:{frozen:None, own:size=24}, computation_supports:{frozen:None, own:size=24}, value_types:{frozen:None, own:size=8}, value_type_supports:{frozen:None, own:size=8}, comp_types:{frozen:None, own:size=7}, comp_type_supports:{frozen:None, own:size=7}, unrelated:strong=1, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}
+(gandr_kernel_term::arena::AnyNode) root = Computation({0:21}) {
+  0 = {0:21}
+}
+(gandr_kernel_core::rewrite::Rewrite) rewrite = Unload{environment:{0:34}, width:{0:1}} {
+  environment = {0:34}
+  width = {0:1}
+}
+(bool) readable = true
+(alloc::vec::Vec<gandr_kernel_core::rewrite::RewriteTask, alloc::alloc::Global>) tasks = size=9 {
+  [0] = Close(Computation({0:21}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Computation({0:21}) {
+      0 = {0:21} {...}
+    }
+    1 = {0:0}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [1] = Open(Computation({0:19}), {0:2}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Computation({0:19}) {
+      0 = {0:19} {...}
+    }
+    1 = {0:2}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [2] = Open(Computation({0:20}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Computation({0:20}) {
+      0 = {0:20} {...}
+    }
+    1 = {0:0}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [3] = Close(Value({0:29}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Value({0:29}) {
+      0 = {0:29} {...}
+    }
+    1 = {0:0}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [4] = Close(Computation({0:18}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Computation({0:18}) {
+      0 = {0:18} {...}
+    }
+    1 = {0:0}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [5] = Open(Computation({0:16}), {0:2}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Computation({0:16}) {
+      0 = {0:16} {...}
+    }
+    1 = {0:2}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [6] = Open(Computation({0:17}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Computation({0:17}) {
+      0 = {0:17} {...}
+    }
+    1 = {0:0}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [7] = Close(Value({0:28}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Value({0:28}) {
+      0 = {0:28} {...}
+    }
+    1 = {0:0}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+  [8] = Open(Value({0:26}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+    0 = Value({0:26}) {
+      0 = {0:26} {...}
+    }
+    1 = {0:0}
+    2 = Unload{environment:{0:34}, width:{0:1}} {
+      environment = {0:34} {...}
+      width = {0:1} {...}
+    }
+  }
+}
+(alloc::vec::Vec<gandr_kernel_core::rewrite::RewriteOutcome, alloc::alloc::Global>) results = size=4 {
+  [0] = ValueType({0:0}) {
+    0 = {0:0}
+  }
+  [1] = ValueType({0:0}) {
+    0 = {0:0}
+  }
+  [2] = ValueType({0:6}) {
+    0 = {0:6}
+  }
+  [3] = ValueType({0:6}) {
+    0 = {0:6}
+  }
+}
+(gandr_kernel_core::hashed::HashedMap<(gandr_kernel_term::arena::AnyNode, gandr_kernel_core::rewrite::BinderDepth, gandr_kernel_core::rewrite::Rewrite), gandr_kernel_core::rewrite::RewriteOutcome>) local = {entries:size=0, index:{slots:size=0, len:0}}
+(alloc::collections::btree::set::BTreeSet<(gandr_kernel_term::arena::AnyNode, gandr_kernel_core::rewrite::BinderDepth), alloc::alloc::Global>) reads = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::vec::Vec<gandr_kernel_core::rewrite::Mention, alloc::alloc::Global>) reading = size=0
+(gandr_kernel_core::rewrite::RewriteTask) task = Close(Value({0:27}), {0:0}, Unload{environment:{0:34}, width:{0:1}}) {
+  0 = Value({0:27}) {
+    0 = {0:27}
+  }
+  1 = {0:0}
+  2 = Unload{environment:{0:34}, width:{0:1}} {
+    environment = {0:34}
+    width = {0:1}
+  }
+}
+(gandr_kernel_term::arena::AnyNode) node = Value({0:27}) {
+  0 = {0:27}
+}
+(gandr_kernel_core::rewrite::Rewrite) step = Unload{environment:{0:34}, width:{0:1}} {
+  environment = {0:34}
+  width = {0:1}
+}
+(gandr_kernel_core::rewrite::BinderDepth) depth = {0:0}
+(gandr_kernel_term::arena::ComputationId) call = {0:1}
+(gandr_kernel_core::rewrite::RewriteOutcome) outcome = Value({0:32}) {
+  0 = {0:32}
+}

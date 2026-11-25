@@ -1,0 +1,6 @@
+// file
+
+// tally
+def counted : Integer ;
+
+def counted = 1 ;

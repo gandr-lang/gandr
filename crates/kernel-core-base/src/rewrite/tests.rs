@@ -1,0 +1,2135 @@
+//! Witnesses for the rewrite machines: shifts and substitutions, their
+//! memo keys, and the rebuild each former makes only where a child changed.
+
+use alloc::alloc::Global;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_kernel_check_memo::CheckMemo as _;
+use gandr_kernel_check_memo::ContentAgreement;
+use gandr_kernel_check_memo::MemoEntryCount;
+use gandr_kernel_check_memo::MemoKey as _;
+use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::CompType;
+use gandr_kernel_term::Computation;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::StringLiteral;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
+use quenchant_arith::arith;
+
+use super::BinderDepth;
+use super::ContentTable;
+use super::RewriteMemo;
+use super::RewritePlane;
+use super::RewriteSupport;
+use super::shift_computation;
+use super::shift_value;
+use super::shift_value_type;
+use super::substitute_comp_type;
+use super::substitute_computation_at;
+use super::substitute_value;
+use super::substitute_value_type;
+use super::unload_computation;
+use super::unload_value;
+use crate::encoding::RewriteGoal;
+use crate::encoding::content_digest;
+use crate::generated::generated;
+use crate::generated::program;
+
+/// A fixture's chain length, as its own quantity rather than a bare count.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ChainLength(u32);
+
+/// The de Bruijn index at `depth` binders out.
+///
+/// # Specification
+/// trivial.
+fn index(depth: BinderDepth) -> DeBruijnIndex
+{
+    DeBruijnIndex::from(u32::from(depth))
+}
+
+#[test]
+fn a_zero_shift_reuses_its_code_carrying_subject()
+{
+    let mut arena = TermArena::new();
+    let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let subject = arena.value_type_element(variable, Level::zero());
+    let before = arena.watermark();
+    let shifted = shift_value_type(
+        &mut arena,
+        &mut ContentTable::named_in(Global),
+        &mut RewriteMemo::new(),
+        subject,
+        BinderDepth::NONE,
+        BinderDepth::NONE,
+    );
+    assert_eq!(shifted, subject);
+    assert_eq!(arena.watermark(), before);
+}
+
+#[test]
+fn a_saturated_variable_shift_reuses_the_unchanged_occurrence()
+{
+    let mut arena = TermArena::new();
+    let subject = arena.value_variable(DeBruijnIndex::from(u32::MAX));
+    let before = arena.watermark();
+    let shifted = shift_value(
+        &mut arena,
+        &mut ContentTable::named_in(Global),
+        &mut RewriteMemo::new(),
+        subject,
+        BinderDepth::NONE,
+        BinderDepth::from(1_u32),
+    );
+    assert_eq!(shifted, subject);
+    assert_eq!(arena.watermark(), before);
+}
+
+#[test]
+fn shifting_raises_free_indices_and_spares_bound_ones()
+{
+    let mut arena = TermArena::new();
+    let free = arena.value_variable(index(BinderDepth::from(0_u32)));
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let raised = shift_value(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        free,
+        BinderDepth::NONE,
+        BinderDepth::from(2_u32),
+    );
+    assert_eq!(
+        Some(&Value::Variable(index(BinderDepth::from(2_u32)))),
+        arena.value(raised),
+        "a free index at the cutoff rises by the amount"
+    );
+    let spared = shift_value(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        free,
+        BinderDepth::from(1_u32),
+        BinderDepth::from(2_u32),
+    );
+    assert_eq!(
+        free, spared,
+        "an index below the cutoff is bound outside the rewrite and is returned unchanged"
+    );
+}
+
+#[test]
+fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
+{
+    let mut arena = TermArena::new();
+    let decoder = gandr_kernel_term::ConstantIndex::from(1_usize);
+    let other = gandr_kernel_term::ConstantIndex::from(2_usize);
+    // `El(c x)`, `c` the constant and `x` the variable `at`.
+    let decode = |arena: &mut TermArena, constant, at: u32| {
+        let head = arena.value_constant(constant);
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(DeBruijnIndex::from(at));
+        let call = arena.computation_application(forced, argument);
+        let code = arena.value_returned(call);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `U (El(el x) → F (El(el y)))`, the codomain under the arrow's binder.
+    let domain = decode(&mut arena, decoder, 0);
+    let codomain = decode(&mut arena, decoder, 1);
+    let returner = arena.comp_type_returner(codomain);
+    let pi = arena.comp_type_pi(domain, returner);
+    let subject = arena.value_type_thunk(pi);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let read = super::abstract_constant_value_type(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        subject,
+        (decoder, DeBruijnIndex::from(5_u32)),
+    );
+    // The decoder's head and argument in `El(head argument)`.
+    let call = |arena: &TermArena, decoded| {
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(decoded)
+        else {
+            panic!("a decode");
+        };
+        let Some(&Value::Returned(call)) = arena.value(code)
+        else {
+            panic!("a returned call");
+        };
+        let Some(&Computation::Application(forced, argument)) = arena.computation(call)
+        else {
+            panic!("an application");
+        };
+        let Some(&Computation::Force(head)) = arena.computation(forced)
+        else {
+            panic!("a forced head");
+        };
+        (arena.value(head).cloned(), arena.value(argument).cloned())
+    };
+    let variable = |at: u32| Some(Value::Variable(DeBruijnIndex::from(at)));
+    let Some(&ValueType::Thunk(pi)) = arena.value_type(read)
+    else {
+        panic!("a thunk");
+    };
+    let Some(&CompType::Pi { domain, codomain }) = arena.comp_type(pi)
+    else {
+        panic!("an arrow");
+    };
+    let Some(&CompType::Returner(result)) = arena.comp_type(codomain)
+    else {
+        panic!("a returner");
+    };
+    // The domain stands under no binder: the variable at the index. The
+    // codomain stands under the arrow's: one past it. The arguments stand.
+    assert_eq!(call(&arena, domain), (variable(5), variable(0)));
+    assert_eq!(call(&arena, result), (variable(6), variable(1)));
+    let unrelated = decode(&mut arena, other, 0);
+    // A fresh session: a memo may answer with an equal node minted earlier.
+    assert_eq!(
+        super::abstract_constant_value_type(
+            &mut arena,
+            &mut ContentTable::named_in(Global),
+            &mut RewriteMemo::new(),
+            unrelated,
+            (decoder, DeBruijnIndex::from(5_u32)),
+        ),
+        unrelated,
+        "a type naming another constant is kept"
+    );
+}
+
+#[test]
+fn sharing_an_endpoint_binds_its_node_and_raises_the_rest()
+{
+    let mut arena = TermArena::new();
+    let head = arena.value_constant(gandr_kernel_term::ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(head);
+    let first = gandr_kernel_term::Component::from(0_usize);
+    let variable = |at: u32| Some(Value::Variable(DeBruijnIndex::from(at)));
+    // `x ← ⟨k k⟩.0; return (⟨k k⟩, ⟨k k⟩', x, y)`: the closed endpoint read
+    // at the root and again under the bind, beside a twin of equal content
+    // minted apart, the bind's variable and a free one.
+    let call = arena.computation_application(forced, head);
+    let endpoint = arena.value_returned(call);
+    let twin = arena.value_returned(call);
+    let projected = arena.computation_tuple_projection(endpoint, first);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let free = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let tuple = arena.value_tuple(&[endpoint, twin, bound, free]);
+    let returned = arena.computation_return(tuple);
+    let subject = arena.computation_bind(projected, returned);
+    let shared = super::share_endpoint(
+        &mut arena,
+        &mut ContentTable::named_in(Global),
+        &mut RewriteMemo::new(),
+        subject,
+        endpoint,
+    );
+    let Some(&Computation::Bind(read, body)) = arena.computation(shared)
+    else {
+        panic!("a bind");
+    };
+    let Some(&Computation::TupleProjection(inspected, _)) = arena.computation(read)
+    else {
+        panic!("a projection");
+    };
+    // At the root the endpoint reads the new binder's variable.
+    assert_eq!(arena.value(inspected).cloned(), variable(0));
+    let Some(&Computation::Return(components)) = arena.computation(body)
+    else {
+        panic!("a return");
+    };
+    let Some(&Value::Tuple(ref components)) = arena.value(components)
+    else {
+        panic!("a tuple");
+    };
+    let reading = |at: usize| arena.value(*components.get(at)?);
+    // Under the bind it reads that variable one binder out, the twin minted
+    // apart is kept, the bind's variable stands and the free one rises past
+    // the new binder.
+    assert_eq!(reading(0).cloned(), variable(1));
+    assert_eq!(
+        components.get(1),
+        Some(&twin),
+        "a twin minted apart is not the endpoint"
+    );
+    assert_eq!(reading(2).cloned(), variable(0));
+    assert_eq!(reading(3).cloned(), variable(2));
+    // `x ← ⟨k z⟩.0; return ⟨k z⟩`, `z` free: under the bind the node reads
+    // the bind's variable, so it is not the endpoint read at the root.
+    let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let call = arena.computation_application(forced, argument);
+    let open = arena.value_returned(call);
+    let projected = arena.computation_tuple_projection(open, first);
+    let kept = arena.computation_return(open);
+    let subject = arena.computation_bind(projected, kept);
+    let shared = super::share_endpoint(
+        &mut arena,
+        &mut ContentTable::named_in(Global),
+        &mut RewriteMemo::new(),
+        subject,
+        open,
+    );
+    let Some(&Computation::Bind(read, body)) = arena.computation(shared)
+    else {
+        panic!("a bind");
+    };
+    let Some(&Computation::TupleProjection(inspected, _)) = arena.computation(read)
+    else {
+        panic!("a projection");
+    };
+    assert_eq!(arena.value(inspected).cloned(), variable(0));
+    assert_eq!(
+        arena.computation(body),
+        Some(&Computation::Return(open)),
+        "an open endpoint under a binder is kept"
+    );
+}
+
+#[test]
+fn a_binder_spares_what_it_binds()
+{
+    let mut arena = TermArena::new();
+    let inner = arena.value_variable(index(BinderDepth::from(0_u32)));
+    let outer = arena.value_variable(index(BinderDepth::from(1_u32)));
+    let pair = arena.value_tuple(&[inner, outer]);
+    let body = arena.computation_return(pair);
+    let lambda = arena.computation_lambda(body);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let shifted = shift_computation(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        lambda,
+        BinderDepth::NONE,
+        BinderDepth::from(3_u32),
+    );
+    let Some(&Computation::Lambda(shifted_body)) = arena.computation(shifted)
+    else {
+        panic!("a shifted lambda is a lambda");
+    };
+    let Some(&Computation::Return(shifted_pair)) = arena.computation(shifted_body)
+    else {
+        panic!("its body is a returner");
+    };
+    let Some(&[first, second]) = arena.value(shifted_pair).and_then(Value::components)
+    else {
+        panic!("and the returner carries the pair");
+    };
+    assert_eq!(
+        Some(&Value::Variable(index(BinderDepth::from(0_u32)))),
+        arena.value(first),
+        "the lambda's own binder is spared"
+    );
+    assert_eq!(
+        Some(&Value::Variable(index(BinderDepth::from(4_u32)))),
+        arena.value(second),
+        "and the index reaching past it rises by the amount"
+    );
+}
+
+#[test]
+fn substitution_replaces_lowers_and_spares()
+{
+    let mut arena = TermArena::new();
+    let replacement = arena.value_literal(Literal::Text(StringLiteral::new(String::from("r"))));
+    let bound_inside = arena.value_variable(index(BinderDepth::from(0_u32)));
+    let substituted = arena.value_variable(index(BinderDepth::from(1_u32)));
+    let outside = arena.value_variable(index(BinderDepth::from(2_u32)));
+    let inner_pair = arena.value_tuple(&[bound_inside, substituted]);
+    let pair = arena.value_tuple(&[inner_pair, outside]);
+    let body = arena.computation_return(pair);
+    let lambda = arena.computation_lambda(body);
+    let thunk = arena.value_thunk(lambda);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let result = substitute_value(&mut arena, &mut table, &mut memo, thunk, replacement);
+
+    let Some(&Value::Thunk(result_lambda)) = arena.value(result)
+    else {
+        panic!("a substituted thunk is a thunk");
+    };
+    let Some(&Computation::Lambda(result_body)) = arena.computation(result_lambda)
+    else {
+        panic!("holding a lambda");
+    };
+    let Some(&Computation::Return(result_pair)) = arena.computation(result_body)
+    else {
+        panic!("whose body returns");
+    };
+    let Some(&[result_inner, result_outside]) =
+        arena.value(result_pair).and_then(Value::components)
+    else {
+        panic!("a pair");
+    };
+    let Some(&[result_bound, result_substituted]) =
+        arena.value(result_inner).and_then(Value::components)
+    else {
+        panic!("over a pair");
+    };
+    assert_eq!(
+        Some(&Value::Variable(index(BinderDepth::from(0_u32)))),
+        arena.value(result_bound),
+        "an index bound inside the walk stands"
+    );
+    assert_eq!(
+        arena.value(replacement).cloned(),
+        arena.value(result_substituted).cloned(),
+        "the index the walk's depth names becomes the replacement"
+    );
+    assert_eq!(
+        Some(&Value::Variable(index(BinderDepth::from(1_u32)))),
+        arena.value(result_outside),
+        "and an index outside the vanished binder lowers by one"
+    );
+}
+
+/// A replacement with a free index is carried under the binders the walk
+/// crossed, which is the half of substitution that capture-avoidance is.
+#[test]
+fn a_replacement_is_carried_under_the_binders_it_crosses()
+{
+    let mut arena = TermArena::new();
+    let replacement = arena.value_variable(index(BinderDepth::from(0_u32)));
+    let occurrence = arena.value_variable(index(BinderDepth::from(1_u32)));
+    let body = arena.computation_return(occurrence);
+    let lambda = arena.computation_lambda(body);
+    let thunk = arena.value_thunk(lambda);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let result = substitute_value(&mut arena, &mut table, &mut memo, thunk, replacement);
+    let Some(&Value::Thunk(result_lambda)) = arena.value(result)
+    else {
+        panic!("a substituted thunk is a thunk");
+    };
+    let Some(&Computation::Lambda(result_body)) = arena.computation(result_lambda)
+    else {
+        panic!("holding a lambda");
+    };
+    let Some(&Computation::Return(carried)) = arena.computation(result_body)
+    else {
+        panic!("whose body returns");
+    };
+    assert_eq!(
+        Some(&Value::Variable(index(BinderDepth::from(1_u32)))),
+        arena.value(carried),
+        "the replacement's own free index rises past the binder it was carried under"
+    );
+}
+
+/// A closed value beside the substituted occurrence, and the closed
+/// replacement carried under the binder to it, are answered whole: the
+/// substitution records as many nodes however long either grows, and the
+/// carrying shift records none.
+#[test]
+fn a_substitution_opens_no_node_its_binder_cannot_reach_3464()
+{
+    /// A chain of `links` distinct pairs, each over the last and the literal
+    /// `leaf`, reading no binder.
+    ///
+    /// # Specification
+    /// - provides: a closed value with `links` distinct pairs above its leaf.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at one, sixteen and 256 links; a support reaching a
+    ///   binder would let the walk open the chain whatever its length.
+    /// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
+    #[spec(ensures: |ret| u32::from(arena.value_support(ret).depth()) == 0)]
+    fn closed_chain(
+        arena: &mut TermArena,
+        links: ChainLength,
+        leaf: Literal,
+    ) -> ValueId
+    {
+        let leaf = arena.value_literal(leaf);
+        (0 .. links.0).fold(leaf, |node, _| arena.value_tuple(&[node, leaf]))
+    }
+
+    // The entries each plane records for `\x. (closed, x)` substituted by a
+    // closed replacement, both chains `links` long, beside the answer.
+    let recorded = |links: ChainLength| {
+        let mut arena = TermArena::new();
+        let text = |name: &str| Literal::Text(StringLiteral::new(String::from(name)));
+        let closed = closed_chain(&mut arena, links, text("c"));
+        let replacement = closed_chain(&mut arena, links, text("r"));
+        let occurrence = arena.value_variable(index(BinderDepth::from(1_u32)));
+        let pair = arena.value_tuple(&[closed, occurrence]);
+        let body = arena.computation_return(pair);
+        let lambda = arena.computation_lambda(body);
+        let thunk = arena.value_thunk(lambda);
+        let mut table = ContentTable::named_in(Global);
+        let mut memo = RewriteMemo::new();
+        let result = substitute_value(&mut arena, &mut table, &mut memo, thunk, replacement);
+        let Some(&Value::Thunk(result_lambda)) = arena.value(result)
+        else {
+            panic!("a substituted thunk is a thunk");
+        };
+        let Some(&Computation::Lambda(result_body)) = arena.computation(result_lambda)
+        else {
+            panic!("holding a lambda");
+        };
+        let Some(&Computation::Return(result_pair)) = arena.computation(result_body)
+        else {
+            panic!("whose body returns");
+        };
+        assert_eq!(
+            Some([closed, replacement].as_slice()),
+            arena.value(result_pair).and_then(Value::components),
+            "the closed value stands and the occurrence becomes the replacement as it was"
+        );
+        (
+            memo.plane_entry_count(RewritePlane::Substitute),
+            memo.plane_entry_count(RewritePlane::Shift),
+        )
+    };
+
+    let short = recorded(ChainLength(1));
+    assert_eq!(
+        MemoEntryCount::from(0_usize),
+        short.1,
+        "the closed replacement is not shifted"
+    );
+    for links in [ChainLength(16), ChainLength(256)] {
+        assert_eq!(
+            short,
+            recorded(links),
+            "a longer closed value opens no more nodes"
+        );
+    }
+}
+
+/// Every type is closed at a vocabulary where no former is indexed by a
+/// value term, so both rewrites hand back the node they were given — the
+/// sharing-preserving reuse, exhibited where it is total.
+#[test]
+fn a_closed_type_shifts_to_itself()
+{
+    let mut arena = TermArena::new();
+    let base = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let product = arena.value_type_product(&[base, unit]);
+    let returner = arena.comp_type_returner(product);
+    let dependent = arena.comp_type_pi(unit, returner);
+    let thunk = arena.value_type_thunk(dependent);
+    let before = arena.watermark();
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let shifted = shift_value_type(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        thunk,
+        BinderDepth::NONE,
+        BinderDepth::from(3_u32),
+    );
+    assert_eq!(thunk, shifted, "a closed type shifts to the very same node");
+    assert_eq!(
+        before,
+        arena.watermark(),
+        "and the rewrite mints nothing, so the arena does not grow by a copy"
+    );
+}
+
+#[test]
+fn a_closed_type_instantiates_to_itself()
+{
+    let mut arena = TermArena::new();
+    let unit = arena.value_type_unit();
+    let returner = arena.comp_type_returner(unit);
+    let dependent = arena.comp_type_pi(unit, returner);
+    let replacement = arena.value_unit();
+    let before = arena.watermark();
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let instantiated =
+        substitute_comp_type(&mut arena, &mut table, &mut memo, dependent, replacement);
+    assert_eq!(
+        dependent, instantiated,
+        "instantiating a closed dependent arrow is the identity on its node"
+    );
+    let inner = substitute_value_type(&mut arena, &mut table, &mut memo, unit, replacement);
+    assert_eq!(unit, inner, "and so is instantiating a closed value type");
+    assert_eq!(
+        before,
+        arena.watermark(),
+        "neither mints, so no intermediate outlives the verdict"
+    );
+}
+
+/// A type carrying a code shifts and instantiates like the term it carries,
+/// which is the whole of what "types in the context stop being closed"
+/// means operationally.
+#[test]
+fn a_code_carrying_type_rewrites_through_its_code()
+{
+    let mut arena = TermArena::new();
+    let zero = Level::zero();
+    let code = arena.value_variable(index(BinderDepth::from(0_u32)));
+    let element = arena.value_type_element(code, zero);
+    let returner = arena.comp_type_returner(element);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+
+    let shifted = shift_value_type(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        element,
+        BinderDepth::NONE,
+        BinderDepth::from(2_u32),
+    );
+    let Some(&ValueType::Element { code: raised, .. }) = arena.value_type(shifted)
+    else {
+        panic!("a shifted code-carrying type still carries a code");
+    };
+    assert_eq!(
+        Some(&Value::Variable(index(BinderDepth::from(2_u32)))),
+        arena.value(raised),
+        "the code's free index rose with the type it sits in"
+    );
+
+    // And a dependent codomain instantiates: the returner under the binder
+    // reads index zero, so instantiating it at a replacement replaces the
+    // code outright.
+    let replacement = arena.value_unit();
+    let instantiated =
+        substitute_comp_type(&mut arena, &mut table, &mut memo, returner, replacement);
+    let Some(&CompType::Returner(result)) = arena.comp_type(instantiated)
+    else {
+        panic!("an instantiated returner is a returner");
+    };
+    let Some(&ValueType::Element { code: planted, .. }) = arena.value_type(result)
+    else {
+        panic!("over a code-carrying type");
+    };
+    assert_eq!(
+        replacement, planted,
+        "the codomain's code became the argument"
+    );
+}
+
+/// An instantiation at a call binds the call ahead of each decode whose
+/// returned code reads the binder, raised past the binders between,
+/// substitutes the decodes that do not read it, stands the call's value for the
+/// binder outside every code, and holds the call in place in a path endpoint
+/// (#720).
+#[test]
+fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
+{
+    let mut arena = TermArena::new();
+    // `El ⟨force(head) argument⟩`, each by its index.
+    let decode = |arena: &mut TermArena, head: u32, argument: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(head));
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(DeBruijnIndex::from(argument));
+        let call = arena.computation_application(forced, argument);
+        let code = arena.value_returned(call);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `El ⟨c ← force(f) g; force(tm) c⟩`: the call bound ahead of the family.
+    let bound = |arena: &mut TermArena, (f, g): (u32, u32), tm: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(f));
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(DeBruijnIndex::from(g));
+        let ahead = arena.computation_application(forced, argument);
+        let family = arena.value_variable(DeBruijnIndex::from(tm));
+        let forced = arena.computation_force(family);
+        let read = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let applied = arena.computation_application(forced, read);
+        let bind = arena.computation_bind(ahead, applied);
+        let code = arena.value_returned(bind);
+        arena.value_type_element(code, Level::zero())
+    };
+    // Outside the binder `tm` is 0, `extend` 1 and `g` 2; under it, one more.
+    let head = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let forced = arena.computation_force(head);
+    let g = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let call = arena.computation_application(forced, g);
+    let argument = arena.value_returned(call);
+    // `Path[.A = Unit](⟨force(head) at⟩, at)`: a returned code as an endpoint.
+    let endpoint = |arena: &mut TermArena, head: u32, at: ValueId| {
+        let head = arena.value_variable(DeBruijnIndex::from(head));
+        let forced = arena.computation_force(head);
+        let call = arena.computation_application(forced, at);
+        let code = arena.value_returned(call);
+        let unit = arena.value_type_unit();
+        arena.value_type_path(unit, code, at)
+    };
+    // `tm(x)`, `tm(g)`, `x` outside any code, `tm(x)` under a binder, and an
+    // endpoint reading `x`.
+    let reads = decode(&mut arena, 1, 0);
+    let spares = decode(&mut arena, 1, 3);
+    let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let bare = arena.value_type_element(x, Level::zero());
+    let unit = arena.value_type_unit();
+    let deeper = decode(&mut arena, 2, 1);
+    let deeper = arena.comp_type_returner(deeper);
+    let deeper = arena.comp_type_pi(unit, deeper);
+    let under = arena.value_type_thunk(deeper);
+    let ends = endpoint(&mut arena, 1, x);
+    let product = arena.value_type_product(&[reads, spares, bare, under, ends]);
+    let codomain = arena.comp_type_returner(product);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let instantiated = super::substitute_comp_type_at_call(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        codomain,
+        (argument, call),
+    );
+    let Some(&CompType::Returner(result)) = arena.comp_type(instantiated)
+    else {
+        panic!("an instantiated returner is a returner");
+    };
+    let Some(ValueType::Product(components)) = arena.value_type(result).cloned()
+    else {
+        panic!("over a product");
+    };
+    let &[reads, spares, bare, under, ends] = &*components
+    else {
+        panic!("of five components");
+    };
+    let expected_reads = bound(&mut arena, (1, 2), 1);
+    let expected_spares = decode(&mut arena, 0, 2);
+    let expected_bare = arena.value_type_element(argument, Level::zero());
+    let unit = arena.value_type_unit();
+    let deeper = bound(&mut arena, (2, 3), 2);
+    let deeper = arena.comp_type_returner(deeper);
+    let deeper = arena.comp_type_pi(unit, deeper);
+    let expected_under = arena.value_type_thunk(deeper);
+    let expected_ends = endpoint(&mut arena, 0, argument);
+    for (what, found, expected) in [
+        (
+            "a decode reading the binder binds the call",
+            reads,
+            expected_reads,
+        ),
+        (
+            "a decode sparing it is substituted",
+            spares,
+            expected_spares,
+        ),
+        (
+            "the binder outside a code is the argument",
+            bare,
+            expected_bare,
+        ),
+        (
+            "under a binder the call rises past it",
+            under,
+            expected_under,
+        ),
+        ("an endpoint holds the call in place", ends, expected_ends),
+    ] {
+        assert_eq!(
+            content_digest(&arena, AnyNode::ValueType(found)),
+            content_digest(&arena, AnyNode::ValueType(expected)),
+            "{what}"
+        );
+    }
+}
+
+/// The differential the memo's soundness rests on: the same function at two
+/// type parameters answers alike.
+///
+/// The workload shares one subterm across many occurrences, so the memoized
+/// run records one entry per distinct `(content, depth)` pair, and the
+/// memoless run answers each occurrence after the first from the walk's own
+/// memo (#3859). Both produce the same rewritten node.
+#[test]
+fn the_memoized_rewrite_agrees_with_the_memoless_one()
+{
+    /// Build a self-similar value whose expansion is exponential in `depth`
+    /// and whose distinct-node count is linear in it.
+    ///
+    /// # Specification
+    /// - provides: a shared pair spine with exactly `levels` links.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at twelve shared pair levels; content equality between
+    ///   memo modes, thirteen distinct supports and shared versus duplicated
+    ///   children separate a collapsed fixture and a sharing-insensitive walk.
+    /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+    #[spec(ensures: |ret| if levels.0 == 0 {
+            arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(0_u32)))
+        } else {
+            matches!(arena.value(ret).and_then(Value::components), Some(&[left, right]) if left == right)
+        })]
+    fn shared_composite(
+        arena: &mut TermArena,
+        levels: ChainLength,
+    ) -> ValueId
+    {
+        let mut node = arena.value_variable(index(BinderDepth::from(0_u32)));
+        let mut remaining = levels.0;
+        while remaining > 0 {
+            node = arena.value_tuple(&[node, node]);
+            remaining = u32::from(arith::sub(
+                arith::Int::from(remaining),
+                arith::Int::from(1_u32),
+            ));
+        }
+        node
+    }
+
+    let mut arena = TermArena::new();
+    let root = shared_composite(&mut arena, ChainLength(12));
+
+    let mut memoless_table = ContentTable::named_in(Global);
+    let mut memoless = NullMemo;
+    let memoless_result = shift_value(
+        &mut arena,
+        &mut memoless_table,
+        &mut memoless,
+        root,
+        BinderDepth::NONE,
+        BinderDepth::from(1_u32),
+    );
+
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let memoized_result = shift_value(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        root,
+        BinderDepth::NONE,
+        BinderDepth::from(1_u32),
+    );
+
+    // Content, not identity: the two runs answer with the same *term*, each
+    // spelling minted by its own walk, so their ids differ.
+    assert_eq!(
+        content_digest(&arena, AnyNode::Value(memoless_result)),
+        content_digest(&arena, AnyNode::Value(memoized_result)),
+        "the memoized and memoless rewrites produce the same term"
+    );
+    assert_eq!(
+        MemoEntryCount::from(13_usize),
+        memo.plane_entry_count(RewritePlane::Shift),
+        "one entry per distinct node of the composite, not one per occurrence"
+    );
+    assert_eq!(
+        MemoEntryCount::from(0_usize),
+        memo.plane_entry_count(RewritePlane::Substitute),
+        "and the substitution plane accounts nothing, so neither plane hides behind the other"
+    );
+
+    // The anti-vacuity half, exhibited rather than counted: each answer shares
+    // its two children at every level of the spine, so the workload cannot
+    // silently stop being shared and keep this case passing. The memoless
+    // walk shares too: it answers a node it rewrote once from its own memo,
+    // where it once minted every occurrence apart (#3859).
+    for (run, result) in [("memoized", memoized_result), ("memoless", memoless_result)] {
+        let mut level = result;
+        for depth in 0_u32 .. 12 {
+            let Some(&[left, right]) = arena.value(level).and_then(Value::components)
+            else {
+                panic!("the {run} rewrite answers a pair at level {depth}");
+            };
+            assert_eq!(
+                left, right,
+                "the {run} rewrite answers once for the one distinct subject at level {depth}"
+            );
+            level = left;
+        }
+    }
+}
+
+/// The support `goal` takes in `table`, which names its records.
+///
+/// # Specification
+/// trivial.
+fn keyed(
+    table: &mut ContentTable<Global>,
+    arena: &TermArena,
+    goal: RewriteGoal,
+) -> RewriteSupport
+{
+    let quenchant_shape::shape::Maybe::Present(support) = RewriteSupport::build(table, arena, goal)
+    else {
+        panic!("a table that names its records keys every rewrite");
+    };
+    support
+}
+
+#[test]
+fn two_rewrites_of_one_subject_are_two_supports()
+{
+    let mut arena = TermArena::new();
+    let subject = arena.value_variable(index(BinderDepth::from(0_u32)));
+    let replacement = arena.value_unit();
+    let mut table = ContentTable::named_in(Global);
+    let shift = keyed(&mut table, &arena, RewriteGoal::Shift {
+        subject: AnyNode::Value(subject),
+        depth: BinderDepth::NONE,
+        cutoff: BinderDepth::NONE,
+        amount: BinderDepth::from(1_u32),
+    });
+    let substitute = keyed(&mut table, &arena, RewriteGoal::Substitute {
+        subject: AnyNode::Value(subject),
+        depth: BinderDepth::NONE,
+        replacement,
+    });
+    assert_eq!(RewritePlane::Shift, shift.plane());
+    assert_eq!(RewritePlane::Substitute, substitute.plane());
+    assert_eq!(
+        ContentAgreement::Differ,
+        shift.agreement(&substitute),
+        "two rewrites of one subject are two questions"
+    );
+    let deeper = keyed(&mut table, &arena, RewriteGoal::Shift {
+        subject: AnyNode::Value(subject),
+        depth: BinderDepth::from(1_u32),
+        cutoff: BinderDepth::NONE,
+        amount: BinderDepth::from(1_u32),
+    });
+    assert_eq!(
+        ContentAgreement::Differ,
+        shift.agreement(&deeper),
+        "and one subject at two binder depths is two questions"
+    );
+    assert_ne!(
+        shift.digest(),
+        deeper.digest(),
+        "and the memo files the two questions under different buckets"
+    );
+    assert_ne!(
+        shift.digest(),
+        substitute.digest(),
+        "as it does the two rewrites"
+    );
+}
+
+#[test]
+fn binder_counts_saturate_at_the_representable_boundary()
+{
+    for (raw, successor, machine) in [
+        (0_u32, 1_u32, 0_usize),
+        (7, 8, 7),
+        (u32::MAX.saturating_sub(1), u32::MAX, 0xffff_fffe),
+        (u32::MAX, u32::MAX, 0xffff_ffff),
+    ] {
+        let depth = BinderDepth::from(raw);
+        assert_eq!(u32::from(depth.deeper()), successor);
+        assert_eq!(u32::from(BinderDepth::past(depth)), successor);
+        assert_eq!(usize::from(depth), machine);
+    }
+    for (raw, binders, deeper) in [
+        (5_u32, 0_usize, 5_u32),
+        (5, 3, 8),
+        (u32::MAX.saturating_sub(2), 3, u32::MAX),
+        (0, usize::MAX, u32::MAX),
+    ] {
+        assert_eq!(
+            u32::from(
+                BinderDepth::from(raw).deeper_by(gandr_kernel_term::ResultCount::from(binders))
+            ),
+            deeper
+        );
+    }
+}
+
+#[test]
+fn outcome_projections_keep_matching_ids_and_decline_other_families()
+{
+    let mut arena = TermArena::new();
+    let value = arena.value_unit();
+    let other_value = arena.value_variable(DeBruijnIndex::from(3_u32));
+    let computation = arena.computation_return(value);
+    let other_computation = arena.computation_force(other_value);
+    let value_type = arena.value_type_unit();
+    let other_value_type = arena.value_type_base(BaseType::Integer);
+    let comp_type = arena.comp_type_returner(value_type);
+    let other_comp_type = arena.comp_type_arrow(value_type, comp_type);
+    for (outcome, expected_value, expected_computation, expected_value_type, expected_comp_type) in [
+        (
+            super::RewriteOutcome::Value(other_value),
+            other_value,
+            computation,
+            value_type,
+            comp_type,
+        ),
+        (
+            super::RewriteOutcome::Computation(other_computation),
+            value,
+            other_computation,
+            value_type,
+            comp_type,
+        ),
+        (
+            super::RewriteOutcome::ValueType(other_value_type),
+            value,
+            computation,
+            other_value_type,
+            comp_type,
+        ),
+        (
+            super::RewriteOutcome::CompType(other_comp_type),
+            value,
+            computation,
+            value_type,
+            other_comp_type,
+        ),
+    ] {
+        assert_eq!(outcome.value_or(value), expected_value);
+        assert_eq!(outcome.computation_or(computation), expected_computation);
+        assert_eq!(outcome.value_type_or(value_type), expected_value_type);
+        assert_eq!(outcome.comp_type_or(comp_type), expected_comp_type);
+    }
+}
+
+#[test]
+fn result_stack_preserves_order_and_falls_back_only_when_empty()
+{
+    let mut arena = TermArena::new();
+    let value = arena.value_unit();
+    let value_type = arena.value_type_unit();
+    let original = AnyNode::Value(value);
+    let first = super::RewriteOutcome::ValueType(value_type);
+    let second = super::RewriteOutcome::Value(value);
+    let mut results = alloc::vec![first, second];
+    assert_eq!(super::popped(&mut results, original), second);
+    assert_eq!(results.as_slice(), &[first]);
+    assert_eq!(super::popped(&mut results, original), first);
+    assert_eq!(super::popped(&mut results, original), second);
+    assert!(results.is_empty(), "{results:?}");
+}
+
+#[test]
+fn rewrite_agreement_ignores_colliding_digest_buckets()
+{
+    let mut arena = TermArena::new();
+    let subject = AnyNode::Value(arena.value_variable(DeBruijnIndex::from(0_u32)));
+    let mut table = ContentTable::named_in(Global);
+    let left = keyed(&mut table, &arena, RewriteGoal::Shift {
+        subject,
+        depth: BinderDepth::NONE,
+        cutoff: BinderDepth::NONE,
+        amount: BinderDepth::from(1_u32),
+    });
+    let mut right = keyed(&mut table, &arena, RewriteGoal::Shift {
+        subject,
+        depth: BinderDepth::from(1_u32),
+        cutoff: BinderDepth::NONE,
+        amount: BinderDepth::from(1_u32),
+    });
+    let mut same = left.clone();
+    same.digest = right.digest;
+    assert_eq!(left.agreement(&same), ContentAgreement::Agree);
+    right.digest = left.digest;
+    assert_eq!(left.agreement(&right), ContentAgreement::Differ);
+}
+
+#[test]
+fn unreadable_subjects_rewrite_to_their_original_ids()
+{
+    let mut arena = TermArena::new();
+    let replacement = arena.value_unit();
+    let floor = arena.watermark();
+    let first = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let second = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let computation = arena.computation_return(first);
+    let value_type = arena.value_type_unit();
+    let comp_type = arena.comp_type_returner(value_type);
+    arena.truncate_to(floor);
+    let mut results = alloc::vec![];
+    let step = super::Rewrite::Shift {
+        cutoff: BinderDepth::NONE,
+        amount: BinderDepth::from(1_u32),
+    };
+    assert_eq!(
+        super::close_value(&mut arena, step, first, BinderDepth::NONE, &mut results),
+        first
+    );
+    assert_eq!(
+        super::close_computation(&mut arena, computation, &mut results),
+        computation
+    );
+    assert_eq!(
+        super::close_value_type(&mut arena, value_type, &mut results),
+        value_type
+    );
+    assert_eq!(
+        super::close_comp_type(&mut arena, comp_type, &mut results),
+        comp_type
+    );
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    for root in [
+        AnyNode::Value(first),
+        AnyNode::Value(second),
+        AnyNode::Computation(computation),
+        AnyNode::ValueType(value_type),
+        AnyNode::CompType(comp_type),
+    ] {
+        for rewrite in [
+            super::Rewrite::Shift {
+                cutoff: BinderDepth::NONE,
+                amount: BinderDepth::from(1_u32),
+            },
+            super::Rewrite::Substitute { replacement },
+        ] {
+            assert_eq!(
+                super::run_rewrite(
+                    &mut arena,
+                    &mut table,
+                    &mut memo,
+                    rewrite,
+                    root,
+                    super::BinderDepth::NONE
+                ),
+                super::outcome_of(root)
+            );
+            assert_eq!(arena.watermark(), floor);
+        }
+    }
+}
+
+#[test]
+fn bind_and_case_rewrites_distinguish_binding_positions()
+{
+    let mut arena = TermArena::new();
+    let inner = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let bound = arena.computation_return(inner);
+    let left = arena.computation_return(inner);
+    let right = arena.computation_return(outer);
+    let sequence = arena.computation_bind(bound, left);
+    let case = arena.computation_case(inner, &[left, right]);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let shifted = shift_computation(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        sequence,
+        BinderDepth::NONE,
+        BinderDepth::from(3_u32),
+    );
+    let Some(&Computation::Bind(shifted_bound, shifted_body)) = arena.computation(shifted)
+    else {
+        panic!("expected bind");
+    };
+    let Some(&Computation::Return(raised)) = arena.computation(shifted_bound)
+    else {
+        panic!("expected returned outer variable");
+    };
+    assert_eq!(
+        arena.value(raised),
+        Some(&Value::Variable(DeBruijnIndex::from(3_u32)))
+    );
+    assert_eq!(
+        arena.computation(shifted_body),
+        Some(&Computation::Return(inner))
+    );
+    let shifted = shift_computation(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        case,
+        BinderDepth::NONE,
+        BinderDepth::from(3_u32),
+    );
+    let Some(&Computation::Case {
+        scrutinee,
+        ref branches,
+    }) = arena.computation(shifted)
+    else {
+        panic!("expected case");
+    };
+    let &[on_left, on_right] = &**branches
+    else {
+        panic!("expected case");
+    };
+    assert_eq!(
+        arena.value(scrutinee),
+        Some(&Value::Variable(DeBruijnIndex::from(3_u32)))
+    );
+    assert_eq!(
+        arena.computation(on_left),
+        Some(&Computation::Return(inner))
+    );
+    let Some(&Computation::Return(raised)) = arena.computation(on_right)
+    else {
+        panic!("expected returned external variable");
+    };
+    assert_eq!(
+        arena.value(raised),
+        Some(&Value::Variable(DeBruijnIndex::from(4_u32)))
+    );
+}
+
+#[test]
+fn a_dependent_pair_and_its_split_bind_where_they_scope()
+{
+    let mut arena = TermArena::new();
+    let base = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let one = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let two = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let first = arena.value_type_path(base, zero, zero);
+    let second = arena.value_type_path(base, zero, one);
+    let sigma = arena.value_type_sigma(first, second);
+    let motive = arena.comp_type_returner(second);
+    let body = arena.computation_return(two);
+    let split = arena.computation_sigma_split(zero, motive, body);
+    let mut table = ContentTable::named_in(Global);
+    let mut memo = RewriteMemo::new();
+    let three = BinderDepth::from(3_u32);
+    let variable = |at: u32| Value::Variable(DeBruijnIndex::from(at));
+    let shifted = shift_value_type(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        sigma,
+        BinderDepth::NONE,
+        three,
+    );
+    let Some(&ValueType::Sigma {
+        first: moved_first,
+        second: moved_second,
+    }) = arena.value_type(shifted)
+    else {
+        panic!("expected a dependent pair");
+    };
+    let Some(&ValueType::Path { left, right, .. }) = arena.value_type(moved_first)
+    else {
+        panic!("expected the first factor's path");
+    };
+    assert_eq!(arena.value(left), Some(&variable(3)));
+    assert_eq!(arena.value(right), Some(&variable(3)));
+    let Some(&ValueType::Path { left, right, .. }) = arena.value_type(moved_second)
+    else {
+        panic!("expected the second factor's path");
+    };
+    assert_eq!(
+        arena.value(left),
+        Some(&variable(0)),
+        "the second factor's binder is spared"
+    );
+    assert_eq!(arena.value(right), Some(&variable(4)));
+    let shifted = shift_computation(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        split,
+        BinderDepth::NONE,
+        three,
+    );
+    let Some(&Computation::SigmaSplit {
+        scrutinee,
+        motive: moved_motive,
+        body: moved_body,
+    }) = arena.computation(shifted)
+    else {
+        panic!("expected a dependent split");
+    };
+    assert_eq!(arena.value(scrutinee), Some(&variable(3)));
+    let Some(&CompType::Returner(answer)) = arena.comp_type(moved_motive)
+    else {
+        panic!("expected the motive's returner");
+    };
+    let Some(&ValueType::Path { left, right, .. }) = arena.value_type(answer)
+    else {
+        panic!("expected the motive's path");
+    };
+    assert_eq!(
+        arena.value(left),
+        Some(&variable(0)),
+        "the motive's binder is spared"
+    );
+    assert_eq!(arena.value(right), Some(&variable(4)));
+    let Some(&Computation::Return(answered)) = arena.computation(moved_body)
+    else {
+        panic!("expected the body's return");
+    };
+    assert_eq!(
+        arena.value(answered),
+        Some(&variable(5)),
+        "the body sits under both components"
+    );
+}
+
+#[test]
+fn carrying_refusals_follow_rule_precedence()
+{
+    let mut arena = TermArena::new();
+    let replacement = arena.value_unit();
+    let zero = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let one = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let computation = arena.computation_return(zero);
+    let floor = arena.watermark();
+    let unreadable = arena.value_unit();
+    arena.truncate_to(floor);
+    let shift = super::Rewrite::Shift {
+        cutoff: BinderDepth::NONE,
+        amount: BinderDepth::from(1_u32),
+    };
+    let substitute = super::Rewrite::Substitute { replacement };
+    let crossed = BinderDepth::from(1_u32);
+    for (rewrite, root, depth, expected) in [
+        (
+            shift,
+            AnyNode::Value(unreadable),
+            crossed,
+            super::Maybe::Absent(super::carrying::Absent::Shift),
+        ),
+        (
+            substitute,
+            AnyNode::Value(unreadable),
+            BinderDepth::NONE,
+            super::Maybe::Absent(super::carrying::Absent::NoCrossedBinders),
+        ),
+        (
+            substitute,
+            AnyNode::Computation(computation),
+            crossed,
+            super::Maybe::Absent(super::carrying::Absent::DifferentOccurrence),
+        ),
+        (
+            substitute,
+            AnyNode::Value(unreadable),
+            crossed,
+            super::Maybe::Absent(super::carrying::Absent::UnreadableValue),
+        ),
+        (
+            substitute,
+            AnyNode::Value(zero),
+            crossed,
+            super::Maybe::Absent(super::carrying::Absent::DifferentOccurrence),
+        ),
+        (
+            substitute,
+            AnyNode::Value(one),
+            crossed,
+            super::Maybe::Present(replacement),
+        ),
+    ] {
+        assert_eq!(
+            super::carried_occurrence(&arena, rewrite, root, depth),
+            expected
+        );
+    }
+}
+
+/// A child slot of a former, numbered in the order [`build`] asks for
+/// them.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Slot(usize);
+
+/// A former's children as [`build`] asks for them, each closed or the one
+/// open slot reading the free variable `index`, which no former here binds
+/// deep enough to capture.
+///
+/// # Specification
+/// trivial.
+struct Children
+{
+    /// The slot that reads the variable, if any.
+    open: Option<Slot>,
+    /// How many slots have been asked for.
+    next: usize,
+    /// The variable the open slot reads.
+    index: DeBruijnIndex,
+}
+
+impl Children
+{
+    /// Every slot closed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn closed() -> Self
+    {
+        Self {
+            open: None,
+            next: 0,
+            index: DeBruijnIndex::from(0_u32),
+        }
+    }
+
+    /// Slot `open` reading `index`, every other slot closed.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn opening(
+        open: Slot,
+        index: DeBruijnIndex,
+    ) -> Self
+    {
+        Self {
+            open: Some(open),
+            next: 0,
+            index,
+        }
+    }
+
+    /// The variable the next slot reads, or `None` for a closed one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read(&mut self) -> Option<DeBruijnIndex>
+    {
+        let slot = Slot(self.next);
+        self.next = self.next.saturating_add(1);
+        (self.open == Some(slot)).then_some(self.index)
+    }
+
+    /// The next slot as a value: the variable, or the unit.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value(
+        &mut self,
+        arena: &mut TermArena,
+    ) -> ValueId
+    {
+        match self.read() {
+            Some(index) => arena.value_variable(index),
+            None => arena.value_unit(),
+        }
+    }
+
+    /// The next slot as a value type: the variable's element type, or the
+    /// unit type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value_type(
+        &mut self,
+        arena: &mut TermArena,
+    ) -> gandr_kernel_term::ValueTypeId
+    {
+        match self.read() {
+            Some(index) => {
+                let code = arena.value_variable(index);
+                arena.value_type_element(code, Level::zero())
+            },
+            None => arena.value_type_unit(),
+        }
+    }
+
+    /// The next slot as a computation returning [`Children::value`]'s.
+    ///
+    /// # Specification
+    /// trivial.
+    fn computation(
+        &mut self,
+        arena: &mut TermArena,
+    ) -> gandr_kernel_term::ComputationId
+    {
+        let value = self.value(arena);
+        arena.computation_return(value)
+    }
+
+    /// The next slot as the returner of [`Children::value_type`]'s.
+    ///
+    /// # Specification
+    /// trivial.
+    fn comp_type(
+        &mut self,
+        arena: &mut TermArena,
+    ) -> gandr_kernel_term::CompTypeId
+    {
+        let value_type = self.value_type(arena);
+        arena.comp_type_returner(value_type)
+    }
+}
+
+/// Every former with children, each named by its family and node.
+#[derive(Clone, Copy, Debug)]
+enum Former
+{
+    Constructor,
+    Record,
+    SessionPath,
+    SessionFlow,
+    Stay,
+    ForwardFlow,
+    FunctionFlow,
+    Then,
+    FlowProduct,
+    PathRefl,
+    PathProduct,
+    PathEquiv,
+    Here,
+    Returned,
+    Higher,
+    HigherEvaluation,
+    QuantifiedEvaluation,
+    Tuple,
+    Injection,
+    ListCons,
+    Thunk,
+    Lift,
+    Quote,
+    QuoteComputation,
+    StaticApplication,
+    DataCase,
+    RecordProjection,
+    TupleProjection,
+    Lambda,
+    Application,
+    Return,
+    Bind,
+    Force,
+    Case,
+    SigmaSplit,
+    ListFold,
+    ListCase,
+    Transport,
+    PathTransport,
+    TelescopeTransport,
+    Ride,
+    TelescopeRide,
+    RelatedApplication,
+    With,
+    Project,
+    Fixpoint,
+    DataType,
+    RecordType,
+    SessionType,
+    PathUniverse,
+    FlowUniverse,
+    PathType,
+    FlowType,
+    ProductType,
+    SigmaType,
+    SumType,
+    ListType,
+    ThunkType,
+    LiftType,
+    ElementType,
+    StagedType,
+    StaticPiType,
+    Returner,
+    Arrow,
+    Pi,
+    ElementComp,
+    WithType,
+}
+
+/// Every [`Former`].
+const FORMERS: &[Former] = &[
+    Former::Constructor,
+    Former::Record,
+    Former::SessionPath,
+    Former::SessionFlow,
+    Former::Stay,
+    Former::ForwardFlow,
+    Former::FunctionFlow,
+    Former::Then,
+    Former::FlowProduct,
+    Former::PathRefl,
+    Former::PathProduct,
+    Former::PathEquiv,
+    Former::Here,
+    Former::Returned,
+    Former::Higher,
+    Former::HigherEvaluation,
+    Former::QuantifiedEvaluation,
+    Former::Tuple,
+    Former::Injection,
+    Former::ListCons,
+    Former::Thunk,
+    Former::Lift,
+    Former::Quote,
+    Former::QuoteComputation,
+    Former::StaticApplication,
+    Former::DataCase,
+    Former::RecordProjection,
+    Former::TupleProjection,
+    Former::Lambda,
+    Former::Application,
+    Former::Return,
+    Former::Bind,
+    Former::Force,
+    Former::Case,
+    Former::SigmaSplit,
+    Former::ListFold,
+    Former::ListCase,
+    Former::Transport,
+    Former::PathTransport,
+    Former::TelescopeTransport,
+    Former::Ride,
+    Former::TelescopeRide,
+    Former::RelatedApplication,
+    Former::With,
+    Former::Project,
+    Former::Fixpoint,
+    Former::DataType,
+    Former::RecordType,
+    Former::SessionType,
+    Former::PathUniverse,
+    Former::FlowUniverse,
+    Former::PathType,
+    Former::FlowType,
+    Former::ProductType,
+    Former::SigmaType,
+    Former::SumType,
+    Former::ListType,
+    Former::ThunkType,
+    Former::LiftType,
+    Former::ElementType,
+    Former::StagedType,
+    Former::StaticPiType,
+    Former::Returner,
+    Former::Arrow,
+    Former::Pi,
+    Former::ElementComp,
+    Former::WithType,
+];
+
+/// `former` in `arena`, each child as `children` hands it out.
+///
+/// # Specification
+/// trivial.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm per former, each its constructor call"
+)]
+fn build(
+    arena: &mut TermArena,
+    former: Former,
+    children: &mut Children,
+) -> AnyNode
+{
+    use alloc::boxed::Box;
+    use alloc::collections::BTreeMap;
+
+    use gandr_kernel_term::Component;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::EvaluationComponent;
+    use gandr_kernel_term::FieldLabel;
+    use gandr_kernel_term::FixpointEvidence;
+    use gandr_kernel_term::HigherDepth;
+    use gandr_kernel_term::HigherProgram;
+    use gandr_kernel_term::LayerPosition;
+    use gandr_kernel_term::PathEvidence;
+    use gandr_kernel_term::Seam;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Summand;
+    use gandr_kernel_term::session::Evidence;
+    use gandr_kernel_term::session::Graph;
+    use gandr_kernel_term::session::Node;
+    use gandr_kernel_term::session::State;
+
+    let label = |name: &str| FieldLabel::from(String::from(name));
+    let c = children;
+    match former {
+        Former::Constructor => {
+            let datatype = c.value_type(arena);
+            let fields = SmallVec::<_, 0, Global>::from_iter([c.value(arena), c.value(arena)]);
+            AnyNode::Value(arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                datatype,
+                ConstructorTag::from(0_usize),
+                fields,
+            ))
+        },
+        Former::Record => {
+            let fields =
+                BTreeMap::from([(label("a"), c.value(arena)), (label("b"), c.value(arena))]);
+            AnyNode::Value(arena.value_record(fields))
+        },
+        Former::SessionPath => {
+            let classifier = c.value_type(arena);
+            let paths = c.value(arena);
+            AnyNode::Value(arena.value_session_path(
+                classifier,
+                Shared::new(Evidence::default()),
+                paths,
+            ))
+        },
+        Former::SessionFlow => {
+            let classifier = c.value_type(arena);
+            let paths = c.value(arena);
+            AnyNode::Value(arena.value_session_flow(
+                classifier,
+                Shared::new(Evidence::default()),
+                paths,
+            ))
+        },
+        Former::Stay => {
+            let point = c.value(arena);
+            AnyNode::Value(arena.value_stay(point))
+        },
+        Former::ForwardFlow => {
+            let classifier = c.value_type(arena);
+            let translator = c.value(arena);
+            let outputs = Box::from([c.value(arena), c.value(arena)]);
+            AnyNode::Value(arena.value_forward_flow(
+                classifier,
+                translator,
+                outputs,
+                ThinShared::default(),
+            ))
+        },
+        Former::FunctionFlow => {
+            let classifier = c.value_type(arena);
+            let (domain, codomain) = (c.value(arena), c.value(arena));
+            AnyNode::Value(arena.value_function_flow(classifier, domain, codomain))
+        },
+        Former::Then => {
+            let (first, second) = (c.value(arena), c.value(arena));
+            AnyNode::Value(arena.value_then(first, second, Seam::Sequence))
+        },
+        Former::FlowProduct => {
+            let (first, second) = (c.value(arena), c.value(arena));
+            AnyNode::Value(arena.value_flow_product(first, second))
+        },
+        Former::PathRefl => {
+            let code = c.value(arena);
+            AnyNode::Value(arena.value_path_refl(code))
+        },
+        Former::PathProduct => {
+            let (first, second) = (c.value(arena), c.value(arena));
+            AnyNode::Value(arena.value_path_product(first, second))
+        },
+        Former::PathEquiv => {
+            let classifier = c.value_type(arena);
+            let (forward, backward) = (c.value(arena), c.value(arena));
+            let evidence = Shared::new(PathEvidence::default());
+            AnyNode::Value(arena.value_path_equiv(classifier, forward, backward, evidence))
+        },
+        Former::Here => {
+            let point = c.value(arena);
+            AnyNode::Value(arena.value_here(point))
+        },
+        Former::Returned => {
+            let computation = c.computation(arena);
+            AnyNode::Value(arena.value_returned(computation))
+        },
+        Former::Higher => {
+            let program = Shared::new(HigherProgram {
+                depth: HigherDepth(1),
+                root: LayerPosition(0),
+                layers: SmallVec::<_, 0, Global>::new(),
+            });
+            let evidence = Box::from([c.value(arena), c.value(arena)]);
+            AnyNode::Value(arena.value_higher(program, evidence))
+        },
+        Former::HigherEvaluation => {
+            let mut component = |arena: &mut TermArena| EvaluationComponent {
+                left: c.value(arena),
+                right: c.value(arena),
+                evidence: c.value(arena),
+            };
+            let components = Box::from([component(arena), component(arena)]);
+            AnyNode::Value(arena.value_higher_evaluation(ThinShared::default(), components))
+        },
+        Former::QuantifiedEvaluation => {
+            let children = Box::from([c.value(arena), c.value(arena)]);
+            AnyNode::Value(arena.value_quantified_evaluation(ThinShared::default(), children))
+        },
+        Former::Tuple => {
+            let components = [c.value(arena), c.value(arena)];
+            AnyNode::Value(arena.value_tuple(&components))
+        },
+        Former::Injection => {
+            let body = c.value(arena);
+            AnyNode::Value(arena.value_injection(Summand::from(0_usize), body))
+        },
+        Former::ListCons => {
+            let (head, tail) = (c.value(arena), c.value(arena));
+            AnyNode::Value(arena.value_list_cons(head, tail))
+        },
+        Former::Thunk => {
+            let body = c.computation(arena);
+            AnyNode::Value(arena.value_thunk(body))
+        },
+        Former::Lift => {
+            let body = c.value(arena);
+            AnyNode::Value(arena.value_lift(Level::zero(), body))
+        },
+        Former::Quote => {
+            let quoted = c.value_type(arena);
+            AnyNode::Value(arena.value_quote(quoted))
+        },
+        Former::QuoteComputation => {
+            let quoted = c.comp_type(arena);
+            AnyNode::Value(arena.value_quote_computation(quoted))
+        },
+        Former::StaticApplication => {
+            let (head, argument) = (c.value(arena), c.value(arena));
+            AnyNode::Value(arena.value_static_application(head, argument))
+        },
+        Former::DataCase => {
+            let scrutinee = c.value(arena);
+            let motive = c.comp_type(arena);
+            let branches =
+                SmallVec::<_, 0, Global>::from_iter([c.computation(arena), c.computation(arena)]);
+            AnyNode::Computation(arena.computation_data_case(scrutinee, motive, branches))
+        },
+        Former::RecordProjection => {
+            let record = c.value(arena);
+            AnyNode::Computation(arena.computation_record_projection(record, label("a")))
+        },
+        Former::TupleProjection => {
+            let tuple = c.value(arena);
+            AnyNode::Computation(
+                arena.computation_tuple_projection(tuple, Component::from(0_usize)),
+            )
+        },
+        Former::Lambda => {
+            let body = c.computation(arena);
+            AnyNode::Computation(arena.computation_lambda(body))
+        },
+        Former::Application => {
+            let head = c.computation(arena);
+            let argument = c.value(arena);
+            AnyNode::Computation(arena.computation_application(head, argument))
+        },
+        Former::Return => {
+            let value = c.value(arena);
+            AnyNode::Computation(arena.computation_return(value))
+        },
+        Former::Bind => {
+            let (bound, body) = (c.computation(arena), c.computation(arena));
+            AnyNode::Computation(arena.computation_bind(bound, body))
+        },
+        Former::Force => {
+            let value = c.value(arena);
+            AnyNode::Computation(arena.computation_force(value))
+        },
+        Former::Case => {
+            let scrutinee = c.value(arena);
+            let branches = [c.computation(arena), c.computation(arena)];
+            AnyNode::Computation(arena.computation_case(scrutinee, &branches))
+        },
+        Former::SigmaSplit => {
+            let scrutinee = c.value(arena);
+            let motive = c.comp_type(arena);
+            let body = c.computation(arena);
+            AnyNode::Computation(arena.computation_sigma_split(scrutinee, motive, body))
+        },
+        Former::ListFold => {
+            let (element, result) = (c.value_type(arena), c.value_type(arena));
+            let list = c.value(arena);
+            let (on_nil, on_cons) = (c.computation(arena), c.computation(arena));
+            AnyNode::Computation(
+                arena.computation_list_fold(element, result, list, on_nil, on_cons),
+            )
+        },
+        Former::ListCase => {
+            let list = c.value(arena);
+            let (on_nil, on_cons) = (c.computation(arena), c.computation(arena));
+            AnyNode::Computation(arena.computation_list_case(list, on_nil, on_cons))
+        },
+        Former::Transport => {
+            let (path, value) = (c.value(arena), c.value(arena));
+            AnyNode::Computation(arena.computation_transport(path, value))
+        },
+        Former::PathTransport => {
+            let motive = c.value_type(arena);
+            let (path, value) = (c.value(arena), c.value(arena));
+            AnyNode::Computation(arena.computation_path_transport(motive, path, value))
+        },
+        Former::TelescopeTransport => {
+            let motive = c.comp_type(arena);
+            let (path, start) = (c.value(arena), c.value(arena));
+            let (over, value) = (c.value(arena), c.value(arena));
+            AnyNode::Computation(
+                arena.computation_telescope_transport(motive, path, start, over, value),
+            )
+        },
+        Former::Ride => {
+            let motive = c.value_type(arena);
+            let (flow, value) = (c.value(arena), c.value(arena));
+            AnyNode::Computation(arena.computation_ride(motive, flow, value))
+        },
+        Former::TelescopeRide => {
+            let motive = c.comp_type(arena);
+            let (flow, start) = (c.value(arena), c.value(arena));
+            let (over, value) = (c.value(arena), c.value(arena));
+            AnyNode::Computation(arena.computation_telescope_ride(motive, flow, start, over, value))
+        },
+        Former::RelatedApplication => {
+            let path = c.value(arena);
+            let arguments = (c.value(arena), c.value(arena));
+            let evidence = c.value(arena);
+            let body = c.computation(arena);
+            AnyNode::Computation(
+                arena.computation_related_application(path, arguments, evidence, body),
+            )
+        },
+        Former::With => {
+            let components = [c.computation(arena), c.computation(arena)];
+            AnyNode::Computation(arena.computation_with(&components))
+        },
+        Former::Project => {
+            let pair = c.computation(arena);
+            AnyNode::Computation(arena.computation_project(Component::from(0_usize), pair))
+        },
+        Former::Fixpoint => {
+            let body = c.computation(arena);
+            AnyNode::Computation(arena.computation_fixpoint(body, FixpointEvidence::Partial))
+        },
+        Former::DataType => {
+            let arguments = SmallVec::<_, 0, Global>::from_iter([c.value(arena), c.value(arena)]);
+            AnyNode::ValueType(arena.value_type_data(ConstantIndex::from(0_usize), arguments))
+        },
+        Former::RecordType => {
+            let fields = BTreeMap::from([
+                (label("a"), c.value_type(arena)),
+                (label("b"), c.value_type(arena)),
+            ]);
+            AnyNode::ValueType(arena.value_type_record(fields))
+        },
+        Former::SessionType => {
+            let graph = Shared::new(Graph {
+                root: State(0),
+                nodes: SmallVec::<_, 0, Global>::from_iter([Node::End]),
+            });
+            let payloads = c.value_type(arena);
+            AnyNode::ValueType(arena.value_type_session(graph, payloads))
+        },
+        Former::PathUniverse => {
+            let (source, target) = (c.value(arena), c.value(arena));
+            AnyNode::ValueType(arena.value_type_path_universe(source, target))
+        },
+        Former::FlowUniverse => {
+            let (source, target) = (c.value(arena), c.value(arena));
+            AnyNode::ValueType(arena.value_type_flow_universe(source, target))
+        },
+        Former::PathType => {
+            let domain = c.value_type(arena);
+            let (left, right) = (c.value(arena), c.value(arena));
+            AnyNode::ValueType(arena.value_type_path(domain, left, right))
+        },
+        Former::FlowType => {
+            let domain = c.value_type(arena);
+            let (source, target) = (c.value(arena), c.value(arena));
+            AnyNode::ValueType(arena.value_type_flow(domain, source, target))
+        },
+        Former::ProductType => {
+            let components = [c.value_type(arena), c.value_type(arena)];
+            AnyNode::ValueType(arena.value_type_product(&components))
+        },
+        Former::SigmaType => {
+            let (first, second) = (c.value_type(arena), c.value_type(arena));
+            AnyNode::ValueType(arena.value_type_sigma(first, second))
+        },
+        Former::SumType => {
+            let summands = [c.value_type(arena), c.value_type(arena)];
+            AnyNode::ValueType(arena.value_type_sum(&summands))
+        },
+        Former::ListType => {
+            let element = c.value_type(arena);
+            AnyNode::ValueType(arena.value_type_list(element))
+        },
+        Former::ThunkType => {
+            let body = c.comp_type(arena);
+            AnyNode::ValueType(arena.value_type_thunk(body))
+        },
+        Former::LiftType => {
+            let inner = c.value_type(arena);
+            AnyNode::ValueType(arena.value_type_lift(inner, Level::zero()))
+        },
+        Former::ElementType => {
+            let code = c.value(arena);
+            AnyNode::ValueType(arena.value_type_element(code, Level::zero()))
+        },
+        Former::StagedType => {
+            let base = c.value_type(arena);
+            AnyNode::ValueType(arena.value_type_staged(base, Stage::At(StageId::from(0_usize))))
+        },
+        Former::StaticPiType => {
+            let (domain, codomain) = (c.value_type(arena), c.value_type(arena));
+            AnyNode::ValueType(arena.value_type_static_pi(domain, codomain))
+        },
+        Former::Returner => {
+            let result = c.value_type(arena);
+            AnyNode::CompType(arena.comp_type_returner(result))
+        },
+        Former::Arrow => {
+            let domain = c.value_type(arena);
+            let codomain = c.comp_type(arena);
+            AnyNode::CompType(arena.comp_type_arrow(domain, codomain))
+        },
+        Former::Pi => {
+            let domain = c.value_type(arena);
+            let codomain = c.comp_type(arena);
+            AnyNode::CompType(arena.comp_type_pi(domain, codomain))
+        },
+        Former::ElementComp => {
+            let code = c.value(arena);
+            AnyNode::CompType(arena.comp_type_element(code, Level::zero()))
+        },
+        Former::WithType => {
+            let components = [c.comp_type(arena), c.comp_type(arena)];
+            AnyNode::CompType(arena.comp_type_with(&components))
+        },
+    }
+}
+
+/// `node` shifted by one past no cutoff, under a memo that keeps nothing,
+/// so every node's rebuild decision runs.
+///
+/// # Specification
+/// trivial.
+fn shifted(
+    arena: &mut TermArena,
+    node: AnyNode,
+) -> AnyNode
+{
+    let mut table = ContentTable::named_in(Global);
+    let memo = &mut NullMemo;
+    let (cutoff, amount) = (BinderDepth::NONE, BinderDepth::from(1_u32));
+    match node {
+        AnyNode::Value(id) => {
+            AnyNode::Value(shift_value(arena, &mut table, memo, id, cutoff, amount))
+        },
+        AnyNode::Computation(id) => AnyNode::Computation(shift_computation(
+            arena, &mut table, memo, id, cutoff, amount,
+        )),
+        AnyNode::ValueType(id) => AnyNode::ValueType(shift_value_type(
+            arena, &mut table, memo, id, cutoff, amount,
+        )),
+        AnyNode::CompType(id) => AnyNode::CompType(super::shift_comp_type(
+            arena, &mut table, memo, id, cutoff, amount,
+        )),
+    }
+}
+
+/// Every former rebuilds exactly where a child changed: an unchanged
+/// former is returned as itself, minting nothing, and a change in any one
+/// child is carried into the fresh node whichever child it is.
+#[test]
+fn every_former_rebuilds_exactly_where_a_child_changed()
+{
+    for &former in FORMERS {
+        let mut arena = TermArena::new();
+        let mut closed = Children::closed();
+        let subject = build(&mut arena, former, &mut closed);
+        let before = arena.watermark();
+        assert_eq!(
+            shifted(&mut arena, subject),
+            subject,
+            "{former:?} reads no variable, so it shifts to itself"
+        );
+        assert_eq!(
+            arena.watermark(),
+            before,
+            "and {former:?} mints nothing on the way"
+        );
+        for slot in (0 .. closed.next).map(Slot) {
+            let subject = build(
+                &mut arena,
+                former,
+                &mut Children::opening(slot, DeBruijnIndex::from(10_u32)),
+            );
+            let expected = build(
+                &mut arena,
+                former,
+                &mut Children::opening(slot, DeBruijnIndex::from(11_u32)),
+            );
+            let result = shifted(&mut arena, subject);
+            assert_eq!(
+                content_digest(&arena, result),
+                content_digest(&arena, expected),
+                "{former:?}'s {slot:?} alone reads the variable, and its rise is carried"
+            );
+        }
+    }
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(512))]
+
+    /// An unload against the substitutions it batches: a generated subject
+    /// under up to two kept binders, its next one to three binders replaced
+    /// by generated components, unloads to the content that substituting the
+    /// components one binder at a time reaches, the innermost first, each
+    /// carried past the replaced binders still outside it; and so does the
+    /// subject held as a value.
+    #[test]
+    fn an_unload_agrees_with_substituting_one_binder_at_a_time(
+        subject in program(),
+        components in proptest::collection::vec(program(), 1 .. 4),
+        kept in 0_u32 .. 3,
+    ) {
+        let mut arena = TermArena::new();
+        let mut table = ContentTable::new_in(Global);
+        let subject = generated(&mut arena, &subject);
+        let mut built = Vec::new();
+        for component in &components {
+            let computation = generated(&mut arena, component);
+            built.push(arena.value_thunk(computation));
+        }
+        let environment = arena.value_tuple(&built);
+        let width = u32::try_from(built.len()).unwrap_or(u32::MAX);
+        let mut carried = Vec::new();
+        for (&component, outside) in built.iter().zip((0 .. width).rev()) {
+            carried.push(shift_value(
+                &mut arena,
+                &mut table,
+                &mut NullMemo,
+                component,
+                BinderDepth::NONE,
+                BinderDepth::from(outside),
+            ));
+        }
+        let (width, depth) = (BinderDepth::from(width), BinderDepth::from(kept));
+        let unloaded = unload_computation(
+            &mut arena,
+            &mut table,
+            &mut NullMemo,
+            (subject, environment),
+            (width, depth),
+        );
+        let mut substituted = subject;
+        for &component in &carried {
+            substituted = substitute_computation_at(
+                &mut arena,
+                &mut table,
+                &mut NullMemo,
+                (substituted, component),
+                depth,
+            );
+        }
+        proptest::prop_assert_eq!(
+            content_digest(&arena, AnyNode::Computation(unloaded)),
+            content_digest(&arena, AnyNode::Computation(substituted))
+        );
+        let held = arena.value_thunk(subject);
+        let unloaded =
+            unload_value(&mut arena, &mut table, &mut NullMemo, (held, environment), width);
+        let mut substituted = held;
+        for &component in &carried {
+            substituted =
+                substitute_value(&mut arena, &mut table, &mut NullMemo, substituted, component);
+        }
+        proptest::prop_assert_eq!(
+            content_digest(&arena, AnyNode::Value(unloaded)),
+            content_digest(&arena, AnyNode::Value(substituted))
+        );
+    }
+}

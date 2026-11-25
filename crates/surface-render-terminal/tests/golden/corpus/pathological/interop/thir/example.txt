@@ -1,0 +1,39 @@
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/interop/thir/example.gandr:21:13
+   │
+14 │   def exampleAtTrueZero(post : Value -> Type) -> post(Int 0) -> wpFn(
+   │   │                     ──── checked against `(post : Value -> Type) -> -F (post(Int 0) -> wpFn(Item, identitySpec, exampleBody, True, post))`; while checking the body of this function; binds post : Value -> Type
+   │ ┌─┘
+   │ │
+15 │ │   Item,
+16 │ │   identitySpec,
+17 │ │   exampleBody,
+   ┆ ┆
+20 │ │ ) =
+21 │ │   fun (h) { h }
+   │ │   ┬─────────┯─│
+   │ └───│─────────│─┤
+   │     │         │ checked against `(post : Value -> Type) -> (post(Int 0) -> wpFn(Item, identitySpec, exampleBody, True, post))`; while checking the body of this thunk
+   │     │         its type does not convert: expected `wpFn(Item, identitySpec, exampleBody, True, post)`, found `post(Int 0)`
+   │     checked against `-F (post(Int 0) -> wpFn(Item, identitySpec, exampleBody, True, post))`; while checking the body of this function; binds h : post(Int 0)
+   │
+   ├ note: `exampleAtTrueZero` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/interop/thir/example.gandr:29:32
+   │
+27 │   spec : Item * Value * (Value -> Type) -> Type,
+   │   ┬───   ────────────────────────────────────── the type it synthesises
+   │   │
+   │   formed; while forming this type under its binder; binds spec : Item * Value * (Value -> Type) -> Type
+28 │   post : Value -> Type
+   │   ──── formed; while forming this type under its binder; binds post : Value -> Type
+29 │ ) -> post(Int 1) -> wpFn(Item, spec, exampleBody, True, post) =
+   │                     ┬──────────┯━━━──────────────────────────
+   │                     │          │
+   │                     │          its type does not convert: expected `(Item, Value, Value -> Type) -> Type`, found `Item * Value * (Value -> Type) -> Type`
+   │                     formed; while checking the argument of this application
+   │
+   ├ note: `exampleAtTrueAnyTable` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

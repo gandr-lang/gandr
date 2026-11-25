@@ -1,0 +1,4 @@
+{SIGN}module Mistyped : Model(CatShape) where {{
+  type Ob = Type;
+  type Hom(a : Ob, b : Integer) = +U[ω] (a -> -F a);
+}}

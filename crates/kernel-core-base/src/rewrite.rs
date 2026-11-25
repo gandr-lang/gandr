@@ -1,0 +1,4482 @@
+//! The **shifting and substitution machines**: the two de Bruijn rewrites the
+//! dependent arrow's rules stand on, as iterative walks over the arena with
+//! their own memo instantiations.
+//!
+//! # Two rewrites, one engine, two planes
+//!
+//! Shifting raises every free index at or above a cutoff; substitution replaces
+//! the innermost binder's variable by a value and lowers everything outside it
+//! by one. They differ in exactly one arm — what a variable becomes — so they
+//! share the walk and split at the leaf, and each is accounted to its own memo
+//! plane so neither machine's reuse hides behind the other's numbers.
+//!
+//! # Why they are machines rather than functions
+//!
+//! Substitution is the function everyone writes recursively, and a recursive
+//! one overflows the stack on a term a decoder built from bytes. Both rewrites
+//! here are loops over an explicit task stack and an explicit results stack, so
+//! they are total on any depth, and the frames they push are the
+//! defunctionalized continuations the recursive presentation's call sites would
+//! have been.
+//!
+//! **The one place the recursive presentation calls the other rewrite is a
+//! scheduled task here rather than a nested call.** Substituting under binders
+//! has to carry the replacement in past them, which is a shift; the engine
+//! schedules that shift onto the same task stack, and its single result lands
+//! exactly where the occurrence's own result would have. So the two rewrites
+//! are one loop, and neither function reaches the other.
+//!
+//! # Unchanged is the identity, and that is what preserves sharing
+//!
+//! Reconstruction returns a node unchanged when its children did not change,
+//! rather than allocating another spelling. A zero shift returns its root
+//! directly, and an index already at the saturation ceiling is not re-minted.
+//! A shift, a substitution and an instantiation answer a node whose support
+//! stops short of the first index they act on with the node itself, without
+//! opening it, so a closed subterm, or a closed replacement carried under
+//! binders, costs one step whatever its size.
+//! An unreadable root bypasses memo lookup: two missing ids have no content
+//! whose equality would justify adopting one as the other's result. Other
+//! memo hits may reuse another equal-content result from the same session, so
+//! identity preservation is a reconstruction property, not a promise across
+//! hits. Shifting a value type and instantiating a computation type are the
+//! public rewrite surface; the other family faces are crate-visible.
+//!
+//! A type carrying no code is closed. Its reconstruction allocates no new term
+//! nodes; a type carrying a code rewrites through that code. Node dispatch
+//! borrows literal and level payloads, cloning a level only when a changed
+//! child requires a new node.
+//!
+//! # The memo is content-keyed, and it creates sharing among intermediates
+//!
+//! Two structurally equal subjects at one binder depth are one rewrite, so a
+//! shared subterm is rewritten once however many times it occurs — the property
+//! that keeps a rewrite linear in distinct nodes rather than in occurrences.
+//!
+//! The consequence worth naming: the rewritten graph can share where the
+//! original did not. That is sharing **created** by the kernel, and it is
+//! admissible for a reason rather than by omission — it is created only among
+//! nodes the kernel itself minted past the watermark, and nothing decides on
+//! it. Conversion's identity fast path is positive-only, so more sharing can
+//! make a comparison finish earlier and can never change a verdict; the trusted
+//! base still takes no interning table of *decoded* values.
+
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use core::alloc::Allocator;
+
+use anodized::spec;
+use gandr_kernel_check_memo::CheckMemo;
+use gandr_kernel_check_memo::ContentAgreement;
+use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_check_memo::HashedMemo;
+use gandr_kernel_check_memo::MemoActivity;
+use gandr_kernel_check_memo::MemoKey;
+use gandr_kernel_check_memo::MemoRecord;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::ThinShared;
+use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::CompType;
+use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::Computation;
+use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
+use gandr_kernel_term::ValueTypeId;
+use quenchant_arith::arith;
+use quenchant_shape::shape::Maybe;
+
+use crate::encoding::ContentTable;
+use crate::encoding::RewriteGoal;
+use crate::encoding::RewriteKey;
+use crate::encoding::encode_rewrite;
+use crate::encoding::rewrite_key;
+use crate::hashed::HashedMap;
+use crate::hashed::hashed_entry;
+
+/// A count of binders: a cutoff, a shift amount, or the depth a walk has
+/// reached.
+///
+/// One type for the three because they are the same quantity measured from
+/// three places, and because a bare integer in these signatures is exactly the
+/// confusion that makes a de Bruijn rewrite wrong in a way no type catches.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BinderDepth(u32);
+
+impl From<u32> for BinderDepth
+{
+    /// The depth of `depth` binders.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(depth: u32) -> Self
+    {
+        Self(depth)
+    }
+}
+
+impl From<BinderDepth> for u32
+{
+    /// How many binders `depth` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(depth: BinderDepth) -> Self
+    {
+        depth.0
+    }
+}
+
+impl From<BinderDepth> for usize
+{
+    /// The same count as a machine index.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the depth as a machine index, saturating at the ceiling
+    ///   rather than wrapping.
+    /// - provides: the one conversion into an index a telescope is measured
+    ///   with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at zero, ordinary depths and the u32 ceiling; exact
+    ///   machine-index and successor observations distinguish narrowing,
+    ///   wrapping and lost saturation.
+    /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
+    #[spec(ensures: |ret| ret == Self::try_from(depth.0).unwrap_or(Self::MAX))]
+    #[inline]
+    fn from(depth: BinderDepth) -> Self
+    {
+        Self::try_from(depth.0).unwrap_or(Self::MAX)
+    }
+}
+
+impl BinderDepth
+{
+    /// No binders.
+    pub const NONE: Self = Self(0);
+
+    /// One binder further in, saturating at the ceiling.
+    ///
+    /// Saturation is the fail-safe direction: a depth at the ceiling is deeper
+    /// than any representable index, so every variable below it reads as bound
+    /// and no free index is rewritten by mistake.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more than `self`, and `self` itself at the ceiling.
+    /// - provides: the depth step every binding position takes, saturating in
+    ///   the fail-safe direction: a depth at the ceiling reads every
+    ///   representable index as bound, so no free index is rewritten by
+    ///   mistake.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at zero, an ordinary depth, the predecessor of the
+    ///   ceiling and the ceiling; exact successors separate omission, wrapping
+    ///   and premature saturation.
+    /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
+    #[inline]
+    #[must_use]
+    pub fn deeper(self) -> Self
+    {
+        // reason: binder depth uses u32::MAX as its conservative ceiling.
+        Self(u32::from(arith::saturating_add(
+            arith::Int::from(self.0),
+            arith::Int::from(1_u32),
+        )))
+    }
+
+    /// `binders` binders further in, saturating at the ceiling, as
+    /// [`Self::deeper`] steps one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `self` plus `binders`, and the ceiling where that passes it.
+    /// - provides: the depth a telescope's later entries and the body of a bind
+    ///   of several values stand at.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero binders, an ordinary count and a count past the
+    ///   ceiling separate omission, wrapping and premature saturation.
+    /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
+    #[spec(ensures: |ret| u64::from(ret.0) == u64::from(self.0).saturating_add(u64::try_from(usize::from(binders)).unwrap_or(u64::MAX)).min(u64::from(u32::MAX)))]
+    #[inline]
+    #[must_use]
+    pub fn deeper_by(
+        self,
+        binders: gandr_kernel_term::ResultCount,
+    ) -> Self
+    {
+        Self(
+            u32::try_from(usize::from(binders))
+                .map_or(u32::MAX, |binders| self.0.saturating_add(binders)),
+        )
+    }
+
+    /// The amount that raises an index past a telescope of `slots` binders.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more than `slots`, saturating at the ceiling.
+    /// - provides: the shift amount that raises an index past a telescope of
+    ///   that many binders.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at zero, an ordinary depth, the predecessor of the
+    ///   ceiling and the ceiling; exact successors separate omission, wrapping
+    ///   and premature saturation.
+    /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
+    #[spec(ensures: |ret| ret.0 == slots.0.saturating_add(1))]
+    #[inline]
+    #[must_use]
+    pub fn past(slots: Self) -> Self
+    {
+        // reason: the shift amount clamps at the representable binder ceiling.
+        Self(u32::from(arith::saturating_add(
+            arith::Int::from(slots.0),
+            arith::Int::from(1_u32),
+        )))
+    }
+}
+
+/// Which rewrite a support belongs to: the memo's accounting partition.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RewritePlane
+{
+    /// The shifting machine.
+    Shift,
+    /// The substitution machine.
+    Substitute,
+    /// The abstraction machine.
+    Abstract,
+}
+
+/// What one rewrite step produced: the node it rewrote to, in its own family.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RewriteOutcome
+{
+    /// A value node.
+    Value(ValueId),
+    /// A computation node.
+    Computation(ComputationId),
+    /// A value-type node.
+    ValueType(ValueTypeId),
+    /// A computation-type node.
+    CompType(CompTypeId),
+}
+
+impl RewriteOutcome
+{
+    /// The value id this outcome carries, or the original when the families
+    /// disagree.
+    ///
+    /// A family disagreement is unreachable — the engine pushes one result per
+    /// child in the child's own family — and declining to the original is the
+    /// fail-safe reading: an unrewritten node is always well-formed, where a
+    /// fabricated one need not be.
+    ///
+    /// # Specification
+    /// - requires: nothing; an outcome of the wrong family is admissible input
+    ///   and declines to `original`.
+    /// - ensures: the value id this outcome carries, and `original` for every
+    ///   other family.
+    /// - provides: the fail-safe unwrapping of a child's result — an
+    ///   unrewritten node is always well formed, where a fabricated one need
+    ///   not be.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::Value(id) => id, Self::Computation(_) | Self::ValueType(_) | Self::CompType(_) => original })]
+    #[inline]
+    fn value_or(
+        self,
+        original: ValueId,
+    ) -> ValueId
+    {
+        match self {
+            Self::Value(id) => id,
+            Self::Computation(_) | Self::ValueType(_) | Self::CompType(_) => original,
+        }
+    }
+
+    /// The computation id this outcome carries; see [`Self::value_or`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as `value_or`, on the computation family.
+    /// - provides: the fail-safe unwrapping of a child's result.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::Computation(id) => id, Self::Value(_) | Self::ValueType(_) | Self::CompType(_) => original })]
+    #[inline]
+    fn computation_or(
+        self,
+        original: ComputationId,
+    ) -> ComputationId
+    {
+        match self {
+            Self::Computation(id) => id,
+            Self::Value(_) | Self::ValueType(_) | Self::CompType(_) => original,
+        }
+    }
+
+    /// The value-type id this outcome carries; see [`Self::value_or`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as `value_or`, on the value-type family.
+    /// - provides: the fail-safe unwrapping of a child's result.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::ValueType(id) => id, Self::Value(_) | Self::Computation(_) | Self::CompType(_) => original })]
+    #[inline]
+    fn value_type_or(
+        self,
+        original: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        match self {
+            Self::ValueType(id) => id,
+            Self::Value(_) | Self::Computation(_) | Self::CompType(_) => original,
+        }
+    }
+
+    /// The computation-type id this outcome carries; see [`Self::value_or`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as `value_or`, on the computation-type family.
+    /// - provides: the fail-safe unwrapping of a child's result.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::CompType(id) => id, Self::Value(_) | Self::Computation(_) | Self::ValueType(_) => original })]
+    #[inline]
+    fn comp_type_or(
+        self,
+        original: CompTypeId,
+    ) -> CompTypeId
+    {
+        match self {
+            Self::CompType(id) => id,
+            Self::Value(_) | Self::Computation(_) | Self::ValueType(_) => original,
+        }
+    }
+}
+
+/// The complete support of one rewrite step, as content.
+///
+/// It holds no arena id and no content id: the canonical words of the
+/// direction, the subject's name, the binder depth, and the rewrite's
+/// parameter, held inline, plus their digest. Equality is word equality of the
+/// key — the deciding comparison — and the digest narrows a bucket without
+/// ever deciding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RewriteSupport
+{
+    /// Which machine asked.
+    plane: RewritePlane,
+    /// The canonical words, held inline.
+    key: RewriteKey,
+    /// The digest of those words.
+    digest: ContentDigest,
+}
+
+impl RewriteSupport
+{
+    /// Build the support of one rewrite goal.
+    ///
+    /// # Specification
+    /// - requires: `table` is this session's and `arena` is the one it has been
+    ///   used with.
+    /// - ensures: two supports are equal exactly when the two goals rewrite the
+    ///   same content the same way at the same binder depth. Absent when the
+    ///   table names nothing, so a rewrite over such a table keeps its answers
+    ///   in the walk's own memo.
+    /// - provides: the rewrite memo's key; the predicate checks its plane.
+    ///   Session provenance and agreement across goals require the paired
+    ///   witnesses rather than another encoding of the same invocation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the plane split and the encoding,
+    ///   separated by a shift and a substitution over one subject (two planes,
+    ///   two encodings) and by one subject at two depths, each asserted
+    ///   exactly.
+    /// - witness: `rewrite::tests::two_rewrites_of_one_subject_are_two_supports`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref support) => support.plane == match goal {
+            RewriteGoal::Shift { .. } => RewritePlane::Shift,
+            RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
+            RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
+        },
+        Maybe::Absent(_) => true,
+    })]
+    fn build<A>(
+        table: &mut ContentTable<A>,
+        arena: &TermArena,
+        goal: RewriteGoal,
+    ) -> Maybe<Self, rewrite_key::Absent>
+    where
+        A: Allocator + Clone,
+    {
+        let plane = match goal {
+            RewriteGoal::Shift { .. } => RewritePlane::Shift,
+            RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
+            RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
+        };
+        encode_rewrite(table, arena, goal).map(|key| {
+            let digest = key.digest();
+            Self { plane, key, digest }
+        })
+    }
+}
+
+impl MemoKey for RewriteSupport
+{
+    type Plane = RewritePlane;
+
+    /// The machine this support was built for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn plane(&self) -> Self::Plane
+    {
+        self.plane
+    }
+
+    /// The digest of this support's canonical encoding.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn digest(&self) -> ContentDigest
+    {
+        self.digest
+    }
+
+    /// The deciding comparison: word equality of the canonical encodings.
+    ///
+    /// The plane is compared first and is redundant — the encoding opens with
+    /// the goal's direction tag, and the two directions draw disjoint tags —
+    /// so the plane field is load-bearing for accounting rather than for
+    /// agreement, exactly as it is on the checker's own key.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `ContentAgreement::Agree` exactly when the two supports carry
+    ///   the same plane and word-equal canonical encodings; the digest is not
+    ///   read, so a collision reaches this comparison and loses.
+    /// - provides: the deciding comparison every rewrite the session reuses is
+    ///   served on.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on equal content, differing rewrite planes and binder
+    ///   depths, and forced digest collisions; exact agreement distinguishes
+    ///   content equality from bucket equality.
+    /// - witness: `rewrite::tests::two_rewrites_of_one_subject_are_two_supports`
+    /// - witness: `rewrite::tests::rewrite_agreement_ignores_colliding_digest_buckets`
+    #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
+        == (self.plane == other.plane && self.key == other.key))]
+    #[inline]
+    fn agreement(
+        &self,
+        other: &Self,
+    ) -> ContentAgreement
+    {
+        if self.plane == other.plane && self.key == other.key {
+            ContentAgreement::Agree
+        }
+        else {
+            ContentAgreement::Differ
+        }
+    }
+}
+
+/// The rewrite memo a session builds for itself: the default path.
+pub type RewriteMemo = HashedMemo<RewriteSupport, RewriteOutcome>;
+
+/// Which rewrite the engine is running, with its parameter.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Rewrite
+{
+    /// Raise every free index at or above `cutoff` by `amount`.
+    Shift
+    {
+        /// The cutoff, measured at the root.
+        cutoff: BinderDepth,
+        /// The amount every free index at or above the cutoff rises by.
+        amount: BinderDepth,
+    },
+    /// Replace the innermost binder's variable by `replacement` and lower
+    /// everything outside it by one.
+    Substitute
+    {
+        /// The replacement value, in the context outside the binder.
+        replacement: ValueId,
+    },
+    /// Replace every occurrence of `constant` by the variable `index` counted
+    /// from the root, raised under every binder crossed.
+    Abstract
+    {
+        /// The constant replaced.
+        constant: ConstantIndex,
+        /// The variable it reads as at the root.
+        index: DeBruijnIndex,
+    },
+    /// Raise every free index by one, as [`Rewrite::Shift`] does from no
+    /// cutoff, except at the returned endpoint `endpoint` — that node, met at
+    /// the root's depth or, when it reads no variable, under any binder — which
+    /// reads the variable of the binder just outside the root, raised under
+    /// every binder crossed.
+    Share
+    {
+        /// The endpoint shared, by its node.
+        endpoint: ValueId,
+        /// Whether the endpoint reads no variable, so that its node means the
+        /// same under every binder.
+        closed: bool,
+    },
+    /// Substitute `replacement` as [`Rewrite::Substitute`] does, except at a
+    /// decode whose returned code reads the binder: there `call` runs ahead,
+    /// bound as the lowering binds a type-read call argument, and the code
+    /// reads the bind's variable for the binder.
+    Instantiate
+    {
+        /// The value the call stands for, in the context outside the binder.
+        replacement: ValueId,
+        /// The call, in the context outside the binder.
+        call: ComputationId,
+    },
+    /// Move the free index `band` to the innermost free position and raise
+    /// every free index below it by one: a decoded returned code's body
+    /// carried under the bind [`Rewrite::Instantiate`] puts ahead of it.
+    Rotate
+    {
+        /// The free index moved innermost, counted from the root.
+        band: BinderDepth,
+    },
+    /// Replace the `width` binders just outside the root by `environment`'s
+    /// components, the index `k` past the root's depth by component `k`, and
+    /// lower every free index past them by `width`: an environment
+    /// substituted in one walk, the replay's unload.
+    Unload
+    {
+        /// The tuple of the replacements, the innermost binder's first, each
+        /// in the context outside every replaced binder.
+        environment: ValueId,
+        /// How many binders the environment replaces.
+        width: BinderDepth,
+    },
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rewrite goal has no session memo key.
+    mod keyed {
+        /// The goal is memoized within its own walk only.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// An instantiation at a call, or the rotation it carries a body
+            /// with, decides a decode by whether its returned code reads the
+            /// binder, a share names its endpoint by its node, and an unload
+            /// its replacements by the tuple holding them; a content key
+            /// carries none of these.
+            Local,
+        }
+    }
+}
+
+impl Rewrite
+{
+    /// This rewrite's goal for `subject` at `depth`, when the session memo
+    /// keys it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shift's goals reach the session memo: a walk over
+    ///   thirteen distinct supports files thirteen entries under the shift's
+    ///   plane, so a goal no session key names leaves the plane empty.
+    /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+    #[inline]
+    const fn goal(
+        self,
+        subject: AnyNode,
+        depth: BinderDepth,
+    ) -> Maybe<RewriteGoal, keyed::Absent>
+    {
+        Maybe::Present(match self {
+            Self::Shift { cutoff, amount } => RewriteGoal::Shift {
+                subject,
+                depth,
+                cutoff,
+                amount,
+            },
+            Self::Substitute { replacement } => RewriteGoal::Substitute {
+                subject,
+                depth,
+                replacement,
+            },
+            Self::Abstract { constant, index } => RewriteGoal::Abstract {
+                subject,
+                depth,
+                constant,
+                index,
+            },
+            Self::Instantiate { .. }
+            | Self::Rotate { .. }
+            | Self::Share { .. }
+            | Self::Unload { .. } => {
+                return Maybe::Absent(keyed::Absent::Local);
+            },
+        })
+    }
+}
+
+/// One step of the rewrite walk.
+///
+/// Every task carries the rewrite it belongs to, because a substitution
+/// schedules shifts of its own: carrying the replacement under the binders the
+/// walk crossed is a shift, and running it as tasks on this same stack is what
+/// keeps the two rewrites one loop rather than one calling the other.
+#[derive(Clone, Copy, Debug)]
+enum RewriteTask
+{
+    /// Rewrite this node at this depth: consult the memo, else schedule its
+    /// children and its own close.
+    Open(AnyNode, BinderDepth, Rewrite),
+    /// Every child of this node has a result on the stack; combine them.
+    Close(AnyNode, BinderDepth, Rewrite),
+    /// The result on top of the stack is this goal's answer, produced by a
+    /// scheduled sub-walk rather than by a close; record it.
+    Record(AnyNode, BinderDepth, Rewrite),
+    /// The rotated body on top of the stack and the raised call beneath it
+    /// answer this decode at the call bound ahead of its code's body.
+    BindAhead(AnyNode, BinderDepth, Rewrite),
+}
+
+/// The shifted or substituted form of a value-type node.
+///
+/// # Specification
+/// - requires: `table` is this session's; `memo` holds only entries this
+///   session recorded against this arena.
+/// - ensures: free indices at or above the depth-adjusted cutoff are raised,
+///   clamped to the index ceiling. A zero amount returns the same id without
+///   opening the graph. Reconstruction reuses unchanged nodes; a memo hit may
+///   reuse an equal-content result minted by an earlier goal in the session.
+/// - provides: the context-lookup shift. The predicate checks zero-shift
+///   identity and readable or unreadable roots; the binder-aware content
+///   relation is witnessed without repeating a mutating traversal.
+/// - fails: never — an unreadable node rewrites to itself, which is the
+///   fail-safe reading, and the goal that reaches it refuses on its own
+///   account.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the variable arm and the unchanged
+///   reuse, separated by a closed type (the same id back) and by the term-level
+///   witnesses that exercise the same engine at a family where variables occur.
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+/// - witness: `gandr-kernel-core::tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.value_type(subject).is_some() {
+        arena.value_type(ret).is_some()
+    } else {
+        ret == subject
+    })]
+#[inline]
+#[must_use]
+pub fn shift_value_type<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ValueTypeId,
+    cutoff: BinderDepth,
+    amount: BinderDepth,
+) -> ValueTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Shift { cutoff, amount };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::ValueType(subject),
+        BinderDepth::NONE,
+    )
+    .value_type_or(subject)
+}
+
+/// The shifted form of a value node; see [`shift_value_type`].
+///
+/// # Specification
+/// - requires: as [`shift_value_type`].
+/// - ensures: as [`shift_value_type`], over the value family, where the
+///   variable arm is the one that does the work.
+/// - provides: the value half of the shifting machine, which substitution uses
+///   to carry a replacement under a binder and the replay's δβ-step uses to
+///   carry a static argument past an operator's outer parameters. The inherited
+///   session and rewrite clauses remain prose-only for the same reason as
+///   [`shift_value_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`shift_value_type`].
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.value(subject).is_some() {
+        arena.value(ret).is_some()
+    } else {
+        ret == subject
+    })]
+#[must_use]
+#[inline]
+pub fn shift_value<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ValueId,
+    cutoff: BinderDepth,
+    amount: BinderDepth,
+) -> ValueId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Shift { cutoff, amount };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Value(subject),
+        BinderDepth::NONE,
+    )
+    .value_or(subject)
+}
+
+/// The shifted form of a computation node; see [`shift_value_type`].
+///
+/// # Specification
+/// - requires: as [`shift_value_type`].
+/// - ensures: as [`shift_value_type`], over the computation family.
+/// - provides: the computation half of the shifting machine. The inherited
+///   session and rewrite clauses remain prose-only for the same reason as
+///   [`shift_value_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`shift_value_type`]; the residue is the three binding
+///   formers, whose bound positions each step the depth in by one.
+/// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.computation(subject).is_some() {
+        arena.computation(ret).is_some()
+    } else {
+        ret == subject
+    })]
+#[inline]
+#[must_use]
+pub fn shift_computation<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ComputationId,
+    cutoff: BinderDepth,
+    amount: BinderDepth,
+) -> ComputationId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Shift { cutoff, amount };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Computation(subject),
+        BinderDepth::NONE,
+    )
+    .computation_or(subject)
+}
+
+/// The shifted form of a computation-type node; see [`shift_value_type`].
+///
+/// # Specification
+/// - requires: as [`shift_value_type`].
+/// - ensures: as [`shift_value_type`], over the computation-type family.
+/// - provides: the weakening a type written outside a binder takes when the
+///   check steps under that binder: a plain arrow's codomain under its lambda,
+///   and the expected type of a bind's body or a case branch. The inherited
+///   session and rewrite clauses remain prose-only for the same reason as
+///   [`shift_value_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`shift_value_type`]; the residue is the dependent
+///   arrow, whose codomain steps the depth in by one and whose domain does not,
+///   observed through the check rules that weaken by it.
+/// - witness: `gandr-kernel-core::check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
+/// - witness: `gandr-kernel-core::check::tests::a_bind_reads_its_expected_type_outside_its_binder`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.comp_type(subject).is_some() {
+        arena.comp_type(ret).is_some()
+    } else {
+        ret == subject
+    })]
+#[inline]
+#[must_use]
+pub fn shift_comp_type<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: CompTypeId,
+    cutoff: BinderDepth,
+    amount: BinderDepth,
+) -> CompTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Shift { cutoff, amount };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
+}
+
+/// The computation type `subject` with its free index `band` moved to the
+/// innermost free position, and every free index inside it raised by one.
+///
+/// # Specification
+/// - requires: memo entries belong to this arena.
+/// - ensures: the free index `band` reads as index zero, each free index below
+///   it as one more, and each free index past it as it stands. An unreadable
+///   subject returns itself.
+/// - provides: a case on a binder past the innermost one reads its goal as a
+///   case on the innermost binder does, when the goal reads no binder inside
+///   the scrutinee.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case on a binder past an unread one reads its goal at
+///   each injection only through the rotation; a goal kept in place reads the
+///   unread binder for the scrutinee.
+/// - witness: `gandr-kernel-core::check::tests::a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110`
+#[spec(ensures: |ret| (band.0 != 0 || ret == subject)
+    && if arena.comp_type(subject).is_some() {
+        arena.comp_type(ret).is_some()
+    } else {
+        ret == subject
+    })]
+#[inline]
+#[must_use]
+pub fn rotate_comp_type<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: CompTypeId,
+    band: BinderDepth,
+) -> CompTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    if band == BinderDepth::NONE {
+        return subject;
+    }
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Rotate { band },
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
+}
+
+/// The computation type `subject` with its innermost binder instantiated at
+/// `replacement`.
+///
+/// This is the dependent arrow's elimination rule: applying a value to a
+/// function of dependent type produces the codomain instantiated at that value.
+///
+/// # Specification
+/// - requires: `subject` stands under exactly one binder more than
+///   `replacement` does; `table` is this session's; `memo` holds only entries
+///   this session recorded against this arena.
+/// - ensures: every occurrence of the removed binder is replaced by the
+///   replacement carried beneath intervening binders, and outer indices fall by
+///   one. Reconstruction reuses unchanged children; memo hits may reuse an
+///   equal-content result. An unreadable subject returns itself.
+/// - provides: dependent application instantiation. The predicate checks
+///   unreadable-root identity and head preservation except at a code decode;
+///   the finite witnesses observe the binder-aware substitution relation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the three variable cases — bound inside
+///   the walk, the substituted index, and outside it — separated by a closed
+///   type (unchanged) and by the term-level witnesses that exercise all three.
+/// - witness: `rewrite::tests::a_closed_type_instantiates_to_itself`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+#[spec(ensures: |ret| arena.comp_type(subject).map_or(ret == subject, |source|
+    matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
+#[must_use]
+pub fn substitute_comp_type<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: CompTypeId,
+    replacement: ValueId,
+) -> CompTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Substitute { replacement };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
+}
+
+/// The computation type `subject` with its innermost binder instantiated at a
+/// call, in the form the lowering writes a type-read call argument in.
+///
+/// Each decode whose returned code reads the binder decodes
+/// `⟨c ← call; body[c / x]⟩`, and `replacement`, the value the call stands
+/// for, stands for the binder everywhere else — in a path endpoint, say, where
+/// the lowering holds a call in place.
+///
+/// A type written `f(g(x))` decodes the bind `c ← g(x); f(c)`, so a codomain
+/// instantiated at the call `g(x)` reads the same syntax, and conversion
+/// compares the two as such (#720). The goals of this walk are memoized within
+/// it alone: whether a decode's code reads the binder decides its answer, and
+/// the session's content key does not carry that.
+///
+/// # Specification
+/// - requires: as [`substitute_comp_type`]; `call` is scoped where
+///   `replacement` is, and `replacement` stands for the value it returns.
+/// - ensures: as [`substitute_comp_type`] at `replacement`, except that each
+///   decode whose returned code reads the binder decodes a returned bind of
+///   `call`, raised past the binders between, into that code's computation with
+///   the binder read as the bind's variable.
+/// - provides: the result type of a dependent application whose argument is a
+///   call.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode reading the binder at depth zero and under an
+///   inner binder, a decode that does not read it, and a path endpoint reading
+///   it separate the bind, the rotation and the plain substitution.
+/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+#[spec(ensures: |ret| arena.comp_type(subject).map_or(ret == subject, |_| arena.comp_type(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn substitute_comp_type_at_call<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: CompTypeId,
+    (replacement, call): (ValueId, ComputationId),
+) -> CompTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Instantiate { replacement, call },
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
+}
+
+/// The value type `subject` with every occurrence of `constant` read as the
+/// variable `index`: the variable at the root, raised by every binder the walk
+/// crosses to reach the occurrence.
+///
+/// # Specification
+/// - requires: `table` is this session's; `memo` holds only entries this
+///   session recorded against this arena; `index` names a binder in scope at
+///   the root.
+/// - ensures: the same type with each `Value::Constant(constant)` under `d`
+///   binders replaced by `Value::Variable(index + d)`, clamped at the index
+///   ceiling, and every other node as it was; an unreadable or constant-free
+///   type answers itself.
+/// - provides: how a definition's own constant is identified with its
+///   fixpoint's self binder where a family its block admits names it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the constant at the root, under one binder and beside
+///   another constant, each asserted exactly.
+/// - witness: `rewrite::tests::an_abstraction_replaces_its_constant_by_a_variable_under_binders`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+#[inline]
+pub fn abstract_constant_value_type<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ValueTypeId,
+    (constant, index): (ConstantIndex, DeBruijnIndex),
+) -> ValueTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Abstract { constant, index },
+        AnyNode::ValueType(subject),
+        BinderDepth::NONE,
+    )
+    .value_type_or(subject)
+}
+
+/// The computation `subject` under one new binder, with every occurrence of
+/// the returned endpoint `endpoint` reading that binder's variable.
+///
+/// # Specification
+/// - requires: `table` is this session's; `memo` holds only entries this
+///   session recorded against this arena.
+/// - ensures: `subject` with every free index raised by one, as
+///   [`shift_computation`] by one from no cutoff raises it, except that the
+///   node `endpoint` itself — met at the root's depth, or under any binder when
+///   the endpoint reads no variable — becomes `Value::Variable(d)` under `d`
+///   binders; a node of equal content minted apart is raised, not replaced; an
+///   unreadable subject answers itself.
+/// - provides: one returned endpoint bound once for every elimination of it in
+///   a term, as the replay binds an endpoint whose call waits on a definition.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the endpoint at the root and under a binder, a node of
+///   equal content beside it, an open endpoint under a binder and a free
+///   variable, each asserted exactly.
+/// - witness: `rewrite::tests::sharing_an_endpoint_binds_its_node_and_raises_the_rest`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+#[inline]
+pub fn share_endpoint<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ComputationId,
+    endpoint: ValueId,
+) -> ComputationId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let closed = arena.value_support(endpoint).depth() == gandr_kernel_term::LooseDepth::default();
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Share { endpoint, closed },
+        AnyNode::Computation(subject),
+        BinderDepth::NONE,
+    )
+    .computation_or(subject)
+}
+
+/// The value type `subject` with its innermost binder instantiated at
+/// `replacement`; see [`substitute_comp_type`].
+///
+/// # Specification
+/// - requires: as [`substitute_comp_type`].
+/// - ensures: as [`substitute_comp_type`], over the value-type family.
+/// - provides: the value-type half of the substitution machine. The inherited
+///   binder, session, and rewrite clauses remain prose-only for the same reason
+///   as [`substitute_comp_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`substitute_comp_type`].
+/// - witness: `rewrite::tests::a_closed_type_instantiates_to_itself`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+#[inline]
+pub fn substitute_value_type<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ValueTypeId,
+    replacement: ValueId,
+) -> ValueTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Substitute { replacement };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::ValueType(subject),
+        BinderDepth::NONE,
+    )
+    .value_type_or(subject)
+}
+
+/// The value type `subject` with the binder at `depth` instantiated at
+/// `replacement`, the `depth` binders inside it kept.
+///
+/// # Specification
+/// - requires: `replacement` is scoped where the instantiated binder stands,
+///   outside the kept ones; memo entries belong to this arena.
+/// - ensures: indices below `depth` stay bound, index `depth` becomes the
+///   replacement carried under the kept binders, and outer indices fall by one
+///   without variable capture; at depth zero, as [`substitute_value_type`].
+/// - provides: a constructor field's parameters instantiated beneath the
+///   binders of the fields before it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list's tail instantiated past the head's binder reads
+///   the element argument; a wrong depth reads the head instead.
+/// - witness: `gandr-kernel-core::tests::recursive_data::dependent_fields_are_admitted`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+#[inline]
+pub fn substitute_value_type_at<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    (subject, replacement): (ValueTypeId, ValueId),
+    depth: BinderDepth,
+) -> ValueTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::ValueType(subject),
+        depth,
+    )
+    .value_type_or(subject)
+}
+
+/// The value `subject` with its innermost binder instantiated at `replacement`;
+/// see [`substitute_comp_type`].
+///
+/// # Specification
+/// - requires: as [`substitute_comp_type`].
+/// - ensures: as [`substitute_comp_type`], over the value family, where the
+///   variable arm is the one that does the work.
+/// - provides: the value half of the substitution machine: the δβ-step a
+///   conversion replay fires when an operator's body meets its static
+///   arguments. The inherited binder, session, and rewrite clauses remain
+///   prose-only for the same reason as [`substitute_comp_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`substitute_comp_type`].
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+#[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
+    matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+#[inline]
+pub fn substitute_value<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ValueId,
+    replacement: ValueId,
+) -> ValueId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Substitute { replacement };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Value(subject),
+        BinderDepth::NONE,
+    )
+    .value_or(subject)
+}
+
+/// The value `subject` with the binder `depth` binders out instantiated at
+/// `replacement`, the `depth` innermost binders kept; see
+/// [`substitute_value_type_at`].
+///
+/// # Specification
+/// - requires: as [`substitute_value_type_at`].
+/// - ensures: as [`substitute_value_type_at`], over the value family; at depth
+///   zero, as [`substitute_value`].
+/// - provides: an indexed constructor's stated result index with its parameters
+///   instantiated beneath its field binders.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons`'s `S(n)` keeps its field binder while its
+///   parameters are instantiated.
+/// - witness: `gandr-kernel-core::tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
+#[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
+    matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+#[inline]
+pub fn substitute_value_at<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    (subject, replacement): (ValueId, ValueId),
+    depth: BinderDepth,
+) -> ValueId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::Value(subject),
+        depth,
+    )
+    .value_or(subject)
+}
+
+/// The computation `subject` with its innermost binder instantiated at
+/// `replacement`; see [`substitute_comp_type`].
+///
+/// # Specification
+/// - requires: as [`substitute_comp_type`].
+/// - ensures: as [`substitute_comp_type`], over the computation family.
+/// - provides: the computation half of the substitution machine: the β-step a
+///   conversion replay fires when a lambda meets an argument, a returner meets
+///   a bind, or an injection meets a case. The inherited binder, session, and
+///   rewrite clauses remain prose-only for the same reason as
+///   [`substitute_comp_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`substitute_comp_type`]; the residue is the entry,
+///   carried by the replay's reduction witnesses.
+/// - witness: `gandr-kernel-core::replay::tests::the_replay_reduces_before_it_reads_a_decision`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
+#[must_use]
+pub fn substitute_computation<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ComputationId,
+    replacement: ValueId,
+) -> ComputationId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Substitute { replacement };
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Computation(subject),
+        BinderDepth::NONE,
+    )
+    .computation_or(subject)
+}
+
+/// The computation `subject` with the binder `depth` binders out instantiated
+/// at `replacement`, the `depth` binders inside it kept.
+///
+/// # Specification
+/// - requires: `replacement` is scoped where the instantiated binder stands,
+///   outside the kept ones; memo entries belong to this arena.
+/// - ensures: indices below `depth` stay bound, index `depth` becomes the
+///   replacement carried under the kept binders, and outer indices fall by one
+///   without variable capture.
+/// - provides: a case's loop obligation held at an instance of a variable of
+///   its context, the variable's index the depth.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the loop obligation over `a` held at `b = Base` leaves
+///   the obligation over `a` alone; a wrong index holds `a` instead.
+/// - witness: `gandr-kernel-core::tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
+pub fn substitute_computation_at<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    (subject, replacement): (ComputationId, ValueId),
+    depth: BinderDepth,
+) -> ComputationId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::Computation(subject),
+        depth,
+    )
+    .computation_or(subject)
+}
+
+/// The computation `subject` with the `width` binders outside its `depth`
+/// innermost ones replaced by `environment`'s components.
+///
+/// The binder `k` places out takes component `k`, and every index past them
+/// is lowered by `width`.
+///
+/// One walk substitutes the whole environment: the unload an
+/// environment-carrying reduction runs at the weak head it stops at.
+///
+/// # Specification
+/// - requires: `environment` is a tuple with a component for each replaced
+///   binder the subject reads, each scoped outside every replaced binder; memo
+///   entries belong to this arena.
+/// - ensures: indices below `depth` stay bound; an index `depth + k` with `k`
+///   below `width` becomes component `k` carried under the kept binders; every
+///   index past them falls by `width`, without capture. A subject reading none
+///   of them comes back as it is.
+/// - provides: an environment machine's state read back as the term the
+///   substituting machine holds at the same step.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unload agrees with substituting its components one
+///   binder at a time, the innermost first, on generated subjects that read
+///   replaced binders, indices past the band and binders of their own.
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
+pub fn unload_computation<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    (subject, environment): (ComputationId, ValueId),
+    (width, depth): (BinderDepth, BinderDepth),
+) -> ComputationId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Unload { environment, width },
+        AnyNode::Computation(subject),
+        depth,
+    )
+    .computation_or(subject)
+}
+
+/// The value `subject` with the `width` binders outside it replaced by
+/// `environment`'s components; see [`unload_computation`].
+///
+/// # Specification
+/// - requires: as [`unload_computation`].
+/// - ensures: as [`unload_computation`] at depth zero, over the value family,
+///   where a replaced variable becomes its component itself.
+/// - provides: a held value read back in the context outside its environment.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`unload_computation`].
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+#[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
+    matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
+pub fn unload_value<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    (subject, environment): (ValueId, ValueId),
+    width: BinderDepth,
+) -> ValueId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Unload { environment, width },
+        AnyNode::Value(subject),
+        BinderDepth::NONE,
+    )
+    .value_or(subject)
+}
+
+/// The value type `subject` with its second binder instantiated at
+/// `replacement`, its innermost binder kept.
+///
+/// # Specification
+/// - requires: `subject` stands under exactly two binders more than
+///   `replacement` does; memo entries belong to this arena.
+/// - ensures: index zero stays bound, index one becomes the replacement carried
+///   under the kept binder, and outer indices fall by one without variable
+///   capture.
+/// - provides: the first step of a two-entry telescope's instantiation; the
+///   second is [`substitute_value_type`] at the kept binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a telescope transport's motive instantiated at both
+///   endpoints separates the kept binder from the substituted one.
+/// - witness: `gandr-kernel-core::element_identity::tests::a_dependent_motive_replays_its_substitution_law`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[inline]
+pub fn substitute_outer_value_type<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    subject: ValueTypeId,
+    replacement: ValueId,
+) -> ValueTypeId
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::ValueType(subject),
+        BinderDepth::from(1_u32),
+    )
+    .value_type_or(subject)
+}
+
+/// Drive one rewrite to completion over an explicit task stack and an explicit
+/// results stack.
+///
+/// # Specification
+/// - requires: `root` resolves in `arena`, or does not, in which case it
+///   rewrites to itself.
+/// - ensures: the rewritten node, minted into `arena` where a child changed and
+///   reused where none did. A zero shift or an unreadable root returns its
+///   original outcome without traversal or memo lookup. A node the walk has
+///   rewritten at a depth answers at that depth from the session memo where it
+///   stored the goal and from the walk's own memo otherwise, under any memo. So
+///   a walk mints at most once for each node and depth of its subject's graph.
+///   Under an inactive memo no support is built, so `table` is untouched.
+///   Session memo hits may reuse equal-content results across walks; memoized
+///   and memoless runs preserve the same content.
+/// - provides: the shared engine of the two rewrites. Predicates check family,
+///   zero-shift identity and unreadable-root fallback. The witnesses compare
+///   bounded memoized and memoless results rather than rerunning either walk.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the walk is a loop over an explicit task stack, not recursion.
+/// - measure: the multiset of scheduled opens, ordered by the arena position of
+///   the node each names. An open pushes either its node's children, whose ids
+///   are strictly below their parent's within a family, or — at the
+///   carried-occurrence arm alone — one sub-walk open on the replacement; a
+///   share's endpoint answers at once and pushes nothing. A close pushes
+///   nothing, except an instantiation's close of a decode whose returned code
+///   reads its binder, which pushes two sub-walk opens, on the call and on the
+///   code's body. A record and a bind-ahead push nothing.
+/// - boundedness: the arena is finite and acyclic by the minting invariant, and
+///   a minted node is never opened, so the set of openable nodes is finite. The
+///   carried-occurrence arm and the decode close are the only ones whose
+///   scheduled opens are not children, and **their nesting is exactly one
+///   deep**: they fire only for a substitution, an instantiation or an unload,
+///   and the sub-walks they schedule are a *shift* and a *rotation*, for which
+///   [`carried_occurrence`] returns nothing and whose closes push nothing — so
+///   a sub-walk descends its own children and can never schedule a third walk.
+///   Their subjects are a replacement, the call and a decoded code's body, each
+///   fixed in the arena before the outer walk reaches it and therefore not a
+///   node the outer walk can grow.
+/// - input recursion: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 at twelve shared pair levels: content digests and child
+///   sharing distinguish memo-induced result changes, not errors common to both
+///   recurrence implementations. L3 on zero shifts, saturated variables and
+///   unreadable roots: exact ids and watermarks separate needless minting and
+///   invalid memo aliases. L3 on a share's endpoint: read at the root, read
+///   again under a binder when it is closed, kept under a binder when it is
+///   open, and a twin of equal content minted apart kept, each asserted
+///   exactly. L3 on a closed value beside the substituted occurrence and a
+///   closed replacement: each plane's entries stay flat as either grows, which
+///   separates a walk opening what its rewrite cannot reach. L3 on the program
+///   a failing seed shrinks to: the values an unload mints, bounded far below
+///   the sixteen million an occurrence-expanding walk mints.
+/// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+/// - witness: `gandr-kernel-core::replay::tests::an_unload_mints_each_shared_node_once_3859`
+/// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
+/// - witness: `gandr-kernel-core::tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
+/// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
+/// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+/// - witness: `encoding::tests::a_rewrite_under_an_inactive_memo_encodes_nothing_487`
+/// - witness: `rewrite::tests::sharing_an_endpoint_binds_its_node_and_raises_the_rest`
+#[spec(ensures: |ret| (!matches!(rewrite, Rewrite::Shift { amount, .. } if amount.0 == 0)
+    || ret == outcome_of(root)) && match (root, ret) {
+    (AnyNode::Value(source), RewriteOutcome::Value(result)) => arena.value(source).is_some() || result == source,
+    (AnyNode::Computation(source), RewriteOutcome::Computation(result)) => arena.computation(source).is_some() || result == source,
+    (AnyNode::ValueType(source), RewriteOutcome::ValueType(result)) => arena.value_type(source).is_some() || result == source,
+    (AnyNode::CompType(source), RewriteOutcome::CompType(result)) => arena.comp_type(source).is_some() || result == source,
+    _ => false,
+})]
+fn run_rewrite<A, M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable<A>,
+    memo: &mut M,
+    rewrite: Rewrite,
+    root: AnyNode,
+    initial_depth: BinderDepth,
+) -> RewriteOutcome
+where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    if matches!(rewrite, Rewrite::Shift { amount, .. } if amount == BinderDepth::NONE) {
+        return outcome_of(root);
+    }
+    let readable = match root {
+        AnyNode::Value(id) => arena.value(id).is_some(),
+        AnyNode::Computation(id) => arena.computation(id).is_some(),
+        AnyNode::ValueType(id) => arena.value_type(id).is_some(),
+        AnyNode::CompType(id) => arena.comp_type(id).is_some(),
+    };
+    if !readable {
+        return outcome_of(root);
+    }
+    let mut tasks: Vec<RewriteTask> = Vec::new();
+    let mut results: Vec<RewriteOutcome> = Vec::new();
+    // The walk's own memo holds every goal the session memo does not store:
+    // one it does not key, every goal under an inactive memo, and one a memo
+    // at its ceiling declines. So a node its subject shares between
+    // occurrences is rewritten once at each depth under any memo (#3859).
+    // Beside it are the nodes an instantiation found reading its binder and,
+    // for each node it has open, whether that node reads it, innermost last.
+    let mut local: HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome> =
+        HashedMap::default();
+    let mut reads: BTreeSet<(AnyNode, BinderDepth)> = BTreeSet::new();
+    let mut reading: Vec<Mention> = Vec::new();
+    tasks.push(RewriteTask::Open(root, initial_depth, rewrite));
+    while let Some(task) = tasks.pop() {
+        match task {
+            RewriteTask::Open(node, depth, step) => {
+                // A node reading no binder the rewrite acts on is answered
+                // whole: the walk would bring every child back unchanged, and
+                // a close over unchanged children reuses the node.
+                if reach(arena, step, node, depth) == Reach::Beyond {
+                    results.push(outcome_of(node));
+                    continue;
+                }
+                let instantiating = matches!(step, Rewrite::Instantiate { .. });
+                // The session memo first, then the walk's own. An inactive
+                // memo never answers, so its support is never built: the
+                // memoless walk encodes nothing.
+                let hit = match step.goal(node, depth) {
+                    Maybe::Present(goal) if matches!(M::ACTIVITY, MemoActivity::Active) => {
+                        match RewriteSupport::build(table, arena, goal) {
+                            Maybe::Present(support) => {
+                                memo.recall(&support).map(|hit| *hit.outcome())
+                            },
+                            Maybe::Absent(_) => None,
+                        }
+                    },
+                    Maybe::Present(_) | Maybe::Absent(keyed::Absent::Local) => None,
+                }
+                .or_else(|| match local.get(&(node, depth, step)) {
+                    Maybe::Present(&outcome) => Some(outcome),
+                    Maybe::Absent(hashed_entry::Absent::Unrecorded) => None,
+                });
+                if let Some(outcome) = hit {
+                    if instantiating && reads.contains(&(node, depth)) {
+                        note_read(&mut reads, &mut reading, (node, depth));
+                    }
+                    results.push(outcome);
+                    continue;
+                }
+                if instantiating
+                    && let AnyNode::Value(id) = node
+                    && let Some(&Value::Variable(index)) = arena.value(id)
+                    && u32::from(index) == depth.0
+                {
+                    note_read(&mut reads, &mut reading, (node, depth));
+                }
+                // A share's endpoint answers at once: the variable of the
+                // binder outside the root, raised under every
+                // binder crossed.
+                if let Rewrite::Share { endpoint, closed } = step
+                    && node == AnyNode::Value(endpoint)
+                    && (closed || depth == BinderDepth::NONE)
+                {
+                    let shared = arena.value_variable(DeBruijnIndex::from(depth.0));
+                    results.push(RewriteOutcome::Value(shared));
+                    continue;
+                }
+                // The one arm that answers through a sub-walk rather than
+                // through its children: the occurrence being substituted, where
+                // the walk has crossed binders the replacement has to be
+                // carried under. The sub-walk leaves exactly
+                // one result on the stack, which is what this
+                // goal's parent was going to read anyway.
+                match carried_occurrence(arena, step, node, depth) {
+                    Maybe::Present(replacement) => {
+                        tasks.push(RewriteTask::Record(node, depth, step));
+                        tasks.push(RewriteTask::Open(
+                            AnyNode::Value(replacement),
+                            BinderDepth::NONE,
+                            Rewrite::Shift {
+                                cutoff: BinderDepth::NONE,
+                                amount: depth,
+                            },
+                        ));
+                        continue;
+                    },
+                    Maybe::Absent(
+                        carrying::Absent::Shift
+                        | carrying::Absent::Abstraction
+                        | carrying::Absent::Sharing
+                        | carrying::Absent::Rotation
+                        | carrying::Absent::NoCrossedBinders
+                        | carrying::Absent::DifferentOccurrence
+                        | carrying::Absent::UnreadableValue,
+                    ) => {},
+                }
+                if instantiating {
+                    reading.push(Mention::Absent);
+                }
+                tasks.push(RewriteTask::Close(node, depth, step));
+                push_rewrite_children(arena, node, depth, &mut tasks, step);
+            },
+            RewriteTask::Close(node, depth, step) => {
+                // An instantiation's decode whose returned code reads the
+                // binder runs the call ahead of the code's body, as the
+                // lowering writes a call a type decodes: the substituted code
+                // is dropped, and the body is carried under the bind by a
+                // rotation. A returned code anywhere else, a path endpoint
+                // say, holds its calls in place and is substituted as written.
+                if let Rewrite::Instantiate { call, .. } = step
+                    && reading.pop() == Some(Mention::Present)
+                {
+                    note_read(&mut reads, &mut reading, (node, depth));
+                    let code = match node {
+                        AnyNode::ValueType(id) => match arena.value_type(id) {
+                            Some(&ValueType::Element { code, .. }) => Maybe::Present(code),
+                            _ => Maybe::Absent(()),
+                        },
+                        AnyNode::CompType(id) => match arena.comp_type(id) {
+                            Some(&CompType::Element { code, .. }) => Maybe::Present(code),
+                            _ => Maybe::Absent(()),
+                        },
+                        AnyNode::Value(_) | AnyNode::Computation(_) => Maybe::Absent(()),
+                    };
+                    if let Maybe::Present(code) = code
+                        && reads.contains(&(AnyNode::Value(code), depth))
+                        && let Some(&Value::Returned(body)) = arena.value(code)
+                    {
+                        let _substituted = results.pop();
+                        tasks.push(RewriteTask::BindAhead(node, depth, step));
+                        tasks.push(RewriteTask::Open(
+                            AnyNode::Computation(body),
+                            BinderDepth::NONE,
+                            Rewrite::Rotate { band: depth },
+                        ));
+                        tasks.push(RewriteTask::Open(
+                            AnyNode::Computation(call),
+                            BinderDepth::NONE,
+                            Rewrite::Shift {
+                                cutoff: BinderDepth::NONE,
+                                amount: depth,
+                            },
+                        ));
+                        continue;
+                    }
+                }
+                let outcome = close_rewrite(arena, step, node, depth, &mut results);
+                // A memo at its ceiling declines to record. The walk proceeds
+                // unmemoized from there, which costs reuse and never the
+                // answer.
+                remember_rewrite(
+                    (table, arena, memo),
+                    &mut local,
+                    (node, depth, step),
+                    outcome,
+                );
+                results.push(outcome);
+            },
+            RewriteTask::Record(node, depth, step) => {
+                if let Some(&outcome) = results.last() {
+                    remember_rewrite(
+                        (table, arena, memo),
+                        &mut local,
+                        (node, depth, step),
+                        outcome,
+                    );
+                }
+            },
+            RewriteTask::BindAhead(node, depth, step) => {
+                let read = results.pop();
+                let ahead = results.pop();
+                let code = match (ahead, read) {
+                    (
+                        Some(RewriteOutcome::Computation(ahead)),
+                        Some(RewriteOutcome::Computation(read)),
+                    ) => {
+                        let bound = arena.computation_bind(ahead, read);
+                        Maybe::Present(arena.value_returned(bound))
+                    },
+                    _ => Maybe::Absent(()),
+                };
+                let outcome = match (node, code) {
+                    (AnyNode::ValueType(id), Maybe::Present(code)) => match arena.value_type(id) {
+                        Some(&ValueType::Element { ref target, .. }) => {
+                            let target = target.clone();
+                            RewriteOutcome::ValueType(arena.value_type_element(code, target))
+                        },
+                        _ => outcome_of(node),
+                    },
+                    (AnyNode::CompType(id), Maybe::Present(code)) => match arena.comp_type(id) {
+                        Some(&CompType::Element { ref target, .. }) => {
+                            let target = target.clone();
+                            RewriteOutcome::CompType(arena.comp_type_element(code, target))
+                        },
+                        _ => outcome_of(node),
+                    },
+                    _ => outcome_of(node),
+                };
+                remember_rewrite(
+                    (table, arena, memo),
+                    &mut local,
+                    (node, depth, step),
+                    outcome,
+                );
+                results.push(outcome);
+            },
+        }
+    }
+    results.pop().unwrap_or_else(|| outcome_of(root))
+}
+
+/// Whether an open node of an instantiation reads the binder it instantiates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mention
+{
+    /// Nothing beneath the node read the binder yet.
+    Absent,
+    /// Something beneath the node read the binder.
+    Present,
+}
+
+/// Note that `node` at its depth reads the binder an instantiation
+/// instantiates, and so does the node open around it.
+///
+/// # Specification
+/// - requires: an instantiation reached `node` at the depth it names.
+/// - ensures: `node` at its depth is among `reads`, and the innermost open
+///   node's reading, if any, is present.
+/// - provides: the reading an instantiation decides a decode by, kept per node
+///   and depth so a hit of the walk's own memo answers it too.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a code reading the binder and one sparing it separate a
+///   read noted from one missed: a missed read substitutes the call's value
+///   where the bind belongs.
+/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+#[spec(ensures: reads.contains(&key) && reading.last().is_none_or(|&held| held == Mention::Present))]
+fn note_read(
+    reads: &mut BTreeSet<(AnyNode, BinderDepth)>,
+    reading: &mut [Mention],
+    key: (AnyNode, BinderDepth),
+)
+{
+    let _first = reads.insert(key);
+    if let Some(open) = reading.last_mut() {
+        *open = Mention::Present;
+    }
+}
+
+/// Record one goal's outcome: in the session memo when it keys the goal and
+/// is active, and in the walk's own memo when the session memo does not store
+/// it.
+///
+/// # Specification
+/// - requires: `outcome` is the goal's answer.
+/// - ensures: a goal the session keys is offered to `memo` under its support
+///   when the memo is active. A goal the session memo does not store is in
+///   `local` with `outcome`: one it does not key, every goal under an inactive
+///   memo, and one a memo at its ceiling declines.
+/// - provides: the one recording step every close, record and bind-ahead takes.
+/// - fails: never; a memo at its ceiling declines, and the walk's own memo
+///   holds the goal instead.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an instantiation's goals are recorded in the walk's own
+///   memo; a memoless shift of a pair spine shares each level's two children,
+///   and the memoized rewrite agrees with the memoless one on the session's
+///   goals.
+/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+/// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+#[spec(ensures: (matches!(M::ACTIVITY, MemoActivity::Active)
+    && matches!(step.goal(node, depth), Maybe::Present(_)))
+    || local.get(&(node, depth, step)) == Maybe::Present(&outcome))]
+fn remember_rewrite<A, M>(
+    (table, arena, memo): (&mut ContentTable<A>, &TermArena, &mut M),
+    local: &mut HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome>,
+    (node, depth, step): (AnyNode, BinderDepth, Rewrite),
+    outcome: RewriteOutcome,
+) where
+    A: Allocator + Clone,
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let stored = match step.goal(node, depth) {
+        Maybe::Present(goal) if matches!(M::ACTIVITY, MemoActivity::Active) => {
+            match RewriteSupport::build(table, arena, goal) {
+                Maybe::Present(support) => matches!(
+                    memo.remember(support, outcome),
+                    Ok(MemoRecord::Recorded | MemoRecord::Replaced)
+                ),
+                Maybe::Absent(_) => false,
+            }
+        },
+        Maybe::Present(_) | Maybe::Absent(keyed::Absent::Local) => false,
+    };
+    if !stored {
+        local.insert((node, depth, step), outcome);
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the ordinary rewrite path needs no carrying shift.
+    mod carrying {
+        /// A carrying shortcut does not apply to this rewrite goal.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// Shifting substitutes no replacement.
+            Shift,
+            /// Abstracting a constant substitutes no replacement.
+            Abstraction,
+            /// Sharing an endpoint substitutes no replacement.
+            Sharing,
+            /// A rotation renames indices and substitutes no replacement.
+            Rotation,
+            /// A replacement at depth zero crosses no binders.
+            NoCrossedBinders,
+            /// The node is not the variable occurrence being substituted.
+            DifferentOccurrence,
+            /// The ordinary unreadable-node path must handle this id.
+            UnreadableValue,
+        }
+    }
+}
+
+/// The value `rewrite` puts at the variable `index`, met under `depth` crossed
+/// binders, when it replaces that variable.
+///
+/// # Specification
+/// - requires: `depth` is the number of binders the walk has crossed to reach
+///   the variable.
+/// - ensures: a substitution's or an instantiation's replacement at the index
+///   `depth` names; an unload's component `index - depth` when that is below
+///   its width and its environment holds it; nothing at every other index and
+///   for every other rewrite.
+/// - provides: the one reading of which variables a rewrite replaces, shared by
+///   the carrying arm and the variable rule.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unload's components land at the indices past the depth
+///   below its width, a substitution's at the depth alone, and every index past
+///   them lowers instead, observed against substituting one binder at a time.
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+#[spec(ensures: |ret| match rewrite {
+    Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => if index == depth {
+        matches!(ret, Maybe::Present(found) if found == replacement)
+    } else {
+        matches!(ret, Maybe::Absent(()))
+    },
+    Rewrite::Unload { width, .. } => matches!(ret, Maybe::Absent(()))
+        || index.0.checked_sub(depth.0).is_some_and(|past| past < width.0),
+    Rewrite::Shift { .. } | Rewrite::Abstract { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(())),
+})]
+#[inline]
+fn replaced(
+    arena: &TermArena,
+    rewrite: Rewrite,
+    index: BinderDepth,
+    depth: BinderDepth,
+) -> Maybe<ValueId, ()>
+{
+    match rewrite {
+        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
+            if index == depth {
+                Maybe::Present(replacement)
+            }
+            else {
+                Maybe::Absent(())
+            }
+        },
+        Rewrite::Unload { environment, width } => {
+            let slot = index
+                .0
+                .checked_sub(depth.0)
+                .filter(|&past| past < width.0)
+                .and_then(|past| usize::try_from(past).ok());
+            match (arena.value(environment).and_then(Value::components), slot) {
+                (Some(components), Some(slot)) => components
+                    .get(slot)
+                    .copied()
+                    .map_or(Maybe::Absent(()), Maybe::Present),
+                (Some(_) | None, None) | (None, Some(_)) => Maybe::Absent(()),
+            }
+        },
+        Rewrite::Shift { .. }
+        | Rewrite::Abstract { .. }
+        | Rewrite::Share { .. }
+        | Rewrite::Rotate { .. } => Maybe::Absent(()),
+    }
+}
+
+/// The replacement a substitution, an instantiation or an unload has to carry
+/// under crossed binders, when this goal is an occurrence it replaces and
+/// there are binders to cross.
+///
+/// A replacement at depth zero needs no carrying, so it takes the ordinary
+/// close path and hands the replacement back as it stands; every other case
+/// schedules the shift.
+///
+/// # Specification
+/// - requires: `depth` is the number of binders the walk has crossed to reach
+///   `node`.
+/// - ensures: the replacement exactly when this is a substitution, an
+///   instantiation or an unload, some binder has been crossed, and the node is
+///   a variable occurrence it replaces ([`replaced`]); nothing in every other
+///   case, including a replacement at depth zero, which takes the ordinary
+///   close path instead.
+/// - provides: a replacement or [`Absent`]: `Shift` selects shifting,
+///   `NoCrossedBinders` needs no raise, `DifferentOccurrence` is not the
+///   target, and `UnreadableValue` leaves the ordinary unreadable-node path in
+///   charge.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on the replacing rewrites, zero and positive depth,
+///   matching and different variables, another family and an unreadable value.
+///   Exact replacements and refusal reasons separate guard precedence and
+///   missing carrying; the nested-binder witness observes the raised
+///   replacement.
+/// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+/// - witness: `rewrite::tests::carrying_refusals_follow_rule_precedence`
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+///
+/// [`Absent`]: carrying::Absent
+#[spec(ensures: |ret| match rewrite {
+    Rewrite::Shift { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Shift)),
+    Rewrite::Abstract { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Abstraction)),
+    Rewrite::Share { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Sharing)),
+    Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Rotation)),
+    Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {
+        if depth.0 == 0 {
+            matches!(ret, Maybe::Absent(carrying::Absent::NoCrossedBinders))
+        } else if let AnyNode::Value(id) = node {
+            match arena.value(id) {
+                None => matches!(ret, Maybe::Absent(carrying::Absent::UnreadableValue)),
+                Some(&Value::Variable(index)) => match replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth) {
+                    Maybe::Present(replacement) => matches!(ret, Maybe::Present(found) if found == replacement),
+                    Maybe::Absent(()) => matches!(ret, Maybe::Absent(carrying::Absent::DifferentOccurrence)),
+                },
+                Some(_) => matches!(ret, Maybe::Absent(carrying::Absent::DifferentOccurrence)),
+            }
+        } else {
+            matches!(ret, Maybe::Absent(carrying::Absent::DifferentOccurrence))
+        }
+    },
+})]
+#[inline]
+fn carried_occurrence(
+    arena: &TermArena,
+    rewrite: Rewrite,
+    node: AnyNode,
+    depth: BinderDepth,
+) -> Maybe<ValueId, carrying::Absent>
+{
+    match rewrite {
+        Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {},
+        Rewrite::Shift { .. } => return Maybe::Absent(carrying::Absent::Shift),
+        Rewrite::Abstract { .. } => return Maybe::Absent(carrying::Absent::Abstraction),
+        Rewrite::Share { .. } => return Maybe::Absent(carrying::Absent::Sharing),
+        Rewrite::Rotate { .. } => return Maybe::Absent(carrying::Absent::Rotation),
+    }
+    if depth == BinderDepth::NONE {
+        return Maybe::Absent(carrying::Absent::NoCrossedBinders);
+    }
+    let AnyNode::Value(id) = node
+    else {
+        return Maybe::Absent(carrying::Absent::DifferentOccurrence);
+    };
+    let Some(value) = arena.value(id)
+    else {
+        return Maybe::Absent(carrying::Absent::UnreadableValue);
+    };
+    match *value {
+        Value::Variable(index) => {
+            match replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth) {
+                Maybe::Present(replacement) => Maybe::Present(replacement),
+                Maybe::Absent(()) => Maybe::Absent(carrying::Absent::DifferentOccurrence),
+            }
+        },
+        Value::Constructor { .. }
+        | Value::Record(_)
+        | Value::Restrict { .. }
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::SessionPath { .. }
+        | Value::SessionFlow { .. }
+        | Value::PathEquiv { .. }
+        | Value::Univalence { .. }
+        | Value::Here { .. }
+        | Value::Stay { .. }
+        | Value::ForwardFlow { .. }
+        | Value::FunctionFlow { .. }
+        | Value::Then { .. }
+        | Value::FlowProduct(..)
+        | Value::Returned(_)
+        | Value::Higher { .. }
+        | Value::HigherEvaluation { .. }
+        | Value::QuantifiedEvaluation { .. }
+        | Value::Constant(_)
+        | Value::Literal(_)
+        | Value::Tuple(..)
+        | Value::ListNil
+        | Value::ListCons(..)
+        | Value::Injection(..)
+        | Value::Thunk(_)
+        | Value::Lift { .. }
+        | Value::Quote(_)
+        | Value::QuoteComputation(_)
+        | Value::StaticApplication(..) => Maybe::Absent(carrying::Absent::DifferentOccurrence),
+    }
+}
+
+/// Whether a rewrite has to open a node, read off the node's support.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// The node reads no binder the rewrite acts on: the walk answers it with
+    /// itself.
+    Beyond,
+    /// The node may read one, or the rewrite matches by something other than
+    /// how far a node reads: the walk opens it.
+    Within,
+}
+
+/// Whether `node`, met at `depth`, reads a binder `rewrite` acts on, so the
+/// walk opens it, or none, so the walk answers it with itself.
+///
+/// A shift acts on the indices at or past its cutoff measured from `depth`; a
+/// substitution, an instantiation and an unload act on the index `depth` names
+/// and every one past it. A node whose support stops short of that index holds
+/// none of them. A share, an abstraction and a rotation match by node, by
+/// constant or by band rather than by how far a node reads, so they open every
+/// node.
+///
+/// # Specification
+/// - requires: `depth` is the number of binders the walk has crossed to reach
+///   `node`.
+/// - ensures: [`Reach::Beyond`] exactly when the rewrite is a shift, a
+///   substitution, an instantiation or an unload and the node's support reaches
+///   no index at or past the first it acts on at `depth`; an unresolvable
+///   node's support reaches every binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on a substitution and on the shift carrying a closed
+///   replacement under binders: the nodes each walk opens stay as many as a
+///   closed value inside the subject, or the closed replacement, grows.
+/// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
+#[spec(ensures: |ret| ret == Reach::Within || matches!(rewrite,
+    Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. }))]
+#[inline]
+fn reach(
+    arena: &TermArena,
+    rewrite: Rewrite,
+    node: AnyNode,
+    depth: BinderDepth,
+) -> Reach
+{
+    let acted_on = match rewrite {
+        Rewrite::Shift { cutoff, .. } => cutoff.0.saturating_add(depth.0),
+        Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {
+            depth.0
+        },
+        Rewrite::Abstract { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => {
+            return Reach::Within;
+        },
+    };
+    let support = match node {
+        AnyNode::Value(id) => arena.value_support(id),
+        AnyNode::Computation(id) => arena.computation_support(id),
+        AnyNode::ValueType(id) => arena.value_type_support(id),
+        AnyNode::CompType(id) => arena.comp_type_support(id),
+    };
+    if u32::from(support.depth()) <= acted_on {
+        Reach::Beyond
+    }
+    else {
+        Reach::Within
+    }
+}
+
+/// A node as its own outcome: the fail-safe reading of an empty results stack,
+/// which the engine's own invariant makes unreachable.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn outcome_of(node: AnyNode) -> RewriteOutcome
+{
+    match node {
+        AnyNode::Value(id) => RewriteOutcome::Value(id),
+        AnyNode::Computation(id) => RewriteOutcome::Computation(id),
+        AnyNode::ValueType(id) => RewriteOutcome::ValueType(id),
+        AnyNode::CompType(id) => RewriteOutcome::CompType(id),
+    }
+}
+
+/// Schedule `node`'s children, innermost-last, each at the depth its position
+/// sits at.
+///
+/// The tasks stack pops in reverse, so children are pushed in reverse wire
+/// order and close in wire order — which is the order [`close_rewrite`] pops
+/// their results in.
+///
+/// **The binding positions are the whole content of this function.** A lambda
+/// binds for its body, a bind binds for its body and not for the bound
+/// computation, a case binds for each branch and not for the scrutinee, the
+/// dependent arrow binds for its codomain and not for its domain, and the
+/// dependent pair for its second factor and not its first; the dependent split
+/// binds once for its motive and twice for its body, and not for its scrutinee.
+///
+/// # Specification
+/// - requires: `depth` is the number of binders the walk has crossed to reach
+///   `node`.
+/// - ensures: pushes one open task per child, in reverse wire order so the
+///   children close in wire order, and at the depth that child's position sits
+///   at: one binder further in for a lambda's body, a bind's body but not its
+///   bound computation, each case branch but not the scrutinee, a dependent
+///   arrow's codomain but not its domain, and a dependent pair's second factor
+///   but not its first; one further for a dependent split's motive and two for
+///   its body. A node with no children, and one that cannot be read, push
+///   nothing.
+/// - provides: the scheduling half of the engine, and the only statement of
+///   where the term language binds.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the open tasks for the node's children, growth within the
+///   node's children in the arena
+///
+/// # Adequacy
+/// - hypothesis: L3 on lambda, bind, case, dependent-code and dependent-pair
+///   positions; exact rewritten free indices separate dropped children,
+///   reversed result order and closing a nonbinding position. The predicate
+///   observes appended task arity, rewrite and bounded depth, not the whole
+///   schedule.
+/// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+/// - witness: `rewrite::tests::bind_and_case_rewrites_distinguish_binding_positions`
+/// - witness: `rewrite::tests::a_dependent_pair_and_its_split_bind_where_they_scope`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `gandr-kernel-core::conv::rewrite_tests::session_rewrites_preserve_graph_evidence_and_native_children`
+#[spec(captures: before = tasks.len(),
+    ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Restrict { ref fixed, .. } => fixed.len().saturating_add(1), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, Value::Stay { .. } | Value::PathRefl(_) | Value::Univalence(_) | Value::Here { .. } | Value::Returned(_) | Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::With(ref components) => components.len(), Computation::ReturnAll(ref values) => values.len(), Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } => 2, Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }),
+    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 2, ValueType::Session { .. } | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Staged { .. } => 1 }),
+    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, CompType::With(ref components) => components.len(), CompType::Returns(ref results) => results.len(), CompType::Returner(_) | CompType::Element { .. } => 1, CompType::Codata { ref arguments, .. } => arguments.len() }),
+}
+        && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
+            if step == rewrite && child_depth >= depth))))]
+fn push_rewrite_children(
+    arena: &TermArena,
+    node: AnyNode,
+    depth: BinderDepth,
+    tasks: &mut Vec<RewriteTask>,
+    rewrite: Rewrite,
+)
+{
+    match node {
+        AnyNode::Value(id) => match arena.value(id) {
+            Some(&Value::Constructor {
+                datatype,
+                ref fields,
+                ..
+            }) => {
+                tasks.extend(
+                    fields
+                        .iter()
+                        .rev()
+                        .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+                );
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(datatype),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&Value::Record(ref fields)) => tasks.extend(
+                fields
+                    .values()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
+            Some(&Value::Restrict { value, ref fixed }) => {
+                tasks.extend(
+                    fixed
+                        .values()
+                        .rev()
+                        .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+                );
+                tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
+            },
+            Some(
+                &Value::ListNil | &Value::Variable(_) | &Value::Constant(_) | &Value::Literal(_),
+            )
+            | None => {},
+            Some(&Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(backward), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(forward), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(path_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(
+                &Value::SessionPath {
+                    path_type,
+                    payload_paths,
+                    ..
+                }
+                | &Value::SessionFlow {
+                    flow_type: path_type,
+                    payload_paths,
+                    ..
+                },
+            ) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Value(payload_paths),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(path_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(
+                &Value::PathRefl(code)
+                | &Value::Univalence(code)
+                | &Value::Here { point: code, .. }
+                | &Value::Stay { point: code, .. },
+            ) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
+            },
+            Some(
+                &Value::Higher {
+                    evidence: ref values,
+                    ..
+                }
+                | &Value::QuantifiedEvaluation {
+                    children: ref values,
+                    ..
+                },
+            ) => tasks.extend(
+                values
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
+            Some(&Value::HigherEvaluation { ref components, .. }) => {
+                tasks.extend(components.iter().rev().flat_map(|component| {
+                    [component.evidence, component.right, component.left]
+                        .map(|id| RewriteTask::Open(AnyNode::Value(id), depth, rewrite))
+                }));
+            },
+            Some(&Value::ForwardFlow {
+                flow_type,
+                translator,
+                ref outputs,
+                ..
+            }) => {
+                tasks.extend(
+                    outputs
+                        .iter()
+                        .rev()
+                        .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+                );
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Value(translator),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(flow_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&Value::FunctionFlow {
+                flow_type,
+                domain,
+                codomain,
+            }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(codomain), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(domain), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(flow_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(
+                &Value::PathProduct(first, second)
+                | &Value::FlowProduct(first, second)
+                | &Value::ListCons(first, second)
+                | &Value::StaticApplication(first, second)
+                | &Value::Then { first, second, .. },
+            ) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(second), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(first), depth, rewrite));
+            },
+            Some(&Value::Tuple(ref components)) => tasks.extend(
+                components
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
+            Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(body), depth, rewrite));
+            },
+            Some(&(Value::Thunk(body) | Value::Returned(body))) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(body),
+                    depth,
+                    rewrite,
+                ));
+            },
+            // The term-to-type edge: a quoted type is rewritten at the depth
+            // its quote stands at, the converse of the decoding edge below.
+            Some(&Value::Quote(quoted)) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(quoted),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&Value::QuoteComputation(quoted)) => {
+                tasks.push(RewriteTask::Open(AnyNode::CompType(quoted), depth, rewrite));
+            },
+        },
+        AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+                ..
+            }) => {
+                tasks.extend(
+                    branches
+                        .iter()
+                        .rev()
+                        .map(|id| RewriteTask::Open(AnyNode::Computation(*id), depth, rewrite)),
+                );
+                tasks.push(RewriteTask::Open(
+                    AnyNode::CompType(motive),
+                    depth.deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::Value(scrutinee), depth, rewrite));
+            },
+            // The motive binds the scrutinee and the body binds both
+            // components; the scrutinee stands outside either.
+            Some(&Computation::SigmaSplit {
+                scrutinee,
+                motive,
+                body,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(body),
+                    depth.deeper().deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::CompType(motive),
+                    depth.deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::Value(scrutinee), depth, rewrite));
+            },
+            Some(
+                &(Computation::RecordProjection(record, _)
+                | Computation::TupleProjection(record, _)),
+            ) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(record), depth, rewrite));
+            },
+            None => {},
+            Some(&Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_cons),
+                    depth.deeper().deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_nil),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::Value(list), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(result),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(element),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_cons),
+                    depth.deeper().deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_nil),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::Value(list), depth, rewrite));
+            },
+            Some(&Computation::Transport(path, value)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
+            },
+            // The motive binds the endpoint; the path or flow and the input
+            // stand outside it.
+            Some(
+                &Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }
+                | &Computation::Ride {
+                    motive,
+                    flow: path,
+                    value,
+                },
+            ) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(motive),
+                    depth.deeper(),
+                    rewrite,
+                ));
+            },
+            // The motive's own arrows bind the telescope; every other child
+            // stands outside it.
+            Some(
+                &Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }
+                | &Computation::TelescopeRide {
+                    motive,
+                    flow: path,
+                    start,
+                    over,
+                    value,
+                },
+            ) => {
+                for id in [value, over, start, path] {
+                    tasks.push(RewriteTask::Open(AnyNode::Value(id), depth, rewrite));
+                }
+                tasks.push(RewriteTask::Open(AnyNode::CompType(motive), depth, rewrite));
+            },
+            // The body binds both results and their identity.
+            Some(&Computation::RelatedApplication {
+                path,
+                left,
+                right,
+                evidence,
+                body,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(body),
+                    depth.deeper().deeper().deeper(),
+                    rewrite,
+                ));
+                for id in [evidence, right, left, path] {
+                    tasks.push(RewriteTask::Open(AnyNode::Value(id), depth, rewrite));
+                }
+            },
+            Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(body),
+                    depth.deeper(),
+                    rewrite,
+                ));
+            },
+            Some(&Computation::Application(head, argument)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(argument), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(head),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
+            },
+            Some(&Computation::Bind(bound, body)) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(body),
+                    depth.deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(bound),
+                    depth,
+                    rewrite,
+                ));
+            },
+            // A bind of several values binds one binder per value in its body.
+            Some(&Computation::BindAll { bound, arity, body }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(body),
+                    depth.deeper_by(arity),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(bound),
+                    depth,
+                    rewrite,
+                ));
+            },
+            // A return of several values binds nothing.
+            Some(&Computation::ReturnAll(ref values)) => tasks.extend(
+                values
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
+            // A pairing binds nothing: every component stands at its depth.
+            Some(&Computation::With(ref components)) => tasks.extend(
+                components
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Computation(*id), depth, rewrite)),
+            ),
+            Some(&Computation::Project(_, pair)) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(pair),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&Computation::Case {
+                scrutinee,
+                ref branches,
+            }) => {
+                tasks.extend(branches.iter().rev().map(|id| {
+                    RewriteTask::Open(AnyNode::Computation(*id), depth.deeper(), rewrite)
+                }));
+                tasks.push(RewriteTask::Open(AnyNode::Value(scrutinee), depth, rewrite));
+            },
+        },
+        AnyNode::ValueType(id) => match arena.value_type(id) {
+            Some(&ValueType::Data { ref arguments, .. }) => tasks.extend(
+                arguments
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
+            Some(&ValueType::Record(ref fields)) => tasks.extend(
+                fields
+                    .values()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::ValueType(*id), depth, rewrite)),
+            ),
+            Some(&ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Abstract(_))
+            | None => {},
+            Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => tasks.extend(
+                parts
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::ValueType(*id), depth, rewrite)),
+            ),
+            // The static Pi binds nothing: both children stand at its depth.
+            Some(&ValueType::StaticPi {
+                domain: first,
+                codomain: second,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(second),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::ValueType(first), depth, rewrite));
+            },
+            // The dependent pair's second factor stands under the first's
+            // binder.
+            Some(&ValueType::Sigma { first, second }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(second),
+                    depth.deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::ValueType(first), depth, rewrite));
+            },
+            Some(
+                &ValueType::PathUniverse(source, target) | &ValueType::FlowUniverse(source, target),
+            ) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(target), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(source), depth, rewrite));
+            },
+            Some(
+                &ValueType::Path {
+                    domain,
+                    left,
+                    right,
+                }
+                | &ValueType::Flow {
+                    domain,
+                    source: left,
+                    target: right,
+                }
+                | &ValueType::Bridge {
+                    domain,
+                    left,
+                    right,
+                },
+            ) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(right), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(left), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(domain),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&ValueType::Thunk(body)) => {
+                tasks.push(RewriteTask::Open(AnyNode::CompType(body), depth, rewrite));
+            },
+            Some(
+                &ValueType::Session {
+                    payloads: inner, ..
+                }
+                | &ValueType::Lift { inner, .. }
+                | &ValueType::List(inner)
+                | &ValueType::Staged { base: inner, .. },
+            ) => {
+                tasks.push(RewriteTask::Open(AnyNode::ValueType(inner), depth, rewrite));
+            },
+            // The type-to-term edge: a code is rewritten at the depth the type
+            // stands at, which is why a rewrite over a type that carries a code
+            // is not the identity.
+            Some(&ValueType::Element { code, .. }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
+            },
+        },
+        AnyNode::CompType(id) => match arena.comp_type(id) {
+            None => {},
+            Some(&CompType::Returner(result)) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(result),
+                    depth,
+                    rewrite,
+                ));
+            },
+            // Each result stands under the binders of the results before it.
+            Some(&CompType::Returns(ref results)) => {
+                tasks.extend(results.iter().enumerate().rev().map(|(before, id)| {
+                    RewriteTask::Open(
+                        AnyNode::ValueType(*id),
+                        depth.deeper_by(gandr_kernel_term::ResultCount::from(before)),
+                        rewrite,
+                    )
+                }));
+            },
+            Some(&CompType::Arrow { domain, codomain }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::CompType(codomain),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(domain),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&CompType::Pi { domain, codomain }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::CompType(codomain),
+                    depth.deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(domain),
+                    depth,
+                    rewrite,
+                ));
+            },
+            Some(&CompType::Element { code, .. }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
+            },
+            Some(&CompType::With(ref components)) => tasks.extend(
+                components
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::CompType(*id), depth, rewrite)),
+            ),
+            Some(&CompType::Codata { ref arguments, .. }) => tasks.extend(
+                arguments
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
+        },
+    }
+}
+
+/// Combine `node`'s children's results into its own, minting only when a child
+/// changed.
+///
+/// # Specification
+/// - requires: the results stack holds one outcome per child of `node`, pushed
+///   by that child's own close.
+/// - ensures: the outcome of `node`, in `node`'s own family, minting a fresh
+///   node only where some child changed and answering the original id
+///   otherwise, so sharing is preserved rather than re-created.
+/// - provides: the combining half of the engine, dispatched to the family's own
+///   close.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on unchanged closed types, rewritten variable codes and
+///   binding terms; observed result families and reconstructed contents
+///   distinguish wrong-family dispatch, wrong child order and lost identity.
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+#[spec(ensures: |ret| matches!((node, ret),
+    (AnyNode::Value(_), RewriteOutcome::Value(_))
+    | (AnyNode::Computation(_), RewriteOutcome::Computation(_))
+    | (AnyNode::ValueType(_), RewriteOutcome::ValueType(_))
+    | (AnyNode::CompType(_), RewriteOutcome::CompType(_))))]
+fn close_rewrite(
+    arena: &mut TermArena,
+    rewrite: Rewrite,
+    node: AnyNode,
+    depth: BinderDepth,
+    results: &mut Vec<RewriteOutcome>,
+) -> RewriteOutcome
+{
+    match node {
+        AnyNode::Value(id) => {
+            RewriteOutcome::Value(close_value(arena, rewrite, id, depth, results))
+        },
+        AnyNode::Computation(id) => {
+            RewriteOutcome::Computation(close_computation(arena, id, results))
+        },
+        AnyNode::ValueType(id) => RewriteOutcome::ValueType(close_value_type(arena, id, results)),
+        AnyNode::CompType(id) => RewriteOutcome::CompType(close_comp_type(arena, id, results)),
+    }
+}
+
+/// Pop one child result, or fall back to the child itself.
+///
+/// The fallback is unreachable: an open pushed one result per child before its
+/// parent's close ran. Reading it as "unchanged" is the fail-safe direction.
+///
+/// # Specification
+/// - requires: nothing; an empty stack is admissible input and reads as
+///   unchanged.
+/// - ensures: the top result, and `original` as its own outcome when the stack
+///   is empty.
+/// - provides: the fail-safe read of a child's result. The empty case is
+///   unreachable — an open pushed one result per child before its parent's
+///   close ran — and reading it as unchanged cannot fabricate a node.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on empty and heterogeneous two-entry result stacks; exact
+///   returned nodes and the surviving entry distinguish dropping an extra
+///   result, reading the wrong end and fabricating the fallback.
+/// - witness: `rewrite::tests::result_stack_preserves_order_and_falls_back_only_when_empty`
+#[spec(captures: before = (results.len(), results.last().copied()),
+    ensures: |ret| results.len() == before.0.saturating_sub(1)
+        && ret == before.1.unwrap_or_else(|| outcome_of(original)))]
+#[inline]
+fn popped(
+    results: &mut Vec<RewriteOutcome>,
+    original: AnyNode,
+) -> RewriteOutcome
+{
+    results.pop().unwrap_or_else(|| outcome_of(original))
+}
+
+/// Combine a value node.
+///
+/// **The variable arm is where the two rewrites differ, and it is the only arm
+/// that differs.** A shift raises a free index and spares a bound one; a
+/// substitution replaces the index the walk's depth names, lowers every index
+/// outside it, and spares every index inside.
+///
+/// # Specification
+/// - requires: the results stack holds one outcome per child of `id`, and
+///   `depth` is the number of binders crossed to reach it.
+/// - ensures: the rewritten value id: the variable arm applies the rewrite's
+///   own rule, a closed former answers `id`, and every other former mints a
+///   node only where a child changed. An unreadable id answers itself.
+/// - provides: the value arm of the combining half, and the one arm where the
+///   two rewrites differ.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: a copy of the node's children where a child changes, growth
+///   within the node's children
+/// - allocation: the rewritten value node, durable by the arena's identifiers
+///
+/// # Adequacy
+/// - hypothesis: L3 on a literal replacement, a pair of differently scoped
+///   variables, a carried replacement and an unreadable root; exact
+///   reconstructed terms distinguish wrong child order, wrong variable cases
+///   and fabricated fallback.
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+/// - witness: `gandr-kernel-core::conv::rewrite_tests::session_rewrites_preserve_graph_evidence_and_native_children`
+#[spec(
+    captures: [before = results.len(), arity = arena.value(id).map_or(0, |matched_native_node| match *matched_native_node {
+Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
+Value::Record(ref fields) => fields.len(),
+Value::Restrict { ref fixed, .. } => fixed.len().saturating_add(1),
+Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3,
+Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2),
+Value::Tuple(ref components) => components.len(),
+Value::Higher { ref evidence, .. } => evidence.len(),
+Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3),
+Value::QuantifiedEvaluation { ref children, .. } => children.len(),
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::FlowProduct(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Then { .. } => 2,
+Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Univalence(_) | Value::Here { .. } | Value::Stay { .. } | Value::Returned(_) => 1,
+Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 0,
+})],
+    ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
+        None => ret == id,
+        Some(&Value::Variable(_)) => true,
+        Some(&Value::Constant(found)) => match rewrite {
+            Rewrite::Abstract { constant, .. } if constant == found => matches!(arena.value(ret), Some(&Value::Variable(_))),
+            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } | Rewrite::Share { .. } | Rewrite::Unload { .. } => ret == id,
+        },
+        Some(node) => arena.value(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten)),
+    },
+)]
+fn close_value(
+    arena: &mut TermArena,
+    rewrite: Rewrite,
+    id: ValueId,
+    depth: BinderDepth,
+    results: &mut Vec<RewriteOutcome>,
+) -> ValueId
+{
+    let Some(node) = arena.value(id)
+    else {
+        return id;
+    };
+    match *node {
+        Value::Constructor {
+            family,
+            datatype,
+            tag,
+            ref fields,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in fields.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| fields.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let classifier = popped(results, AnyNode::ValueType(datatype)).value_type_or(datatype);
+            if rewritten.is_none() && classifier == datatype {
+                id
+            }
+            else {
+                arena.value_constructor(
+                    family,
+                    classifier,
+                    tag,
+                    rewritten.unwrap_or_else(|| fields.clone()),
+                )
+            }
+        },
+        Value::Record(ref fields) => {
+            let mut rewritten = None;
+            for (label, original) in fields.iter().rev() {
+                let result = popped(results, AnyNode::Value(*original)).value_or(*original);
+                if result != *original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| fields.clone())
+                        .get_mut(label)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |fields| arena.value_record(fields))
+        },
+        Value::Restrict { value, ref fixed } => {
+            let mut rewritten = None;
+            for (label, original) in fixed.iter().rev() {
+                let result = popped(results, AnyNode::Value(*original)).value_or(*original);
+                if result != *original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| fixed.clone())
+                        .get_mut(label)
+                {
+                    *slot = result;
+                }
+            }
+            let restricted = popped(results, AnyNode::Value(value)).value_or(value);
+            if rewritten.is_none() && restricted == value {
+                id
+            }
+            else {
+                arena.value_restrict(restricted, rewritten.unwrap_or_else(|| fixed.clone()))
+            }
+        },
+        Value::SessionPath {
+            path_type,
+            payload_paths,
+            ref evidence,
+        } => {
+            let paths = popped(results, AnyNode::Value(payload_paths)).value_or(payload_paths);
+            let classifier =
+                popped(results, AnyNode::ValueType(path_type)).value_type_or(path_type);
+            if paths == payload_paths && classifier == path_type {
+                id
+            }
+            else {
+                arena.value_session_path(classifier, Shared::clone(evidence), paths)
+            }
+        },
+        Value::Univalence(equivalence) => {
+            let record = popped(results, AnyNode::Value(equivalence)).value_or(equivalence);
+            if record == equivalence {
+                id
+            }
+            else {
+                arena.value_univalence(record)
+            }
+        },
+        Value::SessionFlow {
+            flow_type,
+            payload_paths,
+            ref evidence,
+        } => {
+            let paths = popped(results, AnyNode::Value(payload_paths)).value_or(payload_paths);
+            let classifier =
+                popped(results, AnyNode::ValueType(flow_type)).value_type_or(flow_type);
+            if paths == payload_paths && classifier == flow_type {
+                id
+            }
+            else {
+                arena.value_session_flow(classifier, Shared::clone(evidence), paths)
+            }
+        },
+        Value::PathRefl(code) => {
+            let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
+            if rewritten == code {
+                id
+            }
+            else {
+                arena.value_path_refl(rewritten)
+            }
+        },
+        Value::Here {
+            point,
+            ref dialogues,
+        } => {
+            let rewritten = popped(results, AnyNode::Value(point)).value_or(point);
+            if rewritten == point {
+                id
+            }
+            else {
+                arena.value_here_relating(rewritten, Shared::clone(dialogues))
+            }
+        },
+        Value::Stay {
+            point,
+            ref dialogues,
+        } => {
+            let rewritten = popped(results, AnyNode::Value(point)).value_or(point);
+            if rewritten == point {
+                id
+            }
+            else {
+                arena.value_stay_relating(rewritten, Shared::clone(dialogues))
+            }
+        },
+        Value::ForwardFlow {
+            flow_type,
+            translator,
+            ref outputs,
+            ref dialogues,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in outputs.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| outputs.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let map = popped(results, AnyNode::Value(translator)).value_or(translator);
+            let classifier =
+                popped(results, AnyNode::ValueType(flow_type)).value_type_or(flow_type);
+            if rewritten.is_none() && map == translator && classifier == flow_type {
+                id
+            }
+            else {
+                let dialogues = ThinShared::clone(dialogues);
+                let outputs = rewritten.unwrap_or_else(|| outputs.clone());
+                arena.value_forward_flow(classifier, map, outputs, dialogues)
+            }
+        },
+        Value::FunctionFlow {
+            flow_type,
+            domain,
+            codomain,
+        } => {
+            let after = popped(results, AnyNode::Value(codomain)).value_or(codomain);
+            let before = popped(results, AnyNode::Value(domain)).value_or(domain);
+            let classifier =
+                popped(results, AnyNode::ValueType(flow_type)).value_type_or(flow_type);
+            if after == codomain && before == domain && classifier == flow_type {
+                id
+            }
+            else {
+                arena.value_function_flow(classifier, before, after)
+            }
+        },
+        Value::Then {
+            first,
+            second,
+            seam,
+        } => {
+            let later = popped(results, AnyNode::Value(second)).value_or(second);
+            let earlier = popped(results, AnyNode::Value(first)).value_or(first);
+            if later == second && earlier == first {
+                id
+            }
+            else {
+                arena.value_then(earlier, later, seam)
+            }
+        },
+        Value::Returned(computation) => {
+            let rewritten =
+                popped(results, AnyNode::Computation(computation)).computation_or(computation);
+            if rewritten == computation {
+                id
+            }
+            else {
+                arena.value_returned(rewritten)
+            }
+        },
+        Value::Higher {
+            ref program,
+            ref evidence,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in evidence.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| evidence.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let program = Shared::clone(program);
+            rewritten.map_or(id, |evidence| arena.value_higher(program, evidence))
+        },
+        Value::HigherEvaluation {
+            ref dialogues,
+            ref components,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in components.iter().copied().enumerate().rev() {
+                let evidence =
+                    popped(results, AnyNode::Value(original.evidence)).value_or(original.evidence);
+                let right =
+                    popped(results, AnyNode::Value(original.right)).value_or(original.right);
+                let left = popped(results, AnyNode::Value(original.left)).value_or(original.left);
+                let result = gandr_kernel_term::EvaluationComponent {
+                    left,
+                    right,
+                    evidence,
+                };
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| components.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let dialogues = ThinShared::clone(dialogues);
+            rewritten.map_or(id, |components| {
+                arena.value_higher_evaluation(dialogues, components)
+            })
+        },
+        Value::QuantifiedEvaluation {
+            ref steps,
+            ref children,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in children.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| children.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let steps = ThinShared::clone(steps);
+            rewritten.map_or(id, |children| {
+                arena.value_quantified_evaluation(steps, children)
+            })
+        },
+        Value::PathProduct(first, second) => {
+            let rewritten_second = popped(results, AnyNode::Value(second)).value_or(second);
+            let rewritten_first = popped(results, AnyNode::Value(first)).value_or(first);
+            if rewritten_first == first && rewritten_second == second {
+                id
+            }
+            else {
+                arena.value_path_product(rewritten_first, rewritten_second)
+            }
+        },
+        Value::FlowProduct(first, second) => {
+            let rewritten_second = popped(results, AnyNode::Value(second)).value_or(second);
+            let rewritten_first = popped(results, AnyNode::Value(first)).value_or(first);
+            if rewritten_first == first && rewritten_second == second {
+                id
+            }
+            else {
+                arena.value_flow_product(rewritten_first, rewritten_second)
+            }
+        },
+        Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        } => {
+            let rewritten_backward = popped(results, AnyNode::Value(backward)).value_or(backward);
+            let rewritten_forward = popped(results, AnyNode::Value(forward)).value_or(forward);
+            let rewritten_type =
+                popped(results, AnyNode::ValueType(path_type)).value_type_or(path_type);
+            if rewritten_type == path_type
+                && rewritten_forward == forward
+                && rewritten_backward == backward
+            {
+                id
+            }
+            else {
+                arena.value_path_equiv(
+                    rewritten_type,
+                    rewritten_forward,
+                    rewritten_backward,
+                    Shared::clone(evidence),
+                )
+            }
+        },
+        Value::Variable(index) => rewrite_variable(arena, rewrite, id, index, depth),
+        Value::Constant(found) => match rewrite {
+            Rewrite::Abstract { constant, index } if constant == found => {
+                // reason: an index past the ceiling clamps, as a shift's does.
+                let raised = u32::from(arith::saturating_add(
+                    arith::Int::from(u32::from(index)),
+                    arith::Int::from(depth.0),
+                ));
+                arena.value_variable(DeBruijnIndex::from(raised))
+            },
+            Rewrite::Abstract { .. }
+            | Rewrite::Shift { .. }
+            | Rewrite::Substitute { .. }
+            | Rewrite::Instantiate { .. }
+            | Rewrite::Rotate { .. }
+            | Rewrite::Share { .. }
+            | Rewrite::Unload { .. } => id,
+        },
+        Value::ListNil | Value::Literal(_) => id,
+        Value::Tuple(ref components) => {
+            // Results are popped in reverse wire order: children were scheduled
+            // so that they close left to right, so the last one to close is the
+            // first one on top of the stack.
+            let mut rewritten = None;
+            for (index, original) in components.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| components.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |components| arena.value_tuple(&components))
+        },
+        Value::ListCons(head, tail) => {
+            let new_tail = popped(results, AnyNode::Value(tail)).value_or(tail);
+            let new_head = popped(results, AnyNode::Value(head)).value_or(head);
+            if new_head == head && new_tail == tail {
+                id
+            }
+            else {
+                arena.value_list_cons(new_head, new_tail)
+            }
+        },
+        Value::StaticApplication(head, argument) => {
+            let rewritten_argument = popped(results, AnyNode::Value(argument)).value_or(argument);
+            let rewritten_head = popped(results, AnyNode::Value(head)).value_or(head);
+            if rewritten_head == head && rewritten_argument == argument {
+                id
+            }
+            else {
+                arena.value_static_application(rewritten_head, rewritten_argument)
+            }
+        },
+        Value::Injection(side, body) => {
+            let rewritten = popped(results, AnyNode::Value(body)).value_or(body);
+            if rewritten == body {
+                id
+            }
+            else {
+                arena.value_injection(side, rewritten)
+            }
+        },
+        Value::Lift { ref target, body } => {
+            let rewritten = popped(results, AnyNode::Value(body)).value_or(body);
+            if rewritten == body {
+                id
+            }
+            else {
+                let target = target.clone();
+                arena.value_lift(target, rewritten)
+            }
+        },
+        Value::Thunk(body) => {
+            let rewritten = popped(results, AnyNode::Computation(body)).computation_or(body);
+            if rewritten == body {
+                id
+            }
+            else {
+                arena.value_thunk(rewritten)
+            }
+        },
+        Value::Quote(quoted) => {
+            let rewritten = popped(results, AnyNode::ValueType(quoted)).value_type_or(quoted);
+            if rewritten == quoted {
+                id
+            }
+            else {
+                arena.value_quote(rewritten)
+            }
+        },
+        Value::QuoteComputation(quoted) => {
+            let rewritten = popped(results, AnyNode::CompType(quoted)).comp_type_or(quoted);
+            if rewritten == quoted {
+                id
+            }
+            else {
+                arena.value_quote_computation(rewritten)
+            }
+        },
+    }
+}
+
+/// The rewritten form of one bound-variable occurrence.
+///
+/// The three cases of a substitution are the whole rule: an index strictly
+/// below the depth is bound inside the walk and stands; an index equal to the
+/// depth is the one being replaced, and the replacement is carried in under the
+/// binders crossed to reach here; an index above it named a slot outside the
+/// binder that is now gone, so it lowers by one. An unload's are the same
+/// three over a band of `width` binders: an index inside the band becomes the
+/// component it names, and an index past it lowers by the width.
+///
+/// # Specification
+/// - requires: `depth` counts crossed binders and `index` is this variable's
+///   index. A replaced occurrence at positive depth has already taken the
+///   carrying path and never reaches this close.
+/// - ensures: for a shift, the index rises by the amount exactly when it is at
+///   or above the cutoff measured from this depth, and stands otherwise, and a
+///   share moves it as a shift by one from no cutoff does; for a substitution,
+///   an index below the depth stands, an index equal to it becomes the
+///   replacement, and an index above it lowers by one; for an unload, an index
+///   below the depth stands, an index inside the band becomes the component it
+///   names, and an index past the band lowers by the width. Shift cutoffs and
+///   raised indices clamp at the representable ceiling.
+/// - provides: the whole variable rule of every machine, written once.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on indices below, at and above the cutoff or substituted
+///   binder, including zero shift and the u32 ceiling; exact variables,
+///   replacement identity and arena watermark separate scope errors, wrapping
+///   and allocating an unchanged occurrence. An unload's band is observed
+///   against substituting its binders one at a time.
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+#[spec(
+    requires: matches!(arena.value(id), Some(&Value::Variable(actual)) if actual == index),
+    requires: !matches!(rewrite, Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. })
+        || depth.0 == 0
+        || matches!(replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth), Maybe::Absent(())),
+    ensures: |ret| match rewrite {
+        Rewrite::Abstract { .. } => ret == id,
+        Rewrite::Shift { cutoff, amount } => {
+            if u32::from(index) < cutoff.0.saturating_add(depth.0)
+                || u32::from(index).saturating_add(amount.0) == u32::from(index) {
+                ret == id
+            } else {
+                arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(amount.0))))
+            }
+        },
+        Rewrite::Share { .. } => if u32::from(index) < depth.0 {
+            ret == id
+        } else {
+            arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(1))))
+        },
+        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => match u32::from(index).cmp(&depth.0) {
+            core::cmp::Ordering::Less => ret == id,
+            core::cmp::Ordering::Equal => ret == replacement,
+            core::cmp::Ordering::Greater => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_sub(1)))),
+        },
+        Rewrite::Rotate { band } => match u32::from(index).checked_sub(depth.0) {
+            Some(past) if past == band.0 => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(depth.0))),
+            Some(past) if past < band.0 => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(1)))),
+            Some(_) | None => ret == id,
+        },
+        Rewrite::Unload { width, .. } => match u32::from(index).checked_sub(depth.0) {
+            None => ret == id,
+            Some(past) if past < width.0 => match replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth) {
+                Maybe::Present(replacement) => ret == replacement,
+                Maybe::Absent(()) => ret == id,
+            },
+            Some(_) => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_sub(width.0)))),
+        },
+    },
+)]
+fn rewrite_variable(
+    arena: &mut TermArena,
+    rewrite: Rewrite,
+    id: ValueId,
+    index: DeBruijnIndex,
+    depth: BinderDepth,
+) -> ValueId
+{
+    let index = BinderDepth::from(u32::from(index));
+    match rewrite {
+        Rewrite::Abstract { .. } => id,
+        Rewrite::Shift { cutoff, amount } => {
+            shifted_variable(arena, id, (index, depth), (cutoff, amount))
+        },
+        // A share raises every free index by one, as a shift by one does.
+        Rewrite::Share { .. } => shifted_variable(
+            arena,
+            id,
+            (index, depth),
+            (BinderDepth::NONE, BinderDepth::NONE.deeper()),
+        ),
+        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
+            match index.cmp(&depth) {
+                core::cmp::Ordering::Less => id,
+                // Reached only at depth zero: every deeper occurrence answers
+                // through the scheduled carrying shift, which the engine takes
+                // before it ever schedules this close.
+                core::cmp::Ordering::Equal => replacement,
+                core::cmp::Ordering::Greater => {
+                    // index > depth >= 0, so removing this binder cannot
+                    // underflow.
+                    let lowered = u32::from(arith::sub(
+                        arith::Int::from(index.0),
+                        arith::Int::from(1_u32),
+                    ));
+                    arena.value_variable(DeBruijnIndex::from(lowered))
+                },
+            }
+        },
+        // The band's index moves innermost, to the bind's variable, and every
+        // free index inside the band rises past it; the rest stand.
+        Rewrite::Rotate { band } => match index.0.checked_sub(depth.0) {
+            Some(past) if past == band.0 => arena.value_variable(DeBruijnIndex::from(depth.0)),
+            Some(past) if past < band.0 => {
+                // reason: an index inside the band sits below the band's own,
+                // so one more stays representable.
+                let raised = u32::from(arith::saturating_add(
+                    arith::Int::from(index.0),
+                    arith::Int::from(1_u32),
+                ));
+                arena.value_variable(DeBruijnIndex::from(raised))
+            },
+            Some(_) | None => id,
+        },
+        // An unload's band answers by its components, reached only at depth
+        // zero as a substitution's binder is, and every index past the band
+        // lowers by its width.
+        Rewrite::Unload { width, .. } => match index.0.checked_sub(depth.0) {
+            Some(past) if past < width.0 => match replaced(arena, rewrite, index, depth) {
+                Maybe::Present(replacement) => replacement,
+                Maybe::Absent(()) => id,
+            },
+            Some(_) => {
+                // index >= depth + width, so lowering by the width cannot
+                // underflow.
+                let lowered = u32::from(arith::sub(
+                    arith::Int::from(index.0),
+                    arith::Int::from(width.0),
+                ));
+                arena.value_variable(DeBruijnIndex::from(lowered))
+            },
+            None => id,
+        },
+    }
+}
+
+/// A variable at `index` under `depth` crossed binders, shifted by `amount`
+/// from `cutoff`.
+///
+/// # Specification
+/// - requires: `id` is the variable at `index`.
+/// - ensures: `id` when the index is below the cutoff measured from this depth
+///   or the raise saturates to the same index; otherwise the variable at the
+///   index raised by the amount, clamped at the representable ceiling.
+/// - provides: the shift's variable rule, which a share uses too.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`rewrite_variable`]'s shift.
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+/// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
+#[spec(ensures: |ret| if index.0 < cutoff.0.saturating_add(depth.0)
+    || index.0.saturating_add(amount.0) == index.0 {
+    ret == id
+} else {
+    arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(index.0.saturating_add(amount.0))))
+})]
+fn shifted_variable(
+    arena: &mut TermArena,
+    id: ValueId,
+    (index, depth): (BinderDepth, BinderDepth),
+    (cutoff, amount): (BinderDepth, BinderDepth),
+) -> ValueId
+{
+    // reason: a cutoff beyond the index range uses its conservative ceiling.
+    let effective = BinderDepth(u32::from(arith::saturating_add(
+        arith::Int::from(cutoff.0),
+        arith::Int::from(depth.0),
+    )));
+    if index < effective {
+        id
+    }
+    else {
+        // reason: the shift specification clamps an out-of-range raised index.
+        let raised = u32::from(arith::saturating_add(
+            arith::Int::from(index.0),
+            arith::Int::from(amount.0),
+        ));
+        if raised == index.0 {
+            id
+        }
+        else {
+            arena.value_variable(DeBruijnIndex::from(raised))
+        }
+    }
+}
+
+/// Combine a computation node.
+///
+/// # Specification
+/// - requires: the results stack holds one outcome per child of `id`.
+/// - ensures: the rewritten computation id, minting a fresh node only where
+///   some child changed and answering `id` otherwise; an unreadable id answers
+///   itself.
+/// - provides: the computation arm of the combining half.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the rewritten computation node and its copied branches, growth
+///   within the node's children
+///
+/// # Adequacy
+/// - hypothesis: L3 on lambda, bind and case bodies plus unreadable roots;
+///   exact free indices and surviving binders distinguish mixed result order,
+///   lost binding scope and an invented result.
+/// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+/// - witness: `rewrite::tests::bind_and_case_rewrites_distinguish_binding_positions`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+#[spec(
+    captures: [before = results.len(), arity = arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
+Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5,
+Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3,
+Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
+Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
+Computation::With(ref components) => components.len(),
+Computation::ReturnAll(ref values) => values.len(),
+Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Transport(..) => 2,
+Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1,
+})],
+    ensures: |ret| results.len() == before.saturating_sub(arity) && arena.computation(id).map_or_else(|| ret == id, |node| arena.computation(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
+)]
+fn close_computation(
+    arena: &mut TermArena,
+    id: ComputationId,
+    results: &mut Vec<RewriteOutcome>,
+) -> ComputationId
+{
+    let Some(node) = arena.computation(id)
+    else {
+        return id;
+    };
+    match *node {
+        Computation::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+            equations,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in branches.iter().copied().enumerate().rev() {
+                let result =
+                    popped(results, AnyNode::Computation(original)).computation_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| branches.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let classifier = popped(results, AnyNode::CompType(motive)).comp_type_or(motive);
+            let value = popped(results, AnyNode::Value(scrutinee)).value_or(scrutinee);
+            if rewritten.is_none() && classifier == motive && value == scrutinee {
+                id
+            }
+            else {
+                arena.computation_data_case_with_equations(
+                    value,
+                    classifier,
+                    rewritten.unwrap_or_else(|| branches.clone()),
+                    equations,
+                )
+            }
+        },
+        Computation::SigmaSplit {
+            scrutinee,
+            motive,
+            body,
+        } => {
+            let rewritten_body = popped(results, AnyNode::Computation(body)).computation_or(body);
+            let rewritten_motive = popped(results, AnyNode::CompType(motive)).comp_type_or(motive);
+            let rewritten_scrutinee =
+                popped(results, AnyNode::Value(scrutinee)).value_or(scrutinee);
+            if rewritten_body == body
+                && rewritten_motive == motive
+                && rewritten_scrutinee == scrutinee
+            {
+                id
+            }
+            else {
+                arena.computation_sigma_split(rewritten_scrutinee, rewritten_motive, rewritten_body)
+            }
+        },
+        Computation::RecordProjection(record, ref label) => {
+            let value = popped(results, AnyNode::Value(record)).value_or(record);
+            if value == record {
+                id
+            }
+            else {
+                arena.computation_record_projection(value, label.clone())
+            }
+        },
+        Computation::TupleProjection(tuple, component) => {
+            let value = popped(results, AnyNode::Value(tuple)).value_or(tuple);
+            if value == tuple {
+                id
+            }
+            else {
+                arena.computation_tuple_projection(value, component)
+            }
+        },
+        Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => {
+            let new_cons = popped(results, AnyNode::Computation(on_cons)).computation_or(on_cons);
+            let new_nil = popped(results, AnyNode::Computation(on_nil)).computation_or(on_nil);
+            let new_list = popped(results, AnyNode::Value(list)).value_or(list);
+            let new_result = popped(results, AnyNode::ValueType(result)).value_type_or(result);
+            let new_element = popped(results, AnyNode::ValueType(element)).value_type_or(element);
+            if new_cons == on_cons
+                && new_nil == on_nil
+                && new_list == list
+                && new_result == result
+                && new_element == element
+            {
+                id
+            }
+            else {
+                arena.computation_list_fold(new_element, new_result, new_list, new_nil, new_cons)
+            }
+        },
+        Computation::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        } => {
+            let new_cons = popped(results, AnyNode::Computation(on_cons)).computation_or(on_cons);
+            let new_nil = popped(results, AnyNode::Computation(on_nil)).computation_or(on_nil);
+            let new_list = popped(results, AnyNode::Value(list)).value_or(list);
+            if new_cons == on_cons && new_nil == on_nil && new_list == list {
+                id
+            }
+            else {
+                arena.computation_list_case(new_list, new_nil, new_cons)
+            }
+        },
+        Computation::Transport(path, value) => {
+            let rewritten_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let rewritten_path = popped(results, AnyNode::Value(path)).value_or(path);
+            if rewritten_value == value && rewritten_path == path {
+                id
+            }
+            else {
+                arena.computation_transport(rewritten_path, rewritten_value)
+            }
+        },
+        Computation::PathTransport {
+            motive,
+            path,
+            value,
+        } => {
+            let rewritten_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let rewritten_path = popped(results, AnyNode::Value(path)).value_or(path);
+            let rewritten_motive =
+                popped(results, AnyNode::ValueType(motive)).value_type_or(motive);
+            if rewritten_value == value && rewritten_path == path && rewritten_motive == motive {
+                id
+            }
+            else {
+                arena.computation_path_transport(rewritten_motive, rewritten_path, rewritten_value)
+            }
+        },
+        Computation::Ride {
+            motive,
+            flow,
+            value,
+        } => {
+            let rewritten_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let rewritten_flow = popped(results, AnyNode::Value(flow)).value_or(flow);
+            let rewritten_motive =
+                popped(results, AnyNode::ValueType(motive)).value_type_or(motive);
+            if rewritten_value == value && rewritten_flow == flow && rewritten_motive == motive {
+                id
+            }
+            else {
+                arena.computation_ride(rewritten_motive, rewritten_flow, rewritten_value)
+            }
+        },
+        Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => {
+            let new_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let new_over = popped(results, AnyNode::Value(over)).value_or(over);
+            let new_start = popped(results, AnyNode::Value(start)).value_or(start);
+            let new_path = popped(results, AnyNode::Value(path)).value_or(path);
+            let new_motive = popped(results, AnyNode::CompType(motive)).comp_type_or(motive);
+            if new_value == value
+                && new_over == over
+                && new_start == start
+                && new_path == path
+                && new_motive == motive
+            {
+                id
+            }
+            else {
+                arena.computation_telescope_transport(
+                    new_motive, new_path, new_start, new_over, new_value,
+                )
+            }
+        },
+        Computation::TelescopeRide {
+            motive,
+            flow,
+            start,
+            over,
+            value,
+        } => {
+            let new_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let new_over = popped(results, AnyNode::Value(over)).value_or(over);
+            let new_start = popped(results, AnyNode::Value(start)).value_or(start);
+            let new_flow = popped(results, AnyNode::Value(flow)).value_or(flow);
+            let new_motive = popped(results, AnyNode::CompType(motive)).comp_type_or(motive);
+            if new_value == value
+                && new_over == over
+                && new_start == start
+                && new_flow == flow
+                && new_motive == motive
+            {
+                id
+            }
+            else {
+                arena.computation_telescope_ride(
+                    new_motive, new_flow, new_start, new_over, new_value,
+                )
+            }
+        },
+        Computation::RelatedApplication {
+            path,
+            left,
+            right,
+            evidence,
+            body,
+        } => {
+            let new_body = popped(results, AnyNode::Computation(body)).computation_or(body);
+            let new_evidence = popped(results, AnyNode::Value(evidence)).value_or(evidence);
+            let new_right = popped(results, AnyNode::Value(right)).value_or(right);
+            let new_left = popped(results, AnyNode::Value(left)).value_or(left);
+            let new_path = popped(results, AnyNode::Value(path)).value_or(path);
+            if new_body == body
+                && new_evidence == evidence
+                && new_right == right
+                && new_left == left
+                && new_path == path
+            {
+                id
+            }
+            else {
+                arena.computation_related_application(
+                    new_path,
+                    (new_left, new_right),
+                    new_evidence,
+                    new_body,
+                )
+            }
+        },
+        Computation::Lambda(body) => {
+            let rewritten = popped(results, AnyNode::Computation(body)).computation_or(body);
+            if rewritten == body {
+                id
+            }
+            else {
+                arena.computation_lambda(rewritten)
+            }
+        },
+        Computation::Fixpoint { body, evidence } => {
+            let rewritten = popped(results, AnyNode::Computation(body)).computation_or(body);
+            if rewritten == body {
+                id
+            }
+            else {
+                arena.computation_fixpoint(rewritten, evidence)
+            }
+        },
+        Computation::Application(head, argument) => {
+            let rewritten_argument = popped(results, AnyNode::Value(argument)).value_or(argument);
+            let rewritten_head = popped(results, AnyNode::Computation(head)).computation_or(head);
+            if rewritten_head == head && rewritten_argument == argument {
+                id
+            }
+            else {
+                arena.computation_application(rewritten_head, rewritten_argument)
+            }
+        },
+        Computation::Return(value) => {
+            let rewritten = popped(results, AnyNode::Value(value)).value_or(value);
+            if rewritten == value {
+                id
+            }
+            else {
+                arena.computation_return(rewritten)
+            }
+        },
+        Computation::Force(value) => {
+            let rewritten = popped(results, AnyNode::Value(value)).value_or(value);
+            if rewritten == value {
+                id
+            }
+            else {
+                arena.computation_force(rewritten)
+            }
+        },
+        Computation::Bind(bound, body) => {
+            let rewritten_body = popped(results, AnyNode::Computation(body)).computation_or(body);
+            let rewritten_bound =
+                popped(results, AnyNode::Computation(bound)).computation_or(bound);
+            if rewritten_bound == bound && rewritten_body == body {
+                id
+            }
+            else {
+                arena.computation_bind(rewritten_bound, rewritten_body)
+            }
+        },
+        Computation::BindAll { bound, arity, body } => {
+            let rewritten_body = popped(results, AnyNode::Computation(body)).computation_or(body);
+            let rewritten_bound =
+                popped(results, AnyNode::Computation(bound)).computation_or(bound);
+            if rewritten_bound == bound && rewritten_body == body {
+                id
+            }
+            else {
+                arena.computation_bind_all(rewritten_bound, arity, rewritten_body)
+            }
+        },
+        Computation::ReturnAll(ref values) => {
+            let mut rewritten = None;
+            for (index, original) in values.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| values.to_vec())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |values| arena.computation_return_all(&values))
+        },
+        Computation::With(ref components) => {
+            let mut rewritten = None;
+            for (index, original) in components.iter().copied().enumerate().rev() {
+                let result =
+                    popped(results, AnyNode::Computation(original)).computation_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| components.to_vec())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |components| arena.computation_with(&components))
+        },
+        Computation::Project(component, pair) => {
+            let rewritten = popped(results, AnyNode::Computation(pair)).computation_or(pair);
+            if rewritten == pair {
+                id
+            }
+            else {
+                arena.computation_project(component, rewritten)
+            }
+        },
+        Computation::Case {
+            scrutinee,
+            ref branches,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in branches.iter().copied().enumerate().rev() {
+                let result =
+                    popped(results, AnyNode::Computation(original)).computation_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| branches.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let value = popped(results, AnyNode::Value(scrutinee)).value_or(scrutinee);
+            if rewritten.is_none() && value == scrutinee {
+                id
+            }
+            else {
+                let branches = rewritten.unwrap_or_else(|| branches.clone());
+                arena.computation_case(value, &branches)
+            }
+        },
+    }
+}
+
+/// Combine a value-type node.
+///
+/// # Specification
+/// - requires: the results stack holds one outcome per child of `id`.
+/// - ensures: the rewritten value-type id, minting a fresh node only where some
+///   child changed and answering `id` otherwise; an unreadable id answers
+///   itself. Decoding a rewritten quotation returns its quoted type.
+/// - provides: the value-type arm of the combining half.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: a copy of the changed node's children and the fresh value-type
+///   node, growth within the value-type node's children
+///
+/// # Adequacy
+/// - hypothesis: L3 — rewriting consumes exactly its child outcomes; closed
+///   nodes retain their identities, while substituting a quote fires decoding.
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+/// - witness: `gandr-kernel-core::path_universe::tests::universe_fold_tests::universe_clause_is_native`
+/// - witness: `gandr-kernel-core::replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+/// - witness: `gandr-kernel-core::conv::rewrite_tests::session_rewrites_preserve_graph_evidence_and_native_children`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+#[spec(
+    captures: [before = results.len(), arity = arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {
+ValueType::Data { ref arguments, .. } => arguments.len(),
+ValueType::Record(ref fields) => fields.len(),
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
+ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } => 3,
+ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) => 2,
+ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Session { .. } | ValueType::Staged { .. } => 1,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0,
+}), element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
+    ensures: |ret| results.len() == before.saturating_sub(arity) && element.map_or_else(
+        || arena.value_type(id).map_or_else(|| ret == id, |node| arena.value_type(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
+        |code| match arena.value(code) { Some(&Value::Quote(quoted)) => ret == quoted, _ => matches!(arena.value_type(ret), Some(&ValueType::Element { code: found, .. }) if code == found) },
+    ),
+)]
+fn close_value_type(
+    arena: &mut TermArena,
+    id: ValueTypeId,
+    results: &mut Vec<RewriteOutcome>,
+) -> ValueTypeId
+{
+    let Some(node) = arena.value_type(id)
+    else {
+        return id;
+    };
+    match *node {
+        ValueType::Data {
+            declaration,
+            ref arguments,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in arguments.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| arguments.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |arguments| {
+                arena.value_type_data(declaration, arguments)
+            })
+        },
+        ValueType::Record(ref fields) => {
+            let mut rewritten = None;
+            for (label, original) in fields.iter().rev() {
+                let result =
+                    popped(results, AnyNode::ValueType(*original)).value_type_or(*original);
+                if result != *original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| fields.clone())
+                        .get_mut(label)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |fields| arena.value_type_record(fields))
+        },
+        ValueType::PathUniverse(source, target) => {
+            let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
+            let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
+            if rewritten_source == source && rewritten_target == target {
+                id
+            }
+            else {
+                arena.value_type_path_universe(rewritten_source, rewritten_target)
+            }
+        },
+        ValueType::FlowUniverse(source, target) => {
+            let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
+            let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
+            if rewritten_source == source && rewritten_target == target {
+                id
+            }
+            else {
+                arena.value_type_flow_universe(rewritten_source, rewritten_target)
+            }
+        },
+        ValueType::Path {
+            domain,
+            left,
+            right,
+        } => {
+            let rewritten_right = popped(results, AnyNode::Value(right)).value_or(right);
+            let rewritten_left = popped(results, AnyNode::Value(left)).value_or(left);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain && rewritten_left == left && rewritten_right == right {
+                id
+            }
+            else {
+                arena.value_type_path(rewritten_domain, rewritten_left, rewritten_right)
+            }
+        },
+        ValueType::Flow {
+            domain,
+            source,
+            target,
+        } => {
+            let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
+            let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain
+                && rewritten_source == source
+                && rewritten_target == target
+            {
+                id
+            }
+            else {
+                arena.value_type_flow(rewritten_domain, rewritten_source, rewritten_target)
+            }
+        },
+        ValueType::Bridge {
+            domain,
+            left,
+            right,
+        } => {
+            let rewritten_right = popped(results, AnyNode::Value(right)).value_or(right);
+            let rewritten_left = popped(results, AnyNode::Value(left)).value_or(left);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain && rewritten_left == left && rewritten_right == right {
+                id
+            }
+            else {
+                arena.value_type_bridge(rewritten_domain, rewritten_left, rewritten_right)
+            }
+        },
+        ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => id,
+        ValueType::Session {
+            ref graph,
+            payloads,
+        } => {
+            let rewritten = popped(results, AnyNode::ValueType(payloads)).value_type_or(payloads);
+            if rewritten == payloads {
+                id
+            }
+            else {
+                arena.value_type_session(Shared::clone(graph), rewritten)
+            }
+        },
+        ValueType::List(element) => {
+            let rewritten = popped(results, AnyNode::ValueType(element)).value_type_or(element);
+            if rewritten == element {
+                id
+            }
+            else {
+                arena.value_type_list(rewritten)
+            }
+        },
+        ValueType::Staged { base, stage } => {
+            let rewritten = popped(results, AnyNode::ValueType(base)).value_type_or(base);
+            if rewritten == base {
+                id
+            }
+            else {
+                arena.value_type_staged(rewritten, stage)
+            }
+        },
+        ValueType::Element { code, ref target } => {
+            let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
+            if rewritten == code {
+                id
+            }
+            else {
+                let target = target.clone();
+                arena.value_type_element(rewritten, target)
+            }
+        },
+        ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+            let product = matches!(*node, ValueType::Product(_));
+            let mut rewritten = None;
+            for (index, original) in parts.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::ValueType(original)).value_type_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| parts.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            match rewritten {
+                Some(parts) if product => arena.value_type_product(&parts),
+                Some(parts) => arena.value_type_sum(&parts),
+                None => id,
+            }
+        },
+        ValueType::StaticPi { domain, codomain } => {
+            let rewritten_codomain =
+                popped(results, AnyNode::ValueType(codomain)).value_type_or(codomain);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain && rewritten_codomain == codomain {
+                id
+            }
+            else {
+                arena.value_type_static_pi(rewritten_domain, rewritten_codomain)
+            }
+        },
+        ValueType::Sigma { first, second } => {
+            let rewritten_second =
+                popped(results, AnyNode::ValueType(second)).value_type_or(second);
+            let rewritten_first = popped(results, AnyNode::ValueType(first)).value_type_or(first);
+            if rewritten_first == first && rewritten_second == second {
+                id
+            }
+            else {
+                arena.value_type_sigma(rewritten_first, rewritten_second)
+            }
+        },
+        ValueType::Thunk(body) => {
+            let rewritten = popped(results, AnyNode::CompType(body)).comp_type_or(body);
+            if rewritten == body {
+                id
+            }
+            else {
+                arena.value_type_thunk(rewritten)
+            }
+        },
+        ValueType::Lift { inner, ref target } => {
+            let rewritten = popped(results, AnyNode::ValueType(inner)).value_type_or(inner);
+            if rewritten == inner {
+                id
+            }
+            else {
+                let target = target.clone();
+                arena.value_type_lift(rewritten, target)
+            }
+        },
+    }
+}
+
+/// Combine a computation-type node.
+///
+/// # Specification
+/// - requires: the results stack holds one outcome per child of `id`.
+/// - ensures: the rewritten computation-type id, minting a fresh node only
+///   where some child changed and answering `id` otherwise; an unreadable id
+///   answers itself.
+/// - provides: the computation-type arm of the combining half.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: a copy of the node's children and the rewritten
+///   computation-type node, growth within the node's children
+///
+/// # Adequacy
+/// - hypothesis: L3 on a closed returner, a dependent code decode and
+///   unreadable roots; exact resulting types distinguish omitted substitution,
+///   mismatched children and a fabricated fallback.
+/// - witness: `rewrite::tests::a_closed_type_instantiates_to_itself`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+#[spec(captures: before = results.len(),
+    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, CompType::With(ref components) => components.len(), CompType::Returns(ref results) => results.len(), CompType::Returner(_) | CompType::Element { .. } => 1, CompType::Codata { ref arguments, .. } => arguments.len() }))
+        && arena.comp_type(id).map_or(ret == id, |source| matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
+            core::mem::discriminant(source) == core::mem::discriminant(result))))]
+fn close_comp_type(
+    arena: &mut TermArena,
+    id: CompTypeId,
+    results: &mut Vec<RewriteOutcome>,
+) -> CompTypeId
+{
+    let Some(node) = arena.comp_type(id)
+    else {
+        return id;
+    };
+    match *node {
+        CompType::Returner(result) => {
+            let rewritten = popped(results, AnyNode::ValueType(result)).value_type_or(result);
+            if rewritten == result {
+                id
+            }
+            else {
+                arena.comp_type_returner(rewritten)
+            }
+        },
+        CompType::Returns(ref outcomes) => {
+            let mut rewritten = None;
+            for (index, original) in outcomes.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::ValueType(original)).value_type_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| outcomes.to_vec())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |outcomes| arena.comp_type_returns(&outcomes))
+        },
+        CompType::Arrow { domain, codomain } => {
+            let rewritten_codomain =
+                popped(results, AnyNode::CompType(codomain)).comp_type_or(codomain);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain && rewritten_codomain == codomain {
+                id
+            }
+            else {
+                arena.comp_type_arrow(rewritten_domain, rewritten_codomain)
+            }
+        },
+        CompType::Pi { domain, codomain } => {
+            let rewritten_codomain =
+                popped(results, AnyNode::CompType(codomain)).comp_type_or(codomain);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain && rewritten_codomain == codomain {
+                id
+            }
+            else {
+                arena.comp_type_pi(rewritten_domain, rewritten_codomain)
+            }
+        },
+        // As at the value decode: a substituted quote fires the decoding rule
+        // in the constructor, so the rewrite never leaves the redex behind.
+        CompType::Element { code, ref target } => {
+            let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
+            if rewritten == code {
+                id
+            }
+            else {
+                let target = target.clone();
+                arena.comp_type_element(rewritten, target)
+            }
+        },
+        CompType::With(ref components) => {
+            let mut rewritten = None;
+            for (index, original) in components.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::CompType(original)).comp_type_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| components.to_vec())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |components| arena.comp_type_with(&components))
+        },
+        CompType::Codata {
+            declaration,
+            ref arguments,
+        } => {
+            let mut rewritten = None;
+            for (index, original) in arguments.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| arguments.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            rewritten.map_or(id, |arguments| {
+                arena.comp_type_codata(declaration, arguments)
+            })
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests;

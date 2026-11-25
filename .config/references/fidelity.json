@@ -1,0 +1,207 @@
+[
+  {
+    "name": "a recorded site citing its newest work and a dependency by key lines, with its traced works, keeps its record",
+    "cite": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tNew-2025-a_work\tdemo-crate\tmemo\tnewest\tcrates/demo-crate/src/memo.rs:4",
+      "cite\tDep-2024-a_theorem\tdemo-crate\tmemo\tdependency\tcrates/demo-crate/src/memo.rs:5"
+    ],
+    "corpus": [],
+    "fidelity": [
+      {
+        "crate": "demo-crate",
+        "module": "memo",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "scope": "whole"
+      }
+    ],
+    "output": []
+  },
+  {
+    "name": "a historical site with no follow-up is refused, and one naming its refactor is not",
+    "cite": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tNew-2025-a_work\tdemo-crate\tmemo\tnewest\tcrates/demo-crate/src/memo.rs:4",
+      "cite\tNew-2025-a_work\tdemo-crate\t\tnewest\tcrates/demo-crate/src/lib.rs:4"
+    ],
+    "corpus": [],
+    "fidelity": [
+      {
+        "crate": "demo-crate",
+        "module": "memo",
+        "old": "Old-2001-a_work",
+        "verdict": "historical",
+        "followed": "Dep-2024-a_theorem",
+        "scope": "whole"
+      },
+      {
+        "crate": "demo-crate",
+        "module": "",
+        "old": "Old-2001-a_work",
+        "verdict": "historical",
+        "follow_up": 4700,
+        "followed": "Dep-2024-a_theorem",
+        "scope": "whole"
+      }
+    ],
+    "output": [
+      "ledger/references.sql: demo-crate::memo is historical against `Old-2001-a_work` with no follow-up; file the refactor that brings it to the newest work's framing, and write its number in `follow_up`"
+    ]
+  },
+  {
+    "name": "a site citing one work with nothing traced from it is refused",
+    "cite": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tNew-2025-a_work\tdemo-crate\tmemo\tnewest\tcrates/demo-crate/src/memo.rs:4"
+    ],
+    "corpus": [],
+    "fidelity": [
+      {
+        "crate": "demo-crate",
+        "module": "memo",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "scope": "whole"
+      }
+    ],
+    "output": [
+      "ledger/references.sql: demo-crate::memo cites one work and its `followed` is empty; trace every work the newest one cites and write them there"
+    ]
+  },
+  {
+    "name": "a narrower newest work needs an anchor the site cites as anchor, or the statement that none exists",
+    "cite": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tNew-2025-a_case\tdemo-crate\tmemo\tnewest\tcrates/demo-crate/src/memo.rs:4",
+      "cite\tAnchor-2023-the_statement\tdemo-crate\tmemo\tdependency\tcrates/demo-crate/src/memo.rs:5",
+      "cite\tNew-2025-a_case\tdemo-crate\t\tnewest\tcrates/demo-crate/src/lib.rs:4",
+      "cite\tOther-2024-x\tdemo-crate\t\tdependency\tcrates/demo-crate/src/lib.rs:5"
+    ],
+    "corpus": [],
+    "fidelity": [
+      {
+        "crate": "demo-crate",
+        "module": "memo",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "scope": "narrower",
+        "anchor": "Anchor-2023-the_statement"
+      },
+      {
+        "crate": "demo-crate",
+        "module": "",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "scope": "narrower"
+      }
+    ],
+    "output": [
+      "ledger/references.sql: demo-crate's newest work is narrower than the site, and the row names no anchor; cite the central statement it specialises as `anchor`, or state in `unanchored` that the citation window holds none",
+      "ledger/references.sql: demo-crate::memo names `Anchor-2023-the_statement` its anchor, and cites it as no `anchor`; give its key line the role `anchor`"
+    ]
+  },
+  {
+    "name": "a recorded site still citing the work the refresh replaced is refused",
+    "cite": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tNew-2025-a_work\tdemo-crate\tmemo\tnewest\tcrates/demo-crate/src/memo.rs:4",
+      "cite\tOld-2001-a_work\tdemo-crate\tmemo\texemplar\tcrates/demo-crate/src/memo.rs:5"
+    ],
+    "corpus": [],
+    "fidelity": [
+      {
+        "crate": "demo-crate",
+        "module": "memo",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "followed": "Dep-2024-a_theorem",
+        "scope": "whole"
+      }
+    ],
+    "output": [
+      "crates/demo-crate/src/memo.rs:5: demo-crate::memo still cites `Old-2001-a_work`, the work the refresh replaced; delete the citation"
+    ]
+  },
+  {
+    "name": "lineage, background and a bare locator are refused at a recorded site, and kept at a site no row records",
+    "cite": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tNew-2025-a_work\tdemo-crate\tmemo\tnewest\tcrates/demo-crate/src/memo.rs:4",
+      "cite\tLine-2019-a_root\tdemo-crate\tmemo\tlineage\tcrates/demo-crate/src/memo.rs:5",
+      "cite\tBack-2020-context\tdemo-crate\tmemo\tbackground\tcrates/demo-crate/src/memo.rs:6",
+      "locator\tdoi:10.1145/1\tdemo-crate\tmemo\tbackground\tcrates/demo-crate/src/memo.rs:9",
+      "cite\tLine-2019-a_root\tdemo-crate\t\tlineage\tcrates/demo-crate/src/lib.rs:5",
+      "locator\tdoi:10.1145/1\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:9"
+    ],
+    "corpus": [],
+    "fidelity": [
+      {
+        "crate": "demo-crate",
+        "module": "memo",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "scope": "whole"
+      }
+    ],
+    "output": [
+      "crates/demo-crate/src/memo.rs:5: `Line-2019-a_root` is cited as lineage at demo-crate::memo, which the refresh records; give it the role the site takes from it, newest, dependency, anchor or exemplar",
+      "crates/demo-crate/src/memo.rs:6: `Back-2020-context` is cited as background at demo-crate::memo, which the refresh records; give it the role the site takes from it, newest, dependency, anchor or exemplar",
+      "crates/demo-crate/src/memo.rs:9: `doi:10.1145/1` is a bare locator at demo-crate::memo, which the refresh records; cite it by a key line with its role, or delete it"
+    ]
+  },
+  {
+    "name": "a row whose site the tree no longer holds is refused, a crate's module or a corpus source",
+    "cite": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs"
+    ],
+    "corpus": ["corpus/model/held.gandr"],
+    "fidelity": [
+      {
+        "crate": "demo-crate",
+        "module": "gone",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "followed": "X",
+        "scope": "whole"
+      },
+      {
+        "crate": "corpus",
+        "module": "model/gone.gandr",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "followed": "X",
+        "scope": "whole"
+      }
+    ],
+    "output": [
+      "ledger/references.sql: the fidelity row of corpus/model/gone.gandr and `Old-2001-a_work` names a site the tree no longer holds; delete the row",
+      "ledger/references.sql: the fidelity row of demo-crate::gone and `Old-2001-a_work` names a site the tree no longer holds; delete the row"
+    ]
+  },
+  {
+    "name": "a recorded corpus source cites by locator and keeps its record",
+    "cite": [
+      "corpus\tdoi:10.1145/2\tcorpus\tmodel/held.gandr\tbackground\tcorpus/model/held.gandr:3"
+    ],
+    "corpus": ["corpus/model/held.gandr"],
+    "fidelity": [
+      {
+        "crate": "corpus",
+        "module": "model/held.gandr",
+        "old": "Old-2001-a_work",
+        "verdict": "current",
+        "followed": "doi:10.1145/3",
+        "scope": "whole"
+      }
+    ],
+    "output": []
+  }
+]

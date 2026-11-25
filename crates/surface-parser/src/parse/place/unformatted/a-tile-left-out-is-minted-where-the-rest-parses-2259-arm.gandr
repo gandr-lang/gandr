@@ -1,0 +1,5 @@
+def classify(n : Integer) -> -F Integer {
+  match n {
+    | ?branch  return 1
+  }
+}

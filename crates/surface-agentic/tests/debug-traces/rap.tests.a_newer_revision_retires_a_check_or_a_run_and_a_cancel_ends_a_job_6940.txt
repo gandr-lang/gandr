@@ -1,0 +1,130 @@
+test: rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940
+package: gandr-surface-mcp
+command: mise run debug:test gandr-surface-mcp rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940 --break rap::tests::resultless
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-mcp/9c396d268b74d430/out/gandr_surface_mcp-9c396d268b74d430"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-mcp/9c396d268b74d430/out/gandr_surface_mcp-9c396d268b74d430' (x86_64).
+(lldb) settings set -- target.run-args  "rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex rap::tests::resultless
+Breakpoint 1: where = gandr_surface_mcp-9c396d268b74d430`gandr_surface_mcp::rap::tests::resultless + 29 at rap.rs:3114:14, address = 0x000000000167ce5d
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_mcp-9c396d268b74d430`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000006262768
+(lldb) run
+
+running 1 test
+test rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1428065 launched: 'target/debug-trace/debug/build/gandr-surface-mcp/9c396d268b74d430/out/gandr_surface_mcp-9c396d268b74d430' (x86_64)
+Process 1428065 stopped
+* thread #2, name = 'rap::tests::a_n', stop reason = breakpoint 1.1
+       frame #0: 0x0000555556bd0e5d gandr_surface_mcp-9c396d268b74d430`gandr_surface_mcp::rap::tests::resultless(callback={__0:{inner:{0:{0:{fd:{…}}}}}}, wait={secs:0, nanos:{0:300000000}}) at rap.rs:3114:14
+   3111	    ) -> Answer
+   3112	    {
+   3113	        callback
+-> 3114	            .set_nonblocking(true)
+    	             ^
+   3115	            .expect("the listener stops blocking");
+   3116	        let started = std::time::Instant::now();
+   3117	        let mut resultless = Answer(true);
+(lldb) bt 24
+* thread #2, name = 'rap::tests::a_n', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555556bd0e5d gandr_surface_mcp-9c396d268b74d430`gandr_surface_mcp::rap::tests::resultless(callback={__0:{inner:{0:{0:{fd:{…}}}}}}, wait={secs:0, nanos:{0:300000000}}) at rap.rs:3114:14
+     frame #1: 0x0000555556c03024 gandr_surface_mcp-9c396d268b74d430`gandr_surface_mcp::rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940 at rap.rs:4397:13
+     frame #2: 0x0000555556bbf6f7 gandr_surface_mcp-9c396d268b74d430`gandr_surface_mcp::rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940::{closure#0}((null)={}) at rap.rs:4316:80
+     frame #3: 0x0000555556df7ee6 gandr_surface_mcp-9c396d268b74d430`<gandr_surface_mcp::rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000555556e9986b gandr_surface_mcp-9c396d268b74d430`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x0000555556e99869 gandr_surface_mcp-9c396d268b74d430`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #6: 0x0000555556ea6db5 gandr_surface_mcp-9c396d268b74d430`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #7: 0x0000555556ea6db0 gandr_surface_mcp-9c396d268b74d430`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555556ea6db0 gandr_surface_mcp-9c396d268b74d430`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #9: 0x0000555556ea6d9b gandr_surface_mcp-9c396d268b74d430`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #10: 0x0000555556ea6d9b gandr_surface_mcp-9c396d268b74d430`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x0000555556ea6d9b gandr_surface_mcp-9c396d268b74d430`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #12: 0x0000555556ea6d86 gandr_surface_mcp-9c396d268b74d430`test::run_test::{closure#0} at lib.rs:677:43
+     frame #13: 0x0000555556ea1774 gandr_surface_mcp-9c396d268b74d430`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #14: 0x0000555556ea16f9 gandr_surface_mcp-9c396d268b74d430`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x0000555556ea9f12 gandr_surface_mcp-9c396d268b74d430`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x0000555556ea9f03 gandr_surface_mcp-9c396d268b74d430`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x0000555556ea9f03 gandr_surface_mcp-9c396d268b74d430`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #18: 0x0000555556ea9ef3 gandr_surface_mcp-9c396d268b74d430`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x0000555556ea9ef3 gandr_surface_mcp-9c396d268b74d430`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x0000555556ea9ef3 gandr_surface_mcp-9c396d268b74d430`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x0000555556ea9ee4 gandr_surface_mcp-9c396d268b74d430`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555b7de11f gandr_surface_mcp-9c396d268b74d430`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #23: 0x000055555b7de118 gandr_surface_mcp-9c396d268b74d430`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+(lldb) frame variable --depth 3
+(std::net::tcp::TcpListener *) callback = 0x00007ffff79fc75c {__0:{inner:{0:{0:{fd:{…}}}}}}
+(core::time::Duration) wait = {secs:0, nanos:{0:300000000}}
+(lldb) up
+frame #1: 0x0000555556c03024 gandr_surface_mcp-9c396d268b74d430`gandr_surface_mcp::rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940 at rap.rs:4397:13
+   4394	        // start or the change retired it, the run delivers no result of its
+   4395	        // own after it.
+   4396	        assert_eq!(
+-> 4397	            resultless(&callback, Duration::from_millis(300)),
+    	            ^
+   4398	            Answer(true),
+   4399	            "a retired run delivers no result of its own"
+   4400	        );
+(lldb) frame variable --depth 3
+(gandr_surface_mcp::face::tests::Scratch) scratch = {0:"/tmp/gm-1428065-rap-retired"}
+(std::net::tcp::TcpListener) callback = {0:{inner:{0:{0:{fd:{…}}}}}}
+(serde_json::value::Value) uri = String("file:///tmp/wait/held.gandr") {
+  0 = "file:///tmp/wait/held.gandr" {
+    [0] = 'f'
+    [1] = 'i'
+    [2] = 'l'
+    [3] = 'e'
+    [4] = ':'
+    [5] = '/'
+    [6] = '/'
+    [7] = '/'
+    [8] = 't'
+    [9] = 'm'
+    [10] = 'p'
+    [11] = '/'
+    [12] = 'w'
+    [13] = 'a'
+    [14] = 'i'
+    [15] = 't'
+    ...
+  }
+}
+(alloc::sync::Arc<gandr_surface_mcp::rap::tests::Echoing, alloc::alloc::Global>) verbs = strong=1, weak=0 {
+  data = {walking:{inner:{flavor:List({counter:{…}})}}}
+}
+(std::sync::mpsc::Receiver<void>) walks = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(gandr_surface_mcp::rap::Toolset) toolset = {listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, views:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"�"}}, table:{path:"/tmp/gm-1428065-rap-retired/state/subscriptions.json", written:{inner:{futex:{v:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}, verbs:Some(strong=1, weak=0)}
+(core::net::socket_addr::SocketAddr) address = V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:43865}) {
+  0 = {ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:43865}
+}
+(gandr_surface_mcp::face::tests::Editor) editor = {writing:{0:{0:{0:{fd:{…}}}}}, reading:{buf:{buf:{data_ptr:{None:(…), value:{…}}, length:8192}, pos:159, filled:159, initialized:false}, inner:{0:{0:{0:{…}}}}}}
+(serde_json::value::Value) callback_url = String("http://127.0.0.1:34369/results/retired") {
+  0 = "http://127.0.0.1:34369/results/retired" {
+    [0] = 'h'
+    [1] = 't'
+    [2] = 't'
+    [3] = 'p'
+    [4] = ':'
+    [5] = '/'
+    [6] = '/'
+    [7] = '1'
+    [8] = '2'
+    [9] = '7'
+    [10] = '.'
+    [11] = '0'
+    [12] = '.'
+    [13] = '0'
+    [14] = '.'
+    [15] = '1'
+    ...
+  }
+}
+(gandr_surface_mcp::rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940::{closure_env#0}) start = {}
+(gandr_surface_mcp::rap::tests::Message) acknowledged = {head:"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close", body:size=0}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.

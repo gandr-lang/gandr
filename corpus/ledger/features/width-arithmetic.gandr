@@ -1,0 +1,48 @@
+/// `width-arithmetic`: arithmetic on a width that stops at the end of its range.
+///
+/// Implemented: `std.overflow` declares `Overflow.Eff`.
+/// Its one operation `overflow` passes no continuation.
+/// A clause of that operation abandons the continuation, then gives its body.
+/// The reason names the operation and its cause.
+/// A scope at the site gives the reason in the place of the answer.
+///
+/// Not implemented: the plain operators on a width do not perform it.
+/// The library also lacks one handler for each answer type.
+///
+/// - owes: #8156
+/// - owes: #8167
+/// - see: #7968
+// A step written by hand adds two `u8` values. Out of the range, it performs an
+// overflow of `add`. A scope at the site gives the reason, and a sum in the
+// range gives its value.
+
+import std.overflow (Overflow, Reason, Overflowed);
+
+/// The sum of two `u8` values, or the overflow of `add`.
+def addU8(a : u8, b : u8) -> [o : Overflow.Eff with sort R = Reason] u8 =
+  let sum = u8.to_integer a + u8.to_integer b;
+  match sum <= 255 where
+    | true => u8.from_integer sum
+    | false => o.overflow (Reason "add" Overflowed)
+
+/// `255u8` and `1u8` give the reason of an overflow of `add`.
+@[runs("+{.1 = Reason \"add\" Overflowed}")]
+def overflowed() -> u8 + Reason =
+  handle o : Overflow.Eff with sort R = Reason {
+    let s = addU8 255u8 1u8;
+    pure +{.0 = s}
+  } with {
+    | pure(x) => pure x
+    | oper overflow(r) => pure +{.1 = r}
+  }
+
+/// `200u8` and `1u8` give their sum.
+@[runs("+{.0 = 201u8}")]
+def summed() -> u8 + Reason =
+  handle o : Overflow.Eff with sort R = Reason {
+    let s = addU8 200u8 1u8;
+    pure +{.0 = s}
+  } with {
+    | pure(x) => pure x
+    | oper overflow(r) => pure +{.1 = r}
+  }

@@ -1,0 +1,7 @@
+data NatAdd : Type where {
+    | Zero : NatAdd
+    | Succ : (n : NatAdd) --> NatAdd
+    oper add : (m : NatAdd, n : NatAdd) --> NatAdd;
+    rule : add (Succ m) n ==> Succ (add m n);
+    rule : add Zero n ==> n;
+        }

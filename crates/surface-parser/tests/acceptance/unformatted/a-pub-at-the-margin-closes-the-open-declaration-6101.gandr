@@ -1,0 +1,11 @@
+pub def rec runState(e : Type, a : Type, p : Prog (Either StateOp e) a, s : Integer) -> Prog e a =
+  match p where
+     Done(x) => (Done x : Prog e a)
+    | Op(o, k) => match o where
+      | Left(Get) => runState[<] e a (k s) s
+      | Left(Put(t)) => runState[<] e a (k 0) t
+      | Right(other) => (Op other (fun (r) {{
+        runState[<] e a (k r) s
+      }}) : Prog e a)
+
+{follower}

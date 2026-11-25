@@ -1,0 +1,2478 @@
+//! The diagram view: wires, generators, the interface a rewrite is taken
+//! relative to, the validated [`Wiring`], and the seam datum that stands where
+//! a position stood.
+//!
+//! # Diagrams with interfaces
+//!
+//! A circuit rewrite rewrites a diagram *with an interface*: the interface of
+//! a diagram is the coproduct of its input and output ports, and the rewriting
+//! theory this view serves — convex double-pushout rewriting of monogamous
+//! acyclic hypergraphs with interfaces — states every result relative to it.
+//! The hypergraph's nodes are [`Wire`]s and its hyperedges are [`Generator`]s,
+//! addressed by [`Edge`] position; the naming follows the theory because every
+//! condition this module enforces is stated there.
+//!
+//! # The fragment's hypotheses are invariants of the type
+//!
+//! [`Wiring::assemble`] is the only public constructor of a [`Wiring`], and it
+//! refuses anything outside the fragment the theory quantifies over:
+//!
+//! - **monogamy**: in-degree and out-degree at most one on every wire, so a
+//!   wire is never combined (fan-in) or copied (fan-out);
+//! - **mono boundary legs**: neither port list repeats a wire;
+//! - **declared open ports**: a boundary input has no producer, a boundary
+//!   output has no consumer, and every wire with no producer or no consumer is
+//!   declared on the matching leg;
+//! - **acyclicity**: no directed cycle.
+//!
+//! Each refusal is a [`WiringObstruction`] naming the wire or generator that
+//! caused it. Checking at construction rather than at match time is what makes
+//! the hypotheses of every quoted theorem — the convex correspondence, the
+//! uniqueness of boundary complements, and the automatic convexity of a
+//! strongly connected match over an acyclic target — properties no caller can
+//! route around.
+//!
+//! Inside the crate, [`assemble_monogamous`] makes the carrier of the spider
+//! normal form. It checks every condition but acyclicity, because fusion can
+//! close a loop through a spider. No such value leaves the crate.
+//!
+//! # The seam is a pair of partial bijections
+//!
+//! A match into a tree is addressed by one path of child indices. A match into
+//! a circuit is addressed by where the pattern's interface lands on the
+//! target's wires, the input half and the output half kept apart: a [`Seam`] is
+//! that pair, and a [`PartialBijection`] is one half.
+//!
+//! # A derived index, not a carrier
+//!
+//! A [`Wiring`] is the matcher's working view of a diagram. It holds nothing a
+//! diagram's port-bijection representation does not already hold, and nothing
+//! in this crate reads a wiring back out as a term.
+//!
+//! # The fragment, at construction
+//!
+//! `Wiring::assemble` refuses a diagram outside the monogamous acyclic
+//! fragment: an undeclared wire on a generator or the interface, a wire with
+//! two producers or two consumers (a repeated port on one generator counts), a
+//! repeated interface port, a produced input, a consumed output, an open wire
+//! the interface does not declare, and a directed cycle. Every theorem the
+//! matcher quotes — that one assigned wire forces its neighbours, that the
+//! discharge route is sound, that a re-closed body is never a target — has
+//! these as hypotheses, and holding them as an invariant of the type means no
+//! function here re-checks them and no caller can pass a diagram that breaks
+//! them.
+//!
+//! The cycle refusal names a generator on the cycle. The first generator a
+//! topological sort leaves unsettled can sit downstream of a cycle without
+//! being on it, so the refusal walks back from that generator until it closes a
+//! loop and names a member of the loop. Witness:
+//! `interface::tests::the_wiring_refuses_a_directed_cycle`, whose fixture lists
+//! the downstream generator first.
+//!
+//! # Generator labels
+//!
+//! A label is a name together with the role the name is worn in — a value
+//! constructor, an operation frame, a return-side frame, the terminal `★`, or a
+//! fired rewrite (`GeneratorSort`). Two boxes of one spelling in different
+//! roles are two generators: a return-side frame `K⁻(c)` and a nullary
+//! operation frame `K(; c)` share a name and an arity, and a name-only label
+//! would match one against the other where the one-sided matcher refuses both.
+//! The differential against that matcher carries the two rows that separate
+//! them.
+//!
+//! # Boundary wrappers
+//!
+//! Every count, index, budget and verdict a signature here crosses is a
+//! transparent wrapper of this crate's own (`WireCount`, `EdgeCount`,
+//! `PairCount`, `ComponentIndex`, `MatchBudget`, `SearchSteps`, `MatchCount`,
+//! `AdmittedIndex`, …), converting with `From` both ways. `Wire` and `Edge` are
+//! wrappers too, so a wire is never passed where a generator position is
+//! expected. The substrate's wrappers stay the substrate's: one shared
+//! vocabulary would make every budget here a substrate change.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — background: the programme's
+//!   design for the iterated site (§ The design), one site under the wreath
+//!   product, where the acyclicity refusal is the pinwheel's at every level.
+
+pub mod spine;
+
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use quenchant_shape::shape::Maybe;
+
+wrapper! {
+    /// A wire: one node of the hypergraph a diagram reads as, addressed by its
+    /// index below the diagram's [`WireCount`].
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Wire(usize);
+}
+
+wrapper! {
+    /// A hyperedge: one generator occurrence, addressed by its position in the
+    /// diagram's generator list.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Edge(usize);
+}
+
+wrapper! {
+    /// How many wires a diagram declares.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct WireCount(usize);
+}
+
+wrapper! {
+    /// How many generator occurrences a diagram holds.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct EdgeCount(usize);
+}
+
+wrapper! {
+    /// How many pairs a [`PartialBijection`] carries.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct PairCount(usize);
+}
+
+wrapper! {
+    /// Which weakly connected component of a diagram a query names.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ComponentIndex(usize);
+}
+
+wrapper! {
+    /// How many weakly connected components a diagram's generators fall into.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ComponentCount(usize);
+}
+
+impl WireCount
+{
+    /// Whether `wire` is one of the wires this count declares.
+    ///
+    /// # Specification
+    /// - ensures: [`Declaration::Declared`] exactly when `wire`'s index is
+    ///   below the count.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid, first-past and empty wire sets are observed
+    ///   through typed incidence and construction refusals. Inverting the
+    ///   comparison or admitting the first absent wire changes these outcomes;
+    ///   the count is the declared domain.
+    /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    /// - witness: `interface::tests::the_wiring_refuses_an_out_of_range_generator_wire`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(ensures: |answer| (answer == Declaration::Declared) == (wire.0 < self.0))]
+    #[inline]
+    fn declares(
+        self,
+        wire: Wire,
+    ) -> Declaration
+    {
+        if wire.0 < self.0 {
+            Declaration::Declared
+        }
+        else {
+            Declaration::Undeclared
+        }
+    }
+
+    /// The declared wires, in index order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn wires(self) -> impl Iterator<Item = Wire>
+    {
+        (0 .. self.0).map(Wire)
+    }
+}
+
+/// Whether a wire lies below a diagram's wire count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Declaration
+{
+    /// The wire is one of the diagram's.
+    Declared,
+    /// The wire is at or past the count.
+    Undeclared,
+}
+
+/// A generator's name: the box's label in the picture.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct GeneratorName(Box<str>);
+
+impl GeneratorName
+{
+    /// A generator name from any name convertible into one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<N>(name: N) -> Self
+    where
+        N: Into<Self>,
+    {
+        name.into()
+    }
+}
+
+impl From<&str> for GeneratorName
+{
+    /// The name spelled by `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: &str) -> Self
+    {
+        Self(name.into())
+    }
+}
+
+impl From<String> for GeneratorName
+{
+    /// The name spelled by `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: String) -> Self
+    {
+        Self(name.into_boxed_str())
+    }
+}
+
+impl AsRef<str> for GeneratorName
+{
+    /// The name's spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        &self.0
+    }
+}
+
+impl core::fmt::Display for GeneratorName
+{
+    /// Writes the name's spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
+/// The syntactic role a generator's name is worn in.
+///
+/// A name alone does not identify a generator: the sequent alphabet's
+/// constructor `K` and an operation spelled `K` are two different boxes, in
+/// general of one arity, so a label that forgot the role would let a pattern's
+/// producer match a target's consumer frame. A diagram with no such distinction
+/// to make uses [`GeneratorSort::Value`] throughout.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GeneratorSort
+{
+    /// A value-side generator: the sequent alphabet's constructor `K(p̄)`.
+    Value,
+    /// An operation frame: the sequent alphabet's `f(p̄; c)`.
+    Operation,
+    /// A return-side constructor frame: the sequent alphabet's `K⁻(c)`.
+    Return,
+    /// A closed terminal: the sequent alphabet's `★`, a generator consuming a
+    /// wire and producing none, never an open port.
+    Terminal,
+    /// An applied rewrite: a declared circuit rule fired in a body. A rewrite
+    /// and an operation of one spelling are two different boxes.
+    Rewrite,
+    /// A spider of a special commutative Frobenius algebra on the wire sort
+    /// that its name names. The merge, the split, the unit and the counit are
+    /// spiders. Its sources have no order among themselves, and its targets
+    /// have none. The decision modulo the Frobenius laws reads them so; every
+    /// other procedure reads the order that the presentation writes.
+    Spider,
+}
+
+/// The label a generator carries: a name together with the role it is worn
+/// in.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct GeneratorLabel
+{
+    /// The generator's name.
+    name: GeneratorName,
+    /// The role the name is worn in.
+    sort: GeneratorSort,
+}
+
+impl GeneratorLabel
+{
+    /// A label from a name and a role.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<N>(
+        name: N,
+        sort: GeneratorSort,
+    ) -> Self
+    where
+        N: Into<GeneratorName>,
+    {
+        Self {
+            name: name.into(),
+            sort,
+        }
+    }
+
+    /// The generator's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn name(&self) -> &GeneratorName
+    {
+        &self.name
+    }
+
+    /// The role the name is worn in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn sort(&self) -> GeneratorSort
+    {
+        self.sort
+    }
+}
+
+/// One generator occurrence: its label and its ordered ports.
+///
+/// Port order is carried rather than quotiented: no symmetry acts within a
+/// generator, so ordering its ports gives nothing up, and an embedding
+/// preserves it. A [`GeneratorSort::Spider`] is the one exception, and only the
+/// decision modulo the Frobenius laws quotients its order. The derived order is
+/// lexicographic on `(label, sources, targets)`, an order on presentations and
+/// never a claim about diagrams.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Generator
+{
+    /// The label this occurrence carries.
+    label: GeneratorLabel,
+    /// The ordered source wires: the generator's inputs.
+    sources: Box<[Wire]>,
+    /// The ordered target wires: the generator's outputs.
+    targets: Box<[Wire]>,
+}
+
+impl Generator
+{
+    /// A generator occurrence from its label and its two ordered port lists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<Sources, Targets>(
+        label: GeneratorLabel,
+        sources: Sources,
+        targets: Targets,
+    ) -> Self
+    where
+        Sources: Into<Box<[Wire]>>,
+        Targets: Into<Box<[Wire]>>,
+    {
+        Self {
+            label,
+            sources: sources.into(),
+            targets: targets.into(),
+        }
+    }
+
+    /// The label this occurrence carries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn label(&self) -> &GeneratorLabel
+    {
+        &self.label
+    }
+
+    /// The ordered source wires.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn sources(&self) -> &[Wire]
+    {
+        &self.sources
+    }
+
+    /// The ordered target wires.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn targets(&self) -> &[Wire]
+    {
+        &self.targets
+    }
+}
+
+/// The discrete boundary a rewrite is taken relative to: the interface.
+///
+/// Both lists are ordered. [`Wiring::assemble`] refuses a list that repeats a
+/// wire, which is the mono-leg half of monogamy.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Interface
+{
+    /// The ordered input ports: wires no generator produces.
+    inputs: Box<[Wire]>,
+    /// The ordered output ports: wires no generator consumes.
+    outputs: Box<[Wire]>,
+}
+
+impl Interface
+{
+    /// An interface from its two ordered port lists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<Inputs, Outputs>(
+        inputs: Inputs,
+        outputs: Outputs,
+    ) -> Self
+    where
+        Inputs: Into<Box<[Wire]>>,
+        Outputs: Into<Box<[Wire]>>,
+    {
+        Self {
+            inputs: inputs.into(),
+            outputs: outputs.into(),
+        }
+    }
+
+    /// The ordered input ports.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn inputs(&self) -> &[Wire]
+    {
+        &self.inputs
+    }
+
+    /// The ordered output ports.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn outputs(&self) -> &[Wire]
+    {
+        &self.outputs
+    }
+}
+
+/// A refused extension of a [`PartialBijection`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum BijectionClash
+{
+    /// The source wire is already mapped, and not to this image.
+    SourceBound
+    {
+        /// The source wire the extension names.
+        source: Wire,
+        /// Where the source already goes.
+        bound: Wire,
+    },
+    /// The image wire is already reached by a different source, so extending
+    /// would stop the map being injective.
+    ImageBound
+    {
+        /// The image wire the extension names.
+        image: Wire,
+        /// The source that already reaches it.
+        bound: Wire,
+    },
+}
+
+impl core::fmt::Display for BijectionClash
+{
+    /// Names the refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::SourceBound { .. } => "the source wire is already mapped to another image",
+            Self::ImageBound { .. } => "the image wire is already reached by another source",
+        })
+    }
+}
+
+impl core::error::Error for BijectionClash
+{
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a partial bijection maps a source wire nowhere.
+    pub mod wire_image {
+        /// The reason the lookup finds no image.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The wire is outside the map's domain.
+            Unmapped,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no source of a partial bijection reaches an image wire.
+    pub mod wire_preimage {
+        /// The reason the lookup finds no source.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The wire is outside the map's range.
+            Unreached,
+        }
+    }
+}
+
+/// A partial bijection on wires: one half of the seam datum.
+///
+/// Injective by construction: [`PartialBijection::extend`] refuses a pair that
+/// would identify two sources, and leaves the map as it was.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct PartialBijection
+{
+    /// Source wire to image wire.
+    forward: BTreeMap<Wire, Wire>,
+    /// Image wire back to source wire, which is what makes injectivity
+    /// checkable per extension.
+    backward: BTreeMap<Wire, Wire>,
+}
+
+impl PartialBijection
+{
+    /// The empty partial bijection.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// Where `source` goes.
+    ///
+    /// # Specification
+    /// - provides: [`wire_image::Absent::Unmapped`] when `source` is not in the
+    ///   map's domain.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh pair, conflicts and unmapped sources expose
+    ///   exact forward and reverse answers. Wrong keys, stale inverse entries
+    ///   or invented images differ; only publicly constructed partial
+    ///   bijections are admitted.
+    /// - witness: `interface::tests::a_partial_bijection_stays_injective`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(image) => self.forward.get(&source) == Some(&image) && self.backward.get(&image) == Some(&source),
+        Maybe::Absent(wire_image::Absent::Unmapped) => !self.forward.contains_key(&source),
+    })]
+    #[inline]
+    pub fn image_of(
+        &self,
+        source: Wire,
+    ) -> Maybe<Wire, wire_image::Absent>
+    {
+        self.forward
+            .get(&source)
+            .map_or(Maybe::Absent(wire_image::Absent::Unmapped), |image| {
+                Maybe::Present(*image)
+            })
+    }
+
+    /// The source that reaches `image`.
+    ///
+    /// # Specification
+    /// - provides: [`wire_preimage::Absent::Unreached`] when `image` is not in
+    ///   the map's range.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mapped, unreached and refused images expose the exact
+    ///   inverse source. Swapping the two maps or retaining a refused pair
+    ///   changes the answer; the invariant is limited to publicly constructed
+    ///   bijections.
+    /// - witness: `interface::tests::a_partial_bijection_stays_injective`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(source) => self.backward.get(&image) == Some(&source) && self.forward.get(&source) == Some(&image),
+        Maybe::Absent(wire_preimage::Absent::Unreached) => !self.backward.contains_key(&image),
+    })]
+    #[inline]
+    pub fn preimage_of(
+        &self,
+        image: Wire,
+    ) -> Maybe<Wire, wire_preimage::Absent>
+    {
+        self.backward
+            .get(&image)
+            .map_or(Maybe::Absent(wire_preimage::Absent::Unreached), |source| {
+                Maybe::Present(*source)
+            })
+    }
+
+    /// How many pairs the map carries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pair_count(&self) -> PairCount
+    {
+        PairCount(self.forward.len())
+    }
+
+    /// The pairs `(source, image)`, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn pairs(&self) -> impl Iterator<Item = (Wire, Wire)>
+    {
+        self.forward.iter().map(|(source, image)| (*source, *image))
+    }
+
+    /// The restriction of the map to `ports`: one half of a [`Seam`].
+    ///
+    /// # Specification
+    /// - ensures: exactly the pairs whose source is one of `ports` and is
+    ///   mapped. Injectivity is inherited from this map, so the restriction
+    ///   cannot fail.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reordered, repeated, unmapped and empty port lists
+    ///   expose an independently pinned restricted pair set and its inverse.
+    ///   Dropping mapped ports, keeping nonports, duplicating entries or
+    ///   omitting the reverse map changes those observations; no invalid
+    ///   private map representation is admitted. The predicate looks each port
+    ///   up once: every mapped port is kept with its image, every kept pair is
+    ///   one of this map's, and as many pairs are kept as there are distinct
+    ///   mapped ports, so no nonport is kept.
+    /// - witness: `matching::tests::an_embedding_carries_its_seam_as_a_pair_of_partial_bijections`
+    /// - witness: `matching::tests::the_searches_certificates_verify_against_their_own_diagrams`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(ensures: |ref restricted|
+        restricted.forward.len() == ports.iter().filter(|port| self.forward.contains_key(port)).collect::<BTreeSet<_>>().len()
+        && ports.iter().all(|port| self.forward.get(port).is_none_or(|image| restricted.forward.get(port) == Some(image)))
+        && restricted.forward.iter().all(|entry| self.forward.get(entry.0) == Some(entry.1))
+        && restricted.backward.len() == restricted.forward.len()
+        && restricted.forward.iter().all(|entry| restricted.backward.get(entry.1) == Some(entry.0)))]
+    #[inline]
+    #[must_use]
+    pub fn restricted_to(
+        &self,
+        ports: &[Wire],
+    ) -> Self
+    {
+        let mut forward: BTreeMap<Wire, Wire> = BTreeMap::new();
+        let mut backward: BTreeMap<Wire, Wire> = BTreeMap::new();
+        for port in ports {
+            if let Some(image) = self.forward.get(port) {
+                forward.insert(*port, *image);
+                backward.insert(*image, *port);
+            }
+        }
+        Self { forward, backward }
+    }
+
+    /// Extends the map with the pair `(source, image)`.
+    ///
+    /// # Specification
+    /// - ensures: a pair already present is accepted and changes nothing; a
+    ///   pair whose source and image are both unbound is added.
+    /// - fails: [`BijectionClash::SourceBound`] when `source` already maps
+    ///   elsewhere; [`BijectionClash::ImageBound`] when another source already
+    ///   reaches `image`. A refusal leaves the map as it was.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`BijectionClash::SourceBound`]: `source` is mapped to another image.
+    /// - [`BijectionClash::ImageBound`]: `image` is reached by another source.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh pair, its idempotent repeat, a re-bound
+    ///   source and a re-used image separate the four outcomes, each refusal
+    ///   asserted with its payload and the map asserted unchanged after both.
+    ///   The two directions agree for the empty map and an extension writes one
+    ///   pair both ways, so the predicate checks that pair and the two sizes;
+    ///   the witnesses compare whole maps.
+    /// - witness: `interface::tests::a_partial_bijection_stays_injective`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(captures: [
+        prior_image = self.forward.get(&source).copied(),
+        prior_source = self.backward.get(&image).copied(),
+        prior_count = self.forward.len(),
+    ], ensures: |ref result| self.forward.len() == self.backward.len() && match *result {
+        Ok(()) => (prior_image == Some(image) || (prior_image.is_none() && prior_source.is_none()))
+            && self.forward.get(&source) == Some(&image)
+            && self.backward.get(&image) == Some(&source)
+            && self.forward.len() == prior_count.saturating_add(usize::from(prior_image.is_none())),
+        Err(BijectionClash::SourceBound { source: rejected, bound }) => rejected == source
+            && prior_image == Some(bound) && bound != image
+            && self.forward.get(&source) == Some(&bound) && self.forward.len() == prior_count,
+        Err(BijectionClash::ImageBound { image: rejected, bound }) => rejected == image
+            && prior_image.is_none() && prior_source == Some(bound)
+            && self.backward.get(&image) == Some(&bound) && self.forward.len() == prior_count,
+    })]
+    #[inline]
+    pub fn extend(
+        &mut self,
+        source: Wire,
+        image: Wire,
+    ) -> Result<(), BijectionClash>
+    {
+        if let Some(bound) = self.forward.get(&source).copied() {
+            if bound == image {
+                return Ok(());
+            }
+            return Err(BijectionClash::SourceBound { source, bound });
+        }
+        if let Some(bound) = self.backward.get(&image).copied() {
+            return Err(BijectionClash::ImageBound { image, bound });
+        }
+        self.forward.insert(source, image);
+        self.backward.insert(image, source);
+        Ok(())
+    }
+}
+
+/// The seam datum: where a pattern's interface lands on a target, as a pair
+/// of partial bijections.
+///
+/// The input half and the output half are kept apart because the two halves
+/// play different roles in the span a rewrite is.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Seam
+{
+    /// The input half: the pattern's input ports to their images.
+    inputs: PartialBijection,
+    /// The output half: the pattern's output ports to their images.
+    outputs: PartialBijection,
+}
+
+impl Seam
+{
+    /// A seam from its two halves.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        inputs: PartialBijection,
+        outputs: PartialBijection,
+    ) -> Self
+    {
+        Self { inputs, outputs }
+    }
+
+    /// The input half.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn inputs(&self) -> &PartialBijection
+    {
+        &self.inputs
+    }
+
+    /// The output half.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn outputs(&self) -> &PartialBijection
+    {
+        &self.outputs
+    }
+}
+
+/// A refused [`Wiring`]: the condition of the fragment the diagram fails, with
+/// the wire or generator that fails it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum WiringObstruction
+{
+    /// A generator names a wire the diagram does not declare.
+    UnknownWire
+    {
+        /// The out-of-range wire.
+        wire: Wire,
+        /// The generator that names it.
+        at: Edge,
+    },
+    /// The boundary names a wire the diagram does not declare.
+    UnknownBoundaryWire
+    {
+        /// The out-of-range wire.
+        wire: Wire,
+    },
+    /// One wire is produced twice: in-degree two, the combining fan-in the
+    /// fragment excludes.
+    ///
+    /// The two producers may be one generator naming the wire at two target
+    /// ports; `first` and `second` are then equal.
+    FanIn
+    {
+        /// The doubly produced wire.
+        wire: Wire,
+        /// The generator that produced it first.
+        first: Edge,
+        /// The generator that produced it again.
+        second: Edge,
+    },
+    /// One wire is consumed twice: out-degree two, the copy the fragment
+    /// excludes.
+    ///
+    /// The two consumers may be one generator naming the wire at two source
+    /// ports; `first` and `second` are then equal.
+    FanOut
+    {
+        /// The doubly consumed wire.
+        wire: Wire,
+        /// The generator that consumed it first.
+        first: Edge,
+        /// The generator that consumed it again.
+        second: Edge,
+    },
+    /// A boundary list names one wire twice, so its leg is not mono.
+    RepeatedBoundaryPort
+    {
+        /// The repeated wire.
+        wire: Wire,
+    },
+    /// A boundary input is produced by a generator, so it is not open.
+    BoundaryInputIsProduced
+    {
+        /// The wire declared as an input.
+        wire: Wire,
+        /// The generator that produces it.
+        by: Edge,
+    },
+    /// A boundary output is consumed by a generator, so it is not open.
+    BoundaryOutputIsConsumed
+    {
+        /// The wire declared as an output.
+        wire: Wire,
+        /// The generator that consumes it.
+        by: Edge,
+    },
+    /// A wire no generator produces is not declared as an input, so the
+    /// interface would lose a port.
+    ///
+    /// The refusal carries the matcher's convexity discharge as well as the
+    /// interface's honesty: the discharge reads every image input back as the
+    /// image of a declared pattern input, and an undeclared open wire would be
+    /// an image input no connectivity test asked about.
+    UndeclaredInput
+    {
+        /// The undeclared open wire.
+        wire: Wire,
+    },
+    /// A wire no generator consumes is not declared as an output.
+    UndeclaredOutput
+    {
+        /// The undeclared open wire.
+        wire: Wire,
+    },
+    /// The diagram has a directed cycle, outside the acyclic fragment every
+    /// theorem the matcher quotes quantifies over. Above dimension one this
+    /// refusal is the pinwheel's: two cells each the other's source are no
+    /// pasting scheme, Leclerc and Mimram's Lemma 3 (pasting schemes are
+    /// acyclic), so `gandr-theory-sites` holds no shape whose cells meet in a
+    /// cycle at any level.
+    DirectedCycle
+    {
+        /// A generator the cycle runs through.
+        through: Edge,
+    },
+}
+
+impl core::fmt::Display for WiringObstruction
+{
+    /// Names the refused condition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::UnknownWire { .. } => "a generator names a wire the diagram does not declare",
+            Self::UnknownBoundaryWire { .. } => {
+                "the boundary names a wire the diagram does not declare"
+            },
+            Self::FanIn { .. } => "a wire is produced twice",
+            Self::FanOut { .. } => "a wire is consumed twice",
+            Self::RepeatedBoundaryPort { .. } => "a boundary list names a wire twice",
+            Self::BoundaryInputIsProduced { .. } => "a boundary input is produced by a generator",
+            Self::BoundaryOutputIsConsumed { .. } => "a boundary output is consumed by a generator",
+            Self::UndeclaredInput { .. } => "a wire no generator produces is not an input port",
+            Self::UndeclaredOutput { .. } => "a wire no generator consumes is not an output port",
+            Self::DirectedCycle { .. } => "the diagram has a directed cycle",
+        })
+    }
+}
+
+impl core::error::Error for WiringObstruction
+{
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a diagram holds no generator at a position.
+    pub mod generator_lookup {
+        /// The reason the lookup finds no generator.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The position is at or past the diagram's generator count.
+            OutOfRange,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no generator produces a wire.
+    pub mod wire_producer {
+        /// The reason the wire has no producer.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The wire is a boundary input port.
+            BoundaryInput,
+            /// The wire is not one of the diagram's.
+            OutOfRange,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no generator consumes a wire.
+    pub mod wire_consumer {
+        /// The reason the wire has no consumer.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The wire is a boundary output port.
+            BoundaryOutput,
+            /// The wire is not one of the diagram's.
+            OutOfRange,
+        }
+    }
+}
+
+/// One diagram with an interface, inside the monogamous acyclic fragment.
+///
+/// Outside the crate, a value exists only because [`Wiring::assemble`] proved
+/// the diagram is in the fragment. Both halves of that proof are load-bearing
+/// for the matcher: monogamy makes the search choice-free after one seed per
+/// component, and acyclicity is the hypothesis under which a strongly
+/// connected pattern's match is convex without a sweep.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Wiring
+{
+    /// The generator occurrences, addressed by [`Edge`] position.
+    generators: Box<[Generator]>,
+    /// The discrete boundary.
+    boundary: Interface,
+    /// How many wires the diagram declares.
+    wires: WireCount,
+    /// The generator that produces each produced wire.
+    producer: BTreeMap<Wire, Edge>,
+    /// The generator that consumes each consumed wire.
+    consumer: BTreeMap<Wire, Edge>,
+}
+
+impl Wiring
+{
+    /// Assembles a diagram with an interface, or refuses it.
+    ///
+    /// # Specification
+    /// - ensures: the wiring holds `generators` in order, `boundary` and
+    ///   `wires`; it is monogamous (in-degree and out-degree at most one on
+    ///   every wire, both boundary legs mono), boundary-honest (an input has no
+    ///   producer, an output no consumer, and every wire with no producer or no
+    ///   consumer is declared on that leg), and acyclic.
+    /// - fails: [`WiringObstruction`] naming the first failed condition and the
+    ///   wire or generator that fails it.
+    /// - panics: none.
+    /// - intension: the conditions are decided in a fixed order — per generator
+    ///   in position order its sources then its targets (range, then degree);
+    ///   the input leg, then the output leg (range, repetition, openness); per
+    ///   wire in index order an undeclared input, then an undeclared output;
+    ///   acyclicity last, the one condition that is not local. A diagram
+    ///   failing several is refused by the earliest.
+    ///
+    /// # Errors
+    /// - [`WiringObstruction::UnknownWire`]: a generator port names a wire at
+    ///   or past `wires`.
+    /// - [`WiringObstruction::FanOut`]: a wire is a source twice.
+    /// - [`WiringObstruction::FanIn`]: a wire is a target twice.
+    /// - [`WiringObstruction::UnknownBoundaryWire`]: a port names a wire at or
+    ///   past `wires`.
+    /// - [`WiringObstruction::RepeatedBoundaryPort`]: a leg repeats a wire.
+    /// - [`WiringObstruction::BoundaryInputIsProduced`]: an input has a
+    ///   producer.
+    /// - [`WiringObstruction::BoundaryOutputIsConsumed`]: an output has a
+    ///   consumer.
+    /// - [`WiringObstruction::UndeclaredInput`]: a wire with no producer is no
+    ///   input.
+    /// - [`WiringObstruction::UndeclaredOutput`]: a wire with no consumer is no
+    ///   output.
+    /// - [`WiringObstruction::DirectedCycle`]: a directed cycle runs through
+    ///   the named generator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each refusal is separated by a diagram failing only
+    ///   it, asserted by its exact variant and payload: an out-of-range wire
+    ///   named by a source, by a target and by either boundary leg, each at the
+    ///   first index past the count; a fan-in and a fan-out by two generators
+    ///   and by one generator repeating a port; a repeat on either leg; a
+    ///   produced input and a consumed output; an undeclared open wire on
+    ///   either side; a cycle through one generator, through two, and one with
+    ///   a generator downstream of it listed first, so the named generator is
+    ///   on the cycle. L1 — an assembled wiring answers its incidence queries
+    ///   consistently with the generators it was given.
+    /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    /// - witness: `interface::tests::the_wiring_refuses_an_out_of_range_generator_wire`
+    /// - witness: `interface::tests::the_wiring_refuses_an_out_of_range_boundary_wire`
+    /// - witness: `interface::tests::the_wiring_refuses_a_fan_in`
+    /// - witness: `interface::tests::the_wiring_refuses_a_fan_out`
+    /// - witness: `interface::tests::the_wiring_refuses_a_repeated_port_on_one_generator`
+    /// - witness: `interface::tests::the_wiring_refuses_a_repeated_boundary_port`
+    /// - witness: `interface::tests::the_wiring_refuses_a_produced_boundary_input`
+    /// - witness: `interface::tests::the_wiring_refuses_a_consumed_boundary_output`
+    /// - witness: `interface::tests::the_wiring_refuses_an_undeclared_open_wire`
+    /// - witness: `interface::tests::the_wiring_refuses_an_undeclared_open_input`
+    /// - witness: `interface::tests::the_wiring_refuses_a_self_looping_generator`
+    /// - witness: `interface::tests::the_wiring_refuses_a_directed_cycle`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(captures: [generator_count = generators.len(), input_count = boundary.inputs.len(), output_count = boundary.outputs.len()],
+    ensures: |ref result| match *result {
+        Ok(ref wiring) => wiring.wires == wires && wiring.generators.len() == generator_count
+            && wiring.boundary.inputs.len() == input_count && wiring.boundary.outputs.len() == output_count
+            && wiring.producer.len() == wiring.generators.iter().map(|generator| generator.targets.len()).sum::<usize>()
+            && wiring.consumer.len() == wiring.generators.iter().map(|generator| generator.sources.len()).sum::<usize>()
+            && wiring.generators.iter().enumerate().all(|entry|
+                entry.1.sources.iter().all(|wire| wire.0 < wires.0 && wiring.consumer.get(wire) == Some(&Edge(entry.0)))
+                && entry.1.targets.iter().all(|wire| wire.0 < wires.0 && wiring.producer.get(wire) == Some(&Edge(entry.0))))
+            && wiring.boundary.inputs.iter().enumerate().all(|entry| entry.1.0 < wires.0
+                && !wiring.producer.contains_key(entry.1) && !wiring.boundary.inputs.iter().take(entry.0).any(|prior| prior == entry.1))
+            && wiring.boundary.outputs.iter().enumerate().all(|entry| entry.1.0 < wires.0
+                && !wiring.consumer.contains_key(entry.1) && !wiring.boundary.outputs.iter().take(entry.0).any(|prior| prior == entry.1))
+            && (0..wires.0).all(|index| {
+                let wire = Wire(index);
+                wiring.producer.contains_key(&wire) != wiring.boundary.inputs.contains(&wire)
+                    && wiring.consumer.contains_key(&wire) != wiring.boundary.outputs.contains(&wire)
+            }),
+        Err(WiringObstruction::UnknownWire { wire, at }) => wire.0 >= wires.0 && at.0 < generator_count,
+        Err(WiringObstruction::UnknownBoundaryWire { wire }) => wire.0 >= wires.0,
+        Err(WiringObstruction::FanIn { wire, first, second } | WiringObstruction::FanOut { wire, first, second }) =>
+            wire.0 < wires.0 && first <= second && second.0 < generator_count,
+        Err(WiringObstruction::RepeatedBoundaryPort { wire } | WiringObstruction::UndeclaredInput { wire } | WiringObstruction::UndeclaredOutput { wire }) => wire.0 < wires.0,
+        Err(WiringObstruction::BoundaryInputIsProduced { wire, by } | WiringObstruction::BoundaryOutputIsConsumed { wire, by }) => wire.0 < wires.0 && by.0 < generator_count,
+        Err(WiringObstruction::DirectedCycle { through }) => through.0 < generator_count,
+    })]
+    #[inline]
+    pub fn assemble(
+        wires: WireCount,
+        generators: Vec<Generator>,
+        boundary: Interface,
+    ) -> Result<Self, WiringObstruction>
+    {
+        let wiring = assemble_monogamous(wires, generators, boundary)?;
+        check_acyclic(&wiring.generators, &wiring.producer, &wiring.consumer)?;
+        Ok(wiring)
+    }
+
+    /// The generator occurrences, addressed by [`Edge`] position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn generators(&self) -> &[Generator]
+    {
+        &self.generators
+    }
+
+    /// The generator at `edge`.
+    ///
+    /// # Specification
+    /// - provides: [`generator_lookup::Absent::OutOfRange`] when `edge` is at
+    ///   or past the generator count.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid generator positions are observed through the
+    ///   spine reading, and the first absent position has a typed refusal.
+    ///   Returning another generator or misclassifying absence changes the
+    ///   observation; the backing wiring is validated.
+    /// - witness: `interface::spine::tests::a_spine_reads_as_its_generators_and_ports`
+    /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(generator) => self.generators.get(edge.0).is_some_and(|expected| core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(generator))),
+        Maybe::Absent(generator_lookup::Absent::OutOfRange) => edge.0 >= self.generators.len(),
+    })]
+    #[inline]
+    pub fn generator(
+        &self,
+        edge: Edge,
+    ) -> Maybe<&Generator, generator_lookup::Absent>
+    {
+        self.generators.get(edge.0).map_or(
+            Maybe::Absent(generator_lookup::Absent::OutOfRange),
+            Maybe::Present,
+        )
+    }
+
+    /// The discrete boundary.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn boundary(&self) -> &Interface
+    {
+        &self.boundary
+    }
+
+    /// How many wires the diagram declares.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn wire_count(&self) -> WireCount
+    {
+        self.wires
+    }
+
+    /// How many generator occurrences the diagram holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn edge_count(&self) -> EdgeCount
+    {
+        EdgeCount(self.generators.len())
+    }
+
+    /// The generator that produces `wire`.
+    ///
+    /// # Specification
+    /// - provides: [`wire_producer::Absent::BoundaryInput`] for a declared wire
+    ///   no generator produces, which boundary honesty makes an input port;
+    ///   [`wire_producer::Absent::OutOfRange`] for a wire the diagram does not
+    ///   declare.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a produced wire, an input port and a wire past the
+    ///   count separate the three answers. Assembly checks boundary honesty
+    ///   once, and a wiring is immutable after it, so the predicate reads the
+    ///   producer index for a declared wire rather than the boundary.
+    /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(edge) => self.generators.get(edge.0).is_some_and(|generator| generator.targets.contains(&wire)),
+        Maybe::Absent(wire_producer::Absent::BoundaryInput) => wire.0 < self.wires.0 && !self.producer.contains_key(&wire),
+        Maybe::Absent(wire_producer::Absent::OutOfRange) => wire.0 >= self.wires.0,
+    })]
+    #[inline]
+    pub fn producer_of(
+        &self,
+        wire: Wire,
+    ) -> Maybe<Edge, wire_producer::Absent>
+    {
+        if let Some(edge) = self.producer.get(&wire) {
+            return Maybe::Present(*edge);
+        }
+        match self.wires.declares(wire) {
+            Declaration::Declared => Maybe::Absent(wire_producer::Absent::BoundaryInput),
+            Declaration::Undeclared => Maybe::Absent(wire_producer::Absent::OutOfRange),
+        }
+    }
+
+    /// The generator that consumes `wire`.
+    ///
+    /// # Specification
+    /// - provides: [`wire_consumer::Absent::BoundaryOutput`] for a declared
+    ///   wire no generator consumes, which boundary honesty makes an output
+    ///   port; [`wire_consumer::Absent::OutOfRange`] for a wire the diagram
+    ///   does not declare.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a consumed wire, an output port and a wire past the
+    ///   count separate the three answers. Assembly checks boundary honesty
+    ///   once, and a wiring is immutable after it, so the predicate reads the
+    ///   consumer index for a declared wire rather than the boundary.
+    /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(edge) => self.generators.get(edge.0).is_some_and(|generator| generator.sources.contains(&wire)),
+        Maybe::Absent(wire_consumer::Absent::BoundaryOutput) => wire.0 < self.wires.0 && !self.consumer.contains_key(&wire),
+        Maybe::Absent(wire_consumer::Absent::OutOfRange) => wire.0 >= self.wires.0,
+    })]
+    #[inline]
+    pub fn consumer_of(
+        &self,
+        wire: Wire,
+    ) -> Maybe<Edge, wire_consumer::Absent>
+    {
+        if let Some(edge) = self.consumer.get(&wire) {
+            return Maybe::Present(*edge);
+        }
+        match self.wires.declares(wire) {
+            Declaration::Declared => Maybe::Absent(wire_consumer::Absent::BoundaryOutput),
+            Declaration::Undeclared => Maybe::Absent(wire_consumer::Absent::OutOfRange),
+        }
+    }
+
+    /// The diagram's weakly connected components over generator adjacency.
+    ///
+    /// Two generators are adjacent when one produces a wire the other
+    /// consumes. The relation is the undirected one, so a component is a piece
+    /// of the picture with no wire leaving it. The matcher takes one seed per
+    /// component.
+    ///
+    /// # Specification
+    /// - ensures: every generator position appears in exactly one component;
+    ///   components are ordered by their lowest-positioned member, and each
+    ///   component's members are in ascending position order; a diagram with no
+    ///   generator has no component.
+    /// - panics: none.
+    /// - intension: an explicit frontier over generators, each pushed once;
+    ///   discovery runs in ascending position order, which makes the emitted
+    ///   order deterministic.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the partition is validated against its diagram (every
+    ///   position covered once, members ascending) rather than against a
+    ///   predicted answer. L3 — the two adjacency directions are separated by a
+    ///   join reachable only forwards from the seed and one reachable only
+    ///   backwards, and a port-free generator is its own component, so two
+    ///   points of one label stay two addressable components.
+    /// - witness: `interface::tests::the_components_partition_the_generators`
+    /// - witness: `interface::tests::a_component_joins_through_a_shared_wire_in_both_directions`
+    /// - witness: `interface::tests::a_port_free_generator_is_its_own_component`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(ensures: |ref components| {
+        let mut start = 0;
+        let mut previous_first = None;
+        components.members.len() == self.generators.len()
+            && components.ends.last().copied().unwrap_or(0) == components.members.len()
+            && (0..self.generators.len()).all(|index| components.members.iter().filter(|edge| edge.0 == index).count() == 1)
+            && components.ends.iter().all(|end| {
+                let Some(run) = components.members.get(start..*end) else { return false; };
+                start = *end;
+                let Some(first) = run.first() else { return false; };
+                let ordered = previous_first.is_none_or(|previous| previous < *first)
+                    && run.is_sorted_by(|left, right| left < right);
+                previous_first = Some(*first);
+                ordered && run.iter().all(|edge| self.generators.get(edge.0).is_some_and(|generator|
+                    generator.sources.iter().all(|wire| self.producer.get(wire).is_none_or(|neighbour| run.contains(neighbour)))
+                    && generator.targets.iter().all(|wire| self.consumer.get(wire).is_none_or(|neighbour| run.contains(neighbour)))))
+            })
+    })]
+    #[inline]
+    #[must_use]
+    pub fn components(&self) -> Components
+    {
+        let count = self.generators.len();
+        let mut placed: Vec<Placement> = alloc::vec![Placement::Unplaced; count];
+        let mut members: Vec<Edge> = Vec::with_capacity(count);
+        let mut ends: Vec<usize> = Vec::new();
+        let mut frontier: Vec<Edge> = Vec::new();
+        for index in 0 .. count {
+            if place(&mut placed, Edge(index)) == Placement::Placed {
+                continue;
+            }
+            let start = members.len();
+            frontier.push(Edge(index));
+            while let Some(current) = frontier.pop() {
+                members.push(current);
+                let Some(generator) = self.generators.get(current.0)
+                else {
+                    continue;
+                };
+                for wire in &generator.sources {
+                    if let Some(neighbour) = self.producer.get(wire).copied()
+                        && place(&mut placed, neighbour) == Placement::Unplaced
+                    {
+                        frontier.push(neighbour);
+                    }
+                }
+                for wire in &generator.targets {
+                    if let Some(neighbour) = self.consumer.get(wire).copied()
+                        && place(&mut placed, neighbour) == Placement::Unplaced
+                    {
+                        frontier.push(neighbour);
+                    }
+                }
+            }
+            if let Some(component) = members.get_mut(start ..) {
+                component.sort_unstable();
+            }
+            ends.push(members.len());
+        }
+        Components {
+            members: members.into_boxed_slice(),
+            ends: ends.into_boxed_slice(),
+        }
+    }
+}
+
+/// Whether a generator has been placed in a component yet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Placement
+{
+    /// No component holds it yet.
+    Unplaced,
+    /// A component holds it.
+    Placed,
+}
+
+/// Marks `edge` placed and reports whether it already was.
+///
+/// # Specification
+/// - ensures: `edge` is placed afterwards; returns its placement before the
+///   call. A position outside `placed` reports [`Placement::Placed`], so a walk
+///   never pushes it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fresh, repeated and first-past placement exposes the
+///   old verdict and complete resulting slice. Reversing the verdict, changing
+///   another slot or accepting a foreign position differs; only placement state
+///   is observed, not traversal policy.
+/// - witness: `interface::tests::placement_preserves_neighbours_and_refuses_foreign_positions`
+#[spec(captures: [prior = placed.get(edge.0).copied()], ensures: |answer|
+    answer == prior.unwrap_or(Placement::Placed)
+        && placed.get(edge.0).is_none_or(|slot| *slot == Placement::Placed))]
+fn place(
+    placed: &mut [Placement],
+    edge: Edge,
+) -> Placement
+{
+    placed.get_mut(edge.0).map_or(Placement::Placed, |slot| {
+        core::mem::replace(slot, Placement::Placed)
+    })
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a component index names no component.
+    pub mod component_lookup {
+        /// The reason the lookup finds no members.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The index is at or past the component count.
+            OutOfRange,
+        }
+    }
+}
+
+/// A diagram's generators, partitioned into weakly connected components.
+///
+/// Built only by [`Wiring::components`], so a value is a partition of exactly
+/// one diagram's generator positions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Components
+{
+    /// Every member, component by component, each component ascending.
+    members: Box<[Edge]>,
+    /// The end of each component's run in `members`, in component order.
+    ends: Box<[usize]>,
+}
+
+impl Components
+{
+    /// How many components the diagram's generators fall into.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn count(&self) -> ComponentCount
+    {
+        ComponentCount(self.ends.len())
+    }
+
+    /// The members of one component, in ascending position order.
+    ///
+    /// # Specification
+    /// - provides: [`component_lookup::Absent::OutOfRange`] when `component` is
+    ///   at or past the count.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered multi-member and singleton runs, an empty
+    ///   partition and the first absent component expose exact slices and typed
+    ///   refusal. Off-by-one cuts, reordered members and invented empty runs
+    ///   differ; the partition originates from a wiring.
+    /// - witness: `interface::tests::the_components_partition_the_generators`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(members) => self.ends.get(component.0).is_some_and(|end| {
+            let start = component.0.checked_sub(1).and_then(|previous| self.ends.get(previous).copied()).unwrap_or(0);
+            self.members.get(start..*end).is_some_and(|expected| core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(members)))
+        }),
+        Maybe::Absent(component_lookup::Absent::OutOfRange) => component.0 >= self.ends.len(),
+    })]
+    #[inline]
+    pub fn members(
+        &self,
+        component: ComponentIndex,
+    ) -> Maybe<&[Edge], component_lookup::Absent>
+    {
+        let start = component
+            .0
+            .checked_sub(1)
+            .map_or(Some(0), |previous| self.ends.get(previous).copied());
+        let end = self.ends.get(component.0).copied();
+        let run = start
+            .zip(end)
+            .and_then(|(start, end)| self.members.get(start .. end));
+        run.map_or(
+            Maybe::Absent(component_lookup::Absent::OutOfRange),
+            Maybe::Present,
+        )
+    }
+}
+
+/// Assembles a diagram that may hold a directed cycle, or refuses it.
+///
+/// # Specification
+/// - ensures: the wiring holds `generators` in order, `boundary` and `wires`;
+///   it is monogamous and boundary-honest, as [`Wiring::assemble`] states.
+/// - fails: [`WiringObstruction`] naming the first failed local condition, in
+///   the order [`Wiring::assemble`] decides them; never
+///   [`WiringObstruction::DirectedCycle`].
+/// - provides: the carrier of the spider normal form, where fusion can close a
+///   loop through a spider; [`Wiring::assemble`] is this check followed by the
+///   acyclicity check.
+/// - panics: none.
+///
+/// # Errors
+/// Each [`WiringObstruction`] that [`Wiring::assemble`] returns, except
+/// [`WiringObstruction::DirectedCycle`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a loop through one generator is admitted here and refused
+///   by [`Wiring::assemble`], and every local refusal of the assemble fixtures
+///   passes through this function. A check moved out of it, or acyclicity moved
+///   into it, changes one of the two.
+/// - witness: `interface::tests::a_monogamous_wiring_admits_a_directed_cycle`
+/// - witness: `interface::tests::the_wiring_refuses_a_fan_in`
+/// - witness: `interface::tests::the_wiring_refuses_an_undeclared_open_wire`
+#[spec(captures: [generator_count = generators.len()],
+ensures: |ref result| match *result {
+    Ok(ref wiring) => wiring.wires == wires && wiring.generators.len() == generator_count
+        && wiring.producer.len() == wiring.generators.iter().map(|generator| generator.targets.len()).sum::<usize>()
+        && wiring.consumer.len() == wiring.generators.iter().map(|generator| generator.sources.len()).sum::<usize>(),
+    Err(WiringObstruction::DirectedCycle { .. }) => false,
+    Err(_) => true,
+})]
+pub fn assemble_monogamous(
+    wires: WireCount,
+    generators: Vec<Generator>,
+    boundary: Interface,
+) -> Result<Wiring, WiringObstruction>
+{
+    let mut producer: BTreeMap<Wire, Edge> = BTreeMap::new();
+    let mut consumer: BTreeMap<Wire, Edge> = BTreeMap::new();
+    for (index, generator) in generators.iter().enumerate() {
+        let edge = Edge(index);
+        for wire in generator.sources.iter().copied() {
+            if wires.declares(wire) == Declaration::Undeclared {
+                return Err(WiringObstruction::UnknownWire { wire, at: edge });
+            }
+            if let Some(first) = consumer.insert(wire, edge) {
+                return Err(WiringObstruction::FanOut {
+                    wire,
+                    first,
+                    second: edge,
+                });
+            }
+        }
+        for wire in generator.targets.iter().copied() {
+            if wires.declares(wire) == Declaration::Undeclared {
+                return Err(WiringObstruction::UnknownWire { wire, at: edge });
+            }
+            if let Some(first) = producer.insert(wire, edge) {
+                return Err(WiringObstruction::FanIn {
+                    wire,
+                    first,
+                    second: edge,
+                });
+            }
+        }
+    }
+    let mut inputs: BTreeSet<Wire> = BTreeSet::new();
+    for wire in boundary.inputs.iter().copied() {
+        if wires.declares(wire) == Declaration::Undeclared {
+            return Err(WiringObstruction::UnknownBoundaryWire { wire });
+        }
+        if !inputs.insert(wire) {
+            return Err(WiringObstruction::RepeatedBoundaryPort { wire });
+        }
+        if let Some(by) = producer.get(&wire).copied() {
+            return Err(WiringObstruction::BoundaryInputIsProduced { wire, by });
+        }
+    }
+    let mut outputs: BTreeSet<Wire> = BTreeSet::new();
+    for wire in boundary.outputs.iter().copied() {
+        if wires.declares(wire) == Declaration::Undeclared {
+            return Err(WiringObstruction::UnknownBoundaryWire { wire });
+        }
+        if !outputs.insert(wire) {
+            return Err(WiringObstruction::RepeatedBoundaryPort { wire });
+        }
+        if let Some(by) = consumer.get(&wire).copied() {
+            return Err(WiringObstruction::BoundaryOutputIsConsumed { wire, by });
+        }
+    }
+    for wire in wires.wires() {
+        if !producer.contains_key(&wire) && !inputs.contains(&wire) {
+            return Err(WiringObstruction::UndeclaredInput { wire });
+        }
+        if !consumer.contains_key(&wire) && !outputs.contains(&wire) {
+            return Err(WiringObstruction::UndeclaredOutput { wire });
+        }
+    }
+    Ok(Wiring {
+        generators: generators.into_boxed_slice(),
+        boundary,
+        wires,
+        producer,
+        consumer,
+    })
+}
+
+/// Writes new port lists for the generator at `edge`, each a reordering of the
+/// list it replaces.
+///
+/// # Specification
+/// - requires: `edge` is a generator position of `wiring`, and `sources` and
+///   `targets` hold the wires of its sources and of its targets, each in some
+///   order.
+/// - ensures: the generator's ports are `sources` and `targets`; every other
+///   datum is unchanged.
+/// - provides: another presentation of one diagram. The incidence maps stay
+///   valid, because each wire keeps its producer and its consumer.
+/// - panics: none.
+/// - intension: a port past the shorter list keeps its wire, so a list of the
+///   wrong length writes a prefix and never panics; the requirement holds at
+///   every call site.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a spider with tied legs reaches its least form only
+///   through the orders written here, and the decision verifies every winning
+///   presentation against the fused diagram leg by leg.
+/// - witness: `normal_form::spider::tests::tied_legs_have_one_form_in_every_order`
+/// - witness: `normal_form::spider::tests::the_evidence_verifies_against_each_input`
+#[spec(requires: wiring.generators.get(edge.0).is_some_and(|generator|
+    generator.sources.len() == sources.len() && generator.targets.len() == targets.len()
+    && sources.iter().all(|wire| generator.sources.contains(wire))
+    && targets.iter().all(|wire| generator.targets.contains(wire))))]
+pub fn reorder_ports(
+    wiring: &mut Wiring,
+    edge: Edge,
+    sources: &[Wire],
+    targets: &[Wire],
+)
+{
+    let Some(generator) = wiring.generators.get_mut(edge.0)
+    else {
+        return;
+    };
+    for (slot, wire) in generator.sources.iter_mut().zip(sources) {
+        *slot = *wire;
+    }
+    for (slot, wire) in generator.targets.iter_mut().zip(targets) {
+        *slot = *wire;
+    }
+}
+
+/// The acyclicity check: Kahn's algorithm over generators, then a walk back
+/// from an unsettled generator to one on a cycle.
+///
+/// # Specification
+/// - requires: `producer` and `consumer` are the incidence maps of
+///   `generators`.
+/// - ensures: success exactly when every generator settles, which is exactly
+///   when the diagram has no directed cycle.
+/// - fails: [`WiringObstruction::DirectedCycle`] naming a generator on a cycle:
+///   the walk starts at the lowest-positioned unsettled generator and steps to
+///   the producer of its first source whose producer is unsettled until it
+///   revisits a generator, which is on a cycle. An unsettled generator that
+///   only reads a cycle's output is never named.
+/// - panics: none.
+/// - intension: linear in the diagram's ports.
+///
+/// # Errors
+/// [`WiringObstruction::DirectedCycle`] when a directed cycle exists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — monogamous incidence maps for acyclic diagrams, a
+///   self-loop, a two-generator cycle and a downstream-first cycle expose
+///   success or the exact on-cycle edge. Reversing incidence, missing a cycle
+///   or blaming its downstream reader differs; the wiring constructor
+///   establishes the incidence domain.
+/// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+/// - witness: `interface::tests::the_wiring_refuses_a_self_looping_generator`
+/// - witness: `interface::tests::the_wiring_refuses_a_directed_cycle`
+#[spec(requires:
+    producer.len() == generators.iter().map(|generator| generator.targets.len()).sum::<usize>()
+    && consumer.len() == generators.iter().map(|generator| generator.sources.len()).sum::<usize>()
+    && generators.iter().enumerate().all(|entry|
+        entry.1.sources.iter().all(|wire| consumer.get(wire) == Some(&Edge(entry.0)))
+        && entry.1.targets.iter().all(|wire| producer.get(wire) == Some(&Edge(entry.0)))),
+    ensures: |ref result| match *result {
+        Ok(()) => true,
+        Err(WiringObstruction::DirectedCycle { through }) => generators.get(through.0).is_some_and(|generator|
+            generator.sources.iter().any(|wire| producer.contains_key(wire))
+                && generator.targets.iter().any(|wire| consumer.contains_key(wire))),
+        Err(_) => false,
+    })]
+fn check_acyclic(
+    generators: &[Generator],
+    producer: &BTreeMap<Wire, Edge>,
+    consumer: &BTreeMap<Wire, Edge>,
+) -> Result<(), WiringObstruction>
+{
+    let mut waiting: Vec<usize> = Vec::with_capacity(generators.len());
+    for generator in generators {
+        let count = generator
+            .sources
+            .iter()
+            .filter(|wire| producer.contains_key(*wire))
+            .count();
+        waiting.push(count);
+    }
+    let mut ready: Vec<Edge> = Vec::new();
+    for (index, count) in waiting.iter().enumerate() {
+        if *count == 0 {
+            ready.push(Edge(index));
+        }
+    }
+    while let Some(edge) = ready.pop() {
+        let Some(generator) = generators.get(edge.0)
+        else {
+            continue;
+        };
+        for wire in &generator.targets {
+            let Some(next) = consumer.get(wire).copied()
+            else {
+                continue;
+            };
+            let Some(count) = waiting.get_mut(next.0)
+            else {
+                continue;
+            };
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                ready.push(next);
+            }
+        }
+    }
+    let Some(start) = waiting.iter().position(|count| *count > 0)
+    else {
+        return Ok(());
+    };
+    let mut visited: BTreeSet<Edge> = BTreeSet::new();
+    let mut current = Edge(start);
+    while visited.insert(current) {
+        let Some(generator) = generators.get(current.0)
+        else {
+            break;
+        };
+        let unsettled = generator.sources.iter().find_map(|wire| {
+            producer
+                .get(wire)
+                .copied()
+                .filter(|edge| waiting.get(edge.0).is_some_and(|count| *count > 0))
+        });
+        let Some(previous) = unsettled
+        else {
+            break;
+        };
+        current = previous;
+    }
+    Err(WiringObstruction::DirectedCycle { through: current })
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    /// A value-sorted generator label.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value<N>(name: N) -> GeneratorLabel
+    where
+        N: Into<GeneratorName>,
+    {
+        GeneratorLabel::new(name, GeneratorSort::Value)
+    }
+
+    /// `f: (0) -> (1)` followed by `g: (1) -> (2)`, open at both ends.
+    ///
+    /// # Specification
+    /// trivial.
+    fn two_step() -> Result<Wiring, WiringObstruction>
+    {
+        Wiring::assemble(
+            WireCount::from(3),
+            alloc::vec![
+                Generator::new(value("f"), wires![0], wires![1]),
+                Generator::new(value("g"), wires![1], wires![2]),
+            ],
+            Interface::new(wires![0], wires![2]),
+        )
+    }
+
+    #[test]
+    fn an_assembled_wiring_answers_its_incidence()
+    {
+        let wiring = two_step().expect("the two-step diagram is monogamous and acyclic");
+        assert_eq!(
+            EdgeCount::from(2),
+            wiring.edge_count(),
+            "the diagram holds both generators"
+        );
+        assert_eq!(
+            WireCount::from(3),
+            wiring.wire_count(),
+            "and declares all three wires"
+        );
+        assert_eq!(
+            Maybe::Absent(wire_producer::Absent::BoundaryInput),
+            wiring.producer_of(Wire::from(0)),
+            "the input wire is produced by nothing, because it is an input port"
+        );
+        assert_eq!(
+            Maybe::Present(Edge::from(0)),
+            wiring.consumer_of(Wire::from(0)),
+            "and consumed by the first generator"
+        );
+        assert_eq!(
+            Maybe::Present(Edge::from(0)),
+            wiring.producer_of(Wire::from(1)),
+            "the middle wire runs from the first generator"
+        );
+        assert_eq!(
+            Maybe::Present(Edge::from(1)),
+            wiring.consumer_of(Wire::from(1)),
+            "into the second"
+        );
+        assert_eq!(
+            Maybe::Absent(wire_consumer::Absent::BoundaryOutput),
+            wiring.consumer_of(Wire::from(2)),
+            "and the output wire is consumed by nothing, because it is an output port"
+        );
+        assert_eq!(
+            Maybe::Absent(wire_producer::Absent::OutOfRange),
+            wiring.producer_of(Wire::from(3)),
+            "a wire past the count is no input port: it is not the diagram's"
+        );
+        assert_eq!(
+            Maybe::Absent(wire_consumer::Absent::OutOfRange),
+            wiring.consumer_of(Wire::from(3)),
+            "nor an output port"
+        );
+        assert_eq!(
+            Maybe::Absent(generator_lookup::Absent::OutOfRange),
+            wiring.generator(Edge::from(2)),
+            "and a position past the generator count holds nothing"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_fan_in()
+    {
+        let refusal = Wiring::assemble(
+            WireCount::from(3),
+            alloc::vec![
+                Generator::new(value("f"), wires![0], wires![2]),
+                Generator::new(value("g"), wires![1], wires![2]),
+            ],
+            Interface::new(wires![0, 1], wires![2]),
+        )
+        .expect_err("in-degree two is the fan-in the fragment excludes");
+        assert_eq!(
+            WiringObstruction::FanIn {
+                wire: Wire::from(2),
+                first: Edge::from(0),
+                second: Edge::from(1),
+            },
+            refusal,
+            "the refusal names the doubly produced wire and both producers"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_fan_out()
+    {
+        let refusal = Wiring::assemble(
+            WireCount::from(3),
+            alloc::vec![
+                Generator::new(value("f"), wires![0], wires![1]),
+                Generator::new(value("g"), wires![0], wires![2]),
+            ],
+            Interface::new(wires![0], wires![1, 2]),
+        )
+        .expect_err("out-degree two is the copy the fragment excludes");
+        assert_eq!(
+            WiringObstruction::FanOut {
+                wire: Wire::from(0),
+                first: Edge::from(0),
+                second: Edge::from(1),
+            },
+            refusal,
+            "the refusal names the copied wire and both consumers"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_an_out_of_range_generator_wire()
+    {
+        // Both port lists are checked, at the first index past a one-wire
+        // diagram: a distant index would leave `<` weakened to `<=` alive.
+        let bad_source = Wiring::assemble(
+            WireCount::from(1),
+            alloc::vec![Generator::new(value("f"), wires![1], wires![0])],
+            Interface::default(),
+        )
+        .expect_err("a source naming an undeclared wire is out of range");
+        assert_eq!(
+            WiringObstruction::UnknownWire {
+                wire: Wire::from(1),
+                at: Edge::from(0),
+            },
+            bad_source,
+            "the refusal names the wire and the generator that named it"
+        );
+        let bad_target = Wiring::assemble(
+            WireCount::from(1),
+            alloc::vec![Generator::new(value("f"), wires![0], wires![1])],
+            Interface::default(),
+        )
+        .expect_err("and so is a target naming one");
+        assert_eq!(
+            WiringObstruction::UnknownWire {
+                wire: Wire::from(1),
+                at: Edge::from(0),
+            },
+            bad_target,
+            "with the target side named the same way"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_an_out_of_range_boundary_wire()
+    {
+        let bad_input = Wiring::assemble(
+            WireCount::from(1),
+            Vec::new(),
+            Interface::new(wires![1], wires![0]),
+        )
+        .expect_err("an input port outside the wire range is not a port of this diagram");
+        assert_eq!(
+            WiringObstruction::UnknownBoundaryWire {
+                wire: Wire::from(1)
+            },
+            bad_input,
+            "the refusal names the out-of-range input port"
+        );
+        let bad_output = Wiring::assemble(
+            WireCount::from(1),
+            Vec::new(),
+            Interface::new(wires![0], wires![1]),
+        )
+        .expect_err("nor is an output port outside it");
+        assert_eq!(
+            WiringObstruction::UnknownBoundaryWire {
+                wire: Wire::from(1)
+            },
+            bad_output,
+            "and the output leg is checked as well as the input leg"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_repeated_port_on_one_generator()
+    {
+        // One generator naming a wire at two ports is in-degree or out-degree
+        // two just as two generators are; the refusal names the one generator
+        // twice rather than inventing a second.
+        let repeated_source = Wiring::assemble(
+            WireCount::from(2),
+            alloc::vec![Generator::new(value("f"), wires![0, 0], wires![1])],
+            Interface::new(wires![0], wires![1]),
+        )
+        .expect_err("a wire consumed at two ports of one generator is a copy");
+        assert_eq!(
+            WiringObstruction::FanOut {
+                wire: Wire::from(0),
+                first: Edge::from(0),
+                second: Edge::from(0),
+            },
+            repeated_source,
+            "the refusal names the one generator as both consumers"
+        );
+        let repeated_target = Wiring::assemble(
+            WireCount::from(2),
+            alloc::vec![Generator::new(value("f"), wires![0], wires![1, 1])],
+            Interface::new(wires![0], wires![1]),
+        )
+        .expect_err("and a wire produced at two of its ports is a fan-in");
+        assert_eq!(
+            WiringObstruction::FanIn {
+                wire: Wire::from(1),
+                first: Edge::from(0),
+                second: Edge::from(0),
+            },
+            repeated_target,
+            "reported the same way on the produced side"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_repeated_boundary_port()
+    {
+        let on_the_input_leg = Wiring::assemble(
+            WireCount::from(1),
+            Vec::new(),
+            Interface::new(wires![0, 0], wires![0]),
+        )
+        .expect_err("a repeated port is a leg that is not mono");
+        assert_eq!(
+            WiringObstruction::RepeatedBoundaryPort {
+                wire: Wire::from(0)
+            },
+            on_the_input_leg,
+            "the refusal names the repeated port"
+        );
+        let on_the_output_leg = Wiring::assemble(
+            WireCount::from(1),
+            Vec::new(),
+            Interface::new(wires![0], wires![0, 0]),
+        )
+        .expect_err("both legs are mono, so the output leg is checked too");
+        assert_eq!(
+            WiringObstruction::RepeatedBoundaryPort {
+                wire: Wire::from(0)
+            },
+            on_the_output_leg,
+            "and the output leg's repeat is refused the same way"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_produced_boundary_input()
+    {
+        let refusal = Wiring::assemble(
+            WireCount::from(2),
+            alloc::vec![Generator::new(value("f"), wires![0], wires![1])],
+            Interface::new(wires![0, 1], wires![1]),
+        )
+        .expect_err("an input with a producer is not an open port");
+        assert_eq!(
+            WiringObstruction::BoundaryInputIsProduced {
+                wire: Wire::from(1),
+                by: Edge::from(0),
+            },
+            refusal,
+            "the refusal names the port and the generator that produces it"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_consumed_boundary_output()
+    {
+        let refusal = Wiring::assemble(
+            WireCount::from(2),
+            alloc::vec![Generator::new(value("f"), wires![0], wires![1])],
+            Interface::new(wires![0], wires![0, 1]),
+        )
+        .expect_err("an output with a consumer is not an open port");
+        assert_eq!(
+            WiringObstruction::BoundaryOutputIsConsumed {
+                wire: Wire::from(0),
+                by: Edge::from(0),
+            },
+            refusal,
+            "the refusal names the port and the generator that consumes it"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_an_undeclared_open_wire()
+    {
+        let refusal = Wiring::assemble(
+            WireCount::from(2),
+            alloc::vec![Generator::new(value("f"), wires![0], wires![1])],
+            Interface::new(wires![0], Vec::new()),
+        )
+        .expect_err("an open output the interface does not declare is a lost port");
+        assert_eq!(
+            WiringObstruction::UndeclaredOutput {
+                wire: Wire::from(1)
+            },
+            refusal,
+            "the refusal names the wire the interface would have lost"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_an_undeclared_open_input()
+    {
+        // The input side carries more than interface honesty: the convexity
+        // discharge reads every image input back as the image of a declared
+        // input port, so an undeclared open input would be one no connectivity
+        // test asked about.
+        let refusal = Wiring::assemble(
+            WireCount::from(2),
+            alloc::vec![Generator::new(value("f"), wires![0], wires![1])],
+            Interface::new(Vec::new(), wires![1]),
+        )
+        .expect_err("an open input the interface does not declare is a lost port");
+        assert_eq!(
+            WiringObstruction::UndeclaredInput {
+                wire: Wire::from(0)
+            },
+            refusal,
+            "the refusal names the wire the interface would have lost"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_self_looping_generator()
+    {
+        // A cycle of length one leaves exactly one generator unsettled, so a
+        // settled count compared with anything but equality would admit it.
+        let refusal = Wiring::assemble(
+            WireCount::from(1),
+            alloc::vec![Generator::new(value("f"), wires![0], wires![0])],
+            Interface::default(),
+        )
+        .expect_err("a self-loop leaves the acyclic fragment");
+        assert_eq!(
+            WiringObstruction::DirectedCycle {
+                through: Edge::from(0)
+            },
+            refusal,
+            "the refusal names the generator the one-step cycle runs through"
+        );
+    }
+
+    #[test]
+    fn the_wiring_refuses_a_directed_cycle()
+    {
+        let refusal = Wiring::assemble(
+            WireCount::from(2),
+            alloc::vec![
+                Generator::new(value("f"), wires![0], wires![1]),
+                Generator::new(value("g"), wires![1], wires![0]),
+            ],
+            Interface::default(),
+        )
+        .expect_err("a two-generator loop leaves the acyclic fragment");
+        assert_eq!(
+            WiringObstruction::DirectedCycle {
+                through: Edge::from(0)
+            },
+            refusal,
+            "the refusal names a generator the cycle runs through"
+        );
+        // `h` reads the loop's second output and is listed first. It never
+        // settles, and it is not on the cycle: the named generator is.
+        let downstream_first = Wiring::assemble(
+            WireCount::from(4),
+            alloc::vec![
+                Generator::new(value("h"), wires![2], wires![3]),
+                Generator::new(value("f"), wires![0], wires![1, 2]),
+                Generator::new(value("g"), wires![1], wires![0]),
+            ],
+            Interface::new(Vec::new(), wires![3]),
+        )
+        .expect_err("a loop with a reader below it leaves the acyclic fragment");
+        assert_eq!(
+            WiringObstruction::DirectedCycle {
+                through: Edge::from(1)
+            },
+            downstream_first,
+            "the named generator is on the cycle, not merely below it"
+        );
+    }
+
+    #[test]
+    fn a_monogamous_wiring_admits_a_directed_cycle()
+    {
+        // The loop that `assemble` refuses through `f` is admitted, with its
+        // incidence intact; a local refusal still stands.
+        let looped = || {
+            alloc::vec![
+                Generator::new(value("f"), wires![0], wires![1]),
+                Generator::new(value("g"), wires![1], wires![0]),
+            ]
+        };
+        let wiring = assemble_monogamous(WireCount::from(2), looped(), Interface::default())
+            .expect("a loop is monogamous and boundary-honest");
+        assert_eq!(
+            Maybe::Present(Edge::from(1)),
+            wiring.producer_of(Wire::from(0))
+        );
+        assert_eq!(
+            Maybe::Present(Edge::from(0)),
+            wiring.consumer_of(Wire::from(0))
+        );
+        assert_eq!(
+            Err(WiringObstruction::DirectedCycle {
+                through: Edge::from(0)
+            }),
+            Wiring::assemble(WireCount::from(2), looped(), Interface::default()),
+            "the public constructor still refuses the loop"
+        );
+        assert_eq!(
+            Err(WiringObstruction::FanIn {
+                wire: Wire::from(0),
+                first: Edge::from(0),
+                second: Edge::from(1),
+            }),
+            assemble_monogamous(
+                WireCount::from(1),
+                alloc::vec![
+                    Generator::new(value("f"), Vec::new(), wires![0]),
+                    Generator::new(value("g"), Vec::new(), wires![0]),
+                ],
+                Interface::new(Vec::new(), wires![0]),
+            ),
+            "a fan-in stays refused"
+        );
+    }
+
+    #[test]
+    fn the_components_partition_the_generators()
+    {
+        // Validated against the diagram rather than a predicted partition:
+        // every position appears in exactly one component, members ascending.
+        let wiring = Wiring::assemble(
+            WireCount::from(5),
+            alloc::vec![
+                Generator::new(value("f"), wires![0], wires![1]),
+                Generator::new(value("g"), wires![2], wires![3]),
+                Generator::new(value("h"), wires![1], wires![4]),
+            ],
+            Interface::new(wires![0, 2], wires![3, 4]),
+        )
+        .expect("two components, one of two generators and one of one");
+        let components = wiring.components();
+        assert_eq!(
+            ComponentCount::from(2),
+            components.count(),
+            "`f` and `h` share wire 1; `g` shares nothing"
+        );
+        let mut seen: BTreeSet<Edge> = BTreeSet::new();
+        for index in 0 .. usize::from(components.count()) {
+            let Maybe::Present(members) = components.members(ComponentIndex::from(index))
+            else {
+                panic!("a component below the count has members");
+            };
+            assert!(!members.is_empty(), "no component is empty");
+            assert!(
+                members.is_sorted_by(|left, right| left < right),
+                "members are in ascending position order"
+            );
+            for member in members {
+                assert!(seen.insert(*member), "no generator is in two components");
+            }
+        }
+        assert_eq!(
+            usize::from(wiring.edge_count()),
+            seen.len(),
+            "and every generator is in one"
+        );
+        assert_eq!(
+            Maybe::Present(&edges![0, 2][..]),
+            components.members(ComponentIndex::from(0)),
+            "the first component holds the lowest-positioned generator"
+        );
+        assert_eq!(
+            Maybe::Present(&edges![1][..]),
+            components.members(ComponentIndex::from(1)),
+            "and the second is the separate one"
+        );
+        assert_eq!(
+            Maybe::Absent(component_lookup::Absent::OutOfRange),
+            components.members(ComponentIndex::from(2)),
+            "a component index at the count names nothing"
+        );
+    }
+
+    #[test]
+    fn a_component_joins_through_a_shared_wire_in_both_directions()
+    {
+        // Seeding at position 0 makes exactly one direction load-bearing in
+        // each fixture: forwards (a target's consumer) in the first, backwards
+        // (a source's producer) in the second.
+        let forwards = two_step().expect("the seed's target is the second generator's source");
+        assert_eq!(
+            ComponentCount::from(1),
+            forwards.components().count(),
+            "the consumer-of-a-target direction joins them"
+        );
+        let backwards = Wiring::assemble(
+            WireCount::from(3),
+            alloc::vec![
+                Generator::new(value("g"), wires![1], wires![2]),
+                Generator::new(value("f"), wires![0], wires![1]),
+            ],
+            Interface::new(wires![0], wires![2]),
+        )
+        .expect("the same diagram with the generators listed the other way round");
+        assert_eq!(
+            ComponentCount::from(1),
+            backwards.components().count(),
+            "the producer-of-a-source direction joins them"
+        );
+    }
+
+    #[test]
+    fn a_port_free_generator_is_its_own_component()
+    {
+        // A point is adjacent to nothing, so it is a singleton component, and
+        // two points of one label stay two addressable components.
+        let wiring = Wiring::assemble(
+            WireCount::from(0),
+            alloc::vec![
+                Generator::new(value("a"), Vec::new(), Vec::new()),
+                Generator::new(value("a"), Vec::new(), Vec::new()),
+            ],
+            Interface::default(),
+        )
+        .expect("two port-free generators are a diagram");
+        let components = wiring.components();
+        assert_eq!(
+            ComponentCount::from(2),
+            components.count(),
+            "equal labels do not make one component"
+        );
+        assert_eq!(
+            Maybe::Present(&edges![0][..]),
+            components.members(ComponentIndex::from(0)),
+            "each is a singleton"
+        );
+        assert_eq!(
+            Maybe::Present(&edges![1][..]),
+            components.members(ComponentIndex::from(1)),
+            "in position order"
+        );
+        let empty = Wiring::assemble(WireCount::from(0), Vec::new(), Interface::default())
+            .expect("the empty diagram is a diagram");
+        assert_eq!(
+            ComponentCount::from(0),
+            empty.components().count(),
+            "and a diagram with no generator has no component"
+        );
+    }
+
+    #[test]
+    fn a_partial_bijection_stays_injective()
+    {
+        let mut map = PartialBijection::new();
+        assert_eq!(
+            Ok(()),
+            map.extend(Wire::from(0), Wire::from(7)),
+            "the first pair is free"
+        );
+        assert_eq!(
+            Ok(()),
+            map.extend(Wire::from(0), Wire::from(7)),
+            "and repeating it is idempotent rather than a clash"
+        );
+        assert_eq!(
+            Err(BijectionClash::SourceBound {
+                source: Wire::from(0),
+                bound: Wire::from(7),
+            }),
+            map.extend(Wire::from(0), Wire::from(8)),
+            "re-binding a source is refused and names where it already goes"
+        );
+        assert_eq!(
+            Err(BijectionClash::ImageBound {
+                image: Wire::from(7),
+                bound: Wire::from(0),
+            }),
+            map.extend(Wire::from(1), Wire::from(7)),
+            "re-using an image is refused and names what already reaches it"
+        );
+        assert_eq!(
+            PairCount::from(1),
+            map.pair_count(),
+            "neither refusal left a partial extension behind"
+        );
+        assert_eq!(
+            Maybe::Present(Wire::from(7)),
+            map.image_of(Wire::from(0)),
+            "the accepted pair is readable forwards"
+        );
+        assert_eq!(
+            Maybe::Present(Wire::from(0)),
+            map.preimage_of(Wire::from(7)),
+            "and backwards"
+        );
+        assert_eq!(
+            Maybe::Absent(wire_image::Absent::Unmapped),
+            map.image_of(Wire::from(1)),
+            "the refused source stays unmapped"
+        );
+        assert_eq!(
+            Maybe::Absent(wire_preimage::Absent::Unreached),
+            map.preimage_of(Wire::from(8)),
+            "and the refused image unreached"
+        );
+    }
+
+    #[test]
+    fn restriction_and_conflict_precedence_preserve_the_map()
+    {
+        let mut map = PartialBijection::new();
+        for (source, image) in [(2, 20), (5, 50), (8, 80)] {
+            map.extend(Wire(source), Wire(image))
+                .expect("distinct pairs");
+        }
+        let restricted = map.restricted_to(&[Wire(8), Wire(2), Wire(8), Wire(99)]);
+        assert_eq!(restricted.pairs().collect::<Vec<_>>(), [
+            (Wire(2), Wire(20)),
+            (Wire(8), Wire(80))
+        ]);
+        assert_eq!(restricted.preimage_of(Wire(20)), Maybe::Present(Wire(2)));
+        assert_eq!(restricted.preimage_of(Wire(80)), Maybe::Present(Wire(8)));
+        assert_eq!(
+            restricted.preimage_of(Wire(50)),
+            Maybe::Absent(wire_preimage::Absent::Unreached)
+        );
+        assert_eq!(map.restricted_to(&[]), PartialBijection::new());
+        let before = map.clone();
+        assert_eq!(
+            map.extend(Wire(2), Wire(80)),
+            Err(BijectionClash::SourceBound {
+                source: Wire(2),
+                bound: Wire(20)
+            })
+        );
+        assert_eq!(map, before);
+        assert_eq!(
+            map.extend(Wire(99), Wire(80)),
+            Err(BijectionClash::ImageBound {
+                image: Wire(80),
+                bound: Wire(8)
+            })
+        );
+        assert_eq!(map, before);
+    }
+
+    #[test]
+    fn placement_preserves_neighbours_and_refuses_foreign_positions()
+    {
+        let mut placed = [Placement::Unplaced, Placement::Unplaced, Placement::Placed];
+        assert_eq!(place(&mut placed, Edge(1)), Placement::Unplaced);
+        assert_eq!(placed, [
+            Placement::Unplaced,
+            Placement::Placed,
+            Placement::Placed
+        ]);
+        assert_eq!(place(&mut placed, Edge(1)), Placement::Placed);
+        assert_eq!(place(&mut placed, Edge(3)), Placement::Placed);
+        assert_eq!(placed, [
+            Placement::Unplaced,
+            Placement::Placed,
+            Placement::Placed
+        ]);
+    }
+
+    #[test]
+    fn empty_and_isolated_interfaces_preserve_boundary_roles()
+    {
+        let empty = Wiring::assemble(WireCount(0), Vec::new(), Interface::new([], []))
+            .expect("empty diagram");
+        assert_eq!(empty.components().count(), ComponentCount(0));
+        assert_eq!(
+            empty.components().members(ComponentIndex(0)),
+            Maybe::Absent(component_lookup::Absent::OutOfRange)
+        );
+        assert_eq!(
+            empty.producer_of(Wire(0)),
+            Maybe::Absent(wire_producer::Absent::OutOfRange)
+        );
+        let isolated = Wiring::assemble(
+            WireCount(1),
+            Vec::new(),
+            Interface::new([Wire(0)], [Wire(0)]),
+        )
+        .expect("isolated wire is both boundaries");
+        assert_eq!(isolated.components().count(), ComponentCount(0));
+        assert_eq!(
+            isolated.producer_of(Wire(0)),
+            Maybe::Absent(wire_producer::Absent::BoundaryInput)
+        );
+        assert_eq!(
+            isolated.consumer_of(Wire(0)),
+            Maybe::Absent(wire_consumer::Absent::BoundaryOutput)
+        );
+    }
+}

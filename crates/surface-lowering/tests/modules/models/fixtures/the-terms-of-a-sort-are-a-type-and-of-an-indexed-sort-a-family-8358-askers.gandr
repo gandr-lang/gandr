@@ -1,0 +1,4 @@
+def same(w : Terms Frag Width, t : Terms Frag Term w) -> Terms Frag Term w = t;
+def picked() -> Terms Frag Term Frag.word = Frag.choose Frag.high Frag.one Frag.zero;
+def unit() -> Terms Frag Term Frag.word = Frag.one;
+def chosen : Path[.A = Terms Frag Term Frag.word] picked unit = Path.here unit;

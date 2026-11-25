@@ -1,0 +1,88 @@
+[package]
+name = "gandr-theory-exact-reals"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Canonical dyadics, oriented intervals and the scoped plan DAG of exact reals"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["dyadic", "exact-reals", "gandr", "interval"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+autobenches = false
+
+# One integration target, each area file its own module, so a witness path
+# reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The measurements: `harness = false` benches, one timing dyadic and interval
+# operations at four operand widths, one timing a plan's canonical form, its
+# bytes and their reading back, one timing the refinement and the replay of
+# certificates, one timing a turn of the refinement machine, one timing the
+# search and the replay of bounded quantifiers, one timing the checked-result
+# cache, one timing cut elimination, one timing the enclosure rules of the
+# builtins and their replay, and one measuring the split points of each split
+# policy, each with percentiles and allocations.
+[[bench]]
+harness = false
+name = "arithmetic"
+path = "benches/arithmetic.rs"
+
+[[bench]]
+harness = false
+name = "plan"
+path = "benches/plan.rs"
+
+[[bench]]
+harness = false
+name = "certificate"
+path = "benches/certificate.rs"
+
+[[bench]]
+harness = false
+name = "dovetail"
+path = "benches/dovetail.rs"
+
+[[bench]]
+harness = false
+name = "quantifier"
+path = "benches/quantifier.rs"
+
+[[bench]]
+harness = false
+name = "cache"
+path = "benches/cache.rs"
+
+[[bench]]
+harness = false
+name = "elimination"
+path = "benches/elimination.rs"
+
+[[bench]]
+harness = false
+name = "elementary"
+path = "benches/elementary.rs"
+
+[[bench]]
+harness = false
+name = "split"
+path = "benches/split.rs"
+
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+foldhash.workspace = true
+gandr-theory-discrete-morse.workspace = true
+hashbrown.workspace = true
+num-bigint.workspace = true
+
+[dev-dependencies]
+allocation-counter.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

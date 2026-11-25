@@ -1,0 +1,94 @@
+test: elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158
+package: gandr-core-checker
+command: mise run debug:test gandr-core-checker elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158 --break Deferrals.*::resolve$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-checker/a682ebde6fcfcc81/out/gandr_core_checker-a682ebde6fcfcc81"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-checker/a682ebde6fcfcc81/out/gandr_core_checker-a682ebde6fcfcc81' (arm64).
+(lldb) settings set -- target.run-args  "elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Deferrals.*::resolve$
+Breakpoint 1: where = gandr_core_checker-a682ebde6fcfcc81`<gandr_core_checker::elaboration::constraints::Deferrals>::resolve + 76 at constraints.rs:960:5, address = 0x00000001004534a8
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_checker-a682ebde6fcfcc81`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x000000010181a868
+(lldb) run
+
+running 1 test
+test elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 28442 launched: 'target/debug-trace/debug/build/gandr-core-checker/a682ebde6fcfcc81/out/gandr_core_checker-a682ebde6fcfcc81' (arm64)
+Process 28442 stopped
+* thread #2, name = 'elaboration::tests::a_slot_the_signature_leaves_undecided_waits', stop reason = breakpoint 1.1
+       frame #0: 0x00000001004534a8 gandr_core_checker-a682ebde6fcfcc81`<gandr_core_checker::elaboration::constraints::Deferrals>::resolve(self={owed:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, suspended:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, collecting:On, residue:{equations:size=0, dependencies:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, emission:Off, metas:{entries:size=2, by_hole:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, postponed:size=0, journal:None}, nominated:size=2, answered:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, spliced:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, signing:Body}, arena={values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, definitions={bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, models=size=1, part=Signature) at constraints.rs:960:5
+   957 	    /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
+   958 	    /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
+   959 	    /// - witness: `elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158`
+-> 960 	    #[spec(ensures: |ret| match ret {
+    	    ^
+   961 	        | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => part == Signing::Body && at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
+   962 	        | Err((at, refusal)) => part == Signing::Body && matches!(refusal, CheckRefusal::ModelUnanswered { at: named, .. } if named == at),
+   963 	        | Ok(()) => true,
+(lldb) bt 24
+* thread #2, name = 'elaboration::tests::a_slot_the_signature_leaves_undecided_waits', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001004534a8 gandr_core_checker-a682ebde6fcfcc81`<gandr_core_checker::elaboration::constraints::Deferrals>::resolve(self={owed:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, suspended:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, collecting:On, residue:{equations:size=0, dependencies:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, emission:Off, metas:{entries:size=2, by_hole:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, postponed:size=0, journal:None}, nominated:size=2, answered:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, spliced:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, signing:Body}, arena={values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, definitions={bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, models=size=1, part=Signature) at constraints.rs:960:5
+     frame #1: 0x000000010073db08 gandr_core_checker-a682ebde6fcfcc81`gandr_core_checker::elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158 at tests.rs:1472:23
+     frame #2: 0x0000000100720f5c gandr_core_checker-a682ebde6fcfcc81`gandr_core_checker::elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158::{closure#0}((null)={}) at tests.rs:1449:67
+     frame #3: 0x0000000100d00c84 gandr_core_checker-a682ebde6fcfcc81`<gandr_core_checker::elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000000100e71098 gandr_core_checker-a682ebde6fcfcc81`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x0000000100e71090 gandr_core_checker-a682ebde6fcfcc81`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x0000000100e7c5b4 gandr_core_checker-a682ebde6fcfcc81`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x0000000100e7c5a8 gandr_core_checker-a682ebde6fcfcc81`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x0000000100e7c5a8 gandr_core_checker-a682ebde6fcfcc81`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x0000000100e7c5a4 gandr_core_checker-a682ebde6fcfcc81`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x0000000100e7c5a4 gandr_core_checker-a682ebde6fcfcc81`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x0000000100e7c5a4 gandr_core_checker-a682ebde6fcfcc81`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x0000000100e7c598 gandr_core_checker-a682ebde6fcfcc81`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x0000000100e76fa8 gandr_core_checker-a682ebde6fcfcc81`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x0000000100e76f44 gandr_core_checker-a682ebde6fcfcc81`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x0000000100e7ea78 gandr_core_checker-a682ebde6fcfcc81`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x0000000100e7ea68 gandr_core_checker-a682ebde6fcfcc81`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x0000000100e7ea68 gandr_core_checker-a682ebde6fcfcc81`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x0000000100e7ea64 gandr_core_checker-a682ebde6fcfcc81`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x0000000100e7ea64 gandr_core_checker-a682ebde6fcfcc81`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x0000000100e7ea64 gandr_core_checker-a682ebde6fcfcc81`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x0000000100e7ea54 gandr_core_checker-a682ebde6fcfcc81`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x000000010154a778 gandr_core_checker-a682ebde6fcfcc81`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x000000010154a76c gandr_core_checker-a682ebde6fcfcc81`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(gandr_core_checker::elaboration::constraints::Deferrals *) self = 0x0000000170005f08 {owed:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, suspended:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, collecting:On, residue:{equations:size=0, dependencies:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, emission:Off, metas:{entries:size=2, by_hole:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, postponed:size=0, journal:None}, nominated:size=2, answered:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, spliced:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, signing:Body}
+(gandr_core_term::arena::CoreArena *) arena = 0x0000000170005e10 {values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}
+(gandr_core_checker::code::CodeDefinitions *) definitions = 0x00000001700062a0 {bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}
+(&[gandr_core_term::model::ModelSlot]) models = size=1 {
+  [0] = {holes:size=2, fixed:size=0, candidates:size=2}
+}
+(gandr_core_checker::elaboration::constraints::Signing) part = Signature
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x000000010073db08 gandr_core_checker-a682ebde6fcfcc81`gandr_core_checker::elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158 at tests.rs:1472:23
+   1469	    let definitions = crate::code::CodeDefinitions::new();
+   1470	    for slot in [&ambiguous, &unanswered] {
+   1471	        assert_eq!(
+-> 1472	            deferrals.resolve(
+    	                      ^
+   1473	                &mut arena,
+   1474	                &definitions,
+   1475	                core::slice::from_ref(slot),
+(lldb) frame variable --depth 3
+(gandr_core_term::arena::CoreArena) arena = {values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}
+(gandr_core_checker::elaboration::constraints::Deferrals) deferrals = {owed:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, suspended:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, collecting:On, residue:{equations:size=0, dependencies:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, emission:Off, metas:{entries:size=2, by_hole:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, postponed:size=0, journal:None}, nominated:size=2, answered:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, spliced:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, signing:Body}
+(gandr_core_term::hole::HoleId[2]) holes = {
+  [0] = {0:4294967295}
+  [1] = {0:4294967294}
+}
+(gandr_core_term::arena::ValueId) at = {0:0}
+(gandr_core_term::arena::ValueId) integer = {0:3}
+(gandr_core_term::arena::ValueId) unit = {0:4}
+(gandr_core_term::model::ModelSlot) ambiguous = {holes:size=2, fixed:size=0, candidates:size=2}
+(gandr_core_term::model::ModelSlot) unanswered = {holes:size=2, fixed:size=0, candidates:size=1}
+(gandr_core_checker::code::CodeDefinitions) definitions = {bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}
+(core::array::iter::IntoIter<gandr_core_term::model::ModelSlot *>) iter = {inner:{value:{0:{alive:{start:1, end:2}, data:({…}, {…})}}}}
+(gandr_core_term::model::ModelSlot *) slot = 0x0000000170006060 {holes:size=2, fixed:size=0, candidates:size=2}

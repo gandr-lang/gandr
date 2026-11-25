@@ -1,0 +1,33 @@
+// Products can contain optional values.
+//
+// Each tuple member receives a product component type.
+// `Maybe` comes from `data-maybe.gandr`.
+//
+// Constructors in a product need its stated type.
+// A result with no returner has the type `-F (A * B)`.
+//
+// - see: #2255
+// - see: #1877 — a constructor among a tuple's members, typed by the product
+
+/// Optional values, `None` and `Some(x)`.
+import "./data-maybe.gandr";
+// The native finite lists.
+import std.list (List);
+
+/// A present value and an absent one, annotated as their product.
+def paired = (*{Some 1, None} : Maybe Integer * Maybe Integer);
+
+/// The same pair at the type the function returns.
+def answered_pair(n : Integer) -> Maybe Integer * Maybe Integer =
+  *{None, Some n}
+
+/// Each pair in `pair_list` receives its list element type.
+/// Its members receive product component types.
+def pair_list() -> List (Maybe Integer * Maybe Integer) =
+  #[*{Some 1, None}, *{None, Some 2}]
+
+/// A pair in a pair: the inner one takes the product at its place.
+def nested_pair = (*{
+  Some 1,
+  *{None, Some 2}
+} : Maybe Integer * (Maybe Integer * Maybe Integer));

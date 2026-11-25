@@ -1,0 +1,28 @@
+[package]
+name = "gandr-kernel-conversion-trace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The conversion-decision vocabulary and statically dispatched sink shared by the untrusted engine and the certified kernel's replay"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["conversion", "gandr", "kernel", "trace"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+gandr-kernel-data.workspace = true
+
+[lints]
+workspace = true

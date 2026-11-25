@@ -1,0 +1,3 @@
+/// The base.
+def nine : Integer;
+def nine = 9;

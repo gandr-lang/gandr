@@ -1,0 +1,12 @@
+/// A tree whose node holds its children as a function.
+data Tree : Type where
+  | Leaf : (x : Integer) --> Tree
+  | Node : (k : Integer -> Tree) --> Tree
+
+/// The leaf that the first child of each node leads to. The call of `k`
+/// gives a tree at a stage below the argument's. The judgement binds the
+/// result of the call at that staged type.
+def rec first(t : Tree) -> Integer =
+  match t where
+    | Leaf(x) => x
+    | Node(k) => first[<] (k 0)

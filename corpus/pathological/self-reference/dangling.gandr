@@ -1,0 +1,28 @@
+//! `dangling` returns a thunk that captures an access view.
+//!
+//! The access ends when `resume` runs. The checker refuses the later use as
+//! `ViewEscaped`.
+//!
+//! The source imports the host early exit interface.
+//! The handler invokes the returned thunk after it resumes the access.
+//!
+//! Rust `Pin` prevents a moved future from dangling self-reference.
+//! - see: #1183 — `dangling`
+import std.process;
+
+/// `dangling` returns a thunk that captures the access view.
+@[refuses("ViewEscaped")]
+def dangling() -> Integer =
+  var x = 5
+  let r : Integer = handle c : std.process.Exit.Eff {
+    let k = access x as v {
+      c.exit 1;
+      resume v (v + 7);
+      pure thunk { pure v }
+    };
+    force k
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => k *{}
+  };
+  pure x

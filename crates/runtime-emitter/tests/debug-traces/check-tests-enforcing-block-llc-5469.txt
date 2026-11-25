@@ -1,0 +1,17 @@
+command: mise run check:tests-enforcing, with GATE_SCOPE="--package gandr-runtime-emitter -E 'test(/^block::/)'", RUSTUP_TOOLCHAIN=nightly-2026-10-01, MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS= and RUSTUP_HOME a fresh home that holds the toolchain as the CI image's Dockerfile installs it
+issue: #5469
+before: 3729adc7bf8a
+exit: 100
+toolchain: rustup toolchain install nightly-2026-10-01 --profile minimal --component clippy,rustfmt
+    thread 'block::a_class_operand_and_an_output_take_their_words' panicked at crates/runtime-emitter/tests/block.rs:153:43:
+    called `Result::unwrap()` on an `Err` value: Absent("/tmp/flexf-rustup/toolchains/nightly-2026-10-01-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin/llc")
+     Summary [   0.005s] 5 tests run: 0 passed, 5 failed, 116 skipped
+        FAIL [   0.004s] (1/5) gandr-runtime-emitter::tests block::a_second_request_starts_no_process
+        FAIL [   0.004s] (2/5) gandr-runtime-emitter::tests block::a_class_operand_and_an_output_take_their_words
+        FAIL [   0.005s] (3/5) gandr-runtime-emitter::tests block::each_refusal_names_its_cause
+        FAIL [   0.005s] (4/5) gandr-runtime-emitter::tests block::the_system_call_compiles_to_the_bytes_that_ran
+        FAIL [   0.005s] (5/5) gandr-runtime-emitter::tests block::requests_at_once_share_one_compile
+error: test run failed
+toolchain: rustup toolchain install nightly-2026-10-01 --profile minimal --component clippy,rustfmt,llvm-tools
+after: 6cea254d9
+exit: 0

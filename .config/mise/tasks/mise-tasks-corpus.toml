@@ -1,0 +1,480 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# The corpus manifest: a sha256 line per file, `hash  path-under-the-root`,
+# sorted by path, over the roots named. Two manifests of one tree taken under
+# different roots diff to zero when every file kept its hash and its path
+# under its root: the same hashes, the same relative paths, the same count.
+# The roots are space-separated; the output file is written whole.
+#
+# A `ledger` directory is pruned from every root: the ledger exemplars are a
+# manifest root of their own (`corpus/ledger`), so they must not be counted
+# again under the corpus root that now contains them. No fixture subtree is
+# named `ledger`, so the prune matches only the exemplar root.
+["corpus:manifest"]
+description = "A sha256 manifest of the corpus roots, one line per file, sorted by path"
+usage = '''
+arg "[roots]" help="the corpus roots, space-separated, walked recursively"
+arg "[out]" help="the file the manifest is written to"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+out={{ usage.out }}
+mkdir -p "$(dirname "$out")"
+for root in {{ usage.roots }}; do
+  (cd "$root" && find . -name ledger -prune -o -type f -print | LC_ALL=C sort | sed 's|^\./||' | while IFS= read -r rel; do
+    printf '%s  %s\n' "$(sha256sum "$rel" | cut -d' ' -f1)" "$rel"
+  done)
+done | LC_ALL=C sort -k2 > "$out"
+echo "corpus manifest: $(wc -l < "$out") files to $out"
+'''
+
+# The page-28 stress, as far as the library writes it: `library/std`, which
+# holds `std.math`, checked
+# whole, every verdict rechecked and each declaration measured, timed by
+# `.config/bench/timed.py` (#4191), which reads the wall time and the peak
+# resident set alike on Linux and macOS, where `/usr/bin/time` may be absent
+# or differ. The cylinder composites' rows, in the Path reading, by `fill` and
+# in the cells reading, stand beside the artifact sizes Catt reports for the
+# same constructions at dimensions 2 and 3 (Benjamin, Markakis, Offord, Sarti
+# and Vicary, "Naturality for Higher-Dimensional Path Types",
+# arXiv:2501.11620, Example 1.4 and § 6). `cylinderFill2` and `cylinderFill3`
+# are the composites `fill` generates. `cylinderFill3` fixes its points, and
+# the corpus's `cattCylinder3` checks it against the type Catt answers for
+# `cylcomp(3,1,3)` at identity verticals (#3833). Catt's own composite leaves
+# its verticals free (#4240).
+# `cylinderSuspended3` and `coneSuspended3` compose along dimension 2 by
+# suspension (#4198). Page 28 gives no size for them, so their Catt bytes read
+# `none`, and `bench:catt` times Catt's. A row's bytes are its segment in the
+# kernel artifact, its shared size the subterm-table entries the segment adds,
+# and its unshared size its roots' expanded work.
+# Its goals are those the kernel's check of it expanded, recalled from its
+# memo and answered by an earlier admission's kept outcome, and its time the
+# kernel's admission of it. The check's wall time and peak resident set
+# follow, with the load average they were taken under. The check runs over
+# scratch configuration, cache and data directories, so it reads no verdict
+# and commits nothing to the user's store.
+#
+# `std.math` holds rows at n = 3, so the check carries the host's memory
+# bound (`.config/mise/bounded`) and a wall-clock limit, 1800 s unless
+# `--limit` names another (#3855). Where no bound takes, as on macOS, the task
+# refuses before the check runs. A check past either bound prints `past bound`
+# in place of its rows and is never retried larger: the seat asks for a
+# window instead. `.config/bench/stress.jq` decides the outcome, held to
+# `check:bench`'s cases.
+["bench:stress"]
+description = "Check library/std measured and timed under the host's memory bound, std.math's cylinder composites beside Catt's artifact sizes"
+usage = 'flag "--limit <seconds>" help="the wall-clock limit" default="1800"'
+tools.jq = "1.8.1"
+tools.python = "3.15.2"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+limit=${usage_limit:?}
+# The bound refuses here, before the driver is built, where no bound takes.
+.config/mise/bounded bench:stress true
+.config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+status=0
+XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_DATA_HOME="$scratch/data" \
+  .config/mise/bounded bench:stress python .config/bench/timed.py "$scratch/time" \
+  timeout "$limit" target/release/gandr check --recheck --measure library/std \
+  > "$scratch/check" 2> "$scratch/errors" || status=$?
+out_of_memory=false
+if [[ $(< "$scratch/errors") == *'memory allocation of'* ]]; then
+  out_of_memory=true
+fi
+if ! outcome=$(jq -n -c --argjson status "$status" --argjson out_of_memory "$out_of_memory" \
+  '{status: $status, out_of_memory: $out_of_memory}' \
+  | jq -r -L .config/bench -f .config/bench/stress.jq 2> "$scratch/refusal"); then
+  awk '{ sub(/^jq: error \(at [^)]*\): /, "bench:stress: "); print }' "$scratch/refusal" >&2
+  awk '!/^measure: /' "$scratch/check" "$scratch/errors" >&2
+  exit 1
+fi
+if [[ $outcome == 'past bound' ]]; then
+  printf 'bench:stress: past bound, the 8 GiB scope or the %s s limit; never retried larger (#3855)\n' "$limit"
+  exit 0
+fi
+awk '
+function catt(declaration, construction, size) {
+  name[++count] = declaration; builtin[declaration] = construction; bytes[declaration] = size
+}
+BEGIN {
+  catt("cylinderComposite2", "cylcomp(2,1,2)", 818)
+  catt("cylinderStack2", "cylstack(2)", 830)
+  catt("coneComposite2", "conecomp(2,1,2)", 501)
+  catt("cylinderFill2", "cylcomp(2,1,2)", 818)
+  catt("cylinderFill3", "cylcomp(3,1,3)", 10236)
+  catt("cylinderCompositeCells2", "cylcomp(2,1,2)", 818)
+  catt("cylinderStackCells2", "cylstack(2)", 830)
+  catt("coneCompositeCells2", "conecomp(2,1,2)", 501)
+  catt("cylinderSuspended3", "cylcomp(3,2,3)", "none")
+  catt("coneSuspended3", "conecomp(3,2,3)", "none")
+}
+/^measure: / {
+  split($0, part, ": ")
+  if (part[3] in bytes) {
+    split(part[4], size, ", ")
+    sub(/ bytes$/, "", size[1]); sub(/ shared$/, "", size[2]); sub(/ unshared$/, "", size[3])
+    sub(/ expanded$/, "", size[4]); sub(/ recalled$/, "", size[5]); sub(/ kept$/, "", size[6])
+    if (size[7] ~ / ns$/) { sub(/ ns$/, "", size[7]); size[7] = sprintf("%.1f", size[7] / 1000) }
+    row[part[3]] = size[1] "\t" size[2] "\t" size[3] "\t" size[4] "\t" size[5] "\t" size[6] "\t" size[7]
+  }
+}
+END {
+  print "| declaration | Catt built-in | Catt bytes | gandr bytes | shared | unshared | expanded | recalled | kept | kernel µs |"
+  print "| --- | --- | --: | --: | --: | --: | --: | --: | --: | --: |"
+  for (i = 1; i <= count; i++) {
+    if (!(name[i] in row)) { missing = missing " " name[i]; continue }
+    split(row[name[i]], size, "\t")
+    printf "| `%s` | `%s` | %s | %s | %s | %s | %s | %s | %s | %s |\n", name[i], builtin[name[i]], bytes[name[i]], size[1], size[2], size[3], size[4], size[5], size[6], size[7]
+  }
+  if (missing != "") { printf "bench:stress: no row for%s\n", missing > "/dev/stderr"; exit 1 }
+}' "$scratch/check"
+awk '
+/^wall / { wall = $2 " s" }
+/^peak / { peak = $2 }
+END { printf "\nwall %s, peak resident set %s bytes\n", wall, peak }
+' "$scratch/time"
+uptime | awk -F 'load averages?: ' '{ printf "load %s\n", $2 }'
+'''
+
+# The small-device measure (#7308): four paths of gandr under a bound of cores
+# and of memory, the frame of a device with little of both. A built program
+# runs, the kernel replays `library/std` with no recorded verdict, a small
+# module checks cold, and a host serves the world `far` that a crossing
+# reaches. Each path runs at 1 and 2 cores and at 64 MiB, 256 MiB and 1 GiB,
+# and its row gives its wall time, the time to its first line, its peak
+# resident set, the peak that its scope charged and why it stopped. Before
+# those rows come the counts of each check at 1 and 2 cores (#7359): the
+# allocations of every thread and the frames that the kernel's checks pop,
+# from a build with the `counts` feature in `target/counts`, and then the
+# bytes of each frame of the kernel's checks, which rustc prints for
+# `gandr-kernel-core` in `target/sizes`. rustc prints them only when it
+# compiles the crate, so the crate is cleaned there first.
+# `.config/bench/small-device.bash` states each path and the bound, and
+# `.config/bench/small-device.jq`, `small-device-counts.jq` and
+# `small-device-frames.jq` write the rows, held to `check:bench`'s cases. The
+# measure needs a user scope of systemd that bounds memory, so on macOS it
+# refuses before the driver is built. The riscv64 host's table is the verdict,
+# and a fast host's table is never one. `--gandr` names a built driver in
+# place of this checkout's release build, and `--counting` a built driver in
+# place of its count build. Each must come from this checkout: a driver reads
+# `library/std` of the tree that it was built from
+# (`package::lock::standard`), so the `std` of another tree loses its host
+# interfaces. `--limit` gives the seconds that bound each run.
+["bench:small-device"]
+description = "Count the allocations and the frames of each check, read the bytes of each frame, then run four paths of gandr under bounds of cores and of memory, each with its wall time, its first line, its peak resident set, its charged peak and its stop"
+usage = '''
+flag "--gandr <binary>" help="a gandr built from this checkout, in place of its release build"
+flag "--counting <binary>" help="a gandr built from this checkout with the counts feature, in place of its count build"
+flag "--limit <seconds>" help="the wall-clock limit of each run" default="300"
+'''
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# The bound refuses here, before the driver is built, where no bound takes.
+.config/bench/small-device.bash --check-host
+gandr=${usage_gandr:-}
+if [[ -z $gandr ]]; then
+  .config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr
+  gandr=target/release/gandr
+fi
+counting=${usage_counting:-}
+if [[ -z $counting ]]; then
+  .config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr --features counts \
+    --target-dir target/counts
+  counting=target/counts/release/gandr
+fi
+sizes=$(mktemp)
+trap 'rm -f "$sizes"' EXIT
+cargo clean --quiet --package gandr-kernel-core --target-dir target/sizes
+.config/mise/scope cargo rustc --locked --quiet --package gandr-kernel-core --lib --target-dir target/sizes \
+  -- -Zprint-type-sizes > "$sizes"
+.config/bench/small-device.bash "$gandr" "$counting" "$sizes" "${usage_limit:?}"
+'''
+
+# The extent size of the device that holds a directory (#7481), at which the
+# store's shards seal each segment. The `profile` bench of
+# `gandr-storage-store` appends extents of 64 KiB, doubling to 64 MiB, each
+# with one `fdatasync`, and names the smallest whose rate is nine tenths of the
+# best. The task writes that size as `seal_bytes` in the `[store]` table of
+# the user's configuration, `gandr/config.toml` under the XDG configuration
+# directory, which the driver reads when it opens the store. The size is a
+# fact of the host, so it never lands in the tree. A host with no line seals
+# each segment at the close of the store alone.
+["store:profile"]
+description = "Measure the extent size of the device under a directory and write it as the store's seal_bytes in the user's configuration"
+usage = 'arg "<directory>" help="a directory on the device that holds the store"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+rows=$(.config/mise/scope cargo bench --locked --quiet --package gandr-storage-store --bench profile -- \
+  --directory "${usage_directory:?}")
+printf '%s\n' "$rows"
+line=$(printf '%s\n' "$rows" | awk '/^seal_bytes = [0-9]+$/ { print; found = 1 } END { exit found ? 0 : 1 }') \
+  || { echo "store:profile: the bench named no extent size" >&2; exit 1; }
+home=${XDG_CONFIG_HOME:-}
+[[ $home == /* ]] || home=${HOME:?}/.config
+config=$home/gandr/config.toml
+mkdir -p "${config%/*}"
+touch "$config"
+written=$(mktemp "${config%/*}/config.toml.XXXXXX")
+trap 'rm -f "$written"' EXIT
+# Replace the key in the `[store]` table, or add it at the table's head, or
+# add the table at the file's end.
+awk -v line="$line" '
+  /^\[store\][[:space:]]*$/ { print; print line; table = 1; done = 1; next }
+  /^\[/ { table = 0 }
+  table && /^seal_bytes[[:space:]]*=/ { next }
+  { print }
+  END { if (!done) { print ""; print "[store]"; print line } }
+' "$config" > "$written"
+mv "$written" "$config"
+echo "store:profile: $config holds $line under [store]"
+'''
+
+# The width of the host's counter is the count of concurrent compile jobs at
+# which the wall of a fixed batch stops its fall. The batch builds
+# `gandr-kernel-core` and its closure from clean in a scratch target
+# directory with `cargo build --jobs <n>`. The counts go from the host's
+# physical cores to its logical CPUs, in steps of a quarter of the physical
+# count. The width is the last step that cuts the wall by a fiftieth at least.
+# - see: #7706
+#
+# The task writes the width as `compile_width` in the `[host]` table of the
+# user's configuration. The hub reads that table when it sets the counter.
+# The width is a fact of the host, so it never lands in the tree. A host with
+# no line takes its logical count. Run the task on an idle host, because the
+# load of other runs reads as the cores' measure.
+# - see: `gandr/config.toml` under the XDG configuration directory
+["host:compile-width"]
+description = "Measure the count of concurrent compile jobs at which a fixed batch's wall stops falling and write it as the host's compile_width in the user's configuration"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $(uname -s) == Darwin ]]; then
+  physical=$(sysctl -n hw.physicalcpu)
+  logical=$(sysctl -n hw.logicalcpu)
+else
+  physical=$(lscpu --parse=core,socket | awk '!/^#/' | sort --unique | awk 'END { print NR }')
+  logical=$(nproc)
+fi
+step=$(( physical / 4 > 0 ? physical / 4 : 1 ))
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+# Cargo fetches the sources and the registry once, before any timed build.
+cargo fetch --locked --quiet
+width=$physical
+best=
+jobs=$physical
+while (( jobs <= logical )); do
+  rm -rf "$scratch/target"
+  started=${EPOCHREALTIME/./}
+  .config/mise/scope cargo build --locked --quiet --package gandr-kernel-core --jobs "$jobs" \
+    --target-dir "$scratch/target"
+  wall=$(( (${EPOCHREALTIME/./} - started) / 1000 ))
+  echo "host:compile-width: $jobs jobs, ${wall} ms"
+  if [[ -n $best ]] && (( wall * 50 > best * 49 )); then
+    break
+  fi
+  width=$jobs
+  best=$wall
+  if (( jobs < logical && jobs + step > logical )); then jobs=$logical; else jobs=$(( jobs + step )); fi
+done
+line="compile_width = $width"
+home=${XDG_CONFIG_HOME:-}
+[[ $home == /* ]] || home=${HOME:?}/.config
+config=$home/gandr/config.toml
+mkdir -p "${config%/*}"
+touch "$config"
+written=$(mktemp "${config%/*}/config.toml.XXXXXX")
+trap 'rm -rf "$scratch"; rm -f "$written"' EXIT
+# Replace the key in the `[host]` table. With no key, add it at the table's
+# head. With no table, add the table at the file's end.
+awk -v line="$line" '
+  /^\[host\][[:space:]]*$/ { print; print line; table = 1; done = 1; next }
+  /^\[/ { table = 0 }
+  table && /^compile_width[[:space:]]*=/ { next }
+  { print }
+  END { if (!done) { print ""; print "[host]"; print line } }
+' "$config" > "$written"
+mv "$written" "$config"
+echo "host:compile-width: $config holds $line under [host], of $physical physical and $logical logical"
+'''
+
+# Catt's wall time on one example, the oracle the rows at dimension 3 are read
+# against (#3833). Catt is the repository `thibautbenjamin/catt` at the
+# revision below, built once into the user's cache with an opam root of its
+# own. Its `catt.opam` asks for OCaml 4.14, and dune 3.24 drops the `coq`
+# extension its `dune-project` declares, so the switch pins dune 3.23.1 before
+# Catt's dependencies are solved; `-p catt` builds the command without the
+# Rocq plugin. Nothing of it lands in
+# the tree or in the user's own opam root. An example path that names no file
+# from the working directory is read in that checkout, so `examples/…` names
+# Catt's own examples. `--catt` names another program to run in its place.
+#
+# The run carries the host's memory bound (`.config/mise/bounded`) and a
+# wall-clock limit, 1800 s unless `--limit` names another. The task prints one
+# Markdown row, the example and its wall time; a run past either bound prints
+# `past bound` in its place and is never retried larger (#3855). Catt prints no
+# term's size, so the row has none: page 28's sizes stand in `bench:stress`.
+# Catt runs only at n = 2 and 3, so an example naming a cylinder or cone
+# built-in past n = 3 is refused before Catt runs. `.config/bench/row.jq` and
+# `.config/bench/dimension.jq` decide both, held to `check:bench`'s cases.
+["bench:catt"]
+description = "Catt's wall time on one example, under the host's memory bound and a wall-clock limit"
+usage = '''
+arg "<example>" help="the .catt file Catt runs"
+flag "--limit <seconds>" help="the wall-clock limit" default="1800"
+flag "--catt <program>" help="the program run in place of the pinned Catt"
+'''
+tools.jq = "1.8.1"
+tools."github:ocaml/opam" = "2.6.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+example=${usage_example:?}
+limit=${usage_limit:?}
+bench=.config/bench
+revision=3af8b816de62b6452e4382c70a8eaf9e3c153175
+catt=${usage_catt:-}
+checkout=
+if [[ -z $catt ]]; then
+  cache=${XDG_CACHE_HOME:-$HOME/.cache}/gandr/catt/$revision
+  checkout=$cache/catt
+  catt=$checkout/_build/default/bin/catt.exe
+  build() {
+    export OPAMROOT=$cache/opam OPAMYES=1 OPAMCOLOR=never
+    { [[ -d $OPAMROOT ]] || opam init --bare --disable-sandboxing --no-setup; } \
+      && { opam switch list --short | awk '$0 == "catt" { found = 1 } END { exit !found }' \
+        || opam switch create catt ocaml-base-compiler.4.14.2; } \
+      && { [[ -d $cache/catt ]] || git clone --quiet https://github.com/thibautbenjamin/catt "$cache/catt"; } \
+      && git -C "$cache/catt" checkout --quiet "$revision" \
+      && opam pin add --switch=catt --no-action dune 3.23.1 \
+      && opam install --switch=catt --deps-only "$cache/catt/catt.opam" \
+      && (cd "$cache/catt" && opam exec --switch=catt -- dune build -p catt @install)
+  }
+  if [[ ! -x $catt ]]; then
+    mkdir -p "$cache"
+    echo "bench:catt: building Catt at ${revision:0:12} into $cache, once" >&2
+    if ! build > "$cache/build.log" 2>&1; then
+      echo "bench:catt: the build fails; its log is $cache/build.log" >&2
+      exit 1
+    fi
+  fi
+fi
+if [[ ! -f $example && -n $checkout && -f $checkout/$example ]]; then
+  example=$checkout/$example
+fi
+if [[ ! -f $example ]]; then
+  echo "bench:catt: no example at $example" >&2
+  exit 2
+fi
+past=$(jq -R -s -c -f "$bench/dimension.jq" "$example")
+if [[ $past != '[]' ]]; then
+  echo "bench:catt: $example names $(jq -r 'join(", ")' <<< "$past") past n = 3; Catt runs only at n = 2 and 3 (#3855)" >&2
+  exit 2
+fi
+# The bound refuses here, before the run is timed, where no bound takes.
+.config/mise/bounded bench:catt true
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+status=0
+start=$(date +%s%N)
+.config/mise/bounded bench:catt timeout "$limit" "$catt" "$example" > "$scratch/out" 2> "$scratch/err" || status=$?
+end=$(date +%s%N)
+out_of_memory=false
+if [[ $(< "$scratch/err") == *Out_of_memory* ]]; then
+  out_of_memory=true
+fi
+if ! row=$(jq -n \
+  --arg example "${example##*/}" --argjson status "$status" --argjson out_of_memory "$out_of_memory" \
+  --argjson seconds "$(awk -v start="$start" -v end="$end" 'BEGIN { printf "%.6f", (end - start) / 1e9 }')" \
+  '{example: $example, status: $status, seconds: $seconds, out_of_memory: $out_of_memory}' \
+  | jq -r -L "$bench" -f "$bench/row.jq" 2> "$scratch/refusal"); then
+  awk '{ sub(/^jq: error \(at [^)]*\): /, "bench:catt: "); print }' "$scratch/refusal" >&2
+  cat "$scratch/out" "$scratch/err" >&2
+  exit 1
+fi
+printf '| example | wall |\n| --- | --: |\n%s\n' "$row"
+{% endraw %}'''
+
+# The scaling account of `gandr check` (#6879): the thread curve of each head
+# of `main` on the wide host, one row for each head on one `collector` issue,
+# and a defect for each fall (`.config/bench/scaling.bash`). A pass reads the
+# head of `main` and skips it when the account holds it. Otherwise the wide
+# host builds the head and measures it through the measure command that the
+# host's configuration names: the curve of `gandr check --recheck` over the
+# roots of `check:corpus`, three runs at each width, three runs at the
+# placement's width over more nodes, and one run of the `gandr` hotpath series
+# at each width. `curve.jq` and `run.jq` read the measure, and `account.jq`
+# writes the row, the fall and the rows that leave a full body. A measure that
+# fails writes no row and is paged once per head; the next pass measures the
+# head again.
+#
+# `--head <rev>` measures one head in place of the head of `main`. `--print`
+# prints the body, the moved rows and the fall, and writes nothing. `--once`
+# runs one pass and exits. `--install` runs the account as a host service at
+# the lowest priority from this checkout (`.config/service/`), and `--remove`
+# stops and deletes it.
+["bench:scaling"]
+description = "Measure the thread curve of each head of main on the wide host into the scaling account, and open a defect for each fall; --install runs it as a service"
+quiet = true
+tools.jq = "1.8.1"
+usage = '''
+flag "--head <rev>" help="measure this head in place of the head of main"
+flag "--print" help="print the body, the moved rows and the fall, and write nothing"
+flag "--once" help="run one pass and exit"
+flag "--install" help="install and start the service that keeps bench:scaling running from this checkout"
+flag "--remove" help="stop and delete that service"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/service/service.bash
+source .config/issues/keep.bash
+source .config/bench/scaling.bash
+description='gandr scaling account (bench:scaling)'
+if [[ ${usage_remove:-false} == true ]]; then service_unit remove scaling bench:scaling "$description"; exit; fi
+config=$(scaling_configuration) || exit 2
+# The service starts only on a configuration the loop reads.
+if [[ ${usage_install:-false} == true ]]; then service_unit install scaling bench:scaling "$description" background; exit; fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+print=
+if [[ ${usage_print:-false} == true ]]; then print=1; fi
+if [[ -n ${usage_head:-} || -n $print ]]; then
+  scaling_once "${usage_head:-}" "$print"
+  exit
+fi
+while :; do
+  (scaling_once "" "") || echo "bench:scaling: the pass failed; reading again next interval" >&2
+  if [[ ${usage_once:-false} == true ]]; then exit; fi
+  config=$(scaling_configuration) || exit 2
+  sleep "$(jq .interval <<< "$config")"
+done
+{% endraw %}'''
+
+# The parser's report (#4550): today's grammar read on each axis a syntax
+# candidate is measured against, one Markdown row per measure, from
+# `gandr-workflow-parser-report` under the release profile, its molder
+# keeping the census. The table is printed and written to the file named,
+# `target/parser-report.md` by default. The report states its axes and what
+# each is read from.
+["parser:report"]
+description = "Read the parser on each axis a syntax candidate is measured against"
+usage = '''
+arg "[report]" help="the file the table is written to" default="target/parser-report.md"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+report={{ usage.report }}
+mkdir -p "$(dirname "$report")"
+.config/mise/scope cargo run --release --locked --quiet --package gandr-workflow-parser-report --features census > "$report"
+cat "$report"
+'''

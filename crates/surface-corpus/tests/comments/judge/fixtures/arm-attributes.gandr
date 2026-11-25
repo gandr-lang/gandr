@@ -1,0 +1,11 @@
+// Constructor arms with attribute blocks before them.
+
+/// An item type.
+data Item : Type where
+  /// The first item, commented before its attribute block.
+  @[item("one")]
+  | One : Item
+  @[item("two")]
+  | Two : Item
+  /// The third item, commented with no attribute block.
+  | Three : Item

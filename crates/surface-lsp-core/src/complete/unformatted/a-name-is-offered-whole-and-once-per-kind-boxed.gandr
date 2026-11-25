@@ -1,0 +1,3 @@
+{BASE}data Box : Type where {{
+  | Box : (x : Integer) --> Box
+}}

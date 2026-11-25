@@ -1,0 +1,13 @@
+/// `flow_declaration`: a flow: one theory's members, defined over another's,
+/// written with its glyph and in ASCII.
+theory Older where
+  oper answer : Integer;
+
+theory Newer where
+  oper reply : Integer;
+
+flow downgrade : Newer ⇝ Older where
+  def answer = reply;
+
+flow downgradeAscii : Newer ~~> Older where
+  def answer = reply;

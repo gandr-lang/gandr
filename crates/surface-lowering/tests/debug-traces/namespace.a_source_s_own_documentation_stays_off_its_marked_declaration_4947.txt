@@ -1,0 +1,105 @@
+test: namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947 --break panicking::assert_failed
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lowering/18ed007140ce05c3/out/tests-18ed007140ce05c3"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lowering/18ed007140ce05c3/out/tests-18ed007140ce05c3' (arm64).
+(lldb) settings set -- target.run-args  "namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex panicking::assert_failed
+Breakpoint 1: 152 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-18ed007140ce05c3`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001021bc468
+(lldb) run
+
+running 1 test
+test namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 51640 launched: 'target/debug-trace/debug/build/gandr-surface-lowering/18ed007140ce05c3/out/tests-18ed007140ce05c3' (arm64)
+Process 51640 stopped
+* thread #2, name = 'namespace::a_source_s_own_documentation_stays_off_its_marked_de', stop reason = breakpoint 1.128
+       frame #0: 0x00000001021b1d64 tests-18ed007140ce05c3`core::panicking::assert_failed::<(core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String>), (core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String>)>(kind=Eq, left=(Some("DocumentationText(\"A small source.\\nThe answer.\")"), size=1), right=(Some("DocumentationText(\"The answer.\")"), size=1), args=Some({template:{pointer:"the `//!` run documents the source, and the `///` run the declarationpub theory Kit.Shown where {\n  oper label : String;\n}\ntheory Kit.Hidden where {\n  oper label : String;\n}\nimport \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) where {\n  def label : String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) where {\n  def label : String = \"unseen\";\n}\nHiddenthe importer names `Kit.Hidden`the base declares `Kit.Hidden`the private theory is refused at its name in the pathand the exported one beside it is readtakenavailablethe existing `taken` binding must be refusedthe collision reaches the caller as the handler's structured rejectionthe earlier `available` insertion rolls back with the later collisionthe builder carries the emptiness check, so a mistyped source is reported at the path the user wroteand relocating an empty subtree moves nothingparentchildthe child name is freshmissingthe closing modifier selects no exportthe close failed in the modifierimport \"./base.gandr\" as old : Older via downgrade ;\ndef relayed : "...}, args:{pointer:{ty:{0:0}}}})) at panicking.rs:407:5
+   404 	    T: fmt::Debug + ?Sized,
+   405 	    U: fmt::Debug + ?Sized,
+   406 	{
+-> 407 	    assert_failed_inner(kind, &left, &right, args)
+    	    ^
+   408 	}
+   409 	
+   410 	/// Internal function for `assert_match!`
+(lldb) bt 24
+* thread #2, name = 'namespace::a_source_s_own_documentation_stays_off_its_marked_de', stop reason = breakpoint 1.128
+   * frame #0: 0x00000001021b1d64 tests-18ed007140ce05c3`core::panicking::assert_failed::<(core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String>), (core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String>)>(kind=Eq, left=(Some("DocumentationText(\"A small source.\\nThe answer.\")"), size=1), right=(Some("DocumentationText(\"The answer.\")"), size=1), args=Some({template:{pointer:"the `//!` run documents the source, and the `///` run the declarationpub theory Kit.Shown where {\n  oper label : String;\n}\ntheory Kit.Hidden where {\n  oper label : String;\n}\nimport \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) where {\n  def label : String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) where {\n  def label : String = \"unseen\";\n}\nHiddenthe importer names `Kit.Hidden`the base declares `Kit.Hidden`the private theory is refused at its name in the pathand the exported one beside it is readtakenavailablethe existing `taken` binding must be refusedthe collision reaches the caller as the handler's structured rejectionthe earlier `available` insertion rolls back with the later collisionthe builder carries the emptiness check, so a mistyped source is reported at the path the user wroteand relocating an empty subtree moves nothingparentchildthe child name is freshmissingthe closing modifier selects no exportthe close failed in the modifierimport \"./base.gandr\" as old : Older via downgrade ;\ndef relayed : "...}, args:{pointer:{ty:{0:0}}}})) at panicking.rs:407:5
+     frame #1: 0x000000010008ac50 tests-18ed007140ce05c3`tests::namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947 at namespace.rs:5595:5
+     frame #2: 0x000000010006219c tests-18ed007140ce05c3`tests::namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947::{closure#0}((null)={}) at namespace.rs:5581:72
+     frame #3: 0x0000000100132bbc tests-18ed007140ce05c3`<tests::namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000000100246218 tests-18ed007140ce05c3`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x0000000100246210 tests-18ed007140ce05c3`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x0000000100251734 tests-18ed007140ce05c3`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x0000000100251728 tests-18ed007140ce05c3`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x0000000100251728 tests-18ed007140ce05c3`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x0000000100251724 tests-18ed007140ce05c3`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x0000000100251724 tests-18ed007140ce05c3`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x0000000100251724 tests-18ed007140ce05c3`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x0000000100251718 tests-18ed007140ce05c3`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x000000010024c128 tests-18ed007140ce05c3`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x000000010024c0c4 tests-18ed007140ce05c3`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x0000000100253bf8 tests-18ed007140ce05c3`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x0000000100253be8 tests-18ed007140ce05c3`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x0000000100253be8 tests-18ed007140ce05c3`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x0000000100253be4 tests-18ed007140ce05c3`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x0000000100253be4 tests-18ed007140ce05c3`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x0000000100253be4 tests-18ed007140ce05c3`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x0000000100253bd4 tests-18ed007140ce05c3`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x00000001021924f8 tests-18ed007140ce05c3`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x00000001021924ec tests-18ed007140ce05c3`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(core::panicking::AssertKind) kind = Eq
+((core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String, alloc::alloc::Global>) *) left = 0x0000000170006410 (Some("DocumentationText(\"A small source.\\nThe answer.\")"), size=1)
+((core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String, alloc::alloc::Global>) *) right = 0x0000000170006530 (Some("DocumentationText(\"The answer.\")"), size=1)
+(core::option::Option<core::fmt::Arguments>) args = Some({template:{pointer:"the `//!` run documents the source, and the `///` run the declarationpub theory Kit.Shown where {\n  oper label : String;\n}\ntheory Kit.Hidden where {\n  oper label : String;\n}\nimport \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) where {\n  def label : String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) where {\n  def label : String = \"unseen\";\n}\nHiddenthe importer names `Kit.Hidden`the base declares `Kit.Hidden`the private theory is refused at its name in the pathand the exported one beside it is readtakenavailablethe existing `taken` binding must be refusedthe collision reaches the caller as the handler's structured rejectionthe earlier `available` insertion rolls back with the later collisionthe builder carries the emptiness check, so a mistyped source is reported at the path the user wroteand relocating an empty subtree moves nothingparentchildthe child name is freshmissingthe closing modifier selects no exportthe close failed in the modifierimport \"./base.gandr\" as old : Older via downgrade ;\ndef relayed : "...}, args:{pointer:{ty:{0:0}}}}) {
+  0 = {template:{pointer:"the `//!` run documents the source, and the `///` run the declarationpub theory Kit.Shown where {\n  oper label : String;\n}\ntheory Kit.Hidden where {\n  oper label : String;\n}\nimport \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) where {\n  def label : String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) where {\n  def label : String = \"unseen\";\n}\nHiddenthe importer names `Kit.Hidden`the base declares `Kit.Hidden`the private theory is refused at its name in the pathand the exported one beside it is readtakenavailablethe existing `taken` binding must be refusedthe collision reaches the caller as the handler's structured rejectionthe earlier `available` insertion rolls back with the later collisionthe builder carries the emptiness check, so a mistyped source is reported at the path the user wroteand relocating an empty subtree moves nothingparentchildthe child name is freshmissingthe closing modifier selects no exportthe close failed in the modifierimport \"./base.gandr\" as old : Older via downgrade ;\ndef relayed : "...}, args:{pointer:{ty:{0:0}}}}
+}
+(lldb) up
+frame #1: 0x000000010008ac50 tests-18ed007140ce05c3`tests::namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947 at namespace.rs:5595:5
+   5592	        Maybe::Present(documentation) => Some(format!("{:?}", documentation.text())),
+   5593	        Maybe::Absent(_) => None,
+   5594	    };
+-> 5595	    assert_eq!(
+    	    ^
+   5596	        (
+   5597	            read(module.documentation(answer.introduced())),
+   5598	            module
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg) pbg = {dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:28, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2896, rctxs:size=2896, bounds:size=2896, owners:size=2896, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:27, items:197}, alloc:{}, marker:{}}}, menus:size=197, mold_labels:size=2896, adjacencies:size=6483, successor_starts:size=2897, has_pred:size=2896, has_succ:size=2896, form_first:size=205, is_first:size=2896, form_last:size=261, complete_last:size=222, is_complete_last:size=2896, required_tail:size=39, is_required_tail:size=2896, closing:size=2896, twins:size=2896, fingerprint:{0:2254784723520498882}}, automaton:{kinds:size=2896, observations:size=2896, width:46, sets:size=828}}
+(&str) text = "//! A small source.\n\n/// The answer.\npub def answer = 42 ;\n" {
+  [0] = '/'
+  [1] = '/'
+  [2] = '!'
+  [3] = ' '
+  [4] = 'A'
+  [5] = ' '
+  [6] = 's'
+  [7] = 'm'
+  [8] = 'a'
+  [9] = 'l'
+  [10] = 'l'
+  [11] = ' '
+  [12] = 's'
+  [13] = 'o'
+  [14] = 'u'
+  [15] = 'r'
+  ...
+}
+(gandr_surface_lowering::module::LoweredModule) module = {descriptions:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, description_diagnostics:size=0, natives:size=0, cells:{declarations:size=0, diagnostics:size=0}, declarations:{closure:Absent(Whole), own:size=1}, data:size=0, constructors:size=0, shadowed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, codata:size=0, structures:size=0, attributes:{entries:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, worlds:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, interfaces:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, spellings:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, documentation:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, sources:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, inferred_exits:size=0, elidable_exits:size=0, linear_runs:size=0, nested:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, in_scope:{frames:size=0, read:size=0, widest:0}, resolutions:size=0, reached_imports:size=0, origins:{values:size=1, computations:size=0, value_types:size=0, comp_types:size=0, declarations:size=1, cases:size=0, eliminations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, binders:size=0, components:size=0, clause_binders:size=0, forks:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, bindings:size=0, sides:size=0, motives:size=0, labels:size=0, framed:size=0, stand_ins:size=0, relations:size=0, models:size=0, scope_theories:size=0, row_theories:size=0, scope_answers:size=0, scope_laws:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, omitted:size=0}, imports:{declarations:size=0, scopes:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, unit:{sources:size=1, prelude:None}, reads:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, recognition:{scope:{current:{visible:{nodes:size=58, vacant:size=0, count:{…}}, export:{nodes:size=1, vacant:size=0, count:{…}}}, enclosing:size=0}, handler:{policy:WarnAndAllow, shadowed:size=0}}, operation_rules:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, stage_bounds:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, region_names:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, implicits:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, model_slots:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, supplies:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, handler_laws:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, models:{closure:Absent(Whole), own:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, qualified:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, requirements:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, offer:Absent(Unoffered), reducts:size=0, forgets:size=0, readers:size=0, forgettings:size=0, record_faces:size=0}
+(gandr_surface_lowering::module::LoweredDeclaration *) answer = 0x000000010768dd80 {parts:{name:{0:{0:"answer"}}, container:TopLevel({0:0}), role:Declared, constant:{0:0}, span:{start:{0:41}, end:{0:58}}, named:{start:{0:45}, end:{0:51}}, origin:{0:0}, signature:Absent(Unwritten), definition:Present({source:{0:0}, form:{form:{…}, rank:{…}}}), refused_form:Absent(Unwritten), introduced:{source:{0:0}, form:{form:{0:"TOeV\x83\x9b`?\xc74\U00000010\xa5u\U00000011\xc2r\x9d\xd6Xf\U00000006\U00000001\xe7\xfdz\xef`\xe4\xe6nA\x8e"}, rank:{0:0}}}, halves:{signature:Absent(Unwritten), definition:Present({span:{…}, named:{…}})}, outcome:Bodied{body:{0:0}}, inertness:Content, visibility:Public}}
+(tests::namespace::a_source_s_own_documentation_stays_off_its_marked_declaration_4947::{closure_env#1}) read = {}
+((core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String, alloc::alloc::Global>) *) left_val = 0x0000000170006410 (Some("DocumentationText(\"A small source.\\nThe answer.\")"), size=1)
+((core::option::Option<alloc::string::String>, alloc::vec::Vec<alloc::string::String, alloc::alloc::Global>) *) right_val = 0x0000000170006530 (Some("DocumentationText(\"The answer.\")"), size=1)
+(core::panicking::AssertKind) kind = Eq
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.

@@ -1,0 +1,3 @@
+def shapes = Eq.generic Shape;
+def boxes = Eq.generic Box;
+def reflNats = Eq.generic.refl Nat;

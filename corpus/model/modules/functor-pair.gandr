@@ -1,0 +1,49 @@
+//! This source shows generative functors.
+//!
+//! Each application of `MkCounter` gives a fresh abstract type.
+//!
+//! The checker reads each functor member through its argument.
+//!
+//! - cites: [Rossberg-2014-fing_modules]
+//!
+//! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
+
+/// `Seed` exposes a sealed counter signature.
+pub module Seed :> *{type T, zero : T, next : T -> T, read : T -> Integer} where {
+  type T = Integer;
+  /// `zero` gives the counter start.
+  @[runs("0")]
+  def zero = 0;
+  /// `next` increments the counter.
+  @[runs("fun (a) { a + 1 }")]
+  def next(n : T) -> T = n + 1;
+  /// `read` converts a counter value to an integer.
+  @[runs("fun (a) { a }")]
+  def read(n : T) -> Integer = n;
+}
+
+/// `MkCounter` creates a sealed counter from a counter argument.
+module MkCounter(S : *{
+  type T,
+  zero : T,
+  next : T -> T,
+  read : T -> Integer
+}) :> *{type T, seed : T, step : T -> T, read : T -> Integer} where
+  type T = S.T;
+  def seed = S.zero;
+  def step = S.next;
+  def read = S.read;
+
+/// `A` is the first functor application.
+module A = MkCounter(Seed);
+/// `B` is the second functor application.
+module B = MkCounter(Seed);
+
+/// `a_once` steps the first abstract counter. A run answers it opaque at the
+/// seal of `A`.
+@[runs("⟨opaque at A⟩ : () -> A.T")]
+def a_once() -> A.T = A.step A.seed;
+
+/// `b_twice` reads two steps of the second counter.
+@[runs("2")]
+def b_twice() -> Integer = { let one = B.step B.seed; B.read (B.step one) };

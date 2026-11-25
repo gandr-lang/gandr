@@ -1,0 +1,341 @@
+{
+  "crates": [
+    {
+      "package": "gandr-kernel-data",
+      "path": "crates/kernel-data",
+      "skips": []
+    },
+    {
+      "package": "gandr-runtime-scope",
+      "path": "crates/runtime-scope",
+      "skips": [
+        {
+          "test": "io::socket::test::socket::accept",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::accept_in_flight",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::bind",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::listen",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::new",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::recv",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::recv_in_flight",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "path::request::a_later_run_allocates_nothing",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "path::request::a_request_allocates_nothing_after_the_start",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::new",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::run::again",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::run::closure",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::run::full",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        }
+      ]
+    },
+    {
+      "package": "gandr-runtime-uring",
+      "path": "crates/runtime-uring",
+      "skips": [
+        {
+          "test": "base::io_uring::test::enter",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
+          "test": "base::io_uring::test::register",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
+          "test": "base::io_uring::test::setup",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
+          "test": "base::io_uring::test::setup_refuses_no_entries",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::cqes::ready::one",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::cqes::ready::two",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::cqes::ready::zero",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::cqes::wait::one",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::cqes::wait::two",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::cqes::wait::two_of_32_bytes",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::cqes::wait::zero",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "cqueue::test::new",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "registrar::test::register_files",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::cqueue",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_dontfork",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_entries",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_attach_wq",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_clamp",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_coop_taskrun",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_cqe32",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_cqsize",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_defer_taskrun",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_hybrid_iopoll",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_iopoll",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_no_mmap",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_no_sqarray",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_r_disabled",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_registered_fd_only",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_single_issuer",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_sq_aff",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_sqe128",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_sqpoll",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_submit_all",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_setup_taskrun_flag",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_sq_thread_cpu",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::new::with_sq_thread_idle",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::queues",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::registrar",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "ring::test::squeue",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::accept::test::accept",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::accept::test::accept_direct",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::accept::test::accept_direct_cqe_skip",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::accept::test::accept_multishot",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::accept::test::accept_multishot_direct",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::bind::test::bind",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::bind::test::bind_direct",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::bind::test::bind_direct_cqe_skip",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::listen::test::listen",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::listen::test::listen_direct",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::listen::test::listen_direct_cqe_skip",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::socket::test::socket",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::socket::test::socket_direct",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "sqe::socket::test::socket_direct_cqe_skip",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe128::get_sqe::none",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe128::get_sqe::some",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe128::get_sqes::none",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe128::get_sqes::some_many",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe128::get_sqes::some_one",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe128::new",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe64::get_sqe::none",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe64::get_sqe::some",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe64::get_sqes::none",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe64::get_sqes::some_many",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe64::get_sqes::some_one",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe64::new",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "squeue::test::sqe64::submit_and_wait",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        }
+      ]
+    }
+  ]
+}

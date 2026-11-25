@@ -1,0 +1,609 @@
+//! Search-free finite replay of session bisimulations and simulations.
+//!
+//! The producer supplies every related pair. Replay checks local obligations
+//! and set membership; it never generates a candidate relation or unfolds a
+//! recursive type to a fixed point. Payload paths are ordinary checker goals.
+//!
+//! # Session codes
+//!
+//! `ValueType::Session` is a finite protocol-code graph whose payload codes
+//! are the parts of one n-ary product. Formation checks rooted syntax, lexical
+//! binders, immediate action guards, reachable states and payload slots;
+//! payload codes form in an empty term context. Mu and Var edges resolve
+//! within the finite graph. No endpoint or channel values enter the kernel,
+//! and no linearity is certified.
+//!
+//! **Choice.** Session and first-order codes share the value universe, with
+//! finite formation and replay in the trusted base. **Alternative.** A
+//! `gandr-core-session` library decision alone supplies no kernel
+//! certificate; trusting its Boolean answer would move search into admission.
+//! **Reversal.** A combined universe shown non-conservative beyond what finite
+//! replay can fence requires a separate protocol stratum. Finite witnesses
+//! establish no combined-universe conservativity theorem, live endpoint
+//! ownership, FIFO correlation or infinite-run productivity.
+//!
+//! # Identity
+//!
+//! `Value::SessionPath` introduces native `Path_U` by local bisimulation
+//! replay over supplied observable pairs, including extras. The kernel
+//! requires the root and continuation pairs, matching action directions, equal
+//! labels, and structurally equal payload codes or checked native payload
+//! paths. It never performs coinductive search; `gandr-core-session` supplies
+//! candidate relations. Admission keys commit all evidence even though
+//! conversion erases derivation pairs.
+//!
+//! # Directed flows
+//!
+//! `Value::SessionFlow` introduces native `Flow_U` by local simulation replay,
+//! the Gay–Hole subtyping of the same supplied-pair discipline: source
+//! selections are a subset of target selections; target offers are a subset of
+//! source offers. Both the classifier and the introduction persist, so a
+//! declared session subtyping readmits by replay like a session path. Each
+//! consumer rechecks formation, simulation and payload proofs. This is
+//! forward-only evidence with no inverse or Path coercion: a session flow at a
+//! `Path_U` boundary, or a session path at a `Flow_U` one, refuses as
+//! `FamilyMismatch`. A ride along it has no endpoint-value action, and
+//! `replay_ride` refuses one as `RecordedRunRequired`; the recorded-run
+//! consumer in `gandr-core-session` supplies finite skeleton
+//! transport. Relation replay terminates over finite supplied data, not an
+//! observation budget that could declare an unfinished relation valid.
+//!
+//! # Witnesses
+//!
+//! The witnesses target session formation, relation replay, native
+//! traversal/content keys and recorded transport: omitted roots or
+//! continuations, wrong directions and label inclusions, escaped binders,
+//! unchecked payload paths, evidence-key collisions, dropped moves and changed
+//! digests. The memo's six binding conditions are unchanged.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::ValueType;
+use gandr_kernel_term::ValueTypeId;
+use gandr_kernel_term::session::Evidence;
+use gandr_kernel_term::session::Graph;
+use gandr_kernel_term::session::Label;
+use gandr_kernel_term::session::Node;
+use gandr_kernel_term::session::PayloadSlot;
+use gandr_kernel_term::session::State;
+use gandr_kernel_term::session::StatePair;
+
+use crate::conv::Convertibility;
+use crate::conv::convertible_value_types;
+pub use crate::error::session::SessionError;
+
+/// Which local coinductive rule the certificate claims.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Relation
+{
+    /// Equal labels and directions, with both observations preserved.
+    Bisimulation,
+    /// Fewer selections or more offers on the source side.
+    Simulation,
+}
+
+/// Graph traversal instructions; leaving restores lexical binder scope.
+#[derive(Clone, Copy)]
+enum Visit
+{
+    /// Inspect a structural occurrence.
+    Enter(State),
+    /// End the scope of this Mu binder.
+    Leave(State),
+}
+
+/// Extract the finite payload-code telescope.
+///
+/// # Specification
+/// - ensures: returns the parts of the one product the payloads name, in slot
+///   order; any other classifier is refused. No recursive session edge is
+///   followed.
+/// - fails: unreadable native references or malformed telescope shape.
+/// - panics: none.
+///
+/// # Errors
+/// `Arena` or `PayloadTelescope`.
+///
+/// # Adequacy
+/// - hypothesis: L3 malformed payload slots and spines refuse at formation.
+/// - witness: `session::tests::session_codes_are_closed_and_contractive`
+/// - witness: `session::tests::session_boundaries_name_payload_and_graph_refusals`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |fields| {
+    matches!(arena.value_type(payloads), Some(ValueType::Product(parts)) if **parts == **fields)
+}))]
+#[inline]
+pub fn payload_codes(
+    arena: &TermArena,
+    payloads: ValueTypeId,
+) -> Result<Vec<ValueTypeId>, SessionError>
+{
+    match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
+        ValueType::Product(ref parts) => Ok(parts.to_vec()),
+        ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::Session { .. }
+        | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
+        | ValueType::Path { .. }
+        | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
+        | ValueType::Base(_)
+        | ValueType::Sigma { .. }
+        | ValueType::Sum(_)
+        | ValueType::List(_)
+        | ValueType::Thunk(_)
+        | ValueType::Universe { .. }
+        | ValueType::Lift { .. }
+        | ValueType::Element { .. }
+        | ValueType::Abstract(_)
+        | ValueType::StaticPi { .. }
+        | ValueType::Staged { .. } => Err(SessionError::PayloadTelescope),
+    }
+}
+
+/// Check finite structural closure, lexical binding and contractivity.
+///
+/// # Specification
+/// - ensures: structural edges form one rooted tree, variables name enclosing
+///   Mu nodes, every Mu body starts with an action or End, and payload slots
+///   name fields of the supplied finite telescope.
+/// - fails: missing/repeated/unreachable states, escaped variables, unguarded
+///   recursion, malformed telescopes and missing payload slots are named.
+/// - panics: none.
+///
+/// # Errors
+/// The corresponding `SessionError` formation variant.
+///
+/// # Cost
+/// - allocation: the seen and binder marks and the pending visits, growth
+///   within the graph's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 each malformed graph boundary has a distinguishing refusal;
+///   observable recursion remains admitted.
+/// - witness: `session::tests::session_codes_are_closed_and_contractive`
+/// - witness: `session::tests::session_boundaries_name_payload_and_graph_refusals`
+#[spec(ensures: |ret| ret.is_err() || (
+    graph.nodes.get(graph.root.0).is_some()
+    && graph.nodes.iter().all(|node| match *node {
+        Node::Send(_, next) | Node::Receive(_, next) => graph.nodes.get(next.0).is_some(),
+        Node::Select(ref labels) | Node::Offer(ref labels) => labels.values().all(|next| graph.nodes.get(next.0).is_some()),
+        Node::Mu(body) => graph.nodes.get(body.0).is_some_and(|body| !matches!(body, Node::Mu(_) | Node::Var(_))),
+        Node::Var(binder) => matches!(graph.nodes.get(binder.0), Some(Node::Mu(_))),
+        Node::End => true,
+    })
+))]
+#[inline]
+pub fn validate_graph(
+    arena: &TermArena,
+    graph: &Graph,
+    payloads: ValueTypeId,
+) -> Result<(), SessionError>
+{
+    let fields = match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
+        ValueType::Product(ref parts) => PayloadSlot(parts.len()),
+        ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::Session { .. }
+        | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
+        | ValueType::Path { .. }
+        | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
+        | ValueType::Base(_)
+        | ValueType::Sigma { .. }
+        | ValueType::Sum(_)
+        | ValueType::List(_)
+        | ValueType::Thunk(_)
+        | ValueType::Universe { .. }
+        | ValueType::Lift { .. }
+        | ValueType::Element { .. }
+        | ValueType::Abstract(_)
+        | ValueType::StaticPi { .. }
+        | ValueType::Staged { .. } => return Err(SessionError::PayloadTelescope),
+    };
+    let mut seen = alloc::vec![false; graph.nodes.len()];
+    let mut binders = alloc::vec![false; graph.nodes.len()];
+    let mut pending = alloc::vec![Visit::Enter(graph.root)];
+    while let Some(visit) = pending.pop() {
+        let id = match visit {
+            Visit::Leave(id) => {
+                *binders
+                    .get_mut(id.0)
+                    .ok_or(SessionError::MissingState(id))? = false;
+                continue;
+            },
+            Visit::Enter(id) => id,
+        };
+        let node = node(graph, id)?;
+        if core::mem::replace(
+            seen.get_mut(id.0).ok_or(SessionError::MissingState(id))?,
+            true,
+        ) {
+            return Err(SessionError::RepeatedState(id));
+        }
+        match node {
+            &Node::Send(slot, next) | &Node::Receive(slot, next) => {
+                if slot.0 >= fields.0 {
+                    return Err(SessionError::MissingPayload(slot));
+                }
+                pending.push(Visit::Enter(next));
+            },
+            &Node::Select(ref branches) | &Node::Offer(ref branches) => {
+                pending.extend(branches.values().copied().map(Visit::Enter));
+            },
+            &Node::Mu(body) => {
+                if matches!(*self::node(graph, body)?, Node::Mu(_) | Node::Var(_)) {
+                    return Err(SessionError::NonContractive(id));
+                }
+                *binders
+                    .get_mut(id.0)
+                    .ok_or(SessionError::MissingState(id))? = true;
+                pending.push(Visit::Leave(id));
+                pending.push(Visit::Enter(body));
+            },
+            &Node::Var(binder) => {
+                if !matches!(binders.get(binder.0), Some(&true)) {
+                    return Err(SessionError::UnboundVariable(id));
+                }
+            },
+            &Node::End => {},
+        }
+    }
+    for (index, &visited) in seen.iter().enumerate() {
+        if !visited {
+            return Err(SessionError::UnreachableState(State(index)));
+        }
+    }
+    Ok(())
+}
+
+/// Resolve a finite graph reference.
+///
+/// # Specification
+/// - ensures: returns the exact addressed syntax occurrence.
+/// - fails: `MissingState` for an out-of-range reference.
+/// - panics: none.
+///
+/// # Errors
+/// `MissingState`.
+///
+/// # Adequacy
+/// - hypothesis: L3 malformed edges retain their precise state.
+/// - witness: `session::tests::session_codes_are_closed_and_contractive`
+#[spec(ensures: |ret| match ret {
+    Ok(found) => graph.nodes.get(state.0).is_some_and(|expected| core::ptr::eq(core::ptr::from_ref(found), core::ptr::from_ref(expected))),
+    Err(SessionError::MissingState(missing)) => missing == state && state.0 >= graph.nodes.len(),
+    Err(_) => false,
+})]
+fn node(
+    graph: &Graph,
+    state: State,
+) -> Result<&Node, SessionError>
+{
+    graph
+        .nodes
+        .get(state.0)
+        .ok_or(SessionError::MissingState(state))
+}
+
+/// Resolve at most Var → Mu → action, never a fixed-point expansion.
+///
+/// # Specification
+/// - ensures: returns the observable state after at most two administrative
+///   edges; malformed input still refuses rather than diverging.
+/// - fails: missing nodes or an unguarded administrative chain.
+/// - panics: none.
+///
+/// # Errors
+/// `MissingState` or `NonContractive`.
+///
+/// # Adequacy
+/// - hypothesis: L3 the one-unfold equivalence reaches the same cyclic action.
+/// - witness: `session::tests::session_relations_replay_without_search`
+/// - witness: `session::tests::session_boundaries_name_payload_and_graph_refusals`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| graph.nodes.get(found.0).is_some_and(|node| !matches!(node, Node::Mu(_) | Node::Var(_)))))]
+#[inline]
+pub fn head(
+    graph: &Graph,
+    mut state: State,
+) -> Result<State, SessionError>
+{
+    for _ in 0_u8 .. 3 {
+        match node(graph, state)? {
+            &Node::Mu(next) | &Node::Var(next) => state = next,
+            &Node::Send(..)
+            | &Node::Receive(..)
+            | &Node::Select(_)
+            | &Node::Offer(_)
+            | &Node::End => {
+                return Ok(state);
+            },
+        }
+    }
+    Err(SessionError::NonContractive(state))
+}
+
+/// Read a native session code's finite graph and payload telescope.
+///
+/// # Specification
+/// - ensures: exposes only the exact session constructor at the supplied id.
+/// - fails: `ExpectedSession` for every other constructor or missing id.
+/// - panics: none.
+///
+/// # Errors
+/// `ExpectedSession`.
+///
+/// # Adequacy
+/// - hypothesis: L3 non-session endpoints cannot receive session evidence.
+/// - witness: `session::tests::session_boundaries_name_payload_and_graph_refusals`
+#[spec(ensures: |ret| match ret {
+    Ok((graph, fields)) => matches!(arena.value_type(ty), Some(ValueType::Session { graph: actual, payloads }) if core::ptr::eq(core::ptr::from_ref(graph), core::ptr::from_ref(actual.as_ref())) && fields == *payloads),
+    Err(SessionError::ExpectedSession(found)) => found == ty && !matches!(arena.value_type(ty), Some(ValueType::Session { .. })),
+    Err(_) => false,
+})]
+#[inline]
+pub fn view(
+    arena: &TermArena,
+    ty: ValueTypeId,
+) -> Result<(&Graph, ValueTypeId), SessionError>
+{
+    match arena.value_type(ty) {
+        Some(&ValueType::Session {
+            ref graph,
+            payloads,
+        }) => Ok((graph, payloads)),
+        _ => Err(SessionError::ExpectedSession(ty)),
+    }
+}
+
+/// Require one resolved continuation pair in supplied evidence.
+///
+/// # Specification
+/// - ensures: checks membership of exactly the named observable pair.
+/// - fails: missing pair or invalid administrative edge.
+/// - panics: none.
+///
+/// # Errors
+/// `MissingPair`, `MissingState`, or `NonContractive`.
+///
+/// # Adequacy
+/// - hypothesis: L3 deleting a continuation obligation refuses by pair.
+/// - witness: `session::tests::session_relations_replay_without_search`
+#[spec(ensures: |ret| ret.is_err() || head(source, pair.source).is_ok_and(|source| {
+    head(target, pair.target).is_ok_and(|target| evidence.pairs.contains(&StatePair { source, target }))
+}))]
+fn require_pair(
+    source: &Graph,
+    target: &Graph,
+    pair: StatePair,
+    evidence: &Evidence,
+) -> Result<(), SessionError>
+{
+    let source = head(source, pair.source)?;
+    let target = head(target, pair.target)?;
+    let pair = StatePair { source, target };
+    if evidence.pairs.contains(&pair) {
+        Ok(())
+    }
+    else {
+        Err(SessionError::MissingPair(pair))
+    }
+}
+
+/// Verify local label obligations while retaining continuation orientation.
+///
+/// # Specification
+/// - ensures: bisimulation requires equal labels; simulation requires source
+///   selections ⊆ target selections and target offers ⊆ source offers.
+/// - fails: missing labels, missing continuation pairs or malformed edges.
+/// - panics: none.
+///
+/// # Errors
+/// `WrongLabels` or a required-pair refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 exhausts both label subsets of {a,b} at both polarities and
+///   relations; exact refusals distinguish width reversal and missing pairs.
+/// - witness: `session::tests::session_relations_replay_without_search`
+/// - witness: `session::tests::session_choice_relations_exhaust_two_label_widths`
+#[spec(ensures: |ret| ret.is_err() || (
+    (relation != Relation::Bisimulation || labels.0.len() == labels.1.len())
+    && match polarity {
+        Choice::Select => labels.0.keys().all(|label| labels.1.contains_key(label)),
+        Choice::Offer => labels.1.keys().all(|label| labels.0.contains_key(label)),
+    }
+))]
+fn branches(
+    graphs: (&Graph, &Graph),
+    pair: StatePair,
+    labels: (&BTreeMap<Label, State>, &BTreeMap<Label, State>),
+    evidence: &Evidence,
+    relation: Relation,
+    polarity: Choice,
+) -> Result<(), SessionError>
+{
+    let (source, target) = labels;
+    if relation == Relation::Bisimulation && source.len() != target.len() {
+        return Err(SessionError::WrongLabels(pair));
+    }
+    let required = match polarity {
+        Choice::Select => source,
+        Choice::Offer => target,
+    };
+    for label in required.keys() {
+        let source = source.get(label).ok_or(SessionError::WrongLabels(pair))?;
+        let target = target.get(label).ok_or(SessionError::WrongLabels(pair))?;
+        require_pair(
+            graphs.0,
+            graphs.1,
+            StatePair {
+                source: *source,
+                target: *target,
+            },
+            evidence,
+        )?;
+    }
+    Ok(())
+}
+
+/// Which endpoint controls a choice.
+#[derive(Clone, Copy)]
+enum Choice
+{
+    /// Source selects.
+    Select,
+    /// Peer selects.
+    Offer,
+}
+
+/// Replay a finite relation and produce native payload-check obligations.
+///
+/// # Specification
+/// - requires: both endpoint types passed closed-code formation.
+/// - ensures: checks roots and every supplied pair without relation search;
+///   payloads are structurally identical or covered by a native `Path_U` goal.
+///   The returned product type must be checked against the supplied proof tuple
+///   before this relation is evidence.
+/// - fails: wrong directions, labels, payloads, missing pairs, administrative
+///   pairs and malformed payload obligations are named.
+/// - panics: none.
+///
+/// # Errors
+/// Any session formation or relation refusal.
+///
+/// # Cost
+/// - allocation: the payload pair set, the payload field codes and the path
+///   goals, growth within the evidence's payload pairs
+/// - allocation: the product type of the path goals, durable by the arena's
+///   identifiers
+///
+/// # Adequacy
+/// - hypothesis: L1 the independent producer supplies pairs; L3 deletion,
+///   reversal, wrong action and forged payload proof distinguish replay guards.
+/// - witness: `session::tests::session_relations_replay_without_search`
+/// - witness: `session::tests::session_boundaries_name_payload_and_graph_refusals`
+/// - witness: `session::tests::session_choice_relations_exhaust_two_label_widths`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |root| {
+    matches!(arena.value_type(*root), Some(ValueType::Product(paths))
+        if paths.len() == evidence.payloads.len()
+            && paths.iter().all(|&path| matches!(arena.value_type(path), Some(ValueType::PathUniverse(..)))))
+}))]
+pub(crate) fn obligations(
+    arena: &mut TermArena,
+    source: ValueTypeId,
+    target: ValueTypeId,
+    evidence: &Evidence,
+    relation: Relation,
+) -> Result<ValueTypeId, SessionError>
+{
+    let (left, left_payloads) = view(arena, source)?;
+    let (right, right_payloads) = view(arena, target)?;
+    let source_fields = payload_codes(arena, left_payloads)?;
+    let target_fields = payload_codes(arena, right_payloads)?;
+    let mut payload_pairs = BTreeSet::new();
+    for &(source, target) in &evidence.payloads {
+        source_fields
+            .get(source.0)
+            .ok_or(SessionError::MissingPayload(source))?;
+        target_fields
+            .get(target.0)
+            .ok_or(SessionError::MissingPayload(target))?;
+        if !payload_pairs.insert((source, target)) {
+            return Err(SessionError::DuplicatePayloadPath(source, target));
+        }
+    }
+    require_pair(
+        left,
+        right,
+        StatePair {
+            source: left.root,
+            target: right.root,
+        },
+        evidence,
+    )?;
+    for &pair in &evidence.pairs {
+        let a = node(left, pair.source)?;
+        let b = node(right, pair.target)?;
+        if matches!(*a, Node::Mu(_) | Node::Var(_)) || matches!(*b, Node::Mu(_) | Node::Var(_)) {
+            return Err(SessionError::AdministrativePair(pair));
+        }
+        if let Node::Select(ref source_labels) = *a {
+            let Node::Select(ref target_labels) = *b
+            else {
+                return Err(SessionError::WrongAction(pair));
+            };
+            branches(
+                (left, right),
+                pair,
+                (source_labels, target_labels),
+                evidence,
+                relation,
+                Choice::Select,
+            )?;
+            continue;
+        }
+        if let Node::Offer(ref source_labels) = *a {
+            let Node::Offer(ref target_labels) = *b
+            else {
+                return Err(SessionError::WrongAction(pair));
+            };
+            branches(
+                (left, right),
+                pair,
+                (source_labels, target_labels),
+                evidence,
+                relation,
+                Choice::Offer,
+            )?;
+            continue;
+        }
+        match (a, b) {
+            (&Node::End, &Node::End) => {},
+            (&Node::Send(a, next_a), &Node::Send(b, next_b))
+            | (&Node::Receive(a, next_a), &Node::Receive(b, next_b)) => {
+                let source = *source_fields
+                    .get(a.0)
+                    .ok_or(SessionError::MissingPayload(a))?;
+                let target = *target_fields
+                    .get(b.0)
+                    .ok_or(SessionError::MissingPayload(b))?;
+                if convertible_value_types(arena, source, target) != Convertibility::Convertible
+                    && !payload_pairs.contains(&(a, b))
+                {
+                    return Err(SessionError::PayloadMismatch(pair));
+                }
+                require_pair(
+                    left,
+                    right,
+                    StatePair {
+                        source: next_a,
+                        target: next_b,
+                    },
+                    evidence,
+                )?;
+            },
+            _ => return Err(SessionError::WrongAction(pair)),
+        }
+    }
+    let mut paths = Vec::with_capacity(evidence.payloads.len());
+    for &(source, target) in &evidence.payloads {
+        let source = *source_fields
+            .get(source.0)
+            .ok_or(SessionError::MissingPayload(source))?;
+        let target = *target_fields
+            .get(target.0)
+            .ok_or(SessionError::MissingPayload(target))?;
+        let source = arena.value_quote(source);
+        let target = arena.value_quote(target);
+        paths.push(arena.value_type_path_universe(source, target));
+    }
+    Ok(arena.value_type_product(&paths))
+}
+
+#[cfg(test)]
+mod tests;

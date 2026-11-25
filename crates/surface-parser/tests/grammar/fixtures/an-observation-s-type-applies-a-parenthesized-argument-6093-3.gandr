@@ -1,0 +1,2 @@
+codata Ap : Type[-] where
+  ap : (x : Integer) --> Integer;

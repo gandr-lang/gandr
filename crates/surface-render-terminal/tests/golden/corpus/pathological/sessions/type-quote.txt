@@ -1,0 +1,26 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/sessions/type-quote.gandr:10:70
+   │
+10 │   def quoted_receive : Flow[.A = Type](String >? end, String >! end) = Flow.stay
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┬────────────━━┬────────────━━━━┛
+   │ ┃                                      │              │
+   │ ┃                                      │              an endpoint the point does not convert to
+   │ ┃                                      an endpoint the point does not convert to
+11 │ ┃   (type(String >? end));
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ not both endpoints of the path
+   │
+   ├ note: `quoted_receive` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
+
+error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
+   ╭▸ corpus/pathological/sessions/type-quote.gandr:18:50
+   │
+17 │   def open_payload : Path[.A = Type](String >? end, String >? end) = Path.walk (fun (X) {
+   │ ┌────────────────────────────────────────────────────────────────────┘
+18 │ │   type(Path[.A = Type](type(String >? end), type(X >? end)))
+   │ │                                                  ━━━━━━━━ a session payload open over a binder
+19 │ │ }) (Path.here String) (Path.here (type(String >? end)));
+   │ └───────────────────────────────────────────────────────┘ checked against `Path[.A = Type] (String >? end) (String >? end)`; while forming this type under its binder; binds _ : Type
+   │
+   ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
+   ╰ help: bind the session payload inside the run's protocol

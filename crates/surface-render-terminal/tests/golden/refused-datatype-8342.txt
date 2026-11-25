@@ -1,0 +1,7 @@
+note[NotADataType]: this is not a datatype
+  ╭▸ refused-datatype-8342.gandr:8:1
+  │
+8 │ def low : Bit = Not High;
+  │ ━━━━━━━━━━━━━━━━━━━━━━━━━ not an admitted datatype
+  │
+  ╰ note: `low` is expected to check, and the refusal of `Bit` leaves it unsettled

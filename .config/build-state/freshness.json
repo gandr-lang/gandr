@@ -1,0 +1,12 @@
+[
+  {
+    "name": "#7775: a source that changes after its unit, restamped before the unit, builds the unit again",
+    "change": "modify",
+    "output": "rebuilt"
+  },
+  {
+    "name": "a source unchanged since its unit, restamped before the unit, keeps the unit fresh",
+    "change": "none",
+    "output": "fresh"
+  }
+]

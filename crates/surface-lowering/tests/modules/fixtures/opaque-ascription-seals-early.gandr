@@ -1,0 +1,2 @@
+def early : Counter.T = 1;
+module Counter :> *{type T} where { type T = Integer; }

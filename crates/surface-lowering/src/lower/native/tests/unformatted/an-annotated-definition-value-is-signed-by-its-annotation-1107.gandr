@@ -1,0 +1,3 @@
+{MAYBE}def three = (3 : Integer);
+def some = ((Some 3) : Maybe(Integer));
+def grouped = (3);

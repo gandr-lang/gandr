@@ -1,0 +1,74 @@
+#:tombi toml-version = "v1.1.0"
+
+# Top-level limits are the default rule's thresholds; warnings are advisory
+# tree-wide (fail_on_warn), errors gate.
+max_file_size = "2MB"
+warn_file_size = "1MB"
+check_staged = true
+check_working_tree = true
+respect_gitignore = true
+fail_on_warn = false
+
+[rules.default]
+enabled = true
+description = "Default file size check"
+suggestion = "Add the file to 'excludes' or adjust 'max_file_size' in sizelint.toml"
+
+# Doc sprawl budgets. Trigger: disk size, per page, never per total.
+# warn = add a TOC, declare the next seam; error = split before merge. Over
+# budget: split into one-subject modules; split pages carry everything the
+# unsplit page carried. NEVER trim, elide, or compress to pass.
+[rules.doc_sprawl]
+enabled = true
+priority = 100
+description = "Markdown page over doc-sprawl budget"
+suggestion = "Split into one-subject modules with a TOC; never trim content to pass"
+includes = ["*.md"]
+warn_size = "32KB"
+max_size = "64KB"
+# Burn-down list for pages that predate the budgets. Entries leave as splits
+# land; entries never enter without owner sign-off.
+excludes = []
+
+# README budgets. A README is its crate's overview and conceptual entry; the
+# mechanism, decisions and specification detail it links to live in the
+# crate's rustdoc. Over budget: move more into rustdoc, never trim to pass.
+# Both rules outrank `doc_sprawl`. A pattern without a slash matches at any
+# depth, so the root rule excludes the crate, contrib, library and ledger
+# trees; `ledger/README.md` is a ledger page and falls to `doc_sprawl`.
+[rules.readme_root]
+enabled = true
+priority = 200
+description = "Root README over its budget"
+suggestion = "Keep what gandr is, its picture, the build and the licence; move the rest into crates/README.md and rustdoc"
+includes = ["README.md"]
+# 32KB while the synopsis settles under the owner's review (gandr #3247 and
+# #3260); the budget guards against cruft, and the figure is set with the
+# content the owner approves.
+max_size = "32KB"
+excludes = [
+  "contrib/**",
+  "crates/**",
+  "ledger/**",
+  "library/**",
+]
+
+[rules.readme]
+enabled = true
+priority = 200
+description = "Crate README over its budget"
+suggestion = "Move mechanism, decisions and specification detail into the crate's rustdoc; never trim to pass"
+includes = ["contrib/*/README.md", "crates/*/README.md", "library/*/README.md"]
+max_size = "12KB"
+
+# The crates listing carries one row per member, so it grows with the
+# workspace rather than with any one crate's prose. An agent reads the map
+# whole (the owner, 2026-11-13; #7275), so the budget rises with the
+# workspace and leaves room for the stage's splits.
+[rules.readme_crates]
+enabled = true
+priority = 200
+description = "Crates listing over its budget"
+suggestion = "An agent reads this map whole: no seat trims a member row, and the budget rises with the workspace"
+includes = ["crates/README.md"]
+max_size = "32KB"

@@ -1,0 +1,7 @@
+pub def guarded : Prog (Either ExnOp (Either StateOp Void)) Integer = Op (Right (Left Get)) (fun (a) {
+  (Op (Right (Left (Put (a + 1)))) (fun (_u) {
+    (Op (Right (Left Get)) (fun (b) {
+      (Done (b * 10) : Prog (Either ExnOp (Either StateOp Void)) Integer)
+    ) : Prog (Either ExnOp (Either StateOp Void)) Integer)
+  }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
+});

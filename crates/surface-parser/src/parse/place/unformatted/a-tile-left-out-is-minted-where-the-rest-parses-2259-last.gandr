@@ -1,0 +1,2 @@
+def twice : Integer ;
+def twice = loop ∷ loop 

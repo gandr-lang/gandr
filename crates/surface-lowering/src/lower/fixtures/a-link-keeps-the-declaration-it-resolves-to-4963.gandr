@@ -1,0 +1,9 @@
+/// See [b], [M.x], [M], [Red], [b] again and [y].
+def a = 1;
+def b = 2;
+module M where {
+  /// Inner [x] and [b].
+  def x = 3;
+}
+module N where { def x = 4; def y = 5; }
+data Color : Type where { | Red : Color }

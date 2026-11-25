@@ -1,0 +1,6 @@
+def x = 1 ;
+module Holder where {
+  theory In.T where {
+    oper size : $0Integer;
+  }
+}

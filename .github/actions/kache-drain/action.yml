@@ -1,0 +1,11 @@
+name: "kache drain"
+description: >
+  The step at the end of a job that builds through kache. It writes kache's
+  summary to the log, then stops kache's daemon, and the daemon sends its
+  queued uploads before it exits. A composite action has no step at the end
+  of the job, so `setup rust` runs this action for it.
+runs:
+  using: node24
+  main: main.cjs
+  post: post.cjs
+  post-if: always()

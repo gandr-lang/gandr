@@ -1,0 +1,5 @@
+theory Old where {
+  sort Nat : Type;
+  oper f(x : Nat) -> Nat;
+  oper g : (a : Nat) --> (b : Nat);
+}

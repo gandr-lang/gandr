@@ -1,0 +1,89 @@
+//! A layout of a truth value that loses the value: each constant is zero.
+//!
+//! A layout is admitted by its equivalence with the type. A model of the
+//! theory of truth can give its two constants one bit pattern, because that
+//! theory states no rule that parts them. So the model checks, and the fault
+//! must show at the round trip.
+//!
+//! The encoder is the fold into the model, and the decoder is the fold into
+//! the truth values. The round trip at the true value needs a path from the
+//! false value to the true value. The checker refuses that path.
+//!
+//! - see: #8288
+
+/// The theory of a truth value: two constants and no rule.
+theory Truth where
+  /// The sort of truth values.
+  sort T : Type;
+  /// The false value.
+  oper no : T;
+  /// The true value.
+  oper yes : T;
+
+/// The fragment of the `llvm` dialect at one bit.
+theory Bit where
+  /// A word of one bit.
+  sort I1 : Type;
+  /// The constant zero.
+  oper zero : I1;
+  /// The constant one.
+  oper one : I1;
+  /// The conjunction of two bits, which the dialect names `and`.
+  oper band : (x : I1, y : I1) --> I1;
+  /// Zero on the left absorbs.
+  rule bandZero : band zero x <=> zero;
+  /// One on the left is the unit.
+  rule bandOne : band one x <=> x;
+
+/// A layout that stores each truth value as the constant zero.
+module TruthInZero : Model(Truth) where
+  /// The carrier, a term of one bit.
+  type T = Terms Bit;
+  /// False is the constant zero.
+  def no : Terms Bit = Bit.zero;
+  /// True is the constant zero also.
+  def yes : Terms Bit = Bit.zero;
+
+/// The encoder: the fold of a truth value into the layout.
+def encode(t : Terms Truth) -> Terms Bit =
+  match t where
+    | Truth.no => TruthInZero.no
+    | Truth.yes => TruthInZero.yes
+
+/// The conjunction of two truth values.
+def conj(a : Terms Truth, b : Terms Truth) -> Terms Truth =
+  match a where
+    | Truth.no => Truth.no
+    | Truth.yes => b
+
+/// The meaning of each operation of `Bit`. Its carrier is the truth values.
+module BitInTruth : Model(Bit) where
+  /// The carrier, a truth value.
+  type I1 = Terms Truth;
+  /// Zero means false.
+  def zero : Terms Truth = Truth.no;
+  /// One means true.
+  def one : Terms Truth = Truth.yes;
+  /// The operation `band` means the conjunction.
+  def band(x : Terms Truth, y : Terms Truth) -> Terms Truth = conj x y;
+  /// The absorption law holds by computation.
+  def bandZero(x : Terms Truth) -> Path (band zero x) zero = Path.here Truth.no;
+  /// The unit law holds by computation.
+  def bandOne(x : Terms Truth) -> Path (band one x) x = Path.here x;
+
+/// The decoder: the fold of a bit term into the truth values.
+@[respects(*{BitInTruth.bandZero, BitInTruth.bandOne})]
+def rec decode(b : Terms Bit) -> Terms Truth =
+  match b where
+    | Bit.zero => BitInTruth.zero
+    | Bit.one => BitInTruth.one
+    | Bit.band(x, y) => BitInTruth.band (decode[<] x) (decode[<] y)
+
+/// The round trip fails at the true value, which the layout stores as zero.
+///
+/// - see: #8288
+@[refuses("EndpointMismatch")]
+def there(t : Terms Truth) -> Path (decode (encode t)) t =
+  match t where
+    | Truth.no => Path.here Truth.no
+    | Truth.yes => Path.here Truth.yes

@@ -1,0 +1,38 @@
+//! A signature can use a finite shape.
+//!
+//! `boundary Square { … }` names a carrier for signature cells.
+//!
+//! Each `face` member names a subshape that fixes a cell.
+//! Points use name order. A block value puts the shape at its sort-chain head.
+//! A program reads the shape by `case`.
+//!
+//! - cites: [Nuyts-2026-facett_generalization_intensional_type_systems_glue]
+//!
+//! [Nuyts-2026-facett_generalization_intensional_type_systems_glue]: https://types2026.cse.chalmers.se/files/book-of-abstracts.pdf "Schönlank, Nuyts and Devriese, Towards FaceTT: A Generalization of Intensional Type Systems with Glue"
+
+/// `Cells` declares a square, its six faces and a cell sort.
+theory Cells where
+  boundary Square {tl, tr, bl, br};
+  face left = {tl, bl};
+  face right = {tr, br};
+  face top = {tl, tr};
+  face bottom = {bl, br};
+  face corner = {tl};
+  face none = {};
+  sort Cell : Type;
+  oper fill : Cell;
+
+/// Structural recursion over a face chain: one per `Face`.
+def rec faces(chain : Theory) -> Integer =
+  match chain where
+    | Face(name, points, rest) => { let r = faces[<] rest; r + 1 }
+    | _ => 0
+
+/// The square heads the sort chain of `Cells`, with its six faces.
+@[runs("6")]
+def squareFaces() -> Integer = match Cells {
+  | Presents(sorts, opers, rules) => match sorts where
+    | Shape(name, size, chain, rest) => faces chain
+    | _ => 0
+  | _ => 0
+};

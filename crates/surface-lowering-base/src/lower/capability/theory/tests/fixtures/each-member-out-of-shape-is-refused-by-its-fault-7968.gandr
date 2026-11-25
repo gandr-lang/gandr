@@ -1,0 +1,5 @@
+theory Applies where {
+  sort S : Type+;
+  sort C : Type;
+  oper apply : (f : pi+ (s : S). S, k : C) --> C;
+}

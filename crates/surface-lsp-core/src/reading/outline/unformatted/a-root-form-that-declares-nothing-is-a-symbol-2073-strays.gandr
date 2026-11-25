@@ -1,0 +1,8 @@
+import "./a.gandr" ;
+1 ;
+rec {
+  def b = 2 ;
+}
+b ;
+@[ checks ]
+@[ checks ]

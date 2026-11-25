@@ -1,0 +1,64 @@
+//! A rule that joins two constants: the terms of its theory are a type.
+//!
+//! A type can state that two of its constants are one value. The rule that
+//! joins them removes no constructor. So the count of the constructors of a
+//! term does not show that the rewrites end.
+//!
+//! The kernel orders the constructors by each rule that keeps the count. The
+//! root of the left side stands above each constructor of the right side, and
+//! no constructor stands above itself. Each such rewrite lowers a term in that
+//! order, so the rewrites end. Conversion at the type then compares normal
+//! forms.
+//!
+//! - see: #8330
+
+// `Hollow`.
+import "rule-symmetry-apart.gandr";
+
+/// A signal of three lamps, where the amber lamp and the green lamp are one.
+pub theory Signal where
+  /// The lamps.
+  sort L : Type;
+  /// The red lamp.
+  oper red : L;
+  /// The amber lamp.
+  oper amber : L;
+  /// The green lamp.
+  oper green : L;
+  /// The amber lamp is the green lamp.
+  rule calm : amber <=> green;
+
+/// One wire with two levels and no rule.
+pub theory Wire where
+  /// The levels.
+  sort W : Type;
+  /// The low level.
+  oper low : W;
+  /// The high level.
+  oper high : W;
+
+/// The two joined lamps are one term.
+///
+/// - see: #8330
+def joined : Path[.A = Terms Signal] Signal.amber Signal.green = Path.here Signal.green;
+
+/// The level of each lamp. The two joined lamps have one level, so the case
+/// respects the rule.
+pub def level(s : Terms Signal) -> Terms Wire =
+  match s where
+    | Signal.red => Wire.high
+    | Signal.amber => Wire.low
+    | Signal.green => Wire.low
+
+/// The amber lamp runs to the low level.
+@[runs("Wire.low")]
+def amberLevel() -> Terms Wire = level Signal.amber;
+
+/// The red lamp and the green lamp are apart: no rule joins them.
+def redApart(e : Path[.A = Terms Signal] Signal.red Signal.green) -> Hollow =
+  match e {}
+
+/// The red lamp and the amber lamp are apart: the amber lamp rewrites to the
+/// green lamp.
+def redNotAmber(e : Path[.A = Terms Signal] Signal.red Signal.amber) -> Hollow =
+  match e {}

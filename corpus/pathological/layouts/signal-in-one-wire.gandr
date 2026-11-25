@@ -1,0 +1,41 @@
+//! No layout gives two joined lamps two levels.
+//!
+//! A rule joins two constants of a type. A layout that gives them two bit
+//! patterns has no proof of the rule. An encoder that names no law gives no
+//! reason for its two arms to agree.
+//!
+//! The checker refuses the module that omits the law, and it names the rule.
+//! It refuses the encoder over the members of a layout where the encoder
+//! names no law.
+//!
+//! - see: #8333
+
+// `Signal` and `Wire`.
+import "../../model/desc/rule-keeps-count.gandr";
+
+// `SignalInWire`.
+import "../../model/layouts/signal-in-one-wire.gandr";
+
+/// The layout that gives the two joined lamps two levels. It has no law.
+///
+/// - see: #8333
+@[refuses("NoFiller.Omitted")]
+module SignalTorn : Model(Signal) where
+  /// The carrier, a term of one wire.
+  type L = Terms Wire;
+  /// Red is the high level.
+  def red : Terms Wire = Wire.high;
+  /// Amber is the low level.
+  def amber : Terms Wire = Wire.low;
+  /// Green is the high level.
+  def green : Terms Wire = Wire.high;
+
+/// The encoder names no law, so its two arms are two names.
+///
+/// - see: #8333
+@[refuses("RuleNotRespected")]
+def encodeBare(s : Terms Signal) -> Terms Wire =
+  match s where
+    | Signal.red => SignalInWire.red
+    | Signal.amber => SignalInWire.amber
+    | Signal.green => SignalInWire.green

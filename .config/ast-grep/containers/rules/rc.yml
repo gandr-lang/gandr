@@ -1,0 +1,40 @@
+# An `Rc` takes the shared pointer of the kernel's data. The count is
+# atomic. The unit of each site states that the site is off the hot path,
+# or it measures the site.
+id: rc-is-shared
+language: Rust
+severity: hint
+message: the shared pointer of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: generic_type
+    - has:
+        field: type
+        regex: ^(?:(?:alloc|std)::rc::)?Rc$
+    - has:
+        field: type_arguments
+        pattern: $ARGUMENTS
+transform:
+  ITEMS:
+    replace:
+      source: $ARGUMENTS
+      replace: ^<(?<items>[\s\S]*)>$
+      by: <$items, Global>
+fix: Shared$ITEMS
+---
+# A call of `Rc` that the shared pointer holds under the same name.
+id: rc-call-is-shared-call
+language: Rust
+severity: hint
+message: the shared pointer of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: scoped_identifier
+    - has:
+        field: path
+        regex: ^(?:(?:alloc|std)::rc::)?Rc$
+    - has:
+        field: name
+        pattern: $NAME
+        regex: ^(?:new|clone|make_mut|get_mut|try_unwrap|ptr_eq|strong_count)$
+fix: Shared::$NAME

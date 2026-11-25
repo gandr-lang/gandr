@@ -1,0 +1,36 @@
+//! Recursive calls can nest under constructor results.
+//!
+//! The elaborator expands `S(S(dbl[<](x)))` into a `run`.
+//! The constructors then receive the call's value.
+//!
+//! Each fold respects the integers' rules.
+//! It therefore defines an operation on the quotient.
+//!
+//! - cites: [Altenkirch-2018-quotient_inductive_inductive_types]
+//!
+//! [Altenkirch-2018-quotient_inductive_inductive_types]: https://doi.org/10.1007/978-3-319-89366-2_16 "Altenkirch et al., Quotient inductive-inductive types"
+
+// The presented integers.
+import "./data-base.gandr";
+
+/// `dbl` repeats each successor and predecessor.
+def rec dbl(n : Int) -> Int =
+  match n where
+    | Z => Z
+    | S(x) => S (S (dbl[<] x))
+    | P(x) => P (P (dbl[<] x))
+
+/// Negation exchanges successors and predecessors.
+def rec neg(n : Int) -> Int =
+  match n where
+    | Z => Z
+    | S(x) => P (neg[<] x)
+    | P(x) => S (neg[<] x)
+
+/// This example evaluates double two.
+@[runs("S (S (S (S Z)))")]
+def doubled : () -> Int = dbl (S (S Z));
+
+/// This example evaluates the negation of two.
+@[runs("P (P Z)")]
+def negated : () -> Int = neg (S (S Z));

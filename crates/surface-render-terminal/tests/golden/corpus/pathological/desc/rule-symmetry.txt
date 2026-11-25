@@ -1,0 +1,33 @@
+error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
+   ╭▸ corpus/pathological/desc/rule-symmetry.gandr:52:1
+   │
+52 │ ┏ module TallyUnproved : Model(Tally) where
+53 │ ┃   /// The carrier, a vote.
+54 │ ┃   type B = Terms Vote;
+55 │ ┃   /// The empty tally means the vote against.
+   ┆ ┇
+63 │ ┃   /// The unit law holds by computation.
+64 │ ┃   def meetAll(x : Terms Vote) -> Path (meet all x) x = Path.here x;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert
+   │
+   ├ note: `meetComm` is refused with NoFiller.Omitted, as its expectation states
+   ╰ help: prove the law by a definition at its type, or admit it where the host asserts it
+
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/rule-symmetry.gandr:72:3
+   │
+71 │    def rec poll(t : Terms Tally) -> Terms Vote =
+   │    │            ─ checked against `Terms Tally -> -F Terms Vote`; while checking the body of this function; binds t : Terms Tally
+   │ ┌──┘
+   │ │
+72 │ │┏   match t where
+73 │ │┃     | Tally.none => Vote.nay
+74 │ │┃     | Tally.all => Vote.aye
+75 │ │┃     | Tally.meet(x, y) => agree (poll[<] x) (poll[<] y)
+   │ │┃                                                       ╿
+   │ └┃───────────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `Terms Tally -> Terms Vote`; while checking the body of this function; binds poll : Terms Tally -> Terms Vote
+   │                                                          a case its datatype's rules do not admit
+   │
+   ├ note: `poll` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

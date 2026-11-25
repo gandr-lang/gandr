@@ -1,0 +1,54 @@
+[
+  {
+    "name": "#5855: a unit that cites none of its epic's motivating sources is refused, naming the epic and its sources",
+    "input": {
+      "body": "Part of #5721\n\n## Sources\n\n|Source|Role|What it gives|\n|---|---|---|\n|`presented-spaces.md`|primary|§ presented-spaces-crates: the reduct in both crates|\n|`crates/theory-discrete-morse`|primary|the matching and its critical cells|\n\n## After\n\nnone\n",
+      "epics": [
+        {
+          "number": 5721,
+          "body": "The reduct epic.\n\n## Motivating sources\n\n|Source|What it gives|\n|---|---|\n|`Doré-2023-computing_spaces_type_theory` §§ 3.4–3.6|the reduct of a graph and its gradient paths|\n|`Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology`|the reduction of a cellular sheaf along a matching|\n"
+        }
+      ]
+    },
+    "output": "`## Sources` cites none of the motivating sources of #5721, the unit's epic: `Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology`, `Doré-2023-computing_spaces_type_theory`. Cite one in `## Sources`, or add the row `| `<source>` | not read | <why> |`"
+  },
+  {
+    "name": "#5855: a unit that cites one of its epic's motivating sources, with a section after the key, is admitted",
+    "input": {
+      "body": "Part of #5721\n\n## Sources\n\n|Source|Role|What it gives|\n|---|---|---|\n|`presented-spaces.md`|primary|§ presented-spaces-crates: the reduct in both crates|\n|`Doré-2023-computing_spaces_type_theory`|primary|§§ 3.4 to 3.6: the reduct of a graph|\n\n## After\n\nnone\n",
+      "epics": [
+        {
+          "number": 5721,
+          "body": "The reduct epic.\n\n## Motivating sources\n\n|Source|What it gives|\n|---|---|\n|`Doré-2023-computing_spaces_type_theory` §§ 3.4–3.6|the reduct of a graph and its gradient paths|\n|`Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology`|the reduction of a cellular sheaf along a matching|\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#5855: a unit whose epic has no `## Motivating sources` is admitted",
+    "input": {
+      "body": "Part of #5509\n\n## Sources\n\n|Source|Role|What it gives|\n|---|---|---|\n|`presented-spaces.md`|primary|the frame|\n\n## After\n\nnone\n",
+      "epics": [
+        {
+          "number": 5509,
+          "body": "An epic with no motivating sources.\n\n## Units\n\n- #5510\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#5855: an issue key is cited only when no digit follows it, so `#3170` does not cite `#317`",
+    "input": {
+      "body": "Advances #5808\n\n## Sources\n\n|Source|Role|What it gives|\n|---|---|---|\n|`#3170`|secondary|another issue|\n\n## After\n\nnone\n",
+      "epics": [
+        {
+          "number": 5808,
+          "body": "## Motivating sources\n\n|Source|What it gives|\n|---|---|\n|`#317`|the one key space|\n"
+        }
+      ]
+    },
+    "output": "`## Sources` cites none of the motivating sources of #5808, the unit's epic: `#317`. Cite one in `## Sources`, or add the row `| `<source>` | not read | <why> |`"
+  }
+]

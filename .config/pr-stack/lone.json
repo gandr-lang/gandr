@@ -1,0 +1,33 @@
+[
+  {
+    "name": "a lone pending pull request in no server stack is set to auto-merge (#7801)",
+    "stack": [{ "number": 7, "head": "seven" }],
+    "states": { "7": "pending" },
+    "stacks": {},
+    "output": "status 0; #7 is set to auto-merge: GitHub queues it once its required checks pass; auto 7; calls: hold [7] | queue up to 7 | release"
+  },
+  {
+    "name": "a lone pending pull request in a server stack waits for the watch (#7801)",
+    "stack": [{ "number": 7, "head": "seven" }],
+    "states": { "7": "pending" },
+    "stacks": { "7": 9 },
+    "output": "status 0; nothing lands: #7's required checks are pending, and the stack lands from it once it is ready; auto none; calls: "
+  },
+  {
+    "name": "a pending bottom of a stack of two waits for the watch (#7801)",
+    "stack": [
+      { "number": 7, "head": "seven" },
+      { "number": 8, "head": "eight" }
+    ],
+    "states": { "7": "pending", "8": "pending" },
+    "stacks": {},
+    "output": "status 0; nothing lands: #7's required checks are pending, and the stack lands from it once it is ready; auto none; calls: "
+  },
+  {
+    "name": "a lone red pull request is not set to auto-merge (#7801)",
+    "stack": [{ "number": 7, "head": "seven" }],
+    "states": { "7": "red" },
+    "stacks": {},
+    "output": "status 0; nothing lands: #7's required checks are red, and the stack lands from it once it is ready; auto none; calls: "
+  }
+]

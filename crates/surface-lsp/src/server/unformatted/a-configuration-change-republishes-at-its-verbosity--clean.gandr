@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/a.gandr","languageId":"gandr","version":7,
+                    "text":"def f = 42 ;\n"}}}

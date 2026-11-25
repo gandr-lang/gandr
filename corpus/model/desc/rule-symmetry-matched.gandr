@@ -1,0 +1,28 @@
+//! A rule of a commutative operation fires in the two orders of its
+//! arguments.
+//!
+//! The theory of a tally states that its meet is commutative. A reader then
+//! expects the empty tally to absorb on each side of a meet. The rule states
+//! the absorption for the first argument only.
+//!
+//! The match of a rule tries the two orders of the arguments of the meet. So
+//! the rule `meet none x <=> none` decides `meet x none` also. The kernel
+//! replays each rewriting by the same match.
+//!
+//! - see: #8299
+
+// `Tally`, its two rules that rewrite, and its symmetry.
+import "./rule-symmetry.gandr";
+
+/// The empty tally absorbs as the second argument. The rule states it as the
+/// first argument.
+def absorbedSecond(x : Terms Tally) -> Path (Tally.meet x Tally.none) Tally.none = Path.here
+  Tally.none;
+
+/// The full tally is the unit as the second argument.
+def unitSecond(x : Terms Tally) -> Path (Tally.meet x Tally.all) x = Path.here x;
+
+/// The rule fires below a second meet, and its result absorbs again.
+def absorbedBelow(x : Terms Tally, y : Terms Tally) -> Path (Tally.meet
+  (Tally.meet x Tally.none)
+  y) Tally.none = Path.here Tally.none;

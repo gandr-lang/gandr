@@ -1,0 +1,37 @@
+/// `UncertifiedStratum`: a universe equivalence whose round trip at a list cell
+/// does not return it with the tail unread.
+
+// The native finite lists.
+import std.list (List);
+
+/// The negation of a flag.
+def not(b : Unit + Unit) -> Unit + Unit =
+  match b where
+    | +{.0 = u} => +{.1 = u}
+    | +{.1 = u} => +{.0 = u}
+
+def not_not(b : Unit + Unit) -> Unit + Unit =
+  not (not b)
+
+def same(b : Unit + Unit) -> Unit + Unit =
+  b
+
+def negation : Path[.A = Type] Bool Bool = equiv not not;
+
+@[runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)")]
+def both : List Bool = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil);
+
+def keep(xs : List Bool) -> List Bool =
+  xs
+
+def flip_flag(entry : Bool * List Bool) -> Bool * List Bool =
+  match entry where
+    | *{b, xs} => { let c = not b; *{c, xs} }
+
+def flagged : Path[.A = Type] (Bool * List Bool) (Bool * List Bool) = equiv flip_flag flip_flag;
+
+def emptied(xs : List Bool) -> List Bool =
+  nil
+
+@[refuses("UncertifiedStratum")]
+def collapsed = equiv emptied keep;

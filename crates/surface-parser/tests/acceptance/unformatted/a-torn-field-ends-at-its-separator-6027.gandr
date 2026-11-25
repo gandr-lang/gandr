@@ -1,0 +1,3 @@
+codata Stream(a : Type) : Type where
+   : a;
+  tail : {stream};

@@ -1,0 +1,32 @@
+//! The lowering refuses a `format` payload of the wrong shape.
+//!
+//! A `format` payload is a record of the texts `latex`, `typst` and `md`. A
+//! literate render reads each text as the spelling of the declared name in
+//! one document format. A payload of another shape gives the render no
+//! spelling.
+//!
+//! The lowering refuses a `format` with no payload as `MissingPayload`. It
+//! refuses a bare text, a field of no format and a field that is no text as
+//! `IllTypedPayload`.
+//!
+//! - see: #6403
+
+// No payload: the record is the payload, and it is missing.
+@[refuses("MissingPayload")]
+@[format]
+def bare = 1;
+
+// A bare text, not a record.
+@[refuses("IllTypedPayload")]
+@[format("\\oplus")]
+def bare_text = 2;
+
+// A record with a field of no format.
+@[refuses("IllTypedPayload")]
+@[format(*{.html = "&oplus;"})]
+def foreign_field = 3;
+
+// A record whose `latex` is a number, not a text.
+@[refuses("IllTypedPayload")]
+@[format(*{.latex = 2})]
+def untexted_field = 4;

@@ -1,0 +1,28 @@
+def three : Integer ;
+def three = 3 ;
+
+def four : Integer = 4 ;
+
+def five : Integer ;
+// parts them
+def five = 5 ;
+
+def six : Integer ;
+/// Documents the definition.
+def six = 6 ;
+
+def seven : Integer ;
+def between : Integer = 0 ;
+def seven = 7 ;
+
+def eight : Integer ; // on the signature
+def eight = 8 ;
+
+def nine : Integer ;
+def nine = (
+  // inside the value
+  9
+) ;
+
+def ten = 10 ;
+def ten : Integer ;

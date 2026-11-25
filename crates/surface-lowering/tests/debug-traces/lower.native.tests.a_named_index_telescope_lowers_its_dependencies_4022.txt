@@ -1,0 +1,58 @@
+test: lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64).
+(lldb) settings set -- target.run-args  "lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_lowering-52666a784a556435`__rustc::rust_panic + 12 at panicking.rs:875:25, address = 0x0000000101df8768
+(lldb) run
+
+running 1 test
+test lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022 ... 
+thread 'lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022' (1438620567) panicked at crates/surface-lowering/src/fixture.rs:74:5:
+the fixture source is one the parser accepts without repair
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: gandr_surface_lowering-52666a784a556435 was compiled with optimization - stepping may behave oddly; variables may not be available
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 63429 launched: 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64)
+Process 63429 stopped
+* thread #2, name = 'lower::native::tests::a_named_index_telescope_lowers_its_depend', stop reason = breakpoint 1.1
+       frame #0: 0x0000000101df8768 gandr_surface_lowering-52666a784a556435`__rustc::rust_panic at panicking.rs:875:25 [opt]
+(lldb) bt 24
+error: gandr_surface_lowering-52666a784a556435.gandr_surface_lowering.fc8537dd4b4b13da-cgu.09.rcgu.o 0x400009000016d55d: DW_TAG_member '__0' refers to type 0x000000000006fa80 which was unable to be parsed
+* thread #2, name = 'lower::native::tests::a_named_index_telescope_lowers_its_depend', stop reason = breakpoint 1.1
+   * frame #0: 0x0000000101df8768 gandr_surface_lowering-52666a784a556435`__rustc::rust_panic at panicking.rs:875:25 [opt]
+     frame #1: 0x0000000101c752cc gandr_surface_lowering-52666a784a556435`std::panicking::panic_with_hook at panicking.rs:839:5 [opt]
+     frame #2: 0x0000000101c62f00 gandr_surface_lowering-52666a784a556435`std::panicking::panic_handler::{closure#0} at panicking.rs:680:13 [opt]
+     frame #3: 0x0000000101c5a590 gandr_surface_lowering-52666a784a556435`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18 [opt]
+     frame #4: 0x0000000101c635a4 gandr_surface_lowering-52666a784a556435`__rustc::rust_begin_unwind at panicking.rs:678:5 [opt]
+     frame #5: 0x0000000101dfa804 gandr_surface_lowering-52666a784a556435`core::panicking::panic_fmt at panicking.rs:80:14 [opt]
+     frame #6: 0x0000000100a14b64 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::fixture::parsed::{closure#0} at fixture.rs:74:5
+     frame #7: 0x0000000100c073c4 gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<gandr_surface_syntax::tree::SyntaxTree, gandr_surface_lowering::fixture::parsed::{closure#0}>(closure={_ref__pbg:{dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:27, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=169, rule_names:{map:{root:Some({…}), length:169, alloc:{value:{…}}, _marker:{}}}, adaptations:size=73, molds:{molds:size=3314, rctxs:size=3314, bounds:size=3314, owners:size=3314, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=193, mold_labels:size=3314, adjacencies:size=8204, successor_starts:size=3315, has_pred:size=3314, has_succ:size=3314, form_first:size=200, is_first:size=3314, form_last:size=232, complete_last:size=203, is_complete_last:size=3314, required_tail:size=29, is_required_tail:size=3314, closing:size=3314, twins:size=3314, fingerprint:{0:6508449906899417014}}, automaton:{kinds:size=3314, observations:size=3314, width:52, sets:size=832}}, _ref__source:{__0:"data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndata Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type { Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v); }\ndata Twice(a : Type) : a -> a -> Type { Both : (x : a) --> Twice(a, x, x); }\ndata Turned : (n : Nat, v : Vec(Integer, n)) --> Type { Swap : (n : Nat, v : Vec(Integer, n)) --> Turned(v, n); }\n"}}) at __.rs:22:5
+     frame #8: 0x0000000100a47a18 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::fixture::parsed(pbg={dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:27, alloc:{value:{0:{}}}, _marker:{}}, rules:size=169, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:169, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=73, molds:{molds:size=3314, rctxs:size=3314, bounds:size=3314, owners:size=3314, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:31, items:193}, alloc:{}, marker:{}}}, menus:size=193, mold_labels:size=3314, adjacencies:size=8204, successor_starts:size=3315, has_pred:size=3314, has_succ:size=3314, form_first:size=200, is_first:size=3314, form_last:size=232, complete_last:size=203, is_complete_last:size=3314, required_tail:size=29, is_required_tail:size=3314, closing:size=3314, twins:size=3314, fingerprint:{0:6508449906899417014}}, automaton:{kinds:size=3314, observations:size=3314, width:52, sets:size=832}}, source={0:"data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndata Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type { Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v); }\ndata Twice(a : Type) : a -> a -> Type { Both : (x : a) --> Twice(a, x, x); }\ndata Turned : (n : Nat, v : Vec(Integer, n)) --> Type { Swap : (n : Nat, v : Vec(Integer, n)) --> Turned(v, n); }\n"}) at fixture.rs:65:1
+     frame #9: 0x0000000100708db4 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::lowered::{closure#0} at tests.rs:82:16
+     frame #10: 0x0000000100c08744 gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<gandr_surface_lowering::module::LoweredModule, gandr_surface_lowering::lower::native::tests::lowered::{closure#0}>(closure={_ref__source:{__0:"data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndata Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type { Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v); }\ndata Twice(a : Type) : a -> a -> Type { Both : (x : a) --> Twice(a, x, x); }\ndata Turned : (n : Nat, v : Vec(Integer, n)) --> Type { Swap : (n : Nat, v : Vec(Integer, n)) --> Turned(v, n); }\n"}, _ref__arena:{values:{frozen:None, own:size=0}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{}}, region_binders_from:None}}) at __.rs:22:5
+     frame #11: 0x00000001007540fc gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::lowered(source={0:"data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndata Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type { Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v); }\ndata Twice(a : Type) : a -> a -> Type { Both : (x : a) --> Twice(a, x, x); }\ndata Turned : (n : Nat, v : Vec(Integer, n)) --> Type { Swap : (n : Nat, v : Vec(Integer, n)) --> Turned(v, n); }\n"}, arena={values:{frozen:None, own:size=0}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{}}, region_binders_from:None}) at tests.rs:71:1
+     frame #12: 0x00000001007685c8 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022 at tests.rs:1859:18
+     frame #13: 0x0000000100708254 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022::{closure#0}((null)={}) at tests.rs:1856:58
+     frame #14: 0x0000000100988c9c gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #15: 0x00000001011e5fe8 gandr_surface_lowering-52666a784a556435`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #16: 0x00000001011e5fe0 gandr_surface_lowering-52666a784a556435`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18 [opt]
+     frame #17: 0x00000001011f129c gandr_surface_lowering-52666a784a556435`test::run_test_in_process::{closure#0} at lib.rs:747:74 [opt] [inlined]
+     frame #18: 0x00000001011f1290 gandr_surface_lowering-52666a784a556435`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #19: 0x00000001011f1290 gandr_surface_lowering-52666a784a556435`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [opt] [inlined]
+     frame #20: 0x00000001011f128c gandr_surface_lowering-52666a784a556435`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [opt] [inlined]
+     frame #21: 0x00000001011f128c gandr_surface_lowering-52666a784a556435`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #22: 0x00000001011f128c gandr_surface_lowering-52666a784a556435`test::run_test_in_process at lib.rs:747:27 [opt] [inlined]
+     frame #23: 0x00000001011f1280 gandr_surface_lowering-52666a784a556435`test::run_test::{closure#0} at lib.rs:668:43 [opt]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

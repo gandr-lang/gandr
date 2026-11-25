@@ -1,0 +1,5 @@
+#!/usr/bin/env gandr
+// a note
+  /* outer /* inner */ */
+
+def x = 1;

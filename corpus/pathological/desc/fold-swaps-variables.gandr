@@ -1,0 +1,28 @@
+//! A fold that the symmetry of a purse refuses.
+//!
+//! Two purses in one purse have no order. The check reads the call of a fold
+//! at a variable of the rule as one value. That reading must admit no fold
+//! that gives the two orders of one purse two answers.
+//!
+//! A fold that answers with its value on the first purse gives the value of
+//! one variable on one side of the rule, and the value of the other variable
+//! on the other side. No rule joins two such values, so the fold stays
+//! refused.
+//!
+//! - see: #8367
+//! - see: `model/desc/fold-swaps-variables.gandr` — the folds that respect
+//!   the rule
+
+// `Purse` with its symmetry.
+import "../../model/desc/fold-swaps-variables.gandr";
+
+/// The arm of two purses answers with the fold of the first purse. The two
+/// orders of one purse get two answers.
+///
+/// - see: #8367
+@[refuses("RuleNotRespected")]
+def rec upper(t : Terms Purse) -> Terms Purse =
+  match t where
+    | Purse.copper => Purse.copper
+    | Purse.silver => Purse.silver
+    | Purse.two(x, y) => upper[<] x

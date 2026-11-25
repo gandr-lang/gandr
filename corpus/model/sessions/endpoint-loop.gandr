@@ -1,0 +1,94 @@
+// This source drives an endpoint through a recursive protocol with a loop.
+// Such a loop need not exit.
+// Its passes are the steps of a demonic iteration over the protocol.
+//
+// Each loop turn completes one protocol pass.
+// One fixpoint supplies the passes.
+// An outer binding would capture the endpoint in every pass.
+// The loop threads the endpoint as it threads a held slot.
+// A pass acts on its endpoint before it continues.
+//
+// The lowering gives the endpoint to the first pass.
+// The loop head holds the starting state.
+// `continue` returns the endpoint at that state.
+// Such a loop follows its protocol.
+// Such a loop owes no `Partial`.
+//
+// Limits: such a loop never returns, but the kernel's returner assumes that
+// each call returns. So the kernel has no image of the loop.
+// The bridge declines the loop by name, and the checker's verdict stands alone.
+// The report states that each such declaration has no kernel image.
+//
+// - see: #4502
+// - see: #4705
+// - see: #4727
+// - see: #6047
+// - see: #6099
+
+/// `follow` receives reports until retirement.
+/// Retirement closes the endpoint and ends the loop.
+def follow(operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
+}) -> Unit =
+  loop {
+    offer operator {
+      | report => { let next = recv operator; continue }
+      | retire => { let last = recv operator; close operator; break }
+    }
+  }
+
+/// `tally` counts reports in a held slot until retirement.
+/// The loop threads the count beside the endpoint.
+def tally(operator : rec open => &{
+  report : Integer >? open,
+  retire : Integer >? end
+}) -> Integer =
+  var seen = 0
+  loop {
+    offer operator {
+      | report => { let next = recv operator; access seen as v { resume v (v + 1) }; continue }
+      | retire => { let last = recv operator; close operator; break }
+    }
+  };
+  pure seen
+
+/// `asking` selects a report and hears its answer on each pass.
+/// The loop issues every command and never exits.
+def asking(seat : rec open => +{more : Integer >? open, done : end}) -> Unit =
+  loop {
+    select seat more;
+    let heard = recv seat;
+    continue
+  }
+
+/// `serving` hears reports over a protocol with no exit.
+def serving(desk : rec open => &{report : Integer >? open}) -> Unit =
+  loop {
+    offer desk {
+      | report => { let next = recv desk; continue }
+    }
+  }
+
+/// `beacon` sends a report on each pass and never hears one.
+/// The bridge declines it as it declines a loop that receives.
+def beacon(seat : rec open => Integer >! open) -> Unit =
+  loop {
+    send seat 1;
+    continue
+  }
+
+/// `followed` sends two reports and a retirement to a forked desk.
+@[runs("*{}")]
+def followed() -> Unit =
+  let seat = fork (operator : rec open => &{
+    report : Integer >? open,
+    retire : Integer >? end
+  }) { follow operator };
+  select seat report
+  send seat 1
+  select seat report
+  send seat 2
+  select seat retire
+  send seat 3
+  close seat

@@ -1,0 +1,43 @@
+//! A fold over each index of a family that gives two answers for one term.
+//!
+//! A rule of a family makes its two sides one term. A fold over the family
+//! reads a term by its constructors, so an arm can give the two sides of a rule
+//! two answers.
+//!
+//! The checker stands the fold at the index of the root of each rule, and it
+//! compares the fold on the two sides. It refuses the fold by the first rule
+//! whose sides get two answers.
+//!
+//! - see: #8365
+//! - see: `model/desc/fold-over-family.gandr` — the folds that respect each
+//!   rule
+
+// `Width` and `Gate`.
+import "../../model/desc/family-with-rules.gandr";
+import "../../model/desc/fold-over-family.gandr";
+
+/// The arm of a swap gives the empty word. Two swaps of a word are that word,
+/// and the fold gives the empty word for them and the word for itself.
+///
+/// - see: #8365
+@[refuses("RuleNotRespected")]
+def rec flat(w : Width, t : Gate w) -> Gate w =
+  match t where
+    | Dark => Dark
+    | Lit => Lit
+    | Nil => Nil
+    | Swap(x) => Nil
+    | Hold(c, x) => Hold (flat[<] Bit c) (flat[<] Word x)
+
+/// The arm of a hold turns its bit. A word behind the lit bit is that word,
+/// and the fold gives a word behind the dark bit for it.
+///
+/// - see: #8365
+@[refuses("RuleNotRespected")]
+def rec turned(w : Width, t : Gate w) -> Gate w =
+  match t where
+    | Dark => Lit
+    | Lit => Dark
+    | Nil => Nil
+    | Swap(x) => Swap (turned[<] Word x)
+    | Hold(c, x) => Hold (turned[<] Bit c) (turned[<] Word x)

@@ -1,0 +1,81 @@
+/// This source states unbiased composition of a path chain at
+/// a certified stratum.
+///
+/// A chain has one composite across all of its bracketings.
+/// The former therefore selects no bracketing.
+///
+/// The sub-site for a chain certifies its stratum and degree.
+/// Evaluation and the kernel use the left-nested `Path.step` fold.
+///
+/// - see: corpus/model/identity/then.gandr
+/// - see: corpus/ledger/diagnostics/ComposeDoesNotFill.gandr
+import "./circle-base.gandr";
+
+/// The unbiased composite joins three paths with matching endpoints.
+def composed(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path x y,
+  q : Path y z,
+  r : Path z w
+) -> Path x w =
+  compose[5, 7] (chain 3) (p, q, r)
+
+/// The `folded` definition gives the `Path.step` fold of three paths.
+def folded(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path x y,
+  q : Path y z,
+  r : Path z w
+) -> Path x w =
+  Path.step (Path.step p q) r
+
+/// The composite equals its fold by reflexivity.
+def agrees(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path x y,
+  q : Path y z,
+  r : Path z w
+) -> Path[.A = Path[.A = A] x w] (composed A x y z w p q r) (folded A x y z w p q r) =
+  Path.here (folded A x y z w p q r)
+
+/// One cell is its own composite and needs no stratum.
+def single(A : Type, x : A, y : A, p : Path x y) -> Path x y =
+  compose[0, 0] (chain 1) p
+
+/// Three reflexivities compose to a loop at their point.
+def reflexivities(A : Type, x : A) -> Path x x =
+  compose[5, 7] (chain 3) (Path.here x, Path.here x, Path.here x)
+
+/// A composite of reflexivities reduces to reflexivity.
+def decided(A : Type, x : A) -> Path[.A = Path[.A = A] x x] (reflexivities A x) (Path.here x) =
+  Path.here (Path.here x)
+
+/// A called cell runs before the composite reads its returned path.
+def called(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path x y,
+  q : Path y z,
+  r : Path z w
+) -> Path x w =
+  compose[3, 5] (chain 2) (folded A x y z w p q r, Path.here w)
+
+/// A word cell is the path it denotes at the circle point.
+def wound : Path[.A = Path[.A = Circle] Base Base] (compose[3, 5]
+  (chain 2)
+  (loop, Path.here Base)) loop = Path.here loop;

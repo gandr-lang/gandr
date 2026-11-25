@@ -1,0 +1,18 @@
+error[ShapeMismatch]: expected a thunk type `+U C`
+  ╭▸ force.gandr:2:30
+  │
+2 │ def a = thunk { become force 1 };
+  │         ┬──────────────┬─────┯──
+  │         │              │     │
+  │         │              │     its type is not of the required shape: found `Integer`
+  │         │              checked against `-F Integer`; while forcing this
+  │         checked against `() -> Integer`; while checking the body of this thunk
+  │
+  ├ note: `a` is expected to check, and this refusal leaves it unsettled
+  ├ help: change the term or the type it is checked against, so that the type has the required shape
+  ├ class: malformed source
+  ├ detail: the rule here requires a thunk type `+U C`
+  ├ expression: `1`
+  ├ spans: primary 54..55; rule 33..57; rule 48..55
+  ├ rules: ThunkBody, Force
+  ╰ refusal: Checking(ShapeMismatch { at: Value(NodeKey(ContentDigest { high: DigestWord(11651409278527751236), low: DigestWord(16517503191727615335) })), wanted: Thunk, found: Value(NodeKey(ContentDigest { high: DigestWord(487760577359375320), low: DigestWord(17589882110301850820) })), unfolded: Value(NodeKey(ContentDigest { high: DigestWord(487760577359375320), low: DigestWord(17589882110301850820) })) }); FailureOf { refusal: ShapeMismatch { at: Value(NodeKey(ContentDigest { high: DigestWord(11651409278527751236), low: DigestWord(16517503191727615335) })), wanted: Thunk, found: Value(NodeKey(ContentDigest { high: DigestWord(487760577359375320), low: DigestWord(17589882110301850820) })), unfolded: Value(NodeKey(ContentDigest { high: DigestWord(487760577359375320), low: DigestWord(17589882110301850820) })) }, obligations: [ObligationOf { role: ThunkBody, at: Term(Value(NodeKey(ContentDigest { high: DigestWord(9452747135505425962), low: DigestWord(16830457860098834556) }))), expected: Present(Value(NodeKey(ContentDigest { high: DigestWord(8189385083591281978), low: DigestWord(11294385854852005683) }))), binders: [] }, ObligationOf { role: CompBridge, at: Term(Computation(NodeKey(ContentDigest { high: DigestWord(15844380660786921127), low: DigestWord(16387187039183711013) }))), expected: Present(Computation(NodeKey(ContentDigest { high: DigestWord(7545101369256690780), low: DigestWord(16098127279424254800) }))), binders: [] }, ObligationOf { role: Force, at: Term(Computation(NodeKey(ContentDigest { high: DigestWord(15844380660786921127), low: DigestWord(16387187039183711013) }))), expected: Absent(Synthesised), binders: [] }], pursuit: PursuitOf { at: Term(Computation(NodeKey(ContentDigest { high: DigestWord(15844380660786921127), low: DigestWord(16387187039183711013) }))), expected: Absent(Synthesised), stage: Resuming }, hypotheses: [], endpoints: [], solved: None }

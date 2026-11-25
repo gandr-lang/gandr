@@ -1,0 +1,5 @@
+data Empty : Type where {{}}
+def aliased : {alias} ;
+def aliased = {body} ;
+def thunked : {arrow} ;
+def thunked = {body} ;

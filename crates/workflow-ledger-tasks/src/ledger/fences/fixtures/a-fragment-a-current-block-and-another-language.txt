@@ -1,0 +1,17 @@
+```gandr
+f : Integer
+```
+
+  ```gandr title
+  def p : Path[.A = Integer](4, 4);
+  ```
+
+```rust
+def p : Path(Integer, 4, 4);
+```
+
+````markdown
+```gandr
+def p : Path(Integer, 4, 4);
+```
+````

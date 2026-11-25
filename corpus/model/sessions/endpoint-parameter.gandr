@@ -1,0 +1,57 @@
+// A function's parameter at a session type is an endpoint its body drives to
+// its end.
+//
+// A session action acts only on a linear binder, and a parameter binds in the
+// intuitionistic zone. The placement moves the parameter into one linear
+// binder of its name, which shadows it.
+//
+// The lowering wraps the body in the placement. The checker opens the
+// parameter as an endpoint at its session type, and the readmission erases
+// the placement to its body. A call spends the caller's endpoint whole, as a
+// send delegates one, and the callee holds it from then on. On the machine
+// the placement holds the passed end in a fresh cell, as a receive holds its
+// payload. The callee's actions then reach the caller's channel.
+//
+// - see: #1862
+// - see: #4501
+// - see: #4687
+
+/// A parameter at `end` that its body closes.
+def finish(seat : end) -> Unit =
+  close seat
+
+/// A parameter that receives a number, then closes, and answers the number.
+def answer(seat : Integer >? end) -> Integer =
+  let count = recv seat
+  close seat
+  count
+
+/// An intuitionistic parameter beside a parameter at a session type: the
+/// placement counts apart from the parameters before it.
+def report(note : String, seat : String >! end) -> Unit =
+  send seat note
+  close seat
+
+/// A fork's child that hands its end to `finish`, which closes it.
+@[runs("*{}")]
+def handed() -> Unit =
+  let desk = fork (seat : end) { finish seat };
+  close desk
+
+/// The parent hands its end to `answer`, which receives what the child sent.
+@[runs("7")]
+def asked() -> Integer =
+  let desk = fork (seat : Integer >! end) {
+    send seat 7;
+    close seat
+  };
+  answer desk
+
+/// The parent hands its end to `report` beside a note, which the child takes.
+@[runs("*{}")]
+def reported() -> Unit =
+  let desk = fork (seat : String >? end) {
+    let note = recv seat;
+    close seat
+  };
+  report "done" desk

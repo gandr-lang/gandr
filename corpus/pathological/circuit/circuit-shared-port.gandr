@@ -1,0 +1,11 @@
+@[refuses("MalformedForm")]
+theory Shared where
+  sort Nat : Type;
+  oper f : (a : Nat) --> (b : Nat);
+  oper g : (a : Nat) --> (b : Nat);
+
+  rule twice : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (o : Nat) {
+    node : p(x) ==> (m);
+    node : f(y) --> (m);
+    node : g(m) --> (o);
+  };

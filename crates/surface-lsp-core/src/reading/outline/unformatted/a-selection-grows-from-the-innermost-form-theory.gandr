@@ -1,0 +1,4 @@
+theory T where {
+  sort M : Type;
+  oper mul : (x : M) --> M;
+}

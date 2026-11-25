@@ -1,0 +1,3 @@
+/// See [gone].
+def a = 1 ;
+@[ doc("Or [`a`].") ] def b = 2 ;

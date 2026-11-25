@@ -1,0 +1,202 @@
+[
+  {
+    "name": "#6394: a runner context in a job environment is refused",
+    "input": {
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
+      "jobs": {
+        "test": {
+          "env": {
+            "CARGO_TARGET_DIR": "${{ runner.workspace }}/target"
+          }
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/nightly-riscv64-tests.yml` job `test` environment `CARGO_TARGET_DIR` names `runner.`, unavailable in job env\"]"
+  },
+  {
+    "name": "a runner context in a step environment holds",
+    "input": {
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
+      "jobs": {
+        "test": {
+          "steps": [
+            {
+              "env": {
+                "CARGO_TARGET_DIR": "${{ runner.workspace }}/target"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#6888: a hashFiles walk of a build directory is refused",
+    "input": {
+      "workflow": ".github/workflows/report-coverage.yml",
+      "jobs": {
+        "coverage-part": {
+          "steps": [
+            {
+              "if": "${{ hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)) != '' }}"
+            }
+          ]
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/report-coverage.yml` job `coverage-part` walks a build directory with `hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)`. Test one file at the directory's root\"]"
+  },
+  {
+    "name": "#7705: a hashFiles walk from the workspace's root is refused",
+    "input": {
+      "workflow": ".github/workflows/landing-checks.yml",
+      "jobs": {
+        "sweep": {
+          "steps": [
+            {
+              "env": { "CI_STATE_INPUTS": "${{ hashFiles('**/Cargo.toml', 'Cargo.lock') }}" }
+            }
+          ]
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/landing-checks.yml` job `sweep` walks a build directory with `hashFiles('**/Cargo.toml', 'Cargo.lock')`. Test one file at the directory's root\"]"
+  },
+  {
+    "name": "#7705: a hashFiles of the manifests by their places holds",
+    "input": {
+      "workflow": ".github/workflows/landing-checks.yml",
+      "jobs": {
+        "sweep": {
+          "steps": [
+            {
+              "env": {
+                "CI_STATE_INPUTS": "${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'Cargo.lock') }}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a hashFiles test of one file at a build directory's root holds",
+    "input": {
+      "workflow": ".github/workflows/report-coverage.yml",
+      "jobs": {
+        "coverage-part": {
+          "steps": [
+            {
+              "if": "${{ hashFiles(format('target/{0}/.rustc_info.json', env.COVERAGE_STATE)) != '' }}"
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#6774: a job on an edit of a pull request whose condition reads no change is refused",
+    "input": {
+      "workflow": ".github/workflows/landing-title-and-deletes.yml",
+      "on": {
+        "pull_request": {
+          "types": ["opened", "edited", "reopened", "synchronize", "ready_for_review"]
+        },
+        "merge_group": {}
+      },
+      "jobs": {
+        "template": {
+          "if": false
+        },
+        "title": {
+          "if": "${{ github.actor != 'renovate[bot]' && github.event.action != 'synchronize' }}"
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/landing-title-and-deletes.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
+  },
+  {
+    "name": "#6774: a job on an edit of a pull request with no condition is refused",
+    "input": {
+      "workflow": ".github/workflows/landing-title-and-deletes.yml",
+      "on": {
+        "pull_request": {
+          "types": ["edited"]
+        }
+      },
+      "jobs": {
+        "title": {}
+      }
+    },
+    "output": "[\"`.github/workflows/landing-title-and-deletes.yml` job `title` runs on each edit of a pull request. Its condition reads no field of `github.event.changes`\"]"
+  },
+  {
+    "name": "#6774: a job on an edit of a pull request that reads the change of the title holds",
+    "input": {
+      "workflow": ".github/workflows/landing-title-and-deletes.yml",
+      "on": {
+        "pull_request": {
+          "types": ["opened", "edited"]
+        }
+      },
+      "jobs": {
+        "title": {
+          "if": "${{ github.event.action != 'edited' || github.event.changes.title }}"
+        }
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a job of a workflow that does not run on an edit of a pull request holds",
+    "input": {
+      "workflow": ".github/workflows/tracker-check-unit-form.yml",
+      "on": {
+        "issues": {
+          "types": ["opened", "edited"]
+        },
+        "pull_request": null
+      },
+      "jobs": {
+        "sort": {}
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#7117: a job that runs a nextest archive with no fetch before it is refused",
+    "input": {
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
+      "jobs": {
+        "test": {
+          "steps": [
+            { "name": "download the test archive" },
+            { "run": "cargo nextest run --archive-file a.tar.zst --profile riscv64" },
+            { "run": "cargo fetch --locked" }
+          ]
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/nightly-riscv64-tests.yml` job `test` runs a nextest archive with no step before it that fetches the lockfile's sources, so a test that reads the dependency tree offline misses a new git source\"]"
+  },
+  {
+    "name": "#7117: a job that fetches the lockfile's sources before it runs a nextest archive holds",
+    "input": {
+      "workflow": ".github/workflows/nightly-riscv64-tests.yml",
+      "jobs": {
+        "test": {
+          "steps": [
+            { "run": "cargo fetch --locked --manifest-path a/Cargo.toml" },
+            {
+              "run": "if [[ -e $LOCK ]]; then flock 9; fi\ncargo nextest run --archive-file a.tar.zst --profile riscv64"
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
+  }
+]

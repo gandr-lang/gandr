@@ -1,0 +1,2 @@
+def three : Integer ;
+def three = 3 ;

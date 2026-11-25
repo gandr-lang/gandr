@@ -1,0 +1,37 @@
+//! Two distinct terms of a theory with a commutative operation are apart.
+//!
+//! A decoder with no arm for an impossible case needs two distinct constants
+//! to be apart. A theory that states a commutative meet must keep that fact.
+//! The two orders of one meet are one term, so no case tells them apart.
+//!
+//! The rules of the theory converge on classes of terms under the symmetry.
+//! Two closed terms are apart where each pairing of the arguments of a meet
+//! finds two distinct operations. The kernel makes this decision again.
+//!
+//! - see: #8323
+
+/// The type with no value.
+pub data Hollow : Type where {}
+
+/// The theory of two picks and a commutative meet, with no rule for the picks.
+pub theory Pick where
+  /// The picks.
+  sort P : Type;
+  /// The first pick.
+  oper first : P;
+  /// The second pick.
+  oper second : P;
+  /// The meet of two picks.
+  oper meet : (x : P, y : P) --> P;
+  /// The meet is commutative.
+  rule meetComm : meet x y <=> meet y x;
+
+/// The two picks are apart.
+def picksApart(e : Path[.A = Terms Pick] Pick.first Pick.second) -> Hollow =
+  match e {}
+
+/// No pairing joins the meet of the first pick and the meet of the second.
+def meetsApart(
+  e : Path[.A = Terms Pick] (Pick.meet Pick.first Pick.first) (Pick.meet Pick.second Pick.second)
+) -> Hollow =
+  match e {}

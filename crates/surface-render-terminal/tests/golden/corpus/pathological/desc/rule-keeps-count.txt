@@ -1,0 +1,43 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/rule-keeps-count.gandr:26:3
+   │
+25 │    def torn(s : Terms Signal) -> Terms Wire =
+   │    │        ─ checked against `Terms Signal -> -F Terms Wire`; while checking the body of this function; binds s : Terms Signal
+   │ ┌──┘
+   │ │
+26 │ │┏   match s where
+27 │ │┃     | Signal.red => Wire.high
+28 │ │┃     | Signal.amber => Wire.low
+29 │ │┃     | Signal.green => Wire.high
+   │ │┃                               ╿
+   │ └┃───────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `Terms Signal -> Terms Wire`; while checking the body of this thunk
+   │                                  a case its datatype's rules do not admit
+   │
+   ├ note: `torn` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies
+
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/desc/rule-keeps-count.gandr:36:3
+   │
+35 │   def joinedApart(e : Path[.A = Terms Signal] Signal.amber Signal.green) -> Hollow =
+   │   │               ─ checked against `Path[.A = Terms Signal] Signal.amber Signal.green -> -F Hollow`; while checking the body of this function; binds e : Path[.A = Terms Signal] Signal.amber Signal.green
+   │ ┌─┘
+   │ │
+36 │ │   match e {}
+   │ │   ┯━━━━━━━━│
+   │ └───│────────┤
+   │     │        checked against `Path[.A = Terms Signal] Signal.amber Signal.green -> Hollow`; while checking the body of this thunk
+   │     a path whose endpoints are not apart
+   │
+   ├ note: `joinedApart` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal
+
+error[RulesUnoriented]: this rule may rewrite forever: its right side is not smaller than its left in the order the block's calls induce, so the block's rules are refused
+   ╭▸ corpus/pathological/desc/rule-keeps-count.gandr:50:3
+   │
+50 │   rule up : dim ==> lit;
+   │   ━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
+   │
+   ├ note: `Flicker` is refused with RulesUnoriented, as its expectation states
+   ╰ help: make the rule's right side smaller than its left in the path order

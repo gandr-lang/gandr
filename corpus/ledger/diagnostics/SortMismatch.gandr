@@ -1,0 +1,3 @@
+/// `SortMismatch`: a code checked at a universe of the other sort.
+@[refuses("SortMismatch")]
+def wrong_sort : Type[-] = Integer;

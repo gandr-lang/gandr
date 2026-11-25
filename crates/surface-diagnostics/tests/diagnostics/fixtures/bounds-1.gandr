@@ -1,0 +1,7 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+data Fin : Nat -> Type where {
+  | FZ : (n : Nat) --> Fin(Succ(n))
+}

@@ -1,0 +1,1232 @@
+//! The lowering half of a functor application.
+//!
+//! The half holds the renaming that each instance reads its template through,
+//! the types that its manifest components read, and the declarations that its
+//! witnesses and its body's image amount to.
+//!
+//! The design lives with the collection pass (`crate::module::functor`).
+
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Carried;
+use gandr_core_term::Renaming;
+use gandr_core_term::Sort;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::rename_value_traced;
+use gandr_core_term::rename_value_type_traced;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::ByteOffset;
+use quenchant_shape::shape::Maybe;
+
+use super::Expressions;
+use super::ExpressionsRef;
+use super::Families;
+use super::InstanceType;
+use super::Sink;
+use super::Site;
+use super::exits::record_copies;
+use super::lowered;
+use crate::error::LoweringRefusal;
+use crate::form::Piece;
+use crate::form::Pieces;
+use crate::form::Placed;
+use crate::form::Universe;
+use crate::form::read_pieces;
+use crate::module::BodyScope;
+use crate::module::Container;
+use crate::module::DeclarationOutcome;
+use crate::module::InstanceIndex;
+use crate::module::Matched;
+use crate::module::Member;
+use crate::module::ParameterComponent;
+use crate::module::ParameterForm;
+use crate::module::Sealing;
+use crate::module::SlotIndex;
+use crate::module::Stratum;
+use crate::module::StructureIndex;
+use crate::module::TypeComponent;
+use crate::module::TypeMeaning;
+use crate::origin::Origin;
+use crate::resolve::SurfaceName;
+use crate::slot::Role;
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
+    /// Refuse a path read off the application `target`, `F(X).x` or
+    /// `F(X).T`, when its head names a functor.
+    ///
+    /// # Specification
+    /// - requires: `target` is a call or a type application a path selects
+    ///   from; `chain` is scratch.
+    /// - ensures: nothing when the application's head names no functor, so the
+    ///   caller refuses the form as it otherwise would.
+    /// - provides: the one refusal a path off an application meets, whatever
+    ///   position it is read at.
+    /// - fails: [`LoweringRefusal::ProjectionFromApplication`] at the
+    ///   application, naming the functor, when the head names one;
+    ///   [`LoweringRefusal::UnknownMold`] for a node of a mold the grammar does
+    ///   not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value path and a type path off an application of a
+    ///   functor are each refused by name, and a path off a call of a function
+    ///   is not.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of the application, error path
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the functors for the head's name once; the check scans them once more when it refuses"
+        )
+    )]
+    #[spec(ensures: |ret| match ret {
+        | Err(LoweringRefusal::ProjectionFromApplication { span, functor }) => span == target.span && self.cx().collected.functors.iter().any(|found| found.name == functor),
+        | Err(_) | Ok(()) => true,
+    })]
+    #[inline]
+    pub fn refuse_applied(
+        &self,
+        target: Placed,
+        chain: &mut Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        read_pieces(self.cx().pbg, self.cx().tree, target.node, chain)?;
+        let Some(&(Piece::Operand(head) | Piece::Tile { at: head, .. })) = chain.pieces.first()
+        else {
+            return Ok(());
+        };
+        let name = self.cx().name_at(head);
+        if self
+            .cx()
+            .collected
+            .functors
+            .iter()
+            .any(|functor| functor.name == name)
+        {
+            return Err(LoweringRefusal::ProjectionFromApplication {
+                span: target.span,
+                functor: name,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// The parameter module the path head `head` names at `site`: the
+    /// parameter of the functor whose body or parameter the declaration
+    /// owning `site` belongs to, when it is named `head`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: walking out from the container of the declaration owning
+    ///   `site` by an explicit loop, the first functor's body or parameter met
+    ///   answers with its parameter when the parameter is named `head`; absent
+    ///   otherwise, and for a site no declaration owns. An answer is the
+    ///   parameter structure of a functor whose parameter is named `head`.
+    /// - provides: the scope a functor's body reads its parameter's components
+    ///   through, ahead of the outermost scope.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: walks out only the modules enclosing the declaration that owns
+    ///   `site`, its module nesting depth rather than the program's size, and
+    ///   reads one functor; checking its own clause reads one structure and one
+    ///   functor more.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body reads its parameter's type and value by path,
+    ///   and a declaration outside the functor does not; another module's path
+    ///   inside the functor reads as that module.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(parameter) => self.cx().collected.structures.get(usize::from(parameter)).is_some_and(|structure| matches!(structure.stratum,
+            Stratum::Parameter(functor) if self.cx().collected.functors.get(usize::from(functor))
+                .is_some_and(|found| found.parameter == parameter && found.parameter_name == head))),
+        | Maybe::Absent(_) => true,
+    })]
+    fn parameter_named(
+        &self,
+        site: Site,
+        head: SurfaceName<'source>,
+    ) -> Maybe<StructureIndex, parameter_path::Absent>
+    {
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
+        else {
+            return Maybe::Absent(parameter_path::Absent::Outside);
+        };
+        let mut container = self.cx().collected.slots.get(usize::from(own)).map_or_else(
+            || self.cx().collected.top(site.at.span.start()),
+            |slot| slot.container,
+        );
+        while let Container::Module(module) = container
+            && let Some(structure) = self.cx().collected.structures.get(usize::from(module))
+        {
+            if let Stratum::Functor(functor) | Stratum::Parameter(functor) = structure.stratum {
+                return match self.cx().collected.functors.get(usize::from(functor)) {
+                    Some(found) if found.parameter_name == head => Maybe::Present(found.parameter),
+                    Some(_) | None => Maybe::Absent(parameter_path::Absent::Outside),
+                };
+            }
+            container = structure.container;
+        }
+
+        Maybe::Absent(parameter_path::Absent::Outside)
+    }
+
+    /// The parameter of the flow whose body is the module `container` names,
+    /// and the scope enclosing that body.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for the body of a functor whose scope is
+    ///   [`BodyScope::Domain`], a flow's, or [`BodyScope::Path`], a path's, its
+    ///   parameter and the body's own container; absent for any other
+    ///   container.
+    /// - provides: the domain half of
+    ///   [`Self::resolve_name`](crate::lower::Expressions::resolve_name).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow's body reads its domain's member by name, and
+    ///   an ordinary functor's body reads its own members.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_flow_reads_its_domain_s_members_by_name`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((parameter, outer)) => matches!(container, Container::Module(module)
+            if self.cx().collected.structures.get(usize::from(module)).is_some_and(|structure| structure.container == outer
+                && matches!(structure.stratum, Stratum::Functor(functor)
+                    if self.cx().collected.functors.get(usize::from(functor)).is_some_and(|found| found.parameter == parameter
+                        && matches!(found.scope, BodyScope::Domain { .. } | BodyScope::Path { .. }))))),
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn domain_scope(
+        &self,
+        container: Container,
+    ) -> Maybe<(StructureIndex, Container), parameter_path::Absent>
+    {
+        let Container::Module(module) = container
+        else {
+            return Maybe::Absent(parameter_path::Absent::Outside);
+        };
+        let Some(structure) = self.cx().collected.structures.get(usize::from(module))
+        else {
+            return Maybe::Absent(parameter_path::Absent::Outside);
+        };
+        let Stratum::Functor(functor) = structure.stratum
+        else {
+            return Maybe::Absent(parameter_path::Absent::Outside);
+        };
+        match self.cx().collected.functors.get(usize::from(functor)) {
+            Some(found)
+                if matches!(
+                    found.scope,
+                    BodyScope::Domain { .. } | BodyScope::Path { .. }
+                ) =>
+            {
+                Maybe::Present((found.parameter, structure.container))
+            },
+            Some(_) | None => Maybe::Absent(parameter_path::Absent::Outside),
+        }
+    }
+
+    /// The kind a functor parameter's abstract component reads, when `atom`
+    /// is the template atom of one: the kind the component writes, or the
+    /// fuss-free universe an unkinded `type T` reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for an atom standing for an abstract component of some
+    ///   functor's parameter, its written kind's lowered type, or a fresh
+    ///   fuss-free universe when it writes none; nothing for any other atom,
+    ///   and for a written kind that did not lower.
+    /// - provides: the kind a parameter's abstract type answers at where no
+    ///   judgement forms it, as an application's kind check reads it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the kind is read off the functors' components and
+    ///   the lowered nodes, which a predicate would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the abstract type of a functor's parameter that is
+    ///   never applied answers at its universe in the parameter's signature.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
+    #[inline]
+    pub fn parameter_kind(
+        &self,
+        atom: gandr_kernel_term::ConstantIndex,
+        sink: &mut Sink<'_>,
+    ) -> Option<ValueTypeId>
+    {
+        let kind = self
+            .cx()
+            .collected
+            .functors
+            .iter()
+            .flat_map(|functor| &functor.components)
+            .find_map(|component| match component.form {
+                ParameterForm::Abstract(kind)
+                    if self
+                        .cx()
+                        .collected
+                        .slots
+                        .get(usize::from(component.slot))
+                        .is_some_and(|slot| slot.constant == atom) =>
+                {
+                    Some(kind)
+                },
+                ParameterForm::Abstract(_)
+                | ParameterForm::Value(_)
+                | ParameterForm::Manifest(_)
+                | ParameterForm::Derived(_) => None,
+            })?;
+        match kind {
+            Maybe::Present(written) => match self.cx().value_type_at(written.node) {
+                Maybe::Present(stated) => Some(stated),
+                Maybe::Absent(_) => None,
+            },
+            Maybe::Absent(_) => Some(sink.arena.value_type_universe(
+                Sort::Ground(Universe::FUSS_FREE.sort),
+                Level::constant(Universe::FUSS_FREE.level),
+            )),
+        }
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
+{
+    /// Plan the value path `head.selected`, written at `site`, when `head`
+    /// names the parameter of the functor the path is written in.
+    ///
+    /// # Specification
+    /// - requires: `site` is a selection whose only link selects `selected` off
+    ///   the head `head`, or `deeper` marks a longer chain.
+    /// - ensures: a head naming no parameter here is left to the outermost
+    ///   scope, untouched; a one-link path to a value component of the
+    ///   parameter stands as that component's template constant, which every
+    ///   application renames to its witness.
+    /// - provides: the parameter half of [`Self::projection`].
+    /// - fails: [`LoweringRefusal::UnknownMember`] naming the parameter and the
+    ///   selected name for a component the parameter does not state, or any
+    ///   selection past it, since a parameter states no module.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body reads a parameter's value, and a name the
+    ///   parameter does not state is refused by name.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Read::Unread) => matches!(self.shared().parameter_named(site, self.cx().name_at(head)), Maybe::Absent(_)),
+        | Ok(Read::Planned) => matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Constant(_))),
+        | Err(_) => true,
+    })]
+    #[inline]
+    pub fn parameter_value(
+        &mut self,
+        site: Site,
+        head: Placed,
+        selected: Placed,
+        deeper: Deeper,
+    ) -> Result<Read, LoweringRefusal<'source>>
+    {
+        let name = self.cx().name_at(head);
+        let Maybe::Present(parameter) = self.shared().parameter_named(site, name)
+        else {
+            return Ok(Read::Unread);
+        };
+        let member = self.cx().name_at(selected);
+        let unknown = LoweringRefusal::UnknownMember {
+            span: selected.span,
+            module: name,
+            member,
+        };
+        if deeper.0 {
+            return Err(unknown);
+        }
+        let Some(slot) = self.shared().parameter_export(parameter, member)
+        else {
+            return Err(unknown);
+        };
+        self.select(site, slot)?;
+
+        Ok(Read::Planned)
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
+    /// The value component the parameter at `parameter` states under `member`.
+    ///
+    /// A parameter's slots are entered in no name table, so its components are
+    /// found among its exports, as a path into it reads them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot the parameter exports under `member`; nothing for a
+    ///   name no exported slot bears, or a structure the collection does not
+    ///   hold.
+    /// - panics: none.
+    /// - executable: none — the result is the lookup itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body reads a parameter's operation, a law of a
+    ///   parameter's model reads the operation it states, and a name the
+    ///   parameter does not state is found nowhere.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_reads_the_laws_of_its_model_parameter_1764`
+    #[inline]
+    #[must_use]
+    pub fn parameter_export(
+        &self,
+        parameter: StructureIndex,
+        member: SurfaceName<'source>,
+    ) -> Option<SlotIndex>
+    {
+        let structure = self.cx().collected.structures.get(usize::from(parameter))?;
+        structure.exports.iter().find_map(|&export| match export {
+            Member::Slot(slot)
+                if self
+                    .cx()
+                    .collected
+                    .slots
+                    .get(usize::from(slot))
+                    .is_some_and(|entry| entry.name == member) =>
+            {
+                Some(slot)
+            },
+            Member::Slot(_) | Member::Module(_) => None,
+        })
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
+{
+    /// Plan the type path `head.selected`, written at `site`, when `head`
+    /// names the parameter of the functor the path is written in.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::parameter_value`], for a type path.
+    /// - ensures: a head naming no parameter here is left to the outermost
+    ///   scope, untouched; a one-link path to a type component of the parameter
+    ///   stands for what it reads: an abstract one's template atom, which every
+    ///   application renames to the argument's type, or the type a manifest one
+    ///   states.
+    /// - provides: the parameter half of [`Self::type_path`].
+    /// - fails: [`LoweringRefusal::UnknownMember`] as
+    ///   [`Self::parameter_value`]; what [`Self::stated_type`] refuses.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body's signature reads the parameter's abstract
+    ///   type, and a type the parameter does not state is refused by name.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Read::Unread) => matches!(self.shared().parameter_named(site, self.cx().name_at(head)), Maybe::Absent(_)),
+        | Ok(Read::Planned) => matches!(self.cx().plans.get(site.at.node), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
+        | Err(_) => true,
+    })]
+    #[inline]
+    pub fn parameter_type(
+        &mut self,
+        site: Site,
+        head: Placed,
+        selected: Placed,
+        deeper: Deeper,
+    ) -> Result<Read, LoweringRefusal<'source>>
+    {
+        let name = self.cx().name_at(head);
+        let Maybe::Present(parameter) = self.shared().parameter_named(site, name)
+        else {
+            return Ok(Read::Unread);
+        };
+        let member = self.cx().name_at(selected);
+        let unknown = LoweringRefusal::UnknownMember {
+            span: selected.span,
+            module: name,
+            member,
+        };
+        if deeper.0 {
+            return Err(unknown);
+        }
+        let Some(stated) = self
+            .cx()
+            .collected
+            .structures
+            .get(usize::from(parameter))
+            .and_then(|structure| structure.types.iter().find(|stated| stated.name == member))
+            .copied()
+        else {
+            return Err(unknown);
+        };
+        self.stated_type(site, stated)?;
+
+        Ok(Read::Planned)
+    }
+
+    /// Build the renaming of every application written before `before` that
+    /// has none yet, in source order.
+    ///
+    /// # Specification
+    /// - requires: every type an argument or a functor's body writes before
+    ///   `before` is minted.
+    /// - ensures: each application whose form starts before `before` has its
+    ///   renaming, or the refusal of an argument type that did not lower, and
+    ///   the type of each manifest component its instance exports; the
+    ///   applications are taken in source order, so an instance applied to an
+    ///   earlier instance reads that instance's types.
+    /// - provides: the renamings the mint sweep's instance types and
+    ///   [`Self::mint_instances`](crate::lower::Expressions::mint_instances)
+    ///   read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an instance applied to a sealed argument reads the
+    ///   argument's atom, and one applied to an instance reads that instance's
+    ///   type.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_instance_can_be_an_argument`
+    #[spec(
+        captures: before_count = self.cx().renamings.len(),
+        ensures: self.cx().renamings.len() >= before_count && self.cx().renamings.len() <= self.cx().collected.instances.len(),
+    )]
+    #[inline]
+    pub fn rename_instances_before(
+        &mut self,
+        before: Maybe<ByteOffset, renamed_through::Absent>,
+        sink: &mut Sink<'_>,
+    )
+    {
+        while let Some(instance) = self.cx().collected.instances.get(self.cx().renamings.len()) {
+            if let Maybe::Present(offset) = before
+                && instance.declared_by.span.start() >= offset
+            {
+                return;
+            }
+            let index = InstanceIndex(self.cx().renamings.len());
+            let renaming = self.shared().instance_renaming(index, sink);
+            self.cx_mut().renamings.push(renaming);
+            self.instance_manifests(index, sink);
+        }
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
+    /// The renaming the application at `index` reads its template through.
+    ///
+    /// # Specification
+    /// - requires: every earlier application is renamed.
+    /// - ensures: each body slot's constant renamed to its image's, or, for a
+    ///   flow's renaming, to the argument's member it binds; each body atom to
+    ///   its image's atom, each parameter value component to the argument's
+    ///   member its witness checks and each parameter atom to the argument's
+    ///   type; the refusal of the argument's type component when that type did
+    ///   not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`Self::rename_instances_before`](crate::lower::Expressions::rename_instances_before),
+    ///   and a type an instance's member states at a parameter's operation
+    ///   names the argument's, which a source can write.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_instance_names_its_argument_s_operations_2179`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    #[spec(ensures: |ret| ret.is_ok() || self.cx().collected.instances.get(usize::from(index)).is_some())]
+    fn instance_renaming(
+        &self,
+        index: InstanceIndex,
+        sink: &mut Sink<'_>,
+    ) -> Result<Renaming, LoweringRefusal<'source>>
+    {
+        let mut renaming = Renaming::new();
+        let Some(instance) = self.cx().collected.instances.get(usize::from(index))
+        else {
+            return Ok(renaming);
+        };
+        let Some(functor) = self
+            .cx()
+            .collected
+            .functors
+            .get(usize::from(instance.functor))
+        else {
+            return Ok(renaming);
+        };
+        let Maybe::Present(origin) = self.cx().origin_at(instance.declared_by.node)
+        else {
+            return Ok(renaming);
+        };
+        for template in usize::from(functor.body_first) .. usize::from(functor.end) {
+            let (Some(slot), Maybe::Present(image)) = (
+                self.cx().collected.slots.get(template),
+                instance.image(functor, SlotIndex::from(template)),
+            )
+            else {
+                continue;
+            };
+            let read = instance.renamed.get(&image).copied().unwrap_or(image);
+            let Some(mirror) = self.cx().collected.slots.get(usize::from(read))
+            else {
+                continue;
+            };
+            renaming.constant(slot.constant, mirror.constant);
+            if slot.role == Role::Abstract {
+                let atom = sink.arena.value_type_abstract(mirror.constant);
+                sink.origins.record_value_type(atom, origin);
+                renaming.atom(slot.constant, atom);
+            }
+        }
+        for &matched in &instance.matched {
+            match matched {
+                Matched::Value {
+                    parameter, member, ..
+                } => {
+                    if let (Some(stand_in), Some(read)) = (
+                        self.cx().collected.slots.get(usize::from(parameter)),
+                        self.cx().collected.slots.get(usize::from(member)),
+                    ) {
+                        renaming.constant(stand_in.constant, read.constant);
+                    }
+                },
+                Matched::Abstract {
+                    parameter,
+                    argument,
+                    ..
+                } => {
+                    let read = self.argument_type(argument, sink, origin)?;
+                    if let Some(stand_in) = self.cx().collected.slots.get(usize::from(parameter)) {
+                        renaming.atom(stand_in.constant, read);
+                    }
+                },
+                Matched::Manifest { .. } => {},
+            }
+        }
+
+        Ok(renaming)
+    }
+
+    /// The type the argument's type component `argument` reads.
+    ///
+    /// # Specification
+    /// - requires: the argument's types are minted and every earlier
+    ///   application is renamed.
+    /// - ensures: the type a manifest component lowered to, the atom a sealed
+    ///   one's abstract slot declares, recorded at `origin`, or the type an
+    ///   earlier instance's manifest component reads.
+    /// - fails: the wrong-sort refusal at a manifest or an instance's component
+    ///   whose definition is a computation type
+    ///   ([`Self::computation_refusal`]); the refusal the component's slot
+    ///   holds; [`LoweringRefusal::UnresolvedTypeHead`] naming the component
+    ///   when its type is a family or did not lower and its slot holds none.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusal of the component's slot.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`Self::rename_instances_before`](crate::lower::Expressions::rename_instances_before).
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_instance_can_be_an_argument`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    ///
+    /// # Cost
+    /// - allocation: the type the arena mints and its origin, durable by the
+    ///   arena
+    /// - allocation: a refusal, error path
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
+    fn argument_type(
+        &self,
+        argument: TypeComponent<'source>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Result<ValueTypeId, LoweringRefusal<'source>>
+    {
+        let unlowered = || {
+            self.cx()
+                .collected
+                .slots
+                .get(usize::from(argument.held))
+                .map_or_else(
+                    || LoweringRefusal::UnresolvedTypeHead {
+                        span: origin.span(),
+                        head: origin.span(),
+                        name: argument.name,
+                        arity: crate::resolve::HeadArity::Nullary,
+                    },
+                    |held| match held.refusal {
+                        Maybe::Present((_, refusal)) => refusal,
+                        Maybe::Absent(_) => LoweringRefusal::UnresolvedTypeHead {
+                            span: held.named.span,
+                            head: held.named.span,
+                            name: argument.name,
+                            arity: crate::resolve::HeadArity::Nullary,
+                        },
+                    },
+                )
+        };
+        if let TypeMeaning::Manifest(defined) | TypeMeaning::Instantiated { defined, .. } =
+            argument.meaning
+            && let Some(refusal) = self.computation_refusal(defined)
+        {
+            return Err(refusal);
+        }
+        match argument.meaning {
+            TypeMeaning::Manifest(defined) => match self.cx().value_type_at(defined.node) {
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(_) => Err(unlowered()),
+            },
+            TypeMeaning::Sealed => {
+                let Some(atom) = self.cx().collected.slots.get(usize::from(argument.held))
+                else {
+                    return Err(unlowered());
+                };
+                if let Maybe::Present((_, refusal)) = atom.refusal {
+                    return Err(refusal);
+                }
+                let id = sink.arena.value_type_abstract(atom.constant);
+                sink.origins.record_value_type(id, origin);
+                Ok(id)
+            },
+            TypeMeaning::Instantiated { defined, instance } => {
+                match self.cx().instance_types.get(&(instance, defined.node)) {
+                    Some(&InstanceType::Value(id)) => Ok(id),
+                    Some(&InstanceType::Computation(_)) | None => Err(unlowered()),
+                }
+            },
+            TypeMeaning::Builtin(_) => match self.cx().builtin_atom(argument.held) {
+                Maybe::Present(atom) => match sink.atom(atom, origin) {
+                    crate::lower::Lowered::ValueType(id) => Ok(id),
+                    crate::lower::Lowered::Value(_)
+                    | crate::lower::Lowered::Computation(_)
+                    | crate::lower::Lowered::CompType(_)
+                    | crate::lower::Lowered::Function { .. } => Err(unlowered()),
+                },
+                Maybe::Absent(_) => Err(unlowered()),
+            },
+            TypeMeaning::Family(_) => Err(unlowered()),
+        }
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
+{
+    /// Mint the type each manifest component of the instance at `index`
+    /// reads: its template's type, renamed.
+    ///
+    /// # Specification
+    /// - requires: the instance's renaming is built.
+    /// - ensures: every manifest component of every module of the instance
+    ///   whose template's type lowered has its renamed type recorded at the
+    ///   template's sort, every node the renaming minted carrying the origin of
+    ///   the node it was renamed from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transparent functor's manifest result reads the
+    ///   argument's type at each instance, a computation type too.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_transparent_result_reads_the_argument_through`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    ///
+    /// # Cost
+    /// - allocation: the type of each instance it reads, durable by the
+    ///   lowering
+    /// - allocation: the message of a broken clause, diagnostic
+    #[spec(
+        captures: before = self.cx().instance_types.len(),
+        ensures: self.cx().instance_types.len() >= before,
+    )]
+    fn instance_manifests(
+        &mut self,
+        index: InstanceIndex,
+        sink: &mut Sink<'_>,
+    )
+    {
+        let Some(instance) = self.cx().collected.instances.get(usize::from(index))
+        else {
+            return;
+        };
+        let Maybe::Present(origin) = self.cx().origin_at(instance.declared_by.node)
+        else {
+            return;
+        };
+        let mut written = Vec::new();
+        for &image in instance.images.values() {
+            if let Some(structure) = self.cx().collected.structures.get(usize::from(image)) {
+                for stated in structure.types.iter().chain(&structure.type_members) {
+                    if let TypeMeaning::Instantiated { defined, instance } = stated.meaning
+                        && instance == index
+                    {
+                        written.push(defined);
+                    }
+                }
+            }
+        }
+        let Some(Ok(renaming)) = self.cx().renamings.get(usize::from(index)).cloned()
+        else {
+            return;
+        };
+        for defined in written {
+            if self
+                .cx()
+                .instance_types
+                .contains_key(&(index, defined.node))
+            {
+                continue;
+            }
+            if self.cx().computation_members.contains(&defined.node) {
+                let Maybe::Present(template) = self.cx().comp_type_at(defined.node)
+                else {
+                    continue;
+                };
+                let code = sink.arena.value_quote_computation(template);
+                let renamed = rename_value(sink, &renaming, code, origin);
+                if let Some(&Value::QuoteComputation(renamed)) = sink.arena.value(renamed) {
+                    let _fresh = self
+                        .cx_mut()
+                        .instance_types
+                        .insert((index, defined.node), InstanceType::Computation(renamed));
+                }
+                continue;
+            }
+            let Maybe::Present(template) = self.cx().value_type_at(defined.node)
+            else {
+                continue;
+            };
+            let renamed = rename_type(sink, &renaming, template, origin);
+            let _fresh = self
+                .cx_mut()
+                .instance_types
+                .insert((index, defined.node), InstanceType::Value(renamed));
+        }
+    }
+
+    /// Lower every application's witnesses and its body's image.
+    ///
+    /// # Specification
+    /// - requires: every template slot's own declaration is minted, and every
+    ///   application is renamed.
+    /// - ensures: each witness of a value component is the argument's member
+    ///   checked at the parameter's type, renamed; each witness of an abstract
+    ///   component the argument type's code checked at the parameter's kind,
+    ///   renamed, or the fuss-free universe when none is written; each witness
+    ///   of a manifest one the identity on the argument's type checked at the
+    ///   function from it to the parameter's type, renamed; each image slot is
+    ///   its template's declaration renamed, an abstract one sealed at the
+    ///   image of its template's module. A template slot that refused is
+    ///   reported once, at the template, so its image declares nothing; nor
+    ///   does the image of a flow's renaming, whose readers read the source's
+    ///   declaration. An application whose argument's type did not lower, which
+    ///   the argument reports, declares nothing at all, nor does a translation
+    ///   its import's match refuses; one whose argument's type for an abstract
+    ///   component is a computation type refuses that component's witness at
+    ///   the argument's definition and declares nothing else.
+    /// - provides: the declarations
+    ///   [`Self::assemble`](crate::lower::ExpressionsRef::assemble) reads for
+    ///   an instance.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two applications of a counter functor yield two
+    ///   abstract types at two sites, and their members each typed at its own.
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `gandr-surface-lowering::tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    ///
+    /// # Cost
+    /// - allocation: each instance it renames, durable by the lowering
+    /// - allocation: the message of a broken clause, diagnostic
+    #[spec(
+        captures: before = self.cx().instantiated.len(),
+        ensures: self.cx().instantiated.len() >= before,
+    )]
+    #[inline]
+    pub fn mint_instances(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for position in self.cx().current.instances .. self.cx().collected.instances.len() {
+            let Some(instance) = self.cx().collected.instances.get(position).cloned()
+            else {
+                continue;
+            };
+            if self.cx().untranslated.contains(&InstanceIndex(position)) {
+                continue;
+            }
+            let Some(template) = self
+                .cx()
+                .collected
+                .functors
+                .get(usize::from(instance.functor))
+                .cloned()
+            else {
+                continue;
+            };
+            let functor = &template;
+            let Maybe::Present(origin) = self.cx().origin_at(instance.declared_by.node)
+            else {
+                continue;
+            };
+            for &matched in &instance.matched {
+                if let Matched::Abstract {
+                    witness,
+                    argument:
+                        TypeComponent {
+                            meaning:
+                                TypeMeaning::Manifest(defined)
+                                | TypeMeaning::Instantiated { defined, .. },
+                            ..
+                        },
+                    ..
+                } = matched
+                    && let Some(refusal) = self.shared().computation_refusal(defined)
+                {
+                    let _first = self
+                        .cx_mut()
+                        .instantiated
+                        .insert(witness, DeclarationOutcome::Refused(refusal));
+                }
+            }
+            let Some(Ok(renaming)) = self.cx().renamings.get(position).map(Result::as_ref)
+            else {
+                continue;
+            };
+            let mut outcomes = Vec::new();
+            for (component, &matched) in functor.components.iter().zip(&instance.matched) {
+                let checked = self
+                    .shared()
+                    .witness_outcome(*component, matched, renaming, sink, origin);
+                let witness = match matched {
+                    Matched::Value { witness, .. }
+                    | Matched::Abstract { witness, .. }
+                    | Matched::Manifest { witness, .. } => witness,
+                };
+                if let Maybe::Present(outcome) = checked {
+                    outcomes.push((witness, outcome));
+                }
+            }
+            for template in usize::from(functor.body_first) .. usize::from(functor.end) {
+                let (Some(slot), Maybe::Present(image)) = (
+                    self.cx().collected.slots.get(template),
+                    instance.image(functor, SlotIndex::from(template)),
+                )
+                else {
+                    continue;
+                };
+                if instance.renamed.contains_key(&image) {
+                    continue;
+                }
+                let Maybe::Present(own) =
+                    self.shared().own_outcome(SlotIndex::from(template), slot)
+                else {
+                    continue;
+                };
+                let renamed = match own {
+                    DeclarationOutcome::Refused(_)
+                    | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Codata(_)
+                    | DeclarationOutcome::World => continue,
+                    DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    } => DeclarationOutcome::Completed {
+                        declared_type: rename_type(sink, renaming, declared_type, origin),
+                        body: rename_value(sink, renaming, body, origin),
+                    },
+                    DeclarationOutcome::Uncompleted { declared_type } => {
+                        DeclarationOutcome::Uncompleted {
+                            declared_type: rename_type(sink, renaming, declared_type, origin),
+                        }
+                    },
+                    DeclarationOutcome::Bodied { body } => DeclarationOutcome::Bodied {
+                        body: rename_value(sink, renaming, body, origin),
+                    },
+                    DeclarationOutcome::Abstract(sealing) => {
+                        DeclarationOutcome::Abstract(Sealing {
+                            kind: rename_type(sink, renaming, sealing.kind, origin),
+                            representation: rename_type(
+                                sink,
+                                renaming,
+                                sealing.representation,
+                                origin,
+                            ),
+                            extent: sealing.extent,
+                            sealing: instance
+                                .images
+                                .get(&sealing.sealing)
+                                .copied()
+                                .unwrap_or(instance.structure),
+                            component: sealing.component,
+                            mark: sealing.mark,
+                        })
+                    },
+                };
+                outcomes.push((image, renamed));
+            }
+            for (slot, outcome) in outcomes {
+                let _first = self.cx_mut().instantiated.insert(slot, outcome);
+            }
+        }
+    }
+}
+
+impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
+{
+    /// The declaration the witness `matched` checks the argument by, for the
+    /// parameter component `component`, under `renaming`.
+    ///
+    /// # Specification
+    /// - requires: the template's parameter types are minted, a derived
+    ///   component's among them.
+    /// - ensures: as
+    ///   [`Self::mint_instances`](crate::lower::Expressions::mint_instances)
+    ///   for one witness; absent when the parameter's own type or kind did not
+    ///   lower, which its slot's refusal reports.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`Self::mint_instances`](crate::lower::Expressions::mint_instances).
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `gandr-surface-lowering::tests::modules::functors::a_functor_over_a_model_applies_to_one_1226`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(DeclarationOutcome::Completed { .. })))]
+    fn witness_outcome(
+        &self,
+        component: ParameterComponent<'source>,
+        matched: Matched<'source>,
+        renaming: &Renaming,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
+    {
+        match (component.form, matched) {
+            (
+                ParameterForm::Value(_) | ParameterForm::Derived(_),
+                Matched::Value { member, .. },
+            ) => {
+                let stated = match component.form {
+                    ParameterForm::Value(typed) => self.cx().value_type_at(typed.node),
+                    ParameterForm::Derived(_) => self
+                        .cx()
+                        .modelled
+                        .get(&component.slot)
+                        .copied()
+                        .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+                    ParameterForm::Abstract(_) | ParameterForm::Manifest(_) => {
+                        Maybe::Absent(lowered::Absent::Unminted)
+                    },
+                };
+                let (Maybe::Present(stated), Some(read)) =
+                    (stated, self.cx().collected.slots.get(usize::from(member)))
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let declared_type = rename_type(sink, renaming, stated, origin);
+                let body = sink.arena.value_constant(read.constant);
+                sink.origins.record_value(body, origin);
+                Maybe::Present(DeclarationOutcome::Completed {
+                    declared_type,
+                    body,
+                })
+            },
+            (ParameterForm::Abstract(kind), Matched::Abstract { argument, .. }) => {
+                let Ok(read) = self.argument_type(argument, sink, origin)
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let declared_type = match kind {
+                    Maybe::Present(written) => match self.cx().value_type_at(written.node) {
+                        Maybe::Present(stated) => rename_type(sink, renaming, stated, origin),
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    },
+                    Maybe::Absent(_) => {
+                        let id = sink.arena.value_type_universe(
+                            Sort::Ground(Universe::FUSS_FREE.sort),
+                            Level::constant(Universe::FUSS_FREE.level),
+                        );
+                        sink.origins.record_value_type(id, origin);
+                        id
+                    },
+                };
+                let body = sink.arena.value_quote(read);
+                sink.origins.record_value(body, origin);
+                Maybe::Present(DeclarationOutcome::Completed {
+                    declared_type,
+                    body,
+                })
+            },
+            (ParameterForm::Manifest(defined), Matched::Manifest { argument, .. }) => {
+                let (Ok(read), Maybe::Present(stated)) = (
+                    self.argument_type(argument, sink, origin),
+                    self.cx().value_type_at(defined.node),
+                )
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let expected = rename_type(sink, renaming, stated, origin);
+                let returner = sink.arena.comp_type_returner(expected);
+                sink.origins.record_comp_type(returner, origin);
+                let arrow = sink.arena.comp_type_arrow(read, returner);
+                sink.origins.record_comp_type(arrow, origin);
+                let declared_type = sink.arena.value_type_thunk(arrow);
+                sink.origins.record_value_type(declared_type, origin);
+                let bound = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(bound, origin);
+                let returned = sink.arena.computation_return(bound);
+                sink.origins.record_computation(returned, origin);
+                let lambda = sink.arena.computation_lambda(returned);
+                sink.origins.record_computation(lambda, origin);
+                let body = sink.arena.value_thunk(lambda);
+                sink.origins.record_value(body, origin);
+                Maybe::Present(DeclarationOutcome::Completed {
+                    declared_type,
+                    body,
+                })
+            },
+            (
+                ParameterForm::Value(_)
+                | ParameterForm::Abstract(_)
+                | ParameterForm::Manifest(_)
+                | ParameterForm::Derived(_),
+                Matched::Value { .. } | Matched::Abstract { .. } | Matched::Manifest { .. },
+            ) => Maybe::Absent(lowered::Absent::Unminted),
+        }
+    }
+}
+
+/// Whether a path's parameter half planned the path.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Read
+{
+    /// The head names no parameter here: the outermost scope reads the path.
+    Unread,
+    /// The path is planned as a parameter's component.
+    Planned,
+}
+
+/// Whether a path selects past its first link.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Deeper(pub bool);
+
+quenchant_shape::reason_enum! {
+    /// Why a path head names no functor parameter.
+    pub(super) mod parameter_path {
+        /// The path is not read inside a functor of that parameter.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No enclosing functor's parameter bears the head's name.
+            Outside,
+        }
+    }
+}
+
+/// `subject` renamed by `renaming`, every node the renaming minted carrying
+/// the origin of the node it was renamed from, or `fallback`.
+///
+/// # Specification
+/// - requires: `subject` is a value type of `sink`'s arena.
+/// - ensures: as [`rename_value_type_traced`], with every minted node's origin
+///   recorded.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as
+///   [`Lowerer::mint_instances`](crate::lower::Expressions::mint_instances).
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+#[spec(ensures: |ret| ret == subject || sink.arena.value_type(ret).is_some())]
+pub(super) fn rename_type(
+    sink: &mut Sink<'_>,
+    renaming: &Renaming,
+    subject: ValueTypeId,
+    fallback: Origin,
+) -> ValueTypeId
+{
+    let mark = sink.arena.watermark();
+    let mut carried: Vec<Carried> = Vec::new();
+    let renamed = rename_value_type_traced(sink.arena, subject, renaming, &mut carried);
+    record_copies(sink, mark, &carried, fallback);
+    renamed
+}
+
+/// `subject` renamed by `renaming`, every node the renaming minted carrying
+/// the origin of the node it was renamed from, or `fallback`.
+///
+/// # Specification
+/// - requires: `subject` is a value of `sink`'s arena.
+/// - ensures: as [`rename_value_traced`], with every minted node's origin
+///   recorded.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as
+///   [`Lowerer::mint_instances`](crate::lower::Expressions::mint_instances).
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+#[spec(ensures: |ret| ret == subject || sink.arena.value(ret).is_some())]
+pub(super) fn rename_value(
+    sink: &mut Sink<'_>,
+    renaming: &Renaming,
+    subject: ValueId,
+    fallback: Origin,
+) -> ValueId
+{
+    let mark = sink.arena.watermark();
+    let mut carried: Vec<Carried> = Vec::new();
+    let renamed = rename_value_traced(sink.arena, subject, renaming, &mut carried);
+    record_copies(sink, mark, &carried, fallback);
+    renamed
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a renaming pass names no source offset to stop before.
+    pub(super) mod renamed_through {
+        /// The pass renames every application.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Every application is renamed, however late it is written.
+            Everything,
+        }
+    }
+}

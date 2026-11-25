@@ -1,0 +1,5 @@
+/// `EndpointAsValue`: an endpoint read as a value outside an action.
+@[refuses("EndpointAsValue")]
+def seat_returned() -> Unit =
+  let desk = fork (seat : end) { pure seat };
+  close desk

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a9190a4ff1f7ed097d650b359fbec099ae19c2de2ace0b1a8a3fe45f88a04d6c # shrinks to forms = 8, fixture = false, wide = false, chain = [Insert(Position(32384460479978))]
+cc 683d65aec6ace971f086b8bd891c6b825d2aed013a8c2906181072832a5fed9e # shrinks to forms = 36, fixture = true, wide = false, chain = [Merge(Position(12841146445719845022)), Split(Position(8749489210201060595)), Split(Position(9003405071012289094))]
+cc 47a00026b80847fdfccc1206025935c0e6d90fbaa2c8b9e848faba440d2ae8ab # shrinks to forms = 8, fixture = false, wide = false, chain = [Split(Position(7751284581726847289)), Expression(Position(12167856689350673122)), Expression(Position(5403871758532495223)), Split(Position(13443286642023878476))]

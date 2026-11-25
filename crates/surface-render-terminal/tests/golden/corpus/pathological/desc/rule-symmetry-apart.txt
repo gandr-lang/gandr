@@ -1,0 +1,31 @@
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/desc/rule-symmetry-apart.gandr:40:3
+   │
+37 │ ┌ def ordersNotApart(
+38 │ │   e : Path[.A = Terms Pick] (Pick.meet Pick.first Pick.second) (Pick.meet Pick.second Pick.first)
+   │ │   ─ checked; while checking the body of this function; binds e : Path[.A = Terms Pick] (Pick.meet Pick.first Pick.second) (Pick.meet Pick.second Pick.first)
+39 │ │ ) -> Hollow =
+40 │ │   match e {}
+   │ │   ┯━━━━━━━━│
+   │ └───│────────┤
+   │     │        checked; while checking the body of this thunk
+   │     a path whose endpoints are not apart
+   │
+   ├ note: `ordersNotApart` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal
+
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/desc/rule-symmetry-apart.gandr:48:3
+   │
+47 │   def tornApart(e : Path[.A = Terms Torn] Torn.low Torn.high) -> Hollow =
+   │   │             ─ checked against `Path[.A = Terms Torn] Torn.low Torn.high -> -F Hollow`; while checking the body of this function; binds e : Path[.A = Terms Torn] Torn.low Torn.high
+   │ ┌─┘
+   │ │
+48 │ │   match e {}
+   │ │   ┯━━━━━━━━│
+   │ └───│────────┤
+   │     │        checked against `Path[.A = Terms Torn] Torn.low Torn.high -> Hollow`; while checking the body of this thunk
+   │     a path whose endpoints are not apart
+   │
+   ├ note: `tornApart` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal

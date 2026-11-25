@@ -1,0 +1,87 @@
+test: compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431
+package: gandr-core-checker
+command: mise run debug:test gandr-core-checker compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431 --break admit_above
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-checker/d435f7f03eddd6f2/out/gandr_core_checker-d435f7f03eddd6f2"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-checker/d435f7f03eddd6f2/out/gandr_core_checker-d435f7f03eddd6f2' (x86_64).
+(lldb) settings set -- target.run-args  "compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex admit_above
+Breakpoint 1: 16 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_checker-d435f7f03eddd6f2`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000001e0fac8
+(lldb) run
+
+running 1 test
+test compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3644302 launched: 'target/debug-trace/debug/build/gandr-core-checker/d435f7f03eddd6f2/out/gandr_core_checker-d435f7f03eddd6f2' (x86_64)
+Process 3644302 stopped
+* thread #2, name = 'compose::tests:', stop reason = breakpoint 1.5
+       frame #0: 0x0000555556a3b41b gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::admit_above(strata={store:strong=1, weak=0, catalogues:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_two:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, at={0:0}, pasting={level:{0:Past(3)}, tree:{0:327}}, written={bound:{0:11}, degree:{0:5}}) at compose.rs:260:1
+   257 	/// # Adequacy
+   258 	/// - hypothesis: L3 — as [`admit`].
+   259 	/// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+-> 260 	#[spec(ensures: |ref ret| match *ret {
+    	^
+   261 	    | Ok(ref shape) => usize::from(shape.vertex_count()) == pasting.tree().children().count(),
+   262 	    | Err(CheckRefusal::ComposeNotAShape { at: site, pasting: refused }) => site == at && refused == pasting,
+   263 	    | Err(CheckRefusal::ComposeUncertified { at: site, .. }) => site == at,
+(lldb) bt 24
+* thread #2, name = 'compose::tests:', stop reason = breakpoint 1.5
+   * frame #0: 0x0000555556a3b41b gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::admit_above(strata={store:strong=1, weak=0, catalogues:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_two:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, at={0:0}, pasting={level:{0:Past(3)}, tree:{0:327}}, written={bound:{0:11}, degree:{0:5}}) at compose.rs:260:1
+     frame #1: 0x0000555556a2dda9 gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::admit::{closure#0} at compose.rs:223:37
+     frame #2: 0x000055555638bfaa gandr_core_checker-d435f7f03eddd6f2`anodized::__::eval_once::<core::result::Result<gandr_theory_sites::shape::Shape, gandr_core_checker::refusal::CheckRefusal>, gandr_core_checker::compose::admit::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x0000555556a3c02c gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::admit(strata={store:strong=1, weak=0, catalogues:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_two:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, at={0:0}, composite={stratum:{degree:{0:5}, bound:{0:11}}, pasting:{level:{0:Past(3)}, tree:{0:327}}}) at compose.rs:183:1
+     frame #4: 0x000055555687ecec gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431::{closure#2}(strata={store:strong=1, weak=0, catalogues:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_two:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, composite=<unavailable>) at tests.rs:490:9
+     frame #5: 0x00005555568b7940 gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431 at tests.rs:493:9
+     frame #6: 0x000055555687e9a7 gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431::{closure#0}((null)={}) at tests.rs:468:64
+     frame #7: 0x00005555568e6e26 gandr_core_checker-d435f7f03eddd6f2`<gandr_core_checker::compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #8: 0x0000555556b8346b gandr_core_checker-d435f7f03eddd6f2`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #9: 0x0000555556b83469 gandr_core_checker-d435f7f03eddd6f2`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #10: 0x0000555556b909b5 gandr_core_checker-d435f7f03eddd6f2`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #11: 0x0000555556b909b0 gandr_core_checker-d435f7f03eddd6f2`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #12: 0x0000555556b909b0 gandr_core_checker-d435f7f03eddd6f2`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #13: 0x0000555556b9099b gandr_core_checker-d435f7f03eddd6f2`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #14: 0x0000555556b9099b gandr_core_checker-d435f7f03eddd6f2`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #15: 0x0000555556b9099b gandr_core_checker-d435f7f03eddd6f2`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #16: 0x0000555556b90986 gandr_core_checker-d435f7f03eddd6f2`test::run_test::{closure#0} at lib.rs:677:43
+     frame #17: 0x0000555556b8b374 gandr_core_checker-d435f7f03eddd6f2`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #18: 0x0000555556b8b2f9 gandr_core_checker-d435f7f03eddd6f2`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #19: 0x0000555556b93b12 gandr_core_checker-d435f7f03eddd6f2`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #20: 0x0000555556b93b03 gandr_core_checker-d435f7f03eddd6f2`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #21: 0x0000555556b93b03 gandr_core_checker-d435f7f03eddd6f2`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #22: 0x0000555556b93af3 gandr_core_checker-d435f7f03eddd6f2`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #23: 0x0000555556b93af3 gandr_core_checker-d435f7f03eddd6f2`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+(lldb) frame variable --depth 3
+(gandr_core_checker::ua::strata::Strata *) strata = 0x00007ffff7bfe098 {store:strong=1, weak=0, catalogues:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_two:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(gandr_core_term::arena::ValueId) at = {0:0}
+(gandr_core_term::compose::Pasting) pasting = {level:{0:Past(3)}, tree:{0:327}}
+(gandr_core_checker::ua::strata::StratumAt) written = {bound:{0:11}, degree:{0:5}}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000555556a2dda9 gandr_core_checker-d435f7f03eddd6f2`gandr_core_checker::compose::admit::{closure#0} at compose.rs:223:37
+   220 	            return Ok(shape);
+   221 	        },
+   222 	        Form::Columns(tree) => tree,
+-> 223 	        Form::Tree { .. } => return admit_above(strata, at, composite.pasting, written),
+    	                                    ^
+   224 	    };
+   225 	    let outer = Shape::chain(tree.children().count().into()).map_err(|_refused| not_a_shape)?;
+   226 	    let object = level_two_object(tree).map_err(|()| not_a_shape)?;
+(lldb) frame variable --depth 3
+(gandr_core_checker::ua::strata::Strata) strata = {store:strong=1, weak=0, catalogues:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_two:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_three:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, wreaths_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, held_four:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(gandr_core_term::compose::Pasting) composite__pasting = {level:{0:Past(3)}, tree:{0:327}}
+(gandr_theory_sites::shape::ShapeSize) composite__stratum__bound = {0:11}
+(gandr_theory_sites::degree::Degree) composite__stratum__degree = {0:5}
+(gandr_core_term::arena::ValueId) at = {0:0}
+(gandr_core_checker::refusal::CheckRefusal) not_a_shape = ComposeNotAShape{at:{0:0}, pasting:{level:{0:Past(3)}, tree:{0:327}}} {
+  at = {0:0}
+  pasting = {level:{0:Past(3)}, tree:{0:327}}
+}
+(gandr_core_checker::ua::strata::StratumAt) written = {bound:{0:11}, degree:{0:5}}

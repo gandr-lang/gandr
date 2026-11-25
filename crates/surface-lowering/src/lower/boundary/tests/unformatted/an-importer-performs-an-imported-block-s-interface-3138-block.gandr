@@ -1,0 +1,4 @@
+import "./rows.gandr" (addRow);
+@[boundary(addRow)]
+extern "rust" from "boundary" as Boundary { def add(x : u32, n : u32) -> u32; }
+pub def twice(x : u32) -> [Boundary] u32 = Boundary.add x x;

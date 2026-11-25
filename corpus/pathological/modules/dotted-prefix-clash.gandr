@@ -1,0 +1,22 @@
+// A dotted name's prefix opens a module only where the source declares
+// none of that name; one naming a module a form of its own writes is refused
+// at the segment, as the module defined twice.
+//
+// - see: #2687
+
+/// A written module.
+module Kit where
+  /// Its one member.
+  def width = 4;
+
+/// A theory declared through the written module's name.
+@[refuses("DuplicateDefinition")]
+theory Kit.Labelled where
+  /// The label.
+  oper label : String;
+
+/// A model of a theory the path names in no module.
+@[refuses("UnknownMember")]
+module Tag : Model(Kit.Missing) where
+  /// Its label.
+  def label : String = "tag";

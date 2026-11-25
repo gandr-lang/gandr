@@ -1,0 +1,162 @@
+//! The refusals a budget report can meet, each naming what it refused.
+
+use core::fmt;
+
+use gandr_workflow_github::GitHubError;
+
+/// Why a budget report could not be produced or filed.
+///
+/// # Specification
+/// - provides: one variant per refusal; each carries the argument or the
+///   command it refused, so the message points at what must change.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BudgetError
+{
+    /// A `--budget` argument is not a job name, `=`, and whole seconds.
+    Budget
+    {
+        /// The argument.
+        text: String,
+    },
+    /// A `--integration`, `--daily` or `--nightly` argument names the deep
+    /// cone, which only the landing window's runs are classified by.
+    Unclassified
+    {
+        /// The argument.
+        text: String,
+    },
+    /// A `--summed` argument is not a workflow name, `=`, and whole seconds
+    /// of a budget and a ceiling no smaller, `/` between them.
+    Summed
+    {
+        /// The argument.
+        text: String,
+    },
+    /// A `gh` invocation could not run, exited unsuccessfully, or printed
+    /// what this crate does not read.
+    Gh(GitHubError),
+    /// A thread reading runs concurrently could not start, or stopped without
+    /// its reads' results.
+    Reader
+    {
+        /// Why the thread did not start, or that it stopped.
+        message: String,
+    },
+    /// Standard output could not be written.
+    Output
+    {
+        /// The writer's description of the failure.
+        message: String,
+    },
+}
+
+impl fmt::Display for BudgetError
+{
+    /// Describes the refusal and names its input.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one line naming the variant's input and its detail.
+    /// - provides: the message the binary prints before exiting with status 2.
+    /// - fails: propagates the formatter's own write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every variant's rendering names its input and its
+    ///   detail; a dropped field or a swapped variant changes the asserted
+    ///   line.
+    /// - witness: `error::tests::every_refusal_names_its_input`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Budget { ref text } => write!(
+                f,
+                "`{text}` is not a job name, `=`, and a whole number of seconds"
+            ),
+            Self::Unclassified { ref text } => write!(
+                f,
+                "`{text}` names the deep cone; a lane outside the landing window is held to one \
+                 budget over its own runs"
+            ),
+            Self::Summed { ref text } => write!(
+                f,
+                "`{text}` is not a workflow name, `=`, and whole seconds of a budget `/` a \
+                 ceiling no smaller"
+            ),
+            Self::Gh(ref error) => error.fmt(f),
+            Self::Reader { ref message } => write!(f, "a concurrent read: {message}"),
+            Self::Output { ref message } => write!(f, "standard output: {message}"),
+        }
+    }
+}
+
+/// A refusal is an error value, so clap can report a malformed `--budget`.
+impl core::error::Error for BudgetError
+{
+}
+
+impl From<GitHubError> for BudgetError
+{
+    /// The refusal of a failed `gh` invocation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: GitHubError) -> Self
+    {
+        Self::Gh(error)
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::BudgetError;
+
+    #[test]
+    fn every_refusal_names_its_input()
+    {
+        let cases = [
+            (
+                BudgetError::Budget {
+                    text: "check Clippy wall".into(),
+                },
+                "`check Clippy wall` is not a job name, `=`, and a whole number of seconds",
+            ),
+            (
+                BudgetError::Unclassified {
+                    text: "mutate the night's crate (linux):deep=840".into(),
+                },
+                "`mutate the night's crate (linux):deep=840` names the deep cone; a lane outside \
+                 the landing window is held to one budget over its own runs",
+            ),
+            (
+                BudgetError::Summed {
+                    text: "nightly-sweeps=1200/900".into(),
+                },
+                "`nightly-sweeps=1200/900` is not a workflow name, `=`, and whole seconds of a \
+                 budget `/` a ceiling no smaller",
+            ),
+            (
+                BudgetError::Reader {
+                    message: "the thread stopped without its reads".into(),
+                },
+                "a concurrent read: the thread stopped without its reads",
+            ),
+            (
+                BudgetError::Output {
+                    message: "broken pipe".into(),
+                },
+                "standard output: broken pipe",
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected, "{error:?}");
+        }
+    }
+}

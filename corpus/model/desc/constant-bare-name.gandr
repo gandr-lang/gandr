@@ -1,0 +1,34 @@
+//! A theory constant written by its bare name in a rule and in a sort index.
+//!
+//! A constant is an operation of no input, `oper bot : Grade`. A rule and an
+//! index name it often, and a call with no argument reads as noise there.
+//!
+//! A rule side and an index term name a constant by its bare name, as they
+//! name a variable. The theory declares the name as a constant, so the reader
+//! reads that constant and not a variable. A name that the theory does not
+//! declare stays a variable, as `e` and `y` do here.
+//!
+//! - see: #7913
+
+/// Choice with cut over a grade-indexed sort, its grades and commands
+/// constants. `cutLeft` commits to the left branch at any grade of the right.
+@[normalizes("orBot(cut, fail) ~> cut")]
+theory ConstantCut where
+  /// How a computation may end.
+  sort Grade : Type;
+  /// The computations that end at the grade `g`.
+  sort M(g : Grade) : Type;
+
+  /// The grade of a computation that commits.
+  oper bot : Grade;
+  /// The grade of a computation that fails.
+  oper top : Grade;
+  /// The cut: it commits, at the grade `bot`.
+  oper cut : M bot;
+  /// The failure, at the grade `top`.
+  oper fail : M top;
+  /// Choice: a committed left branch beside a right branch at any grade.
+  oper orBot : (x : M bot, y : M e) --> M bot;
+
+  /// A cut on the left commits, whatever stands on the right.
+  rule cutLeft : orBot cut y ==> cut;

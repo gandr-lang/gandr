@@ -1,0 +1,26 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+def twice(n : Nat) -> Nat { Succ (Succ n) }
+
+def block(n : Nat) -> Nat {
+  let m = twice n;
+  twice m
+}
+
+def noted(n : Nat) -> Nat {
+  // the count twice
+  twice n
+}
+
+def rec down(n : Nat) -> Nat {
+  match n {
+    | Zero => Zero
+    | Succ(m) => down[<] m
+  }
+}
+
+def kept(n : Nat) -> Nat = twice n;
+
+module Inner where {
+  def inner(n : Nat) -> Nat { twice n }
+}

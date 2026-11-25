@@ -1,0 +1,2 @@
+import "file:///no/such/\"place\".gandr" as far ;
+def x : Integer ; def x = 3 ;

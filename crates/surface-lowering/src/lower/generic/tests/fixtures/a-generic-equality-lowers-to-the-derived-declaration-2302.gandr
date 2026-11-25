@@ -1,0 +1,3 @@
+def eqPoint = Eq.generic Point;
+def stated : (Point, Point) -> Bool = Eq.generic Point;
+def eqNat = Eq.generic Nat;

@@ -1,0 +1,103 @@
+[
+  {
+    "name": "#3134: a sectioned issue carrying `shape:signed` lands",
+    "input": {
+      "issues": [
+        {
+          "number": 4,
+          "labels": ["kind:feature", "area:workflow", "status:claimed", "shape:signed"],
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4164: a sectioned issue without `shape:signed` waits on the coordinator's sign-off, arming `pr:await` on the issue",
+    "input": {
+      "issues": [
+        {
+          "number": 4,
+          "labels": ["kind:feature", "area:workflow", "status:claimed"],
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ]
+    },
+    "output": "wait: #4's sections wait for the coordinator's `shape:signed`: page `sections #4: <the shape's first line>` if not yet paged; `pr:await 4` wakes the seat once the label stands, and `pr:open` runs again then\narm: /bin/bash -c 'mise run pr:await 4' timer-await-4"
+  },
+  {
+    "name": "#3134: a new-territory body missing `## Try first` is refused with the finding named, signed or not",
+    "input": {
+      "issues": [
+        {
+          "number": 5,
+          "labels": ["kind:feature", "area:workflow", "status:claimed", "shape:signed"],
+          "body": "New territory: the first of its kind.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n## The shape\n\nOne reader.\n"
+        }
+      ]
+    },
+    "output": "#5 still lacks what a unit issue carries: write each on the issue, pass `unit:check 5`, page the coordinator `sections #5: <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n  - `## Try first` is missing"
+  },
+  {
+    "name": "#3134: an issue still unsectioned is refused with each section it lacks, ahead of any sign-off",
+    "input": {
+      "issues": [
+        {
+          "number": 6,
+          "labels": ["kind:defect", "area:workflow", "status:unsectioned"],
+          "body": "## Observation\n\nSeen on main.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n"
+        }
+      ]
+    },
+    "output": "#6 still lacks what a unit issue carries: write each on the issue, pass `unit:check 6`, page the coordinator `sections #6: <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n  - `## Readings` is missing\n  - `## Concerns` is missing\n  - `## Ledger` is missing\n  - `## Not in this slice` is missing\n  - `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n  - `## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory`, `failure` and `streaming`, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)"
+  },
+  {
+    "name": "#3134: an epic or a `collector` the body advances is not read; each other issue is",
+    "input": {
+      "issues": [
+        {
+          "number": 1,
+          "labels": ["kind:epic"],
+          "body": "Rungs."
+        },
+        {
+          "number": 2,
+          "labels": ["kind:ci", "area:workflow", "collector"],
+          "body": "| Row |"
+        },
+        {
+          "number": 3,
+          "labels": ["kind:feature", "area:workflow", "status:claimed"],
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ]
+    },
+    "output": "wait: #3's sections wait for the coordinator's `shape:signed`: page `sections #3: <the shape's first line>` if not yet paged; `pr:await 3` wakes the seat once the label stands, and `pr:open` runs again then\narm: /bin/bash -c 'mise run pr:await 3' timer-await-3"
+  },
+  {
+    "name": "#4637: a feature in `area:surface` signed before the `## Surface` rule lands without the section",
+    "input": {
+      "issues": [
+        {
+          "number": 4,
+          "labels": ["kind:feature", "area:surface", "status:claimed", "shape:signed"],
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4637: an unsigned feature in `area:surface` without `## Surface` is refused with the finding",
+    "input": {
+      "issues": [
+        {
+          "number": 4,
+          "labels": ["kind:feature", "area:surface", "status:claimed"],
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ]
+    },
+    "output": "#4 still lacks what a unit issue carries: write each on the issue, pass `unit:check 4`, page the coordinator `sections #4: <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n  - `## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)"
+  }
+]

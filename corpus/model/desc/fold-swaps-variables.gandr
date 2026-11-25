@@ -1,0 +1,78 @@
+//! A fold over a type whose rule swaps two variables respects that rule.
+//!
+//! Two purses in one purse have no order, and the rule of the purse swaps its
+//! two variables. A fold reads each field by a call of its own. So the two
+//! sides of the rule hold the same two calls in two orders.
+//!
+//! The check reads the call of the fold at each variable of a rule as one
+//! value. The two sides then differ by the order of two fields alone, and the
+//! rule joins them. The kernel decides the fold again by its own code, and it
+//! searches the pairing of the two fields.
+//!
+//! A call that gives a purse in one order equals the purse in the other
+//! order. The checker names the crossed pairing of the two fields at the
+//! value that the call returns, and the kernel replays it at that value.
+//!
+//! - see: #8367
+//! - see: #8385
+//! - see: `pathological/desc/fold-swaps-variables.gandr` — a fold that the
+//!   rule refuses
+//! - see: `model/desc/fold-drops-variable.gandr` — a fold over a rule that
+//!   drops a variable
+
+/// The theory of a purse of coins, with two purses in one purse in no order.
+pub theory Purse where
+  /// The sort of purses.
+  sort P : Type;
+  /// The copper coin.
+  oper copper : P;
+  /// The silver coin.
+  oper silver : P;
+  /// Two purses in one purse.
+  oper two : (x : P, y : P) --> P;
+  /// Two purses in one purse have no order. This rule is a symmetry.
+  rule twoComm : two x y <=> two y x;
+
+/// The fold of a purse into itself, with each field in its place.
+///
+/// - see: #8367
+def rec refill(t : Terms Purse) -> Terms Purse =
+  match t where
+    | Purse.copper => Purse.copper
+    | Purse.silver => Purse.silver
+    | Purse.two(x, y) => Purse.two (refill[<] x) (refill[<] y)
+
+/// The fold of a purse into itself, with the two fields in the other order.
+///
+/// - see: #8367
+def rec tipped(t : Terms Purse) -> Terms Purse =
+  match t where
+    | Purse.copper => Purse.copper
+    | Purse.silver => Purse.silver
+    | Purse.two(x, y) => Purse.two (tipped[<] y) (tipped[<] x)
+
+/// A purse with the copper coin before the silver coin.
+def copperFirst() -> Terms Purse = Purse.two Purse.copper Purse.silver;
+
+/// A purse with the silver coin before the copper coin.
+def silverFirst() -> Terms Purse = Purse.two Purse.silver Purse.copper;
+
+/// The fold that keeps each field in its place gives the same purse.
+///
+/// - see: #8367
+def refilled : Path[.A = Terms Purse] (refill copperFirst) copperFirst = Path.here copperFirst;
+
+/// The fold that turns the two fields gives the purse in the other order.
+///
+/// - see: #8367
+def turnedOver : Path[.A = Terms Purse] (tipped copperFirst) silverFirst = Path.here silverFirst;
+
+/// The purse in one order is the purse in the other order, through two calls.
+def eitherOrder : Path[.A = Terms Purse] copperFirst silverFirst = Path.here silverFirst;
+
+/// The fold that keeps each field in its place gives the purse in the other
+/// order also.
+def refilledOver : Path[.A = Terms Purse] (refill copperFirst) silverFirst = Path.here silverFirst;
+
+/// The fold that turns the two fields gives the same purse also.
+def turnedBack : Path[.A = Terms Purse] (tipped copperFirst) copperFirst = Path.here copperFirst;

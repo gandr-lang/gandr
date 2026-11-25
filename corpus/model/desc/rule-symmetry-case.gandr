@@ -1,0 +1,42 @@
+//! A case over the terms of a theory may swap two arguments under a symmetry.
+//!
+//! Two beacons side by side are one term in their two orders. A case that
+//! turns the two beacons gives one answer on the two sides of the symmetry.
+//! The checker admits that case, and the kernel must decide it again.
+//!
+//! The kernel decides the respect of a case by its own conversion, and no
+//! trace names a pairing there. At two constructors under a symmetry it tries
+//! the written pairing of the two fields, and then the crossed one.
+//!
+//! - see: #8385
+
+/// The theory of the beacons, with two beacons side by side in no order.
+pub theory Beacon where
+  /// The sort of beacons.
+  sort B : Type;
+  /// The dull beacon.
+  oper dull : B;
+  /// The bright beacon.
+  oper bright : B;
+  /// Two beacons side by side.
+  oper twin : (x : B, y : B) --> B;
+  /// Two beacons side by side have no order. This rule is a symmetry.
+  rule twinComm : twin x y <=> twin y x;
+
+/// The two beacons in the other order.
+///
+/// - see: #8385
+def turn(t : Terms Beacon) -> Terms Beacon =
+  match t where
+    | Beacon.dull => Beacon.dull
+    | Beacon.bright => Beacon.bright
+    | Beacon.twin(x, y) => Beacon.twin y x
+
+/// Each beacon as it is. The two sides of the symmetry differ by their order.
+///
+/// - see: #8385
+def stay(t : Terms Beacon) -> Terms Beacon =
+  match t where
+    | Beacon.dull => Beacon.dull
+    | Beacon.bright => Beacon.bright
+    | Beacon.twin(x, y) => Beacon.twin x y

@@ -1,0 +1,14 @@
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
+   ╭▸ corpus/pathological/specification/state-wp.gandr:12:3
+   │
+12 │ ┏   handle st : StateLaws with sort S = Integer {
+13 │ ┃     let n = st.get;
+14 │ ┃     st.put (n + 1);
+15 │ ┃     pure fun (q) { fun (s) { q *{} s } }
+   ┆ ┇
+19 │ ┃     | oper put(_s, k) => pure fun (q) { fun (old) { let w = k *{}; w q old } }
+20 │ ┃   }
+   │ ┗━━━┛ not shown to satisfy a law of its theory
+   │
+   ├ note: `incrForgetful` is refused with HandlerUnlawful, as its expectation states
+   ╰ help: change the handler's clauses so that they satisfy the law

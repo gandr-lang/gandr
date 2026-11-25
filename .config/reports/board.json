@@ -1,0 +1,7 @@
+[
+  {
+    "name": "#3771: refactor:file reads a board of 700 refactor issues, past the argument limit, and its dry run prints the decision",
+    "issues": 700,
+    "act": "none"
+  }
+]

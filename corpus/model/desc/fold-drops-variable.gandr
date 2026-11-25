@@ -1,0 +1,42 @@
+//! A fold over a type whose rule drops a variable respects that rule.
+//!
+//! A choice under the high bit is its first word, and the rule drops the
+//! second word. A fold reads each field by a call of its own. So the left side
+//! of the rule holds a call at the second word, and the right side holds none.
+//!
+//! The check reads the call of the fold at each variable of a rule as one
+//! value. A fold into a returner with pure effects gives each term one value,
+//! so that value stands for the call on the two sides. The kernel builds the
+//! same reading by its own code.
+//!
+//! - see: #8367
+//! - see: `pathological/desc/fold-drops-variable.gandr` — the folds that the
+//!   rule refuses
+//! - see: `model/desc/family-with-rules.gandr` — the fragment and its rules
+
+// `Width` and `Fragment`.
+import "./family-with-rules.gandr";
+
+/// The fold of the fragment into itself, at each width.
+///
+/// - see: #8367
+pub def rec copy(w : Width, t : Fragment w) -> Fragment w =
+  match t where
+    | Low => Low
+    | High => High
+    | And(a, b) => And (copy[<] Bit a) (copy[<] Bit b)
+    | Zero => Zero
+    | One => One
+    | Zext(b) => Zext (copy[<] Bit b)
+    | Choose(c, x, y) => Choose (copy[<] Bit c) (copy[<] Word x) (copy[<] Word y)
+
+/// A choice under the high bit.
+def chosenWord() -> Fragment Word = Choose High One Zero;
+
+/// The word one.
+def oneWord() -> Fragment Word = One;
+
+/// The fold of a choice under the high bit is the word one.
+///
+/// - see: #8367
+def copied : Path[.A = Fragment Word] (copy Word chosenWord) oneWord = Path.here oneWord;

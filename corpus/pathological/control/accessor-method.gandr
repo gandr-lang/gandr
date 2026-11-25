@@ -1,0 +1,92 @@
+// What a method answering a place may not be: a method at a deduced mode
+// answers a view of its receiver at that mode and ends in the place itself,
+// its view type stands only as such a method's result, and its element type is
+// the element's. A view block follows only a call of such a method, on a
+// receiver a hold holds, and its exclusive lend waits for the held list's
+// other lends to end.
+
+// The list each call below holds; the list's places.
+import "../../model/control/accessor-place.gandr";
+import "../../model/control/accessor-method.gandr";
+// The native finite lists.
+import std.list (List);
+
+/// A list's places out of shape.
+module Misplaced where {
+  /// A method at a deduced mode whose result is a value, not a view.
+  @[refuses("ViewNotPlace")]
+  def valued[m : Mode](self : m List Integer) -> -F Integer = self.#[0];
+  /// A method answering a view whose body computes a value rather than
+  /// naming a place.
+  @[refuses("ViewNotPlace")]
+  def computed[m : Mode](self : m List Integer) -> -F View[m](Integer) = pure 0;
+  /// A view at a mode other than the receiver's.
+  @[refuses("ViewNotPlace")]
+  def crossed[m : Mode, n : Mode](self : m List Integer) -> -F View[n](Integer) = self.#[0];
+  /// A view whose element type is not the list's.
+  @[refuses("TypeMismatch")]
+  def mistyped[m : Mode](self : m List Integer) -> -F View[m](String) = self.#[0];
+  /// The length, read from a list lent for reading: a method answering no
+  /// place.
+  def size(self : shared List Integer) -> -F Integer = pure 2;
+}
+
+/// A view block after a call of a method that answers no place.
+@[refuses("ViewOfNoPlace")]
+def sized() -> Integer =
+  var xs = pair
+  (xs.size ()) as w { pure w }
+
+/// A view block on a list no var holds: nothing keeps what an exclusive
+/// view would write back.
+@[refuses("OutOfFragment.Held")]
+def unheld(ys : List Integer) -> Integer =
+  (ys.first ()) as w { pure w }
+
+/// The same block through the method's path: the path changes no rule of
+/// the receiver.
+@[refuses("OutOfFragment.Held")]
+def unheldByPath(ys : List Integer) -> Integer =
+  (Places.first ys) as w { pure w }
+
+/// An exclusive view of a list a shared access already lends.
+@[refuses("HeldLent")]
+def raisedWhileRead() -> Integer =
+  var xs = pair
+  access shared xs as v { (xs.first ()) as w { resume w 3 }; pure 0 }
+
+/// A method that answers a place, named as a value. No function value carries
+/// the hold that the place needs.
+@[refuses("MethodAsValue")]
+def bound() -> Integer =
+  var xs = pair
+  let f = Places.first
+  let y = f xs
+  pure y
+
+/// A function that applies its argument to a list.
+def applied(g : List Integer -> Integer, ys : List Integer) -> Integer =
+  g ys
+
+/// The same method as the argument of a function.
+@[refuses("MethodAsValue")]
+def passed() -> Integer =
+  applied Places.first pair
+
+/// An element index with a bare bracket for static arguments. An index uses
+/// the selector `.#[ … ]`.
+@[refuses("MalformedForm")]
+def bareIndex() -> Integer =
+  var xs = pair
+  let y = xs[1]
+  pure y
+
+/// A view type standing as a parameter's type.
+@[refuses("ViewNotPlace")]
+def stray(v : View[m](Integer)) -> Integer =
+  pure 0
+
+/// A mode variable on a parameter that is no receiver.
+@[refuses("StrayReceiverMode")]
+def lent[m : Mode](ys : m List Integer) -> Integer =
+  pure 0

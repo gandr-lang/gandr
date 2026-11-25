@@ -1,0 +1,2 @@
+{BASE}def three : -F Nat ;
+def three = pl

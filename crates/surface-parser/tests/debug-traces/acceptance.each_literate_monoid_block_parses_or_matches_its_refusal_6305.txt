@@ -1,0 +1,178 @@
+test: acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305
+package: gandr-surface-parser
+command: mise run debug:test gandr-surface-parser acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305 --break gandr_surface_parser::parse::parse
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/7dbb0e9419357275/out/tests-7dbb0e9419357275"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/7dbb0e9419357275/out/tests-7dbb0e9419357275' (x86_64).
+(lldb) settings set -- target.run-args  "acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex gandr_surface_parser::parse::parse
+Breakpoint 1: 11 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-7dbb0e9419357275`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x000000000258fe18
+(lldb) run
+
+running 1 test
+test acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3289353 launched: 'target/debug-trace/debug/build/gandr-surface-parser/7dbb0e9419357275/out/tests-7dbb0e9419357275' (x86_64)
+Process 3289353 stopped
+* thread #2, name = 'acceptance::eac', stop reason = breakpoint 1.7
+       frame #0: 0x0000555555e593b7 tests-7dbb0e9419357275`gandr_surface_parser::parse::parse(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3109, rctxs:size=3109, bounds:size=3109, owners:size=3109, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:20, items:204}, alloc:{}, marker:{}}}, menus:size=204, mold_labels:size=3109, adjacencies:size=7447, successor_starts:size=3110, has_pred:size=3109, has_succ:size=3109, form_first:size=210, is_first:size=3109, form_last:size=282, complete_last:size=232, is_complete_last:size=3109, required_tail:size=50, is_required_tail:size=3109, closing:size=3109, twins:size=3109, fingerprint:{0:16591295780250687667}}, automaton:{kinds:size=3109, observations:size=3109, width:49, sets:size=882}, application:Some({0:1568}), type_application:Some({0:2307}), flat:size=3}, source={0:"/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n"}) at parse.rs:618:1
+   615 	/// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
+   616 	/// - witness: `parse::tests::arbitrary_source_parses_totally`
+   617 	#[inline]
+-> 618 	#[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|parsed| {
+    	^
+   619 	    parsed.tree.source() == source && parsed.tree.grammar() == pbg.fingerprint()
+   620 	        && parsed.tree.node(parsed.tree.root()).is_some_and(|node| node.label() == NodeLabel::Wald)
+   621 	        && parsed.obligations.iter().zip(parsed.obligations.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end()))
+(lldb) bt 24
+* thread #2, name = 'acceptance::eac', stop reason = breakpoint 1.7
+   * frame #0: 0x0000555555e593b7 tests-7dbb0e9419357275`gandr_surface_parser::parse::parse(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3109, rctxs:size=3109, bounds:size=3109, owners:size=3109, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:20, items:204}, alloc:{}, marker:{}}}, menus:size=204, mold_labels:size=3109, adjacencies:size=7447, successor_starts:size=3110, has_pred:size=3109, has_succ:size=3109, form_first:size=210, is_first:size=3109, form_last:size=282, complete_last:size=232, is_complete_last:size=3109, required_tail:size=50, is_required_tail:size=3109, closing:size=3109, twins:size=3109, fingerprint:{0:16591295780250687667}}, automaton:{kinds:size=3109, observations:size=3109, width:49, sets:size=882}, application:Some({0:1568}), type_application:Some({0:2307}), flat:size=3}, source={0:"/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n"}) at parse.rs:618:1
+     frame #1: 0x0000555555dd53ed tests-7dbb0e9419357275`tests::acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305 at acceptance.rs:2773:22
+     frame #2: 0x0000555555db67a7 tests-7dbb0e9419357275`tests::acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305::{closure#0}((null)={}) at acceptance.rs:2762:71
+     frame #3: 0x0000555555def5a6 tests-7dbb0e9419357275`<tests::acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000555555eaeb0b tests-7dbb0e9419357275`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x0000555555eaeb09 tests-7dbb0e9419357275`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #6: 0x0000555555ebc055 tests-7dbb0e9419357275`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #7: 0x0000555555ebc050 tests-7dbb0e9419357275`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555555ebc050 tests-7dbb0e9419357275`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #9: 0x0000555555ebc03b tests-7dbb0e9419357275`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #10: 0x0000555555ebc03b tests-7dbb0e9419357275`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x0000555555ebc03b tests-7dbb0e9419357275`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #12: 0x0000555555ebc026 tests-7dbb0e9419357275`test::run_test::{closure#0} at lib.rs:677:43
+     frame #13: 0x0000555555eb6a14 tests-7dbb0e9419357275`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #14: 0x0000555555eb6999 tests-7dbb0e9419357275`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x0000555555ebf1b2 tests-7dbb0e9419357275`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x0000555555ebf1a3 tests-7dbb0e9419357275`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x0000555555ebf1a3 tests-7dbb0e9419357275`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #18: 0x0000555555ebf193 tests-7dbb0e9419357275`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x0000555555ebf193 tests-7dbb0e9419357275`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x0000555555ebf193 tests-7dbb0e9419357275`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x0000555555ebf184 tests-7dbb0e9419357275`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x0000555557b08acf tests-7dbb0e9419357275`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #23: 0x0000555557b08ac8 tests-7dbb0e9419357275`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) pbg = 0x0000555557c5e770 {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3109, rctxs:size=3109, bounds:size=3109, owners:size=3109, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:20, items:204}, alloc:{}, marker:{}}}, menus:size=204, mold_labels:size=3109, adjacencies:size=7447, successor_starts:size=3110, has_pred:size=3109, has_succ:size=3109, form_first:size=210, is_first:size=3109, form_last:size=282, complete_last:size=232, is_complete_last:size=3109, required_tail:size=50, is_required_tail:size=3109, closing:size=3109, twins:size=3109, fingerprint:{0:16591295780250687667}}, automaton:{kinds:size=3109, observations:size=3109, width:49, sets:size=882}, application:Some({0:1568}), type_application:Some({0:2307}), flat:size=3}
+(gandr_surface_syntax::span::SourceText) source = {0:"/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n"}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000555555dd53ed tests-7dbb0e9419357275`tests::acceptance::each_literate_monoid_block_parses_or_matches_its_refusal_6305 at acceptance.rs:2773:22
+   2770	            .split_once('\n')
+   2771	            .ok_or("each gandr fence has a newline")?;
+   2772	        let (block, _) = block.split_once("```").ok_or("each gandr fence closes")?;
+-> 2773	        let parsed = parse(built(), SourceText::from(block))?;
+    	                     ^
+   2774	        match claim.trim() {
+   2775	            "" => assert!(
+   2776	                bool::from(parsed.is_clean()),
+(lldb) frame variable --depth 3
+(std::path::PathBuf) path = "crates/surface-parser/../../corpus/sketch/literate/monoid.gandr.md" {
+  inner = "crates/surface-parser/../../corpus/sketch/literate/monoid.gandr.md" {
+    inner = {inner:size=138}
+  }
+}
+(alloc::string::String) source = "# Monoids, and the free one on a type\n\nA monoid is a type with an associative operation and a unit. This file is a literate gandr source: its `gandr` code blocks are the program, and the rest is prose. The Markdown reader keeps each block's position, so a diagnostic lands on the line of this file that holds it.\n\n## The theory\n\nThe operation is written `⊕` when typeset. The attribute travels with the name, so every module that imports `Monoid` typesets it the same way.\n\n```gandr refuses(\"MalformedForm\")\n/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n```\n\n## Lists form the free monoid\n\nConcatenation is the operation, and the empty list is the unit. The columns of the two clauses stay aligned when typeset, as the source lays them out.\n\n```gandr refuses(\"MalformedForm\")\n/// Lists under concatenation.\nmodule Lists :> Model(Monoid) with sort M = List(a) where\n  /// The empty list.\n  def unit = #[];\n  /// The first list, then the second.\n  def op(xs : List(a), ys : List(a)) -> List(a) {\n    match xs where\n      #[]       => ys,\n      #[x, ..r] => #[x, ..op r ys]\n  }\n```\n\n## Folding a list into any monoid\n\nA fold sends the free monoid to any other. Its doc comment carries a formula in the target's own markup, read by the `#md` reader.\n\n```gandr refuses(\"MalformedForm\")\n/// Folds `xs` into `m`: #md{ $x_1 \\oplus \\cdots \\oplus x_n$ }.\npub def fold[m : Model(Monoid)](xs : List(m.M)) -> m.M {\n  match xs where\n    #[]       => m.unit,\n    #[x, ..r] => m.op x (fold r)\n}\n```\n" {
+  [0] = '#'
+  [1] = ' '
+  [2] = 'M'
+  [3] = 'o'
+  [4] = 'n'
+  [5] = 'o'
+  [6] = 'i'
+  [7] = 'd'
+  [8] = 's'
+  [9] = ','
+  [10] = ' '
+  [11] = 'a'
+  [12] = 'n'
+  [13] = 'd'
+  [14] = ' '
+  [15] = 't'
+  ...
+}
+(unsigned long) count = 0
+(core::iter::adapters::skip::Skip<core::str::iter::Split<&str> >) iter = {iter:{0:{start:1034, end:1767, matcher:{haystack:"# Monoids, and the free one on a type\n\nA monoid is a type with an associative operation and a unit. This file is a literate gandr source: its `gandr` code blocks are the program, and the rest is prose. The Markdown reader keeps each block's position, so a diagnostic lands on the line of this file that holds it.\n\n## The theory\n\nThe operation is written `⊕` when typeset. The attribute travels with the name, so every module that imports `Monoid` typesets it the same way.\n\n```gandr refuses(\"MalformedForm\")\n/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n```\n\n## Lists form the free monoid\n\nConcatenation is the operation, and the empty list is the unit. The columns of the two clauses stay aligned when typeset, as the source lays them out.\n\n```gandr refuses(\"MalformedForm\")\n/// Lists under concatenation.\nmodule Lists :> Model(Monoid) with sort M = List(a) where\n  /// The empty list.\n  def unit = #[];\n  /// The first list, then the second.\n  def op(xs : List(a), ys : List(a)) -> List(a) {\n    match xs where\n      #[]       => ys,\n      #[x, ..r] => #[x, ..op r ys]\n  }\n```\n\n## Folding a list into any monoid\n\nA fold sends the free monoid to any other. Its doc comment carries a formula in the target's own markup, read by the `#md` reader.\n\n```gandr refuses(\"MalformedForm\")\n/// Folds `xs` into `m`: #md{ $x_1 \\oplus \\cdots \\oplus x_n$ }.\npub def fold[m : Model(Monoid)](xs : List(m.M)) -> m.M {\n  match xs where\n    #[]       => m.unit,\n    #[x, ..r] => m.op x (fold r)\n}\n```\n", needle:"```gandr", searcher:TwoWay({…})}, allow_trailing_empty:true, finished:false}}, n:0}
+(&str) fenced = " refuses(\"MalformedForm\")\n/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n```\n\n## Lists form the free monoid\n\nConcatenation is the operation, and the empty list is the unit. The columns of the two clauses stay aligned when typeset, as the source lays them out.\n\n" {
+  [0] = ' '
+  [1] = 'r'
+  [2] = 'e'
+  [3] = 'f'
+  [4] = 'u'
+  [5] = 's'
+  [6] = 'e'
+  [7] = 's'
+  [8] = '('
+  [9] = '"'
+  [10] = 'M'
+  [11] = 'a'
+  [12] = 'l'
+  [13] = 'f'
+  [14] = 'o'
+  [15] = 'r'
+  ...
+}
+(&str) claim = " refuses(\"MalformedForm\")" {
+  [0] = ' '
+  [1] = 'r'
+  [2] = 'e'
+  [3] = 'f'
+  [4] = 'u'
+  [5] = 's'
+  [6] = 'e'
+  [7] = 's'
+  [8] = '('
+  [9] = '"'
+  [10] = 'M'
+  [11] = 'a'
+  [12] = 'l'
+  [13] = 'f'
+  [14] = 'o'
+  [15] = 'r'
+  ...
+}
+(&str) block = "/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n```\n\n## Lists form the free monoid\n\nConcatenation is the operation, and the empty list is the unit. The columns of the two clauses stay aligned when typeset, as the source lays them out.\n\n" {
+  [0] = '/'
+  [1] = '/'
+  [2] = '/'
+  [3] = ' '
+  [4] = 'A'
+  [5] = 'n'
+  [6] = ' '
+  [7] = 'a'
+  [8] = 's'
+  [9] = 's'
+  [10] = 'o'
+  [11] = 'c'
+  [12] = 'i'
+  [13] = 'a'
+  [14] = 't'
+  [15] = 'i'
+  ...
+}
+(&str) block = "/// An associative operation with a unit.\npub theory Monoid where\n  /// The carrier.\n  sort M : Type;\n  /// The unit.\n  @[format(*{latex = \"\\\\varepsilon\", typst = \"epsilon\", md = \"ε\"})]\n  oper unit : M;\n  /// The operation.\n  @[format(*{latex = \"\\\\oplus\", typst = \"plus.circle\", md = \"⊕\"})]\n  oper op : (a : M, b : M) --> M;\n" {
+  [0] = '/'
+  [1] = '/'
+  [2] = '/'
+  [3] = ' '
+  [4] = 'A'
+  [5] = 'n'
+  [6] = ' '
+  [7] = 'a'
+  [8] = 's'
+  [9] = 's'
+  [10] = 'o'
+  [11] = 'c'
+  [12] = 'i'
+  [13] = 'a'
+  [14] = 't'
+  [15] = 'i'
+  ...
+}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.

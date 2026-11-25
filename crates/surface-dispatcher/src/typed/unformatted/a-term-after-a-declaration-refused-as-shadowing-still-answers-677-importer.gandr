@@ -1,0 +1,5 @@
+import "./point.gandr" ;
+data Point : Type where {
+  | Here : Point
+}
+def two = 2 ;

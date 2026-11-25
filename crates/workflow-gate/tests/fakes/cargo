@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# A fake `cargo` for the cases of `gate`. `cargo metadata` prints the file
+# that `FAKE_CARGO_METADATA` names, and each other call fails.
+set -euo pipefail
+[[ ${1:-} == metadata ]] || { echo "fake cargo: no answer for: $*" >&2; exit 64; }
+exec cat "$FAKE_CARGO_METADATA"

@@ -1,0 +1,75 @@
+//! A model and a fold that do not prove the symmetry of a commutative
+//! operation.
+//!
+//! The rule `meet x y <=> meet y x` joins two terms of the theory. A model
+//! that gives the meet a meaning must give those two terms one value. A fold
+//! over the terms must give them one result. Without a proof, a program can
+//! tell the two orders apart.
+//!
+//! The checker reads the symmetry as it reads each rule. A model that omits
+//! the law is refused where its two sides do not convert. A fold that states
+//! no respect of the law is refused at its case.
+//!
+//! - see: #8291
+
+/// The theory of a vote: two constants and no rule.
+theory Vote where
+  /// The sort of votes.
+  sort V : Type;
+  /// The vote against.
+  oper nay : V;
+  /// The vote for.
+  oper aye : V;
+
+/// The theory of a tally of votes, with a commutative meet.
+theory Tally where
+  /// The sort of tallies.
+  sort B : Type;
+  /// The tally where no vote is for.
+  oper none : B;
+  /// The tally where each vote is for.
+  oper all : B;
+  /// The meet of two tallies.
+  oper meet : (x : B, y : B) --> B;
+  /// The empty tally on the left absorbs.
+  rule meetNone : meet none x <=> none;
+  /// The full tally on the left is the unit.
+  rule meetAll : meet all x <=> x;
+  /// The meet is commutative. This rule is a symmetry.
+  rule meetComm : meet x y <=> meet y x;
+
+/// The agreement of two votes.
+def agree(a : Terms Vote, b : Terms Vote) -> Terms Vote =
+  match a where
+    | Vote.nay => Vote.nay
+    | Vote.aye => b
+
+/// A model that omits the symmetry. Its two sides do not convert, so nothing
+/// proves the law, and the module is refused.
+///
+/// - see: #8291
+@[refuses("NoFiller.Omitted")]
+module TallyUnproved : Model(Tally) where
+  /// The carrier, a vote.
+  type B = Terms Vote;
+  /// The empty tally means the vote against.
+  def none : Terms Vote = Vote.nay;
+  /// The full tally means the vote for.
+  def all : Terms Vote = Vote.aye;
+  /// The meet means the agreement.
+  def meet(x : Terms Vote, y : Terms Vote) -> Terms Vote = agree x y;
+  /// The absorption law holds by computation.
+  def meetNone(x : Terms Vote) -> Path (meet none x) none = Path.here Vote.nay;
+  /// The unit law holds by computation.
+  def meetAll(x : Terms Vote) -> Path (meet all x) x = Path.here x;
+
+/// A fold that states no respect of a rule. The two orders of a meet do not
+/// convert, so the case is refused.
+///
+/// - see: #8291
+@[refuses("RuleNotRespected")]
+def rec poll(t : Terms Tally) -> Terms Vote =
+  match t where
+    | Tally.none => Vote.nay
+    | Tally.all => Vote.aye
+    | Tally.meet(x, y) => agree (poll[<] x) (poll[<] y)

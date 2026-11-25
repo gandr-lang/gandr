@@ -1,0 +1,61 @@
+// A result can follow its argument.
+//
+// A recursive result has its parameter's type.
+// Each branch returns a value no larger than that parameter.
+//
+// A call keeps the argument's stage.
+// Division follows subtraction.
+// A logarithm takes a half at each recursive call.
+// A nonrecursive definition opens no stage.
+//
+// - see: #392
+// - see: `../../pathological/data/following.gandr`
+
+// The naturals and the numerals two and three.
+import "./data-base.gandr";
+
+/// Truncated subtraction, by recursion on the first argument: never larger
+/// than it, so a call's result stands where its first argument does.
+def rec minus(n : Nat, k : Nat) -> Nat =
+  match k where
+    | Zero => n
+    | Succ(j) => match n where
+      | Zero => Zero
+      | Succ(p) => minus[<] p j
+
+/// `divided` computes the ceiling quotient of `n` by `d + 1`.
+/// `minus` provides a value below `n`.
+def rec divided(n : Nat, d : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => { let r = minus p d; Succ (divided[<] r d) }
+
+/// `halvedUp` computes the ceiling half of `n`.
+/// Its predecessor is below `n`.
+def rec halvedUp(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => { let q = minus p (Succ Zero); Succ (halvedUp[<] q) }
+
+/// The number of binary digits of `n`, a logarithm: half of the field `p`
+/// stands where `p` does, below `n`, since `halvedUp` follows its argument.
+def rec digits(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => { let h = halvedUp p; Succ (digits[<] h) }
+
+/// Three less one: two.
+@[runs("Succ (Succ Zero)")]
+def difference : () -> Nat = minus three (Succ Zero);
+
+/// Four divided by two: two.
+@[runs("Succ (Succ Zero)")]
+def quotient : () -> Nat = divided (Succ three) (Succ Zero);
+
+/// The ceiling half of three is two.
+@[runs("Succ (Succ Zero)")]
+def halvedThree : () -> Nat = halvedUp three;
+
+/// Four is `100` in binary: three digits.
+@[runs("Succ (Succ (Succ Zero))")]
+def digitsOfFour : () -> Nat = digits (Succ three);

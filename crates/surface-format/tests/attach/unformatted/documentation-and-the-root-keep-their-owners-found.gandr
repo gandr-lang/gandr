@@ -1,0 +1,7 @@
+/// One.
+/// Two.
+def one = 1 ;
+
+// alone
+
+def two = 2 ;

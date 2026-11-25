@@ -1,0 +1,13 @@
+/// `OutOfFragment.Held`: a form out of the fragment: the name an access lends
+/// is no linear slot.
+///
+/// An integer's methods.
+module Bumped where {
+  /// A write to the integer, which an exclusive receiver lends.
+  @[checks]
+  def bump(self : Integer) -> Unit = pure *{};
+}
+
+@[refuses("OutOfFragment.Held")]
+def unheld(n : Integer) -> Unit =
+  n.bump ()

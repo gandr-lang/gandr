@@ -1,0 +1,73 @@
+test: regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578
+package: gandr-runtime-emitter
+command: mise run debug:test gandr-runtime-emitter regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578 --break a_region_holds_a_word_s_bytes_for_each_word_6578$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-runtime-emitter/bdb2d146e20e1883/out/gandr_runtime_emitter-bdb2d146e20e1883"
+Current executable set to 'target/debug-trace/debug/build/gandr-runtime-emitter/bdb2d146e20e1883/out/gandr_runtime_emitter-bdb2d146e20e1883' (x86_64).
+(lldb) settings set -- target.run-args  "regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex a_region_holds_a_word_s_bytes_for_each_word_6578$
+Breakpoint 1: where = gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578 + 7 at regions.rs:1139:22, address = 0x000000000033c6f7
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_runtime_emitter-bdb2d146e20e1883`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000006710f8
+(lldb) run
+
+running 1 test
+test regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 832086 launched: 'target/debug-trace/debug/build/gandr-runtime-emitter/bdb2d146e20e1883/out/gandr_runtime_emitter-bdb2d146e20e1883' (x86_64)
+Process 832086 stopped
+* thread #2, name = 'regions::tests:', stop reason = breakpoint 1.1
+       frame #0: 0x00005555558906f7 gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578 at regions.rs:1139:22
+   1136	    #[test]
+   1137	    fn a_region_holds_a_word_s_bytes_for_each_word_6578()
+   1138	    {
+-> 1139	        let region = Reservation::of(CHUNK);
+    	                     ^
+   1140	        let word = u64::try_from(core::mem::size_of::<Word>()).unwrap_or(u64::MAX);
+   1141	        assert_eq!(Bytes(0), region.held(region.base()));
+   1142	        assert_eq!(
+(lldb) bt 24
+* thread #2, name = 'regions::tests:', stop reason = breakpoint 1.1
+   * frame #0: 0x00005555558906f7 gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578 at regions.rs:1139:22
+     frame #1: 0x00005555558834d7 gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578::{closure#0}((null)={}) at regions.rs:1137:58
+     frame #2: 0x00005555557d86a6 gandr_runtime_emitter-bdb2d146e20e1883`<gandr_runtime_emitter::regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #3: 0x0000555555899f9b gandr_runtime_emitter-bdb2d146e20e1883`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #4: 0x0000555555899f99 gandr_runtime_emitter-bdb2d146e20e1883`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #5: 0x00005555558a74e5 gandr_runtime_emitter-bdb2d146e20e1883`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #6: 0x00005555558a74e0 gandr_runtime_emitter-bdb2d146e20e1883`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #7: 0x00005555558a74e0 gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #8: 0x00005555558a74cb gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #9: 0x00005555558a74cb gandr_runtime_emitter-bdb2d146e20e1883`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #10: 0x00005555558a74cb gandr_runtime_emitter-bdb2d146e20e1883`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #11: 0x00005555558a74b6 gandr_runtime_emitter-bdb2d146e20e1883`test::run_test::{closure#0} at lib.rs:677:43
+     frame #12: 0x00005555558a1ea4 gandr_runtime_emitter-bdb2d146e20e1883`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #13: 0x00005555558a1e29 gandr_runtime_emitter-bdb2d146e20e1883`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #14: 0x00005555558aa642 gandr_runtime_emitter-bdb2d146e20e1883`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #15: 0x00005555558aa633 gandr_runtime_emitter-bdb2d146e20e1883`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #16: 0x00005555558aa633 gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #17: 0x00005555558aa623 gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #18: 0x00005555558aa623 gandr_runtime_emitter-bdb2d146e20e1883`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #19: 0x00005555558aa623 gandr_runtime_emitter-bdb2d146e20e1883`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #20: 0x00005555558aa614 gandr_runtime_emitter-bdb2d146e20e1883`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #21: 0x0000555555be82cf gandr_runtime_emitter-bdb2d146e20e1883`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #22: 0x0000555555be82c8 gandr_runtime_emitter-bdb2d146e20e1883`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+     frame #23: 0x00007ffff7cacef1 libc.so.6`start_thread(arg=<unavailable>) at pthread_create.c:454:8
+(lldb) frame variable --depth 3
+(lldb) up
+frame #1: 0x00005555558834d7 gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578::{closure#0}((null)={}) at regions.rs:1137:58
+   1134	    /// a limit, on every host. The memory bound reads these bytes when it
+   1135	    /// stops a run.
+   1136	    #[test]
+-> 1137	    fn a_region_holds_a_word_s_bytes_for_each_word_6578()
+    	                                                         ^
+   1138	    {
+   1139	        let region = Reservation::of(CHUNK);
+   1140	        let word = u64::try_from(core::mem::size_of::<Word>()).unwrap_or(u64::MAX);
+(lldb) frame variable --depth 3
+(gandr_runtime_emitter::regions::tests::a_region_holds_a_word_s_bytes_for_each_word_6578::{closure_env#0} *)  = 0x00007ffff7bc94f6 {}

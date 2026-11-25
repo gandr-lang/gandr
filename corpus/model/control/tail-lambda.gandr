@@ -1,0 +1,93 @@
+// A body whose result is a function value may end in a bare lambda.
+//
+// The `return` before such a lambda states nothing that the written type
+// lacks. The checker therefore reads the lambda as the box that the body
+// returns, and the core equals the core of a written `return`.
+//
+// The lambda stands at the end of a body, after a `let`, at the end of a
+// block, and in each arm of a match. The cases with a written `return` keep
+// it under `explicit_exits`. Two cases keep their `return` in every source: a
+// box whose computation is no function, and a lambda with no expected type.
+//
+// - see: #6390
+
+/// Two values.
+data Two : Type where
+  /// The left value.
+  | Left : Two
+  /// The right value.
+  | Right : Two
+
+/// The natural numbers in unary.
+data Peano : Type where
+  /// Zero.
+  | Zero : Peano
+  /// The successor of `n`.
+  | Succ : (n : Peano) --> Peano
+
+/// The type `Two` at each natural.
+def natOr(n : Peano) -> Type =
+  match n where
+    | Zero => return Two
+    | Succ(_m) => return Two
+
+/// The identity at `g`, which returns its lambda with a written `return`.
+@[explicit_exits]
+def idA(g : Type) -> g -> g =
+  return fun (x) {
+    return x
+  }
+
+/// The identity at `g`, its lambda bare: the same core as `idA`.
+def idB(g : Type) -> g -> g =
+  fun (x) {
+    x
+  }
+
+/// The lambda comes after a `let`.
+def after_let() -> Two -> Two =
+  let _kept = pure Left
+  fun (u) {
+    u
+  }
+
+/// The lambda ends a block.
+def block_tail() -> Two -> Two =
+  {
+    fun (u) {
+      u
+    }
+  }
+
+/// The first arm ends in a bare lambda, and the second returns its lambda.
+@[explicit_exits]
+def arms(choice : Two) -> Two -> Two =
+  match choice where
+    | Left => fun (u) {
+      return u
+    }
+    | Right => return fun (u) {
+      return u
+    }
+
+/// The later arm ends in a bare lambda, after an arm that returns one.
+@[explicit_exits]
+def right_arm(choice : Two) -> Two -> Two =
+  match choice where
+    | Left => return fun (u) {
+      return u
+    }
+    | Right => fun (u) {
+      return u
+    }
+
+/// The arm at `Zero` ends in a bare lambda under a refined parameter.
+@[explicit_exits]
+def refined_arm(n : Peano, _x : natOr(n)) -> Peano -> Peano =
+  match n where
+    | Zero => fun (u) {
+      return u
+    }
+    | Succ(_n) => return fun (u) {
+      return u
+    }

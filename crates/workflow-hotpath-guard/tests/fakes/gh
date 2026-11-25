@@ -1,0 +1,27 @@
+#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+if [ "$FAKE_GH" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
+n=$(wc -l < "$FAKE_GH_LOG" | tr -d ' ')
+# A REST read names its method, as `api --method GET <path>`: read it as `api <path>`.
+if [ "$1 $2 $3" = 'api --method GET' ]; then shift 3; set -- api "$@"; fi
+case "$1 $2" in
+  'api --paginate')
+    case "$3" in
+      */comments) printf '%s\n' "${FAKE_COMMENTS:-}" ;;
+      *) printf '%s\n' "$FAKE_CHECKS" ;;
+    esac ;;
+  'api --method') cat > "$FAKE_GH_BODY.patch-${4##*/}" ;;
+  'api repos/'*/pulls/*) printf '%s' "${FAKE_PULL:?the named pull request}" ;;
+  'api repos/'*/actions/artifacts*)
+    name=${2#*name=}
+    name=${name%%&*}
+    if [ -n "${FAKE_REPORTS:-}" ] && [ -d "$FAKE_REPORTS/$name" ]; then echo 7; fi ;;
+  'api repos/'*) printf '%s' "${FAKE_PULLS:-[]}" ;;
+  'run download') mkdir -p "$9" && cp "$FAKE_REPORTS/$7"/* "$9"/ ;;
+  'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
+  'issue create') cat > "$FAKE_GH_BODY.create-$n"; echo "https://example.invalid/issues/$n" ;;
+  'issue comment') cat > "$FAKE_GH_BODY.comment-$3"; echo "https://example.invalid/issues/$3#issuecomment-$n" ;;
+  'issue edit') cat > "$FAKE_GH_BODY.edit-$3" ;;
+  'issue close' | 'issue reopen') ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac

@@ -1,0 +1,4 @@
+module M where {
+  def count = 3;
+  type Q = Path[.A = Integer](count, 3);
+}

@@ -1,0 +1,3 @@
+import std.string (concat) ;
+def three : Integer ;
+def three = 3 ;

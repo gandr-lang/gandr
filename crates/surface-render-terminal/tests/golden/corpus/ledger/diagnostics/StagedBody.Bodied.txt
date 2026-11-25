@@ -1,0 +1,8 @@
+error[StagedBody.Bodied]: a staged signature has a body
+  ╭▸ corpus/ledger/diagnostics/StagedBody.Bodied.gandr:4:3
+  │
+4 │ @[thir(("example.rs", "identity"))]
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a staged signature with a body
+  │
+  ├ note: `identityBody` is refused with StagedBody.Bodied, as its expectation states
+  ╰ help: delete the body, and the staged THIR gives the value

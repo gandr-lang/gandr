@@ -1,0 +1,59 @@
+[package]
+name = "gandr-surface-repl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The gandr read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder, the batch and line-editor faces"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "repl", "transcript"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The loop asks the parser whether a buffer is complete, submits each complete
+# buffer to the interactive session, reads the dispatcher's step and the
+# settle report off the submission, prints each diagnostic the walk yields
+# through the terminal renderer, lays types from the incremental checker's
+# checkpoints out through the presentation printer, echoes the buffer through
+# the grammar's role table, and encodes everything onto the renderer seam's
+# transcript blocks. The session's checkpoints and kernel records live in
+# memory. The terminal face edits lines with rustyline, and watches the files
+# the loop loaded through notify.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+gandr-core-checker.workspace = true
+gandr-core-content.workspace = true
+gandr-core-incremental.workspace = true
+gandr-core-nbe.workspace = true
+gandr-core-term.workspace = true
+gandr-storage-records.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-evaluate.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-render-remote.workspace = true
+gandr-surface-render-terminal.workspace = true
+gandr-surface-session.workspace = true
+gandr-surface-syntax.workspace = true
+notify.workspace = true
+quenchant-shape.workspace = true
+rustyline.workspace = true
+
+[dev-dependencies]
+gandr-kernel-term.workspace = true
+
+[lints]
+workspace = true

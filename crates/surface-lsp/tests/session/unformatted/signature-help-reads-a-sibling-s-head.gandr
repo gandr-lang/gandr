@@ -1,0 +1,3 @@
+import "./base.gandr" ;
+def two : +U (-F Integer) ;
+def two = thunk { pick 1 } ;

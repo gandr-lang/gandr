@@ -1,0 +1,8 @@
+error[SessionNotEquivalent]: `Path.bisim` needs the two protocols to behave alike at every step
+   ╭▸ corpus/ledger/diagnostics/SessionNotEquivalent.gandr:14:49
+   │
+14 │   def same : Path[.A = Type] SeatEnd SeatEnd′ = Path.bisim SeatEnd SeatEnd′;
+   │                                                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
+   │
+   ├ note: `same` is refused with SessionNotEquivalent, as its expectation states
+   ╰ help: make the two protocols bisimilar at every step

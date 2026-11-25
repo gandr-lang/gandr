@@ -1,0 +1,3 @@
+import "./base.gandr";
+def two : Integer = "two";
+def three : Integer = owed;

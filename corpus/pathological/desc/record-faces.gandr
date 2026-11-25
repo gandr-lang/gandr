@@ -1,0 +1,101 @@
+// A record type's faces refused: one face holds a label the record lacks, and
+// one face is named twice. An extension type is refused when it names a field
+// or a face that the record type lacks. Another fixes a field at a value of
+// another type. A record literal at a patched type states a fixed field at
+// another value, and so does a configuration coerced in to a patched type. A
+// system of faces names one face twice, and another system's faces disagree
+// where they meet.
+//
+// A face lists only labels its record holds, and each face has its own name. A
+// reader `.#{` fixes only the fields its record type writes, and a face only
+// when the type member names it. A face's refusal covers its record and marks
+// the label, and the others stand at the second name or at the face. A fixed
+// value has its field's type, and a fixed field holds its reader's value. Each
+// of the two refusals stands at the value, the field or the configuration.
+//
+// The types stand in a module, whose members carry the verdict each refusal
+// states. Each refusal names the face and the record type. Two faces of a
+// system agree on their meet, and the refusal stands at the later face's value.
+//
+// - see: `model/desc/record-faces.gandr` — the faces read, and the reader read
+// - see: `pathological/desc/shaped-signature.gandr` — a theory's faces refused
+//   alike
+// - see: #6504 — faces on lazy records and codata declarations.
+
+/// Two record types, each with a faces block the check refuses.
+module Faces where {
+  /// `bad` holds `cert`, which the record does not label: the refusal covers
+  /// the record, and marks the label at fault (`FaceOutsideShape`).
+  @[refuses("IllFormedDescription")]
+  type Outside = *{host : String, port : Integer} where
+    face bad = { port, cert };
+
+  /// The block names `addr` twice: the second is refused at its name
+  /// (`DuplicateFaceName`).
+  @[refuses("IllFormedDescription")]
+  type Twice = *{host : String, port : Integer} where
+    face addr = { host };
+    face addr = { port };
+}
+
+/// An `&` record cannot declare a face.
+@[refuses("IllFormedDescription")]
+type Server = &{host : String, port : Integer, tls : Bool} where
+  /// `secure` names the port and TLS fields.
+  face secure = {port, tls};
+
+/// Stream is a codata. It cannot declare a face.
+@[refuses("MalformedForm")]
+codata Stream(a : Type) : Type[-] where
+  /// `head` yields an element.
+  head : a;
+  /// `tail` yields a stream.
+  tail : Stream a;
+  /// `front` names the head face.
+  face front = {head};
+
+/// A server's configuration: the faces `secure` and `addr` meet at the port.
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = { port, tls };
+  face addr = { host, port };
+
+/// `mode` is no field of `Config`: the reader is refused at the label.
+@[refuses("UnresolvedName")]
+def moded(c : Config.#{.mode = 1}) -> Integer = 0;
+
+/// `remote` is no face of `Config`: the reader is refused at the face.
+@[refuses("UnresolvedName")]
+def remote(c : Config.#{remote ↦ *{.host = "localhost"}}) -> Integer = 0;
+
+/// `true` is no `Integer`: the reader is refused at the value it fixes for
+/// `port`.
+@[refuses("TypeMismatch")]
+def mistyped(c : Config.#{.port = true}) -> Integer = 0;
+
+/// The literal states `port` at 80, but the reader fixes it at 443: the
+/// literal is refused at the field.
+@[refuses("FixedFieldDiffers")]
+def wrong : Config.#{.port = 443} = *{.host = "localhost", .port = 80, .tls = true};
+
+/// A configuration on the plain port.
+def http : Config = *{.host = "localhost", .port = 80, .tls = false};
+
+/// `http` holds `port` at 80, but the reader fixes it at 443: the coercion in
+/// is refused at the configuration.
+@[refuses("FixedFieldDiffers")]
+def plain : Config.#{.port = 443} = http;
+
+/// The system names `secure` twice: the second is refused at its name.
+@[refuses("DuplicateDefinition")]
+def again(c : Config.#{
+  secure ↦ *{.port = 443, .tls = true},
+  secure ↦ *{.port = 443, .tls = true}
+}) -> Integer { 0 }
+
+/// The faces meet at the port, but `secure` fixes it at 443 and `addr` at 80:
+/// the system is refused at the port of `addr`.
+@[refuses("FixedFieldDiffers")]
+def split_port(c : Config.#{
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 80}
+}) -> Integer { c.port }

@@ -1,0 +1,5 @@
+/// `staged_type`: a type at a stage its signature binds.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+def kept[i : Size](n : Nat[i]) -> Nat[i] = n;

@@ -1,0 +1,77 @@
+//! This source tests univalence at signature corollas.
+//!
+//! A translator must be natural along each corolla automorphism. Its tables
+//! must cover exactly the shared corollas. Related corollas must have equal
+//! element counts.
+//!
+//! The examples accept a natural relabelling. They refuse an unnatural
+//! relabelling, mismatched tables and unmatched cardinalities.
+//!
+//! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
+//! - cites: [Petrakis-2022-univalent_typoids]
+//!
+//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
+//! [Petrakis-2022-univalent_typoids]: https://arxiv.org/abs/2205.06651 "Petrakis, Univalent Typoids"
+
+/// `Rig` defines two binary operations with one corolla shape.
+theory Rig where
+  sort R : Type;
+  oper plus : (x : R, y : R) --> (z : R);
+  oper times : (x : R, y : R) --> (z : R);
+
+/// `Semi` defines one binary operation.
+theory Semi where
+  sort S : Type;
+  oper mul : (x : S, y : S) --> (z : S);
+
+/// `rename` relabels four corolla elements. It is natural along their
+/// automorphisms.
+def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
+  match e where
+    | +{.0 = u} => +{.2 = u}
+    | +{.1 = u} => +{.3 = u}
+    | +{.2 = u} => +{.0 = u}
+    | +{.3 = u} => +{.1 = u}
+
+/// `cross` relabels four corolla elements without naturality.
+def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
+  match e where
+    | +{.0 = u} => +{.2 = u}
+    | +{.1 = u} => +{.1 = u}
+    | +{.2 = u} => +{.0 = u}
+    | +{.3 = u} => +{.3 = u}
+
+/// `dual` applies the natural relabelling to `plus`.
+def dual = ua[1, 4] Rig Rig (*{.plus = rename}) (*{.plus = rename});
+
+/// `swaps` transports one corolla element along `dual`.
+def swaps : Path (Path.walk (fun (X) { X }) dual (*{*{}, +{.1 = *{}}})) *{
+  *{},
+  +{.3 = *{}}
+} = Path.here (*{*{}, +{.3 = *{}}});
+
+/// `crossed` refuses a relabelling that does not commute with corolla symmetry.
+@[refuses("NotNatural")]
+def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
+
+/// `twice` refuses tables with a corolla on only one side.
+@[refuses("CorollaTables")]
+def twice = ua[1, 4] Rig Rig (*{.plus = rename, .times = rename}) (*{.plus = rename});
+
+/// `widen` maps booleans into four corolla elements.
+def widen(b : Bool) -> Unit + Unit + Unit + Unit =
+  match b where
+    | true => +{.0 = *{}}
+    | false => +{.1 = *{}}
+
+/// `narrow` maps four corolla elements onto booleans.
+def narrow(e : Unit + Unit + Unit + Unit) -> Bool =
+  match e where
+    | +{.0 = u} => +{.0 = u}
+    | +{.1 = u} => +{.1 = u}
+    | +{.2 = u} => +{.0 = u}
+    | +{.3 = u} => +{.1 = u}
+
+/// `uneven` refuses two corollas with different element counts.
+@[refuses("CorollaCardinality")]
+def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow});

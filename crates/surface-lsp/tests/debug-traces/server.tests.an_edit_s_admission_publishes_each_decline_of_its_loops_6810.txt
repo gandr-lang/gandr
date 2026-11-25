@@ -1,0 +1,59 @@
+test: server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810
+package: gandr-surface-lsp
+command: mise run debug:test gandr-surface-lsp server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lsp/6f4d47291abed748/out/gandr_surface_lsp-6f4d47291abed748"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lsp/6f4d47291abed748/out/gandr_surface_lsp-6f4d47291abed748' (arm64).
+(lldb) settings set -- target.run-args  "server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_lsp-6f4d47291abed748`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000103e9aaa8
+(lldb) run
+
+running 1 test
+test server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810 ... 
+thread 'server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810' (40650530) panicked at crates/surface-lsp/src/server.rs:12964:9:
+assertion `left == right` failed: the admission of the opening and of the edit each publish the five loops' declines
+  left: (5, 0)
+ right: (5, 5)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: gandr_surface_lsp-6f4d47291abed748 was compiled with optimization - stepping may behave oddly; variables may not be available
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2499 launched: 'target/debug-trace/debug/build/gandr-surface-lsp/6f4d47291abed748/out/gandr_surface_lsp-6f4d47291abed748' (arm64)
+Process 2499 stopped
+* thread #2, name = 'server::tests::an_edit_s_admission_publishes_each_decline_of_it', stop reason = breakpoint 1.1
+       frame #0: 0x0000000103e9aaa8 gandr_surface_lsp-6f4d47291abed748`__rustc::rust_panic at panicking.rs:887:25 [opt]
+(lldb) bt 24
+* thread #2, name = 'server::tests::an_edit_s_admission_publishes_each_decline_of_it', stop reason = breakpoint 1.1
+   * frame #0: 0x0000000103e9aaa8 gandr_surface_lsp-6f4d47291abed748`__rustc::rust_panic at panicking.rs:887:25 [opt]
+     frame #1: 0x0000000103e51aa4 gandr_surface_lsp-6f4d47291abed748`std::panicking::panic_with_hook at panicking.rs:840:5 [opt]
+     frame #2: 0x0000000103e39858 gandr_surface_lsp-6f4d47291abed748`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13 [opt]
+     frame #3: 0x0000000103e315cc gandr_surface_lsp-6f4d47291abed748`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18 [opt]
+     frame #4: 0x0000000103e3a2bc gandr_surface_lsp-6f4d47291abed748`__rustc::rust_begin_unwind at panicking.rs:679:5 [opt]
+     frame #5: 0x0000000103e9c5f8 gandr_surface_lsp-6f4d47291abed748`core::panicking::panic_fmt at panicking.rs:80:14 [opt]
+     frame #6: 0x0000000103e9c4dc gandr_surface_lsp-6f4d47291abed748`core::panicking::assert_failed_inner at panicking.rs:0 [opt]
+     frame #7: 0x0000000103e8a800 gandr_surface_lsp-6f4d47291abed748`core::panicking::assert_failed::<(usize, usize), (usize, usize)>(kind=Eq, left=(5, 0), right=(5, 5), args=Some({template:{pointer:"the admission of the opening and of the edit each publish the five loops' declines{\"semanticTokens\":{\"refreshSupport\":true}}opening the importer itself asks for nothing`one`, which the base on disk does not declare, is unresolvedworkspace/semanticTokens/refreshthe base opened with `one` rechecks the importer and asks for its tokens again`one` is now a function the base declares{\"inlayHint\":{\"refreshSupport\":true}}workspace/inlayHint/refresha client that refreshes its inlay hints is asked for them again{\"semanticTokens\":{\"refreshSupport\":true},\"inlayHint\":{\"refreshSupport\":true}}a client that refreshes both is asked for its tokens, then its hints{}a client that does not refresh its tokens is asked nothing{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\n                    \"uri\":\"file:///tmp/pulled.gandr\",\"languageId\":\"gandr\",\"version\":1,\n                    \"text\":\"def g = missing ;\\n\"}}}the messages are a listworkspace/diagnostic/refresh/items/0/codea full report names its digesta p"...}, args:{pointer:{ty:{0:0}}}})) at panicking.rs:407:5
+     frame #8: 0x000000010075e3d0 gandr_surface_lsp-6f4d47291abed748`gandr_surface_lsp::server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810 at server.rs:12964:9
+     frame #9: 0x0000000100687aec gandr_surface_lsp-6f4d47291abed748`gandr_surface_lsp::server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810::{closure#0}((null)={}) at server.rs:12920:70
+     frame #10: 0x00000001009de09c gandr_surface_lsp-6f4d47291abed748`<gandr_surface_lsp::server::tests::an_edit_s_admission_publishes_each_decline_of_its_loops_6810::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x0000000100a7f518 gandr_surface_lsp-6f4d47291abed748`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #12: 0x0000000100a7f510 gandr_surface_lsp-6f4d47291abed748`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #13: 0x0000000100a8aa34 gandr_surface_lsp-6f4d47291abed748`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #14: 0x0000000100a8aa28 gandr_surface_lsp-6f4d47291abed748`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #15: 0x0000000100a8aa28 gandr_surface_lsp-6f4d47291abed748`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #16: 0x0000000100a8aa24 gandr_surface_lsp-6f4d47291abed748`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #17: 0x0000000100a8aa24 gandr_surface_lsp-6f4d47291abed748`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #18: 0x0000000100a8aa24 gandr_surface_lsp-6f4d47291abed748`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #19: 0x0000000100a8aa18 gandr_surface_lsp-6f4d47291abed748`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #20: 0x0000000100a85428 gandr_surface_lsp-6f4d47291abed748`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #21: 0x0000000100a853c4 gandr_surface_lsp-6f4d47291abed748`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #22: 0x0000000100a8cef8 gandr_surface_lsp-6f4d47291abed748`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #23: 0x0000000100a8cee8 gandr_surface_lsp-6f4d47291abed748`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

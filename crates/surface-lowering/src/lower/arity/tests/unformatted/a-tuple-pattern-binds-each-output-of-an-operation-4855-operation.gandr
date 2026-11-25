@@ -1,0 +1,6 @@
+data Flag : Type where {
+    | Down : Flag
+    | Up : Flag
+    oper swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);
+    rule : swap a b ==> (b, a);
+}

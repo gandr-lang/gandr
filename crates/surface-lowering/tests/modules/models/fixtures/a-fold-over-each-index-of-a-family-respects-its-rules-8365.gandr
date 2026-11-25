@@ -1,0 +1,34 @@
+data Width : Type where
+  | Bit : Width
+  | Word : Width
+
+data Gate : Width -> Type where {
+  | Dark : Gate Bit
+  | Lit : Gate Bit
+  | Nil : Gate Word
+  | Swap : (x : Gate Word) --> Gate Word
+  | Hold : (c : Gate Bit, x : Gate Word) --> Gate Word
+  rule : Swap (Swap x) <=> x;
+  rule : Hold Lit x <=> x;
+}
+
+def rec same(w : Width, t : Gate w) -> Gate w =
+  match t where
+    | Dark => Dark
+    | Lit => Lit
+    | Nil => Nil
+    | Swap(x) => Swap (same[<] Word x)
+    | Hold(c, x) => Hold (same[<] Bit c) (same[<] Word x)
+
+def rec bits(t : Gate Bit) -> Gate Bit =
+  match t where
+    | Dark => Dark
+    | Lit => Lit
+
+def rec turned(w : Width, t : Gate w) -> Gate w =
+  match t where
+    | Dark => Lit
+    | Lit => Dark
+    | Nil => Nil
+    | Swap(x) => Swap (turned[<] Word x)
+    | Hold(c, x) => Hold (turned[<] Bit c) (turned[<] Word x)

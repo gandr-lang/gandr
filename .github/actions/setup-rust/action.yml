@@ -1,0 +1,123 @@
+name: "setup rust"
+description: >
+  The rustup toolchain setup every Rust job shares: the rustup cache
+  restore, the toolchain install, the rustup cache save, and the shared
+  Rust dependency cache. The job's checkout step runs first; this
+  action is everything after it.
+inputs:
+  # Save both caches in this job: the one writer per cache lane.
+  cache-save:
+    description: "Save the rustup toolchain and the dependency cache in this job"
+    default: "false"
+  # Off inside the CI image, which already carries the toolchain.
+  install-toolchain:
+    description: "Restore, install, and save the rustup toolchain in this job"
+    default: "true"
+  # Off on a self-hosted runner, which keeps its own rustup home, Cargo home
+  # and work directory from one job to the next (#7352). There the action
+  # installs the pin into the runner's own home and restores and saves no
+  # cache.
+  cache:
+    description: "Restore and save the rustup toolchain and the dependency cache"
+    default: "true"
+  # Off for a job whose compiles must not come from a cache.
+  kache:
+    description: "Build through kache, with its shared cache on ghcr.io"
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - id: rustup-restore
+      if: ${{ inputs.install-toolchain == 'true' && inputs.cache == 'true' }}
+      name: "restore rustup toolchain"
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        # The key hashes the pin file, so a toolchain bump is a cache
+        # rotation; the install step below reads the same file.
+        path: ~/.rustup/toolchains/*
+        key: rustup-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+    - name: "install rust tools"
+      if: ${{ inputs.install-toolchain == 'true' }}
+      # dtolnay/rust-toolchain takes `toolchain` as a required input and
+      # exits when it is omitted -- it does not read the repo's
+      # rust-toolchain.toml, so it cannot express "install the pin".
+      # Plain rustup with no argument reads the pin file, components and
+      # profile included: the one toolchain every Rust job shares, and a
+      # fast no-op when the cache restore above already holds it.
+      run: |
+        rustup toolchain install
+        rustup show active-toolchain
+      # Composite actions have no default shell: `run` steps must name
+      # their `shell:` explicitly or GitHub rejects the action at setup.
+      shell: bash
+    # The cargo configuration links every Linux build with mold. The CI image
+    # carries it, and a bare Linux runner does not. So the job installs it.
+    # The liburing crate of `gandr-runtime-uring` runs bindgen in its build.
+    # So the job installs `libclang-dev` too, until a later unit removes that
+    # crate.
+    # - see: `.cargo/config.toml`, #7638
+    - name: "read the package index"
+      if: ${{ inputs.install-toolchain == 'true' && runner.os == 'Linux' }}
+      run: sudo apt-get update
+      shell: bash
+    - name: "install mold and libclang"
+      if: ${{ inputs.install-toolchain == 'true' && runner.os == 'Linux' }}
+      run: sudo apt-get install -y --no-install-recommends mold libclang-dev
+      shell: bash
+    # mise reads rust-toolchain.toml as its `rust` tool, so every later
+    # `mise run` would install that toolchain again through rustup, and on
+    # macOS runners that second install is killed by SIGKILL in about one
+    # run of five while rustup run directly is not (#1190). rustup installed
+    # the pin above and its proxies are on the runner's PATH, so the rest of
+    # the job leaves `rust` out of mise as the tool install step does. Under
+    # act mise's install is what provides rustup, so act keeps the tool. The
+    # line written is the workflow's own variable and a literal.
+    - name: "leave the toolchain to rustup"
+      if: ${{ inputs.install-toolchain == 'true' && env.ACT != 'true' }}
+      run: printf 'MISE_DISABLE_TOOLS=%s,rust\n' "$MISE_DISABLE_TOOLS" >> "$GITHUB_ENV" # zizmor: ignore[github-env]
+      shell: bash
+    - name: "save rustup toolchain"
+      if: ${{ inputs.install-toolchain == 'true' && inputs.cache == 'true' && inputs.cache-save == 'true' && steps.rustup-restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.rustup/toolchains/*
+        key: ${{ steps.rustup-restore.outputs.cache-primary-key }}
+    - name: "cache Rust dependencies"
+      id: rust-cache
+      if: ${{ inputs.cache == 'true' }}
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        # Profile changes rotate dependency state. Test jobs cache their
+        # complete archive separately, without dependency-cache pruning.
+        prefix-key: gandr-v2-rust-deps
+        key: ${{ hashFiles('Cargo.toml') }}
+        # Share crate downloads across every Rust lane. Complete compiled
+        # test artifacts have their own cache, including integration tests.
+        shared-key: rust-deps
+        cache-all-crates: false
+        cache-targets: false
+        cache-on-failure: false
+        save-if: ${{ inputs.cache-save == 'true' }}
+    # kache caches each compile by its content and shares it across jobs,
+    # runners and worktrees. mise installs it from the pin in `mise.toml`, so
+    # the hosts, the hosted runners and the CI image take one version. Its
+    # remote is an OCI repository on ghcr.io.
+    #
+    # The job builds through a wrapper that `kache-wrapper.bash` writes. The
+    # script states what the wrapper holds, and why each job has a daemon of
+    # its own.
+    #
+    # `kache drain` stops the job's daemon at the end of the job, and the
+    # daemon sends its queued uploads first.
+    # - see: `.github/actions/kache-drain`, #7789, #7828
+    - name: "build through kache"
+      if: ${{ inputs.kache == 'true' }}
+      env:
+        KACHE_TRUSTED: ${{ github.event_name == 'merge_group' || contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name) && contains(fromJSON('["refs/heads/main", "refs/heads/landing", "refs/heads/integration"]'), github.ref) }}
+        KACHE_USER: ${{ github.actor }}
+        KACHE_TOKEN: ${{ github.token }}
+      run: printf 'RUSTC_WRAPPER=%s\n' "$("$GITHUB_ACTION_PATH/kache-wrapper.bash")" >> "$GITHUB_ENV" # zizmor: ignore[github-env]
+      shell: bash
+    - name: "drain kache at the end of the job"
+      if: ${{ inputs.kache == 'true' }}
+      uses: ./.github/actions/kache-drain # zizmor: ignore[self-repository]

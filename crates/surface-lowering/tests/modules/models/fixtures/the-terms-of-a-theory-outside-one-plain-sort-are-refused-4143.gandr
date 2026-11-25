@@ -1,0 +1,6 @@
+theory Idem where {
+  sort M : Type;
+  oper twice : (x : M) --> M;
+  law settles : (x : M) -> Path[.A = M](twice (twice x), twice x);
+}
+def doubled : Terms(Idem) = Idem.twice;

@@ -1,0 +1,107 @@
+# An inherent impl whose self type names `'r`, with no generic parameters,
+# takes `<'r>`. The rule writes it before the self type, and rustfmt joins it
+# to `impl`.
+id: impl-takes-brand
+language: Rust
+severity: hint
+message: the impl of a holder takes the region's brand
+rule:
+  pattern: $SELF
+  any:
+    - kind: generic_type
+    - kind: reference_type
+    - kind: tuple_type
+  inside:
+    kind: impl_item
+    field: type
+    all:
+      - not:
+          has:
+            field: trait
+            regex: .
+      - not:
+          has:
+            field: type_parameters
+            kind: type_parameters
+  has:
+    kind: lifetime
+    regex: ^'r$
+    stopBy: end
+fix: <'r> $SELF
+---
+# A trait impl whose self type or trait names `'r`, with no generic
+# parameters, takes `<'r>` before the trait.
+id: trait-impl-takes-brand
+language: Rust
+severity: hint
+message: the impl of a holder takes the region's brand
+rule:
+  pattern: $TRAIT
+  any:
+    - kind: type_identifier
+    - kind: scoped_type_identifier
+    - kind: generic_type
+  inside:
+    kind: impl_item
+    field: trait
+    all:
+      - not:
+          has:
+            field: type_parameters
+            kind: type_parameters
+      - any:
+          - has:
+              field: type
+              regex: .
+              has:
+                kind: lifetime
+                regex: ^'r$
+                stopBy: end
+          - has:
+              field: trait
+              regex: .
+              has:
+                kind: lifetime
+                regex: ^'r$
+                stopBy: end
+fix: <'r> $TRAIT
+---
+# An impl whose self type or trait names `'r`, with generic parameters that
+# lack it, takes `'r` first among them.
+id: impl-parameters-take-brand
+language: Rust
+severity: hint
+message: the impl of a holder takes the region's brand
+rule:
+  pattern: $PARAMETERS
+  kind: type_parameters
+  inside:
+    kind: impl_item
+    field: type_parameters
+    any:
+      - has:
+          field: type
+          regex: .
+          has:
+            kind: lifetime
+            regex: ^'r$
+            stopBy: end
+      - has:
+          field: trait
+          regex: .
+          has:
+            kind: lifetime
+            regex: ^'r$
+            stopBy: end
+  not:
+    has:
+      kind: lifetime
+      regex: ^'r$
+      stopBy: end
+transform:
+  BRANDED:
+    replace:
+      source: $PARAMETERS
+      replace: ^<
+      by: "<'r, "
+fix: $BRANDED

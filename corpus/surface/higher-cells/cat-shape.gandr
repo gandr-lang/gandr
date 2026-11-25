@@ -1,0 +1,18 @@
+// The shape of a category, after the HoTT book's Definition 9.1.1 (a
+// precategory): objects, a hom-type between two of them, identities and
+// composition with the unit and associativity laws as rules. Its coherence
+// cells are in `coherence.gandr`.
+
+/// The category shape. Its laws over the dependent sort are read with the
+/// objects each composite stands at, so the unit laws agree at `comp(id(a),
+/// id(a))` (#1510).
+theory CatShape where
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+
+  oper id : (a : Ob) --> Hom a a;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
+
+  rule unitL : comp (id a) f ==> f;
+  rule unitR : comp f (id b) ==> f;
+  rule assoc : comp (comp f g) h ==> comp f (comp g h);

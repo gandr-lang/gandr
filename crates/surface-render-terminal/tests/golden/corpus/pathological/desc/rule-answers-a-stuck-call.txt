@@ -1,0 +1,21 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/desc/rule-answers-a-stuck-call.gandr:47:46
+   │
+46 │     def unitOfAnother(b : Terms Truth, c : Terms Truth) -> Path (encode
+   │  ┌──│─────────────────┬────────────────┬─────────────────────────┘
+   │  │  │                 │                │
+   │  │  │                 │                checked against `(a : Terms Truth) -> -F (Path[.A = Terms BitWord] (encode b) (BitWord.band BitWord.one (encode a)))`; while checking the body of this function; binds c : Terms Truth
+   │ ┌│──┘                 checked; while checking the body of this function; binds b : Terms Truth
+   │ ││
+47 │ ││    b) (BitWord.band BitWord.one (encode c)) = Path.here
+   │ ││┏━━━│━━━┬──────────────────────────────────━━━━┛
+   │ ││┃   │   │
+   │ │└┃───┤   an endpoint the point does not convert to
+   │ │ ┃   an endpoint the point does not convert to
+48 │ │ ┃   (encode b);
+   │ └─┃────────────╿┘ checked; while checking the body of this thunk
+   │   ┗━━━━━━━━━━━━┥
+   │                not both endpoints of the path
+   │
+   ├ note: `unitOfAnother` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

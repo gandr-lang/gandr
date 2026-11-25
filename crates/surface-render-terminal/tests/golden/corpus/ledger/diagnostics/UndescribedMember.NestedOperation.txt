@@ -1,0 +1,8 @@
+error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.NestedOperation.gandr:20:3
+   │
+20 │   rule unitR : ext m (bind x. (ret x)) <=> m;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+   │
+   ├ note: `BelowMonad` is refused with UndescribedMember.NestedOperation, as its expectation states
+   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>

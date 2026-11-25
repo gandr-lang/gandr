@@ -1,0 +1,32 @@
+// `std.hash`: the multiply-shift family of universal hash functions. For an
+// odd multiplier `a`, `multiplyShift w m a x` sends a key `x` of `w` bits to
+// a hash of `m` bits: `(a · x mod 2^w) div 2^(w - m)`.
+//
+// The family is universal when `a` is a uniform odd integer below `2^w`. Two
+// distinct keys then collide with a probability of at most `2 / 2^m`. So a
+// hash spends one multiplication, one `int.mod` and one `int.div`, and the
+// random choice of `a` replaces any assumption about the keys.
+//
+// `multiplier` draws `a` through `std.rand.Eff`: it draws `w` bits and sets
+// the lowest bit. Each odd value below `2^w` then has the weight `2 / 2^w`.
+// A width outside 1 to 64 meets the refusal of the draw by name. The corpus
+// source `hashing.gandr` states the exact probability of a collision.
+//
+// - see: #5713
+// - see: Dietzfelbinger, Hagerup, Katajainen and Penttonen 1997, A reliable
+//   randomized algorithm for the closest-pair problem — the family and its
+//   bound
+
+// `span`, the `2^w` values of a width, and the interface of randomness.
+import std.rand (span);
+
+/// The hash of `m` bits of the key `x` of `w` bits under the odd multiplier
+/// `a`: `(a · x mod 2^w) div 2^(w - m)`.
+pub def multiplyShift(w : Integer, m : Integer, a : Integer, x : Integer) -> Integer =
+  int.div (int.mod (a * x) (span w)) (span (w - m))
+
+/// A uniform odd multiplier below `2^w`: a draw of `w` bits with its lowest
+/// bit set.
+pub def multiplier(w : Integer) -> [std.rand.Eff] Integer =
+  let drawn = std.rand.draw w
+  drawn - int.mod drawn 2 + 1

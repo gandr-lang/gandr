@@ -1,0 +1,58 @@
+test: acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102
+package: gandr-surface-parser
+command: mise run debug:test gandr-surface-parser acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/7dbb0e9419357275/out/tests-7dbb0e9419357275"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/7dbb0e9419357275/out/tests-7dbb0e9419357275' (x86_64).
+(lldb) settings set -- target.run-args  "acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-7dbb0e9419357275`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x000000000255e7d8
+(lldb) run
+
+running 1 test
+test acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102 ... 
+thread 'acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102' (290953) panicked at crates/surface-parser/tests/acceptance.rs:1753:9:
+assertion `left == right` failed: the juxtaposed type owes what its call owes: "def run_over_binder(served : Run ((Seat.Dispatch). end)) -> Run (?(Seat.Dispatch). end) =\n  served\n"
+  left: [MissingTile, MissingTile, MissingTile, MissingTile, MissingTile]
+ right: [MissingTile, MissingTile, MissingTile, MissingTile, MissingTile, MissingTile, MissingTile, MissingTile]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 290834 launched: 'target/debug-trace/debug/build/gandr-surface-parser/7dbb0e9419357275/out/tests-7dbb0e9419357275' (x86_64)
+Process 290834 stopped
+* thread #2, name = 'acceptance::a_t', stop reason = breakpoint 1.1
+       frame #0: 0x0000555557ab27d8 tests-7dbb0e9419357275`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'acceptance::a_t', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555557ab27d8 tests-7dbb0e9419357275`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x0000555557acf855 tests-7dbb0e9419357275`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x0000555557ab1df2 tests-7dbb0e9419357275`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x0000555557aaa819 tests-7dbb0e9419357275`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555557ab29bd tests-7dbb0e9419357275`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x0000555557aee0fc tests-7dbb0e9419357275`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555557aedff3 tests-7dbb0e9419357275`core::panicking::assert_failed_inner at panicking.rs:447:23
+     frame #7: 0x0000555555deafff tests-7dbb0e9419357275`core::panicking::assert_failed::<alloc::vec::Vec<gandr_surface_parser::oblig::Oblig>, alloc::vec::Vec<gandr_surface_parser::oblig::Oblig>>(kind=Eq, left=size=5, right=size=8, args=Some({template:{pointer:"-the juxtaposed type owes what its call owes: \xc0"}, args:{pointer:{ty:Placeholder{value:{…}, formatter:{…}, _lifetime:{…}}}}})) at panicking.rs:407:5
+     frame #8: 0x0000555555dcd6a4 tests-7dbb0e9419357275`tests::acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102 at acceptance.rs:1753:9
+     frame #9: 0x0000555555daac07 tests-7dbb0e9419357275`tests::acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102::{closure#0}((null)={}) at acceptance.rs:1719:4
+     frame #10: 0x0000555555e02b76 tests-7dbb0e9419357275`<tests::acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x0000555555ea49cb tests-7dbb0e9419357275`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x0000555555ea49c9 tests-7dbb0e9419357275`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #13: 0x0000555555eb1f15 tests-7dbb0e9419357275`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #14: 0x0000555555eb1f10 tests-7dbb0e9419357275`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x0000555555eb1f10 tests-7dbb0e9419357275`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #16: 0x0000555555eb1efb tests-7dbb0e9419357275`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #17: 0x0000555555eb1efb tests-7dbb0e9419357275`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x0000555555eb1efb tests-7dbb0e9419357275`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #19: 0x0000555555eb1ee6 tests-7dbb0e9419357275`test::run_test::{closure#0} at lib.rs:677:43
+     frame #20: 0x0000555555eac8d4 tests-7dbb0e9419357275`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #21: 0x0000555555eac859 tests-7dbb0e9419357275`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x0000555555eb5072 tests-7dbb0e9419357275`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x0000555555eb5063 tests-7dbb0e9419357275`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

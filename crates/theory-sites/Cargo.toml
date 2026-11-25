@@ -1,0 +1,35 @@
+[package]
+name = "gandr-theory-sites"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The carrier's shapes as a site with stick-free objects: a morphism class over gandr's circuit wirings, its degree, and the finite checks of its generalized Reedy structure"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "graphical-category", "no-std", "reedy"]
+categories = ["algorithms", "mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# The suites print their observed table; `test = true` builds them with the
+# test targets so the gates compile them.
+[[example]]
+name = "suites"
+test = true
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+gandr-theory-circuit-algebras.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

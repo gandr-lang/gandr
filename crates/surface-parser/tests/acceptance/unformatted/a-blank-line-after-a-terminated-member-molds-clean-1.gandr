@@ -1,0 +1,5 @@
+theory S where {
+  sort S : Type;
+
+  sort T : Type;
+}

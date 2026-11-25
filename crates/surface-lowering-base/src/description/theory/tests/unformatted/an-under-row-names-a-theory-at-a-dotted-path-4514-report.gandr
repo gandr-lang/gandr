@@ -1,0 +1,2 @@
+theory Store.Eff where {{ sort S : Type; }}
+theory Logged where {{ {signature} rule r : f (g x) <=> g x where {{ | under [Store.Eff | r] }}; }}

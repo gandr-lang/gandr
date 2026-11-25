@@ -1,0 +1,4 @@
+def inside() -> Bool { (Eq.generic Point) (Point 1 2) (Point 1 2) }
+def integers = Eq.generic (Integer) ;
+def bare = Eq.generic ;
+def reflIntegers = Eq.generic.refl (Integer) ;

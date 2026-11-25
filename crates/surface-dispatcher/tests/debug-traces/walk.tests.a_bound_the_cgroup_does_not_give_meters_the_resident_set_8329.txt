@@ -1,0 +1,65 @@
+test: walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329 --break metered
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/5d43da4761ceaa64/out/gandr_surface_dispatcher-5d43da4761ceaa64"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/5d43da4761ceaa64/out/gandr_surface_dispatcher-5d43da4761ceaa64' (x86_64).
+(lldb) settings set -- target.run-args  "walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex metered
+Breakpoint 1: 13 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-5d43da4761ceaa64`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000059e01d8
+(lldb) run
+
+running 1 test
+test walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3527822 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/5d43da4761ceaa64/out/gandr_surface_dispatcher-5d43da4761ceaa64' (x86_64)
+Process 3527822 stopped
+* thread #2, name = 'walk::tests::a_', stop reason = breakpoint 1.7
+       frame #0: 0x0000555556d98410 gandr_surface_dispatcher-5d43da4761ceaa64`gandr_surface_dispatcher::walk::metered::<gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure#0}, gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure#1}>(memory={bytes:{0:4294967296}, origin:Flag}, start=Some({held:{0:1073741824}, reached:{0:7}}), now={}, resident={}) at walk.rs:447:11
+(lldb) bt 24
+* thread #2, name = 'walk::tests::a_', stop reason = breakpoint 1.7
+   * frame #0: 0x0000555556d98410 gandr_surface_dispatcher-5d43da4761ceaa64`gandr_surface_dispatcher::walk::metered::<gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure#0}, gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure#1}>(memory={bytes:{0:4294967296}, origin:Flag}, start=Some({held:{0:1073741824}, reached:{0:7}}), now={}, resident={}) at walk.rs:447:11
+     frame #1: 0x0000555556e7aa9a gandr_surface_dispatcher-5d43da4761ceaa64`gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329 at walk.rs:2505:13
+     frame #2: 0x0000555556e639f7 gandr_surface_dispatcher-5d43da4761ceaa64`gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure#0}((null)={}) at walk.rs:2487:71
+     frame #3: 0x000055555704aff6 gandr_surface_dispatcher-5d43da4761ceaa64`<gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000555557336afb gandr_surface_dispatcher-5d43da4761ceaa64`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x0000555557336af9 gandr_surface_dispatcher-5d43da4761ceaa64`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #6: 0x0000555557343cd5 gandr_surface_dispatcher-5d43da4761ceaa64`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #7: 0x0000555557343cd0 gandr_surface_dispatcher-5d43da4761ceaa64`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555557343cd0 gandr_surface_dispatcher-5d43da4761ceaa64`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #9: 0x0000555557343cbb gandr_surface_dispatcher-5d43da4761ceaa64`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #10: 0x0000555557343cbb gandr_surface_dispatcher-5d43da4761ceaa64`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x0000555557343cbb gandr_surface_dispatcher-5d43da4761ceaa64`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #12: 0x0000555557343ca6 gandr_surface_dispatcher-5d43da4761ceaa64`test::run_test::{closure#0} at lib.rs:645:43
+     frame #13: 0x000055555733e6c4 gandr_surface_dispatcher-5d43da4761ceaa64`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #14: 0x000055555733e649 gandr_surface_dispatcher-5d43da4761ceaa64`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x0000555557346d62 gandr_surface_dispatcher-5d43da4761ceaa64`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x0000555557346d53 gandr_surface_dispatcher-5d43da4761ceaa64`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x0000555557346d53 gandr_surface_dispatcher-5d43da4761ceaa64`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #18: 0x0000555557346d43 gandr_surface_dispatcher-5d43da4761ceaa64`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #19: 0x0000555557346d43 gandr_surface_dispatcher-5d43da4761ceaa64`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x0000555557346d43 gandr_surface_dispatcher-5d43da4761ceaa64`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x0000555557346d34 gandr_surface_dispatcher-5d43da4761ceaa64`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555af5ad4f gandr_surface_dispatcher-5d43da4761ceaa64`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+     frame #23: 0x000055555af5ad48 gandr_surface_dispatcher-5d43da4761ceaa64`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:127:17
+(lldb) frame variable --depth 3
+(gandr_runtime_emitter::regions::Memory) memory = {bytes:{0:4294967296}, origin:Flag}
+(core::option::Option<gandr_runtime_emitter::regions::Charge>) start = Some({held:{0:1073741824}, reached:{0:7}}) {
+  0 = {held:{0:1073741824}, reached:{0:7}}
+}
+(gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure_env#0}) now = {}
+(gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure_env#1}) resident = {}
+(lldb) up
+frame #1: 0x0000555556e7aa9a gandr_surface_dispatcher-5d43da4761ceaa64`gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329 at walk.rs:2505:13
+(lldb) frame variable --depth 3
+(gandr_runtime_emitter::regions::Memory) bound = {bytes:{0:4294967296}, origin:Flag}
+(gandr_runtime_emitter::regions::Charge) start = {held:{0:1073741824}, reached:{0:7}}
+(gandr_surface_dispatcher::walk::tests::a_bound_the_cgroup_does_not_give_meters_the_resident_set_8329::{closure_env#0}) charged = {}

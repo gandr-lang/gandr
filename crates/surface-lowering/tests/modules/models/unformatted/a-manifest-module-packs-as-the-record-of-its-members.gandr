@@ -1,0 +1,2 @@
+{COUNTER}def packed : Model(Counter) ;
+def packed = pack Open at Model(Counter) ;

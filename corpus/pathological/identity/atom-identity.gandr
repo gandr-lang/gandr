@@ -1,0 +1,58 @@
+//! The twin of the model's `originOther`: an atom whose type member states a
+//! relation and its reflexivity but no transport law. Without the law the
+//! relation is no identity system
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics], §
+//! 5.8, Theorem 5.8.2, so the atom's identity stays its own and the relation's
+//! evidence is no path between its points.
+//!
+//! - see: #1784 — `lawlessOriginOther`
+//! - see: #1959 — `unpairedContraction`, `UnpairedPoint`
+//! - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+//!
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
+
+// The relation, its reflexivity and its transport law over the unit type.
+import "../../model/identity/atom-identity.gandr";
+
+/// The unit type sealed, stating the relation and its reflexivity alone.
+module Lawless :> *{type T, origin : T, other : T} where {
+  /// The sealed points, whose interface names no transport law.
+  @[identity(*{related, reflexivity})]
+  type T = Unit;
+
+  /// One point.
+  def origin = *{};
+
+  /// Another point.
+  def other = *{};
+}
+
+/// The relation's evidence between two sealed points, refused: the interface
+/// names no transport law.
+@[refuses("AtomTransport")]
+def lawlessOriginOther : Path Lawless.origin Lawless.other = *{};
+
+/// The transport law at the paths of the unit type written as no pair,
+/// refused: an identity in the singleton's total space is a path in the
+/// unit type and one over it.
+@[refuses("TypeMismatch")]
+def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path *{b, r} *{
+  a,
+  pathReflexivity a
+} = *{};
+
+/// The unit type sealed, naming the refused law. The atom and its members
+/// check against their types; the kernel withholds them with the law, as it
+/// withholds every reader of a declaration that did not cross, rather than
+/// faulting the source.
+module UnpairedPoint :> *{type T, origin : T, other : T} where {
+  /// The sealed points, whose transport law is refused.
+  @[identity(*{pathRelated, pathReflexivity, unpairedContraction})]
+  type T = Unit;
+
+  /// One point.
+  def origin = *{};
+
+  /// Another point.
+  def other = *{};
+}

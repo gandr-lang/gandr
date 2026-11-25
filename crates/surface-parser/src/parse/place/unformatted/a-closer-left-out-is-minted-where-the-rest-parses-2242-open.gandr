@@ -1,0 +1,2 @@
+def once(n : Integer) -> -F Integer {
+  return n

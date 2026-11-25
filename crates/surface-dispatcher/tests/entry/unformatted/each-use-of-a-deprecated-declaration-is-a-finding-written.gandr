@@ -1,0 +1,4 @@
+def add : Integer ;
+@[ deprecated ] def add = 1 ;
+def a = add ;
+def b = missing ;

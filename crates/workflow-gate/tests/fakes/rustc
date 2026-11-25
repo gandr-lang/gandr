@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# A fake `rustc` for the cases of `gate`. `rustc -vV` prints a version with
+# a host and a commit. `rustc --print cfg --target <target> <flag>...` prints
+# two target features, and a third when a flag is `-Ccase-flag`. Each other
+# call fails.
+set -euo pipefail
+case "$*" in
+  -vV)
+    printf 'rustc 1.0.0-case (0123456789ab 2026-01-01)\nbinary: rustc\ncommit-hash: 0123456789abcdef0123456789abcdef01234567\nhost: case-host\nrelease: 1.0.0-case\n'
+    ;;
+  '--print cfg --target '*)
+    printf 'debug_assertions\ntarget_arch="case"\ntarget_feature="avx2"\ntarget_feature="sse2"\n'
+    if [[ " $* " == *' -Ccase-flag '* ]]; then printf 'target_feature="fma"\n'; fi
+    ;;
+  *)
+    echo "fake rustc: no answer for: $*" >&2
+    exit 64
+    ;;
+esac

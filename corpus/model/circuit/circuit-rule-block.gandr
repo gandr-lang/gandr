@@ -1,0 +1,31 @@
+//! `circuit-rule-block` models a circuit rule in a `theory` block.
+//!
+//! `cong1` routes a rewrite result and one data input through two nodes.
+//! The pathological circuit sources refuse cycles and invalid rule wiring.
+//!
+//! The current lowering keeps `cong1` beside the block value because `Theory`
+//! does not encode circuit rules.
+//!
+//! - cites: [Lafont-1990-interaction_nets]
+//!
+//! [Lafont-1990-interaction_nets]: https://doi.org/10.1145/96709.96718 "Lafont, Interaction Nets"
+
+/// `Nat` defines data constructors with the circuit arrow.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+/// `NatSum` binds `cong1`, which routes the rewrite of `x` through
+/// `add` with `y`.
+theory NatSum where
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+
+  rule cong1 : (
+    rule p : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) <=> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : add(x′, y) --> (z);
+  };

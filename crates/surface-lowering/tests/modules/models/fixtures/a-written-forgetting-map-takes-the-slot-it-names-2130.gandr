@@ -1,0 +1,19 @@
+theory Pairing where {
+  sort A : Type;
+  sort B : Type;
+  oper left : A;
+  oper right : B;
+}
+theory Counter where {
+  sort C : Type;
+  oper zero : C;
+}
+def any(m : Model Pairing) -> Model Pairing = m;
+def inserted(m : Model Pairing with sort A = Integer with sort B = Unit) -> Model Pairing = become any
+  (forget[sort A = Integer, sort B = Unit](m) at Model Pairing);
+def written(m : Model Pairing with sort A = Integer with sort B = Unit) -> Model Pairing = become forget[
+  sort B = Unit,
+  sort A = Integer
+](m) at Model Pairing;
+def unfixed(m : Model Counter) -> Model Counter = become forget[sort C = Integer](m) at Model
+  Counter;

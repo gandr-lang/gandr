@@ -1,0 +1,639 @@
+//! A document open in an editor, synchronised one keystroke at a time and
+//! held to what a fresh connection answers for the same text.
+//!
+//! A single editor's session runs over `serve` itself, through framed
+//! streams; the shared-workspace sessions run in process, as the hub's
+//! connections do, and replay over streams at their end. The server answers
+//! each change before it reads the next message, so the session runs in
+//! lockstep: every keystroke is followed by its publication, and every
+//! assertion is made at the keystroke that broke it. The oracle is
+//! external to the incremental path: a fresh connection opening the same text
+//! whole. Whatever the server derives from the text alone — the diagnostics,
+//! the semantic tokens, the outline, the folding, the selection ranges and the
+//! inline completion — must agree between the two, so a text the server holds
+//! differently from the editor, or an incremental answer that differs from a
+//! whole one, fails where it diverged. A hover reads the session's latest
+//! accepted revision, which a fresh connection does not have, so it is held
+//! to answering, not to agreeing.
+//!
+//! Every keystroke checks its publication and asks for the inline completion
+//! at the cursor. The oracle, the hover and the selection ranges — each of
+//! which parses the whole document again — run at every keystroke under
+//! [`Oracle::Keystroke`], and under [`Oracle::Line`] at every keystroke that
+//! adds or removes a line, at the opening and at the end of a typing. The
+//! corpus typing takes the line cadence: with specifications enforced, a
+//! whole parse per keystroke across fifty thousand keystrokes costs minutes,
+//! while the incremental path the line cadence still drives at every
+//! keystroke is what the typing is for; the erasure and the scripted and
+//! random sessions keep the keystroke cadence.
+//!
+//! Every keystroke's text is also molded by a molder that decides each token
+//! both by its tables and by the dry runs they replace, form run by form run
+//! as a session molds it, and the two must agree. With specifications
+//! enforced that differential takes the oracle's cadence.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::any::Any;
+use core::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+use std::sync::LazyLock;
+
+use anodized::spec;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::built_in;
+use gandr_surface_parser::DisagreementCount;
+use gandr_surface_parser::FormSplit;
+use gandr_surface_parser::MoldVerdicts;
+use gandr_surface_parser::Molder;
+use gandr_surface_syntax::SourceText;
+use serde_json::Value;
+use serde_json::json;
+
+use super::buffer::Buffer;
+use super::buffer::Change;
+use super::buffer::Key;
+use super::buffer::Offset;
+use super::buffer::Text;
+use super::buffer::Typing;
+use super::client::Client;
+use super::client::Method;
+use super::client::Quiet;
+use super::client::Record;
+
+/// The requests over the whole document whose answers depend on its text and
+/// its URI alone.
+const WHOLE: [Method; 4] = [
+    Method("textDocument/semanticTokens/full"),
+    Method("textDocument/documentSymbol"),
+    Method("textDocument/foldingRange"),
+    Method("textDocument/documentLink"),
+];
+
+/// The built-in grammar, which the server parses with, built once for the
+/// differential molds.
+static GRAMMAR: LazyLock<Pbg> = LazyLock::new(|| built_in().expect("the built-in grammar builds"));
+
+/// When a session consults the oracle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Oracle
+{
+    /// At every keystroke.
+    Keystroke,
+    /// At every keystroke that adds or removes a line, and when asked.
+    Line,
+}
+
+/// A document open in an editor and its server, synchronised keystroke by
+/// keystroke.
+pub struct Session
+{
+    /// The document's URI.
+    uri: String,
+    /// The editor's buffer.
+    buffer: Buffer,
+    /// The connection.
+    client: Client,
+    /// When the oracle is consulted.
+    oracle: Oracle,
+    /// The version the latest synchronisation carried.
+    version: i32,
+    /// How many keystrokes have been checked.
+    keystrokes: usize,
+    /// The diagnostics last published.
+    published: Value,
+    /// What each check read: the publication, the inline completion and,
+    /// against the oracle, the hover at the cursor.
+    answers: Vec<Value>,
+}
+
+impl Session
+{
+    /// Open `text` at `uri` under `typing`, the cursor at its end, consulting
+    /// the oracle at the cadence `oracle` names, on a connection `serve`
+    /// itself serves over framed streams.
+    ///
+    /// # Specification
+    /// - requires: `uri` is a `file` URI.
+    /// - ensures: the document is open at version 1 and its publication was
+    ///   held to the fresh connection's.
+    /// - provides: a single editor's session, ready for keystrokes.
+    /// - panics: the opening publication is missing, or disagrees with a fresh
+    ///   connection's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every single-editor scenario opens here; the opening
+    ///   publication is compared exactly as a keystroke's is.
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    #[spec(requires: uri.starts_with("file://"),
+        ensures: |ret| ret.version == 1_i32 && ret.buffer.text() == text && ret.uri.starts_with("file://"))]
+    pub fn open(
+        uri: String,
+        text: Text<'_>,
+        typing: Typing,
+        oracle: Oracle,
+    ) -> Self
+    {
+        Self::opening(Client::served(), uri, text, typing, oracle)
+    }
+
+    /// Open `text` at `uri` as [`open`](Self::open) does, on a connection
+    /// driven in process over a workspace a second editor may join, its
+    /// exchange kept for a replay over streams.
+    ///
+    /// # Specification
+    /// - requires: `uri` is a `file` URI.
+    /// - ensures: the document is open at version 1 and its publication was
+    ///   held to the fresh connection's.
+    /// - provides: the first editor of the shared-workspace scenarios.
+    /// - panics: the opening publication is missing, or disagrees with a fresh
+    ///   connection's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — both two-editor scenarios open their first editor
+    ///   here; the opening publication is compared exactly as a keystroke's is.
+    /// - witness: `tests::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
+    #[spec(requires: uri.starts_with("file://"),
+        ensures: |ret| ret.version == 1_i32 && ret.buffer.text() == text && ret.uri.starts_with("file://"))]
+    pub fn open_shared(
+        uri: String,
+        text: Text<'_>,
+        typing: Typing,
+        oracle: Oracle,
+    ) -> Self
+    {
+        Self::opening(
+            Client::initialized(Record::Kept, Quiet::Unheld),
+            uri,
+            text,
+            typing,
+            oracle,
+        )
+    }
+
+    /// Open this shared session's document, at its current text, from a second
+    /// connection over the same workspace, as a second editor does.
+    ///
+    /// # Specification
+    /// - requires: this session was opened shared.
+    /// - ensures: the second session holds this one's URI and text at version
+    ///   1, and its publication was held to a fresh connection's.
+    /// - provides: the second editor of the shared-workspace scenarios.
+    /// - panics: this session is served, or the opening publication is missing
+    ///   or disagrees with a fresh connection's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — both two-editor scenarios open their second editor
+    ///   here; a second open that disturbed the first's document shows at the
+    ///   first's next keystroke.
+    /// - witness: `tests::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body hands the whole text to the second connection, which publishes on it; the check compares it once"
+        )
+    )]
+    #[spec(ensures: |ret| ret.uri == self.uri && ret.buffer.text() == self.buffer.text())]
+    pub fn beside(
+        &self,
+        typing: Typing,
+    ) -> Self
+    {
+        Self::opening(
+            self.client.beside(Record::Kept),
+            self.uri.clone(),
+            self.buffer.text(),
+            typing,
+            self.oracle,
+        )
+    }
+
+    /// Open `text` at `uri` through `client`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opening(
+        mut client: Client,
+        uri: String,
+        text: Text<'_>,
+        typing: Typing,
+        oracle: Oracle,
+    ) -> Self
+    {
+        let opened = client.notify(
+            Method("textDocument/didOpen"),
+            &json!({ "textDocument": {
+                "uri": uri, "languageId": "gandr", "version": 1_i32, "text": text.0,
+            }}),
+        );
+        let mut session = Self {
+            uri,
+            buffer: Buffer::holding(text, typing),
+            client,
+            oracle,
+            version: 1_i32,
+            keystrokes: 0_usize,
+            published: Value::Null,
+            answers: Vec::new(),
+        };
+        session.published = session.publication(&opened);
+        session.check(Oracle::Keystroke);
+        session
+    }
+
+    /// Hold the current text to the oracle, whatever the session's cadence.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn verify(&mut self)
+    {
+        self.check(Oracle::Keystroke);
+    }
+
+    /// The editor's buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn buffer(&self) -> &Buffer
+    {
+        &self.buffer
+    }
+
+    /// The diagnostics last published.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn published(&self) -> &Value
+    {
+        &self.published
+    }
+
+    /// What each check read, in order: the publication, the inline completion
+    /// and, against the oracle, the hover at the cursor.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn answers(&self) -> &[Value]
+    {
+        &self.answers
+    }
+
+    /// The codes of the diagnostics last published, in order, each `null`
+    /// when the diagnostic carries none.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn codes(&self) -> Vec<Value>
+    {
+        self.published.as_array().map_or_default(|diagnostics| {
+            diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.get("code").cloned().unwrap_or(Value::Null))
+                .collect()
+        })
+    }
+
+    /// Type `typed`, one keystroke.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn type_char(
+        &mut self,
+        typed: Key,
+    )
+    {
+        let changes = self.buffer.type_char(typed);
+        self.keystroke(&changes);
+    }
+
+    /// Press Enter, one keystroke.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn enter(&mut self)
+    {
+        let change = self.buffer.enter();
+        self.keystroke(&[change]);
+    }
+
+    /// Press backspace, one keystroke.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn backspace(&mut self)
+    {
+        let changes = self.buffer.backspace();
+        self.keystroke(&changes);
+    }
+
+    /// Press delete, one keystroke.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn delete(&mut self)
+    {
+        let changes = self.buffer.delete();
+        self.keystroke(&changes);
+    }
+
+    /// Replace `start .. end` with `text`, one keystroke.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn replace(
+        &mut self,
+        start: Offset,
+        end: Offset,
+        text: Text<'_>,
+    )
+    {
+        let change = self.buffer.replace(start, end, text);
+        self.keystroke(&[change]);
+    }
+
+    /// Undo the latest edit, one keystroke.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn undo(&mut self)
+    {
+        let changes = self.buffer.undo();
+        self.keystroke(&changes);
+    }
+
+    /// Move the cursor to `at`, one keystroke that edits nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn move_to(
+        &mut self,
+        at: Offset,
+    )
+    {
+        self.buffer.move_to(at);
+        self.keystroke(&[]);
+    }
+
+    /// Replay a shared session's whole exchange over framed streams.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn replays_over_streams(&self)
+    {
+        self.client.replays_over_streams();
+    }
+
+    /// End a served session as an editor does, over its streams.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn closes_over_streams(self)
+    {
+        self.client.closes_over_streams();
+    }
+
+    /// Send `changes` as one synchronisation, then check the keystroke.
+    ///
+    /// # Specification
+    /// - requires: `changes` are the edits the buffer just applied, in order,
+    ///   each counted in the text before it.
+    /// - ensures: with changes, the server published once for the new version
+    ///   last; either way, the keystroke was checked, against the oracle when
+    ///   the session's cadence or a change that adds or removes a line asks.
+    /// - provides: one lockstep step.
+    /// - panics: the publication is missing or stale, or a check fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every keystroke of every scenario passes here; a
+    ///   server that skipped a publication, published a stale version or held a
+    ///   different text fails at that keystroke.
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    #[spec(captures: [keystrokes = self.keystrokes, version = self.version],
+        ensures: self.keystrokes == keystrokes.saturating_add(1)
+            && self.version == if changes.is_empty() { version } else { version.saturating_add(1) })]
+    fn keystroke(
+        &mut self,
+        changes: &[Change],
+    )
+    {
+        self.keystrokes = self.keystrokes.saturating_add(1);
+        if !changes.is_empty() {
+            self.version = self.version.saturating_add(1);
+            let change = json!({
+                "textDocument": { "uri": self.uri, "version": self.version },
+                "contentChanges": changes.iter().map(Change::json).collect::<Vec<_>>(),
+            });
+            let messages =
+                self.exchanging(|client| client.notify(Method("textDocument/didChange"), &change));
+            self.published = self.publication(&messages);
+        }
+        let lines = changes
+            .iter()
+            .any(|change| change.start.line != change.end.line || change.text.contains('\n'));
+        self.check(if lines {
+            Oracle::Keystroke
+        }
+        else {
+            self.oracle
+        });
+    }
+
+    /// The diagnostics of the latest publication for the document among
+    /// `messages`, at the session's version.
+    ///
+    /// # Specification
+    /// trivial.
+    fn publication(
+        &self,
+        messages: &[Value],
+    ) -> Value
+    {
+        let publication = messages
+            .iter()
+            .rev()
+            .find(|message| {
+                message.get("method").and_then(Value::as_str)
+                    == Some("textDocument/publishDiagnostics")
+                    && message.pointer("/params/uri").and_then(Value::as_str)
+                        == Some(self.uri.as_str())
+            })
+            .unwrap_or_else(|| panic!("a publication follows the synchronisation{}", self.scene()));
+        assert_eq!(
+            publication.pointer("/params/version"),
+            Some(&json!(self.version)),
+            "the publication carries the latest version{}",
+            self.scene()
+        );
+        publication
+            .pointer("/params/diagnostics")
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    /// Check the current keystroke, against the oracle when `cadence` is
+    /// [`Oracle::Keystroke`].
+    ///
+    /// # Specification
+    /// - requires: the latest publication is in `published`.
+    /// - ensures: the inline completion at the cursor answers without an error,
+    ///   once, and the buffer's text molds alike by the molder's tables and by
+    ///   its dry runs, form run by form run as a session molds it. Against the
+    ///   oracle, the hover and selection ranges at the cursor answer likewise,
+    ///   and the published diagnostics, the whole-document answers and the
+    ///   inline completion and selection ranges at the cursor equal a fresh
+    ///   connection's for the buffer's text. [`answers`](Self::answers) gains
+    ///   the publication, the inline completion and, against the oracle, the
+    ///   hover.
+    /// - provides: the per-keystroke invariants.
+    /// - panics: a query is refused or answered twice, an answer disagrees, or
+    ///   a decision of the molder's tables differs from its dry runs'.
+    /// - executable: none — the answers compared are the two connections'
+    ///   replies, read and asserted inside the call; the record is what was
+    ///   read, which a clause would only restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the oracle is a fresh connection opening the text
+    ///   whole, external to the incremental path; an incremental reparse, a
+    ///   stale form or a text applied differently changes some text-derived
+    ///   answer at the keystroke that caused it, or by the next line. The
+    ///   molder's dry runs are the oracle of its tables: a table verdict that
+    ///   differs on an intermediate text fails at that keystroke.
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    fn check(
+        &mut self,
+        cadence: Oracle,
+    )
+    {
+        // With specifications enforced, both procedures' clauses run at
+        // every decision, so the differential takes the oracle's cadence.
+        if cadence == Oracle::Keystroke || !cfg!(anodized_panic) {
+            let mut molder = Molder::with_verdicts(&GRAMMAR, MoldVerdicts::Differential);
+            let split = FormSplit::new(&molder, SourceText::from(self.buffer.text().0));
+            for &run in split.runs() {
+                let _unit = split.mold(&mut molder, run);
+            }
+            assert_eq!(
+                DisagreementCount(0),
+                molder.disagreements(),
+                "the molder's tables decide as its dry runs do{}",
+                self.scene()
+            );
+        }
+        let document = json!({ "uri": self.uri });
+        let at = json!({ "textDocument": document, "position": self.buffer.position().json() });
+        // Invoked: every trigger setting answers it, so the oracle compares
+        // the ghost text whatever the client configured.
+        let inline = json!({
+            "textDocument": document,
+            "position": self.buffer.position().json(),
+            "context": { "triggerKind": 1_i32 },
+        });
+        let selection = json!({
+            "textDocument": document,
+            "positions": [self.buffer.position().json()],
+        });
+        let ghost = self
+            .exchanging(|client| client.request(Method("textDocument/inlineCompletion"), &inline));
+        if cadence == Oracle::Line {
+            self.answers
+                .push(json!({ "diagnostics": self.published, "ghost": ghost }));
+            return;
+        }
+        let hover = self.exchanging(|client| client.request(Method("textDocument/hover"), &at));
+        let ranges = self
+            .exchanging(|client| client.request(Method("textDocument/selectionRange"), &selection));
+        let mut fresh = Client::initialized(Record::Dropped, Quiet::Unheld);
+        let opened = fresh.notify(
+            Method("textDocument/didOpen"),
+            &json!({ "textDocument": {
+                "uri": self.uri, "languageId": "gandr", "version": self.version,
+                "text": self.buffer.text().0,
+            }}),
+        );
+        let whole = opened
+            .iter()
+            .rev()
+            .find_map(|message| message.pointer("/params/diagnostics"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        assert_eq!(
+            self.published,
+            whole,
+            "the published diagnostics are a fresh connection's{}",
+            self.scene()
+        );
+        for method in WHOLE {
+            let params = json!({ "textDocument": document });
+            assert_eq!(
+                self.exchanging(|client| client.request(method, &params)),
+                fresh.request(method, &params),
+                "{} answers as a fresh connection does{}",
+                method.0,
+                self.scene()
+            );
+        }
+        assert_eq!(
+            ghost,
+            fresh.request(Method("textDocument/inlineCompletion"), &inline),
+            "the inline completion is a fresh connection's{}",
+            self.scene()
+        );
+        assert_eq!(
+            ranges,
+            fresh.request(Method("textDocument/selectionRange"), &selection),
+            "the selection ranges are a fresh connection's{}",
+            self.scene()
+        );
+        self.answers.push(json!({
+            "diagnostics": self.published, "ghost": ghost, "hover": hover,
+        }));
+    }
+
+    /// Run `exchange` over the connection, a panic in it — the loop stopped
+    /// answering, or answered with an error — reported at the session's scene.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exchanging<Answer>(
+        &mut self,
+        exchange: impl FnOnce(&mut Client) -> Answer,
+    ) -> Answer
+    {
+        match catch_unwind(AssertUnwindSafe(|| exchange(&mut self.client))) {
+            Ok(answer) => answer,
+            Err(payload) => panic!("{}{}", panic_message(&*payload).0, self.scene()),
+        }
+    }
+
+    /// Where the session stands, for a failure message.
+    ///
+    /// # Specification
+    /// trivial.
+    fn scene(&self) -> String
+    {
+        let text = self.buffer.text().0;
+        let (before, after) = text.split_at(self.buffer.cursor().0);
+        format!(
+            "\n  at {} keystroke {} version {}\n  text: {before}⸢cursor⸣{after}",
+            self.uri, self.keystrokes, self.version
+        )
+    }
+}
+
+/// The message a panic carried, when it carried text.
+///
+/// # Specification
+/// trivial.
+pub fn panic_message(payload: &(dyn Any + Send)) -> Text<'_>
+{
+    Text(
+        payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("a panic without a message"),
+    )
+}

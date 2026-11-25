@@ -1,0 +1,4 @@
+pub data Shape : Type where {
+  | Circle : Shape
+}
+pub def faraway : Integer = 7;

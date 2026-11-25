@@ -1,0 +1,87 @@
+test: typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_dispatcher-11f9202ccd863ba9"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_dispatcher-11f9202ccd863ba9' (x86_64).
+(lldb) settings set -- target.run-args  "typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_dispatcher-11f9202ccd863ba9`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x00000000064ef728
+(lldb) run
+
+running 1 test
+test typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933 ... 
+thread 'typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933' (1224868) panicked at crates/surface-dispatcher/src/typed.rs:8839:9:
+every printed type that lowers again reprints as itself: [
+    (
+        "args(d, f(fn (b) { t(h(b)) }), x, t)",
+        Present(
+            "args(d, f(thunk { fn (b) { t(h(b)) } }), x, t)",
+        ),
+    ),
+    (
+        "args(d, f(fn (b) { t(h(b)) }), x, t) -> -F Unit",
+        Present(
+            "args(d, f(thunk { fn (b) { t(h(b)) } }), x, t) -> -F Unit",
+        ),
+    ),
+    (
+        "(b : a => x) -> args(d, f(fn (c) { t(b(c)) }), x, t) -> -F Unit",
+        Present(
+            "(b : a => x) -> args(d, f(thunk { fn (c) { t(b(c)) } }), x, t) -> -F Unit",
+        ),
+    ),
+    (
+        "args(d, f(fn (b) { t(h(b)) }), x, t)",
+        Present(
+            "args(d, f(thunk { fn (b) { t(h(b)) } }), x, t)",
+        ),
+    ),
+    (
+        "args(d, f(fn (b) { t(h(b)) }), x, t)",
+        Present(
+            "args(d, f(thunk { fn (b) { t(h(b)) } }), x, t)",
+        ),
+    ),
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1224759 launched: 'target/debug-trace/debug/deps/gandr_surface_dispatcher-11f9202ccd863ba9' (x86_64)
+Process 1224759 stopped
+* thread #2, name = 'typed::tests::a', stop reason = breakpoint 1.1
+       frame #0: 0x000055555ba43728 gandr_surface_dispatcher-11f9202ccd863ba9`__rustc::rust_panic at panicking.rs:875:25
+(lldb) bt 24
+* thread #2, name = 'typed::tests::a', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555ba43728 gandr_surface_dispatcher-11f9202ccd863ba9`__rustc::rust_panic at panicking.rs:875:25
+     frame #1: 0x000055555baa4a06 gandr_surface_dispatcher-11f9202ccd863ba9`std::panicking::panic_with_hook at panicking.rs:839:5
+     frame #2: 0x000055555ba427e2 gandr_surface_dispatcher-11f9202ccd863ba9`std::panicking::panic_handler::{closure#0} at panicking.rs:687:13
+     frame #3: 0x000055555ba376f9 gandr_surface_dispatcher-11f9202ccd863ba9`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x000055555ba4399d gandr_surface_dispatcher-11f9202ccd863ba9`__rustc::rust_begin_unwind at panicking.rs:678:5
+     frame #5: 0x000055555ba7515c gandr_surface_dispatcher-11f9202ccd863ba9`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555557385fad gandr_surface_dispatcher-11f9202ccd863ba9`gandr_surface_dispatcher::typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933 at typed.rs:8839:9
+     frame #7: 0x000055555732e177 gandr_surface_dispatcher-11f9202ccd863ba9`gandr_surface_dispatcher::typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933::{closure#0}((null)={}) at typed.rs:8802:65
+     frame #8: 0x0000555556f4c4f6 gandr_surface_dispatcher-11f9202ccd863ba9`<gandr_surface_dispatcher::typed::tests::a_thunk_a_computed_type_writes_reprints_as_printed_3933::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x00005555576ea70b gandr_surface_dispatcher-11f9202ccd863ba9`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x00005555576ea709 gandr_surface_dispatcher-11f9202ccd863ba9`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #11: 0x00005555576f7d65 gandr_surface_dispatcher-11f9202ccd863ba9`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #12: 0x00005555576f7d60 gandr_surface_dispatcher-11f9202ccd863ba9`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x00005555576f7d60 gandr_surface_dispatcher-11f9202ccd863ba9`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #14: 0x00005555576f7d4b gandr_surface_dispatcher-11f9202ccd863ba9`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #15: 0x00005555576f7d4b gandr_surface_dispatcher-11f9202ccd863ba9`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x00005555576f7d4b gandr_surface_dispatcher-11f9202ccd863ba9`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #17: 0x00005555576f7d36 gandr_surface_dispatcher-11f9202ccd863ba9`test::run_test::{closure#0} at lib.rs:668:43
+     frame #18: 0x00005555576f28c4 gandr_surface_dispatcher-11f9202ccd863ba9`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #19: 0x00005555576f2849 gandr_surface_dispatcher-11f9202ccd863ba9`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x00005555576faea2 gandr_surface_dispatcher-11f9202ccd863ba9`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x00005555576fae93 gandr_surface_dispatcher-11f9202ccd863ba9`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x00005555576fae93 gandr_surface_dispatcher-11f9202ccd863ba9`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #23: 0x00005555576fae83 gandr_surface_dispatcher-11f9202ccd863ba9`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

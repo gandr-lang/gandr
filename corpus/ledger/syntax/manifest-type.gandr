@@ -1,0 +1,6 @@
+/// `manifest_type`: a model type with its sorts fixed, one `with` per sort.
+theory Pair where
+  sort A : Type;
+  sort B : Type;
+def pairsOn(x : Type) -> Type =
+  return type(Model Pair with sort A = x with sort B = Unit + Unit)

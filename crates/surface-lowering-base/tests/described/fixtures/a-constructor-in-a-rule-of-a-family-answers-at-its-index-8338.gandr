@@ -1,0 +1,8 @@
+data Width : Type where { | Bit : Width | Word : Width }
+data Term : Width -> Type where {
+  | Low : Term Bit
+  | High : Term Bit
+  | One : Term Word
+  | Choose : (c : Term Bit, x : Term Word, y : Term Word) --> Term Word
+  rule : Choose High x y <=> x;
+}

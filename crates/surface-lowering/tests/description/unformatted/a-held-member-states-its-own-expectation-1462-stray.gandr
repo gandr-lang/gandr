@@ -1,0 +1,5 @@
+data Bit : Type where {
+  @[ checks ]
+  | Low : Bit
+  | High : Bit
+}

@@ -1,0 +1,6 @@
+/// `BuiltinMark.OutsideToolchain`: a `builtin` mark in a source that is no
+/// module of a package of the toolchain. Only `std` binds a row of the builtin
+/// table.
+@[refuses("BuiltinMark.OutsideToolchain")]
+@[builtin("string.append")]
+def append : (a : String, b : String) -> String;

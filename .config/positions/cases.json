@@ -1,0 +1,64 @@
+[
+  {
+    "name": "a struct over an unsigned integer and one over a byte array are hits, and a struct over a signed integer is not",
+    "input": [
+      "crates/kernel-term/src/term.rs:167:pub struct ConstantIndex(usize);",
+      "crates/storage-artifact/src/record.rs:114:pub struct AdmissionKey([u8; ADMISSION_KEY_LEN]);",
+      "crates/kernel-term/src/term.rs:300:pub struct Offset(i64);",
+      ""
+    ],
+    "output": "crates/kernel-term/src/term.rs\tConstantIndex\ncrates/storage-artifact/src/record.rs\tAdmissionKey"
+  },
+  {
+    "name": "a crate-visible field, a generic struct and an indented struct outside a test module are hits",
+    "input": [
+      "crates/kernel-term/src/wire.rs:397:pub struct WireUsize(pub usize);",
+      "crates/storage-values/src/manifest.rs:1253:struct FieldBytes<const WIDTH: usize>([u8; WIDTH]);",
+      "crates/storage-chunker/src/units.rs:106:    pub struct BytePosition(u64);",
+      "crates/storage-schema/src/parts.rs:164:pub(crate) struct Slot(pub(crate) usize);"
+    ],
+    "output": "crates/kernel-term/src/wire.rs\tWireUsize\ncrates/storage-chunker/src/units.rs\tBytePosition\ncrates/storage-schema/src/parts.rs\tSlot\ncrates/storage-values/src/manifest.rs\tFieldBytes"
+  },
+  {
+    "name": "an indented struct after a file's inline test module is left out, one before it stays, and a mod that ends in a semicolon opens no tests",
+    "input": [
+      "crates/kernel-core/src/environment.rs:120:    struct Before(usize);",
+      "crates/kernel-core/src/environment.rs:5304:#[cfg(test)]",
+      "crates/kernel-core/src/environment.rs:5305:mod encoding_tests;",
+      "crates/kernel-core/src/environment.rs:5310:    struct Between(usize);",
+      "crates/kernel-core/src/environment.rs:5314:#[cfg(test)]",
+      "crates/kernel-core/src/environment.rs:5315:mod tests",
+      "crates/kernel-core/src/environment.rs:7848:    struct At(usize);"
+    ],
+    "output": "crates/kernel-core/src/environment.rs\tBefore\ncrates/kernel-core/src/environment.rs\tBetween"
+  },
+  {
+    "name": "a test module under attributes up to four lines below its cfg starts the tests, and one further down does not",
+    "input": [
+      "crates/kernel-check-memo/src/overlay.rs:500:#[cfg(test)]",
+      "crates/kernel-check-memo/src/overlay.rs:504:mod tests {",
+      "crates/kernel-check-memo/src/overlay.rs:537:    struct Named(u64);",
+      "crates/storage-records/src/node.rs:1500:#[cfg(test)]",
+      "crates/storage-records/src/node.rs:1505:mod tests {",
+      "crates/storage-records/src/node.rs:1550:    struct HashSeed(u8);"
+    ],
+    "output": "crates/storage-records/src/node.rs\tHashSeed"
+  },
+  {
+    "name": "a block module with no cfg(test) above it starts no tests, and a struct at the start of its line after the tests stays",
+    "input": [
+      "crates/storage-values/src/units.rs:120:mod units {",
+      "crates/storage-values/src/units.rs:141:    pub struct ChunkCount(usize);",
+      "crates/kernel-term/src/presented.rs:2600:#[cfg(all(test, feature = \"proofs\"))]",
+      "crates/kernel-term/src/presented.rs:2601:mod proofs {",
+      "crates/kernel-term/src/presented.rs:2646:    struct Letter(usize);",
+      "crates/kernel-term/src/presented.rs:2900:pub struct RuleIndex(usize);"
+    ],
+    "output": "crates/kernel-term/src/presented.rs\tRuleIndex\ncrates/storage-values/src/units.rs\tChunkCount"
+  },
+  {
+    "name": "no line gives no hit",
+    "input": [],
+    "output": ""
+  }
+]

@@ -1,0 +1,4 @@
+@[ decomposes(series (event right 0)
+  (parallel (event left 1) (event right 1))) ]
+def a : Integer ;
+def b : Integer ;

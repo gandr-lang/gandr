@@ -1,0 +1,33 @@
+//! `forced` has a parent ask its task before it receives the reply.
+//!
+//! The parent's send, the task's receipt and the task's reply form a chain.
+//! Only the task close commutes with the parent receipt.
+//!
+//! The annotations state the channel web. The parent forks the task, sends a
+//! request, reads the reply and closes.
+//!
+//! - see: `independent.gandr` — two tasks whose plays do not order each other
+//! - see: #3338 — the run trace and the web a source states for a channel
+// The import gives the task protocols.
+import "./task-base.gandr";
+
+/// A parent sends its task a request and reads the reply.
+@[
+  runs("*{}"),
+  traces(decomposes
+    task
+    (series
+      (event right 0)
+      (event left 0)
+      (event left 1)
+      (parallel (event left 2) (series (event right 1) (event right 2)))))
+]
+def forced() -> Unit =
+  let asked = fork (task : Task.Relay) {
+    let request = recv task;
+    send task request;
+    close task
+  };
+  send asked Task.notes
+  let reply = recv asked
+  close asked

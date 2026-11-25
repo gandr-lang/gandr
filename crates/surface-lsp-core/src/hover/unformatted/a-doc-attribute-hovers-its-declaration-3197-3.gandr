@@ -1,0 +1,3 @@
+@[ doc("fi$0rst") ]
+@[ doc("second") ]
+def f = 42;

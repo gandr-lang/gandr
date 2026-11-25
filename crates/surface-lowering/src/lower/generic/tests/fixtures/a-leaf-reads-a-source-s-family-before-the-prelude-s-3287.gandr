@@ -1,0 +1,2 @@
+data Tagged : Type where { | Tagged : (shown : Bool, count : Nat) --> Tagged }
+def eqTagged = Eq.generic Tagged;

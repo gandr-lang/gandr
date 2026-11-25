@@ -1,0 +1,25 @@
+//! `relocated` resumes a stack that captured access to a variable.
+//!
+//! The continuation resumes under its own frame. Its frames contain copied
+//! windows. The view still reads its cell. The checker reports `ViewEscaped`
+//! for the `dangling` source.
+//!
+//! The source imports the host early exit interface.
+//! The handler resumes the continuation. The source runs to `112`.
+//!
+//! A polled Rust future cannot make this move.
+//! - see: #1183 — `relocated`
+import std.process;
+
+/// `relocated` resumes a captured access from a higher stack frame.
+@[runs("112")]
+def relocated() -> Integer =
+  var x = 5
+  let r : Integer = handle c : std.process.Exit.Eff {
+    access x as v { c.exit 1; resume v (v + 7) };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { let m = k *{}; pure m + 100 }
+  };
+  pure x + r

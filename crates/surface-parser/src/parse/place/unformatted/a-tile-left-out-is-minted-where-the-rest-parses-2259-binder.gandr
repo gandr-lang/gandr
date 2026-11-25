@@ -1,0 +1,4 @@
+data Stack : Type where {
+  | Empty : Stack
+  | Push : (x  Integer, rest : Stack) --> Stack
+}

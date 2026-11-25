@@ -1,0 +1,92 @@
+# The claim markers an issue body carries (#3915): the lane that claimed it,
+# `<!-- claim: lane=<lane> -->`, written by `claim:next`, or the lane that
+# last let it go and when, `<!-- released: lane=<lane> at=<time> -->`,
+# written by `claim:release` and by the merge that advances it. Writing a
+# release removes every marker, so a released body carries that one alone. A
+# merge that advances a unit leaves its claim standing, so its release keeps
+# the claim markers (`renewing`, #6954). A release under `--forgo` writes
+# neither (#4104). A claim keeps another lane's
+# claim standing before its own (`claiming`, #4660): when two runs claim at
+# once, the first claim marker is the earlier claim, and it holds the issue.
+# A marker holds a claim only under `status:claimed`, so a claim of a body
+# without the label writes the lane's marker alone (#5531).
+#
+# A marker counts only where a tool writes it, alone on its line (#4839): one
+# quoted in prose or a code span, as an issue about the markers writes it, is
+# text, never a claim, and no claim or release takes it out. A reader also
+# passes over a fenced block.
+
+def claim_marker($lane): "<!-- claim: lane=\($lane) -->";
+def released_marker($lane; $at): "<!-- released: lane=\($lane) at=\($at) -->";
+
+# The pattern of `$marker`, a pattern itself, alone on its line: the blank
+# text before it and the line's end after it. A writer replaces it with a line
+# break and trims the body's end.
+def alone($marker): "(?:\\s*\\n|^)[ \\t]*" + $marker + "[ \\t]*(?:\\n|$)";
+
+# The body with each fenced block taken out, so a reader never meets a marker
+# quoted in one.
+def unfenced: gsub("```[\\s\\S]*?```"; "");
+
+# The body with no claim marker.
+def unmarked: gsub(alone("<!-- (claim|released): [^>\\n]*-->"); "\n");
+
+# The body carrying `$marker` alone, after its text.
+def marked($marker): (. // "" | unmarked | sub("\\s+$"; "")) + "\n\n" + $marker + "\n";
+
+# The body carrying its claim markers and `$lane`'s release at `$at` after
+# them, any earlier release removed: a merge advances a unit whose claim
+# stays, and the release renews the claim's age (#6954).
+def renewing($lane; $at):
+  (. // "" | gsub(alone("<!-- released: [^>\\n]*-->"); "\n") | sub("\\s+$"; ""))
+  + "\n\n" + released_marker($lane; $at) + "\n";
+
+# The lane a body's first claim marker names, the earlier claim, or null.
+def claim_lane: [(. // "") | unfenced | capture(alone("<!-- claim: lane=(?<lane>[^ \\n]+) -->")).lane][0];
+
+# The body carrying `$lane`'s claim marker after any other lane's, its own
+# earlier marker and any release removed.
+def claiming($lane):
+  (. // "" | gsub(alone("<!-- released: [^>\\n]*-->"); "\n") | gsub(alone(claim_marker($lane)); "\n") | sub("\\s+$"; ""))
+  + "\n\n" + claim_marker($lane) + "\n";
+
+# The body `$lane` claims, given the labels `$labels` its read shows (#5531).
+# Under `status:claimed`, another lane's marker can be a live claim, so the
+# body keeps it first (`claiming`, #4660). A live claim adds its label before
+# its marker, so without the label no marker is live, and the body carries
+# the lane's marker alone.
+def claiming($lane; $labels):
+  if ($labels | index("status:claimed")) then claiming($lane) else marked(claim_marker($lane)) end;
+
+# The body without `$lane`'s claim marker, or null when it carries none.
+def unclaiming($lane):
+  if (. // "" | test(alone(claim_marker($lane))))
+  then gsub(alone(claim_marker($lane)); "\n") | sub("\\s+$"; "") + "\n"
+  else null end;
+
+# A body's release, `{lane, at}` with `at` in seconds, or null.
+def release:
+  [(. // "") | unfenced | capture(alone("<!-- released: lane=(?<lane>[^ \\n]+) at=(?<at>[^ \\n]+) -->"))
+    | {lane, at: (.at | fromdateiso8601)}][0];
+
+# A body's release while it keeps the issue for its lane, `{lane, at}`, or
+# nothing. A lane keeps its continuation for 2 hours after its release
+# (#3915). In that time `claim:next` offers the issue to that lane first, and
+# `claim:next` and `claim:take` refuse it to every other lane.
+def kept($now): release | select(. != null and $now - .at < 7200);
+
+# The claim and release markers a body carries alone on their lines, in
+# order, each without its blank text.
+def markers: [(. // "") | unfenced | scan(alone("<!-- (?:claim|released): [^>\\n]*-->")) | gsub("^\\s+|\\s+$"; "")];
+
+# The body written over a body that carried `$old`'s markers (#6210). A seat
+# that rewrites a body from its own draft drops the markers the draft never
+# held, and a dropped claim marker frees the issue for a second lane. So the
+# written body keeps each marker of `$old` that it lacks, in their order,
+# after its text.
+def keeping($old):
+  . as $new
+  | (($old | markers) - ($new | markers)) as $lost
+  | if $lost == [] then $new
+    else ($new // "" | sub("\\s+$"; "")) + "\n\n" + ($lost | join("\n\n")) + "\n"
+    end;

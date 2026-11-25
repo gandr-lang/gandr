@@ -1,0 +1,35 @@
+error[MissingPayload]: the attribute `format` needs a record of the texts `latex`, `typst`, `md`
+   ╭▸ corpus/pathological/attributes/ill-typed-format.gandr:16:3
+   │
+16 │ @[format]
+   │   ━━━━━━ takes a payload
+   │
+   ├ note: `bare` is refused with MissingPayload, as its expectation states
+   ╰ help: give the attribute the payload its schema requires
+
+error[IllTypedPayload]: the attribute `format` takes a record of the texts `latex`, `typst`, `md`, not a text payload
+   ╭▸ corpus/pathological/attributes/ill-typed-format.gandr:21:10
+   │
+21 │ @[format("\\oplus")]
+   │          ━━━━━━━━━ a payload of another schema
+   │
+   ├ note: `bare_text` is refused with IllTypedPayload, as its expectation states
+   ╰ help: give `format` a record of the texts `latex`, `typst`, `md`
+
+error[IllTypedPayload]: the attribute `format` takes a record of the texts `latex`, `typst`, `md`, not a non-literal payload
+   ╭▸ corpus/pathological/attributes/ill-typed-format.gandr:26:10
+   │
+26 │ @[format(*{.html = "&oplus;"})]
+   │          ━━━━━━━━━━━━━━━━━━━━ a payload of another schema
+   │
+   ├ note: `foreign_field` is refused with IllTypedPayload, as its expectation states
+   ╰ help: give `format` a record of the texts `latex`, `typst`, `md`
+
+error[IllTypedPayload]: the attribute `format` takes a record of the texts `latex`, `typst`, `md`, not a non-literal payload
+   ╭▸ corpus/pathological/attributes/ill-typed-format.gandr:31:10
+   │
+31 │ @[format(*{.latex = 2})]
+   │          ━━━━━━━━━━━━━ a payload of another schema
+   │
+   ├ note: `untexted_field` is refused with IllTypedPayload, as its expectation states
+   ╰ help: give `format` a record of the texts `latex`, `typst`, `md`

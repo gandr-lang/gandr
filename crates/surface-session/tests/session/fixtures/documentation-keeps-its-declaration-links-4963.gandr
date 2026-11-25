@@ -1,0 +1,4 @@
+/// See [other], [other] and [Red].
+def answer = 42;
+def other = 1;
+data Color : Type where { | Red : Color }

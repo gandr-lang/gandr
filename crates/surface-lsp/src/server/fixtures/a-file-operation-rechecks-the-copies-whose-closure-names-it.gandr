@@ -1,0 +1,2 @@
+import "./lib/five.gandr";
+def six : Integer = five;

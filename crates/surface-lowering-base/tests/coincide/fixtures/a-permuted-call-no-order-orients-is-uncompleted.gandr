@@ -1,0 +1,8 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+  oper plus : (m : Nat, n : Nat) --> Nat;
+  oper pick : (m : Nat, n : Nat) --> Nat;
+  rule : pick m n ==> plus m n;
+  rule : pick Zero n ==> plus n Zero;
+}

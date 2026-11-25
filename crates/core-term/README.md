@@ -1,0 +1,117 @@
+# gandr-core-term
+
+The core call-by-push-value language: its syntax in a flat arena, the one unified typing context, the definition chain, the per-scope definitional environment, and the co-de Bruijn carrier.
+
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
+- [License](#license)
+<!-- tocstop -->
+
+## Synopsis
+
+**What.** The core language between the surface syntax and the kernel, and the one context its typing rules read. Values and computations on the term side, value types and computation types on the type side, are nodes of an append-only `CoreArena` addressed by four typed `u32` ids. `Context` is the two-zone typing context `Γ; Σ`: flat, de Bruijn, id-addressed and name-free. `DefinitionChain` records each definition's body and unfolding height; `DefinitionalEnvironment` decides, scope by scope, whether a definition is manifest. `FailureClass` is the four-class vocabulary every refusal of the core pipeline is classified into. The crate holds syntax, contexts and native scalar operations; conversion lives in `gandr-core-nbe` and execution in `gandr-core-sequent`. It is `no_std` over `core` and `alloc`.
+
+**Why.** An elaborator, a normalizer and a checker each go under binders, type occurrences and unfold definitions, and separate spellings of the context drift. One flat representation gives every rule one place to read a binder, and cloning it copies two flat vectors, so a conversion or a normalizer takes one by value.
+
+**How.** [`syntax`](src/syntax.rs) states the alphabet and the grammar, [`arena`](src/arena.rs) the nodes and [`context`](src/context.rs) the zones.
+
+## Provided features
+
+- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, the linear arrow `CompType::LinearArrow` with its abstraction `Computation::LinearLambda`, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, positional tuple projections, the fixpoint `Computation::Fixpoint` with its `FixpointEvidence`, the ascription `Computation::Ascribe` that synthesises the type it checks its body against, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
+- `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
+- `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes. `Relocated`, `Relocation` and `Relocated::settle`: a shift or a strengthening carried on an id, and its one write-out. `Carried` and `Sources`: a traced rewrite's report and its read-back.
+- `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, the canonical node of a type (`canonical_value_type`), and `ArenaWatermark` with `CoreArena::truncate_to` and the per-family suffixes minted since a mark (`values_since`, `computations_since`, `value_types_since`, `comp_types_since`).
+- Native `List` types, `ListNil` and `ListCons` values, and an annotated, pure `ListFold`, whose binders [`syntax`](src/syntax.rs) states: the [kernel's List former](../kernel-core/src/check.rs), not a sum encoding or a nominal declaration.
+- Closed effect rows on returners carry named interfaces with typed payloads and replies; `EffectRow::EMPTY` is the pure returner. [`effect`](src/effect.rs) states the union and the inclusion, and `effect::host` the host interfaces.
+- `Context`: `open`, `close`, `occurrence`, `declared`, `linear_use` and `depth` over `Zone::Intuitionistic` and `Zone::Linear`, refusing with `ContextError`.
+- `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
+- `DefinitionalEnvironment`, `ScopeId` and `Transparency`: `root`, `open_scope`, `state` and `transparency`.
+- `FailureClass`: `UserAbsence`, `Unimplemented`, `MalformedSource` and `EngineFault`, the classes a lowering refusal and a checking refusal are each classified into by their own crate's classifier; `Unimplemented` names its `TrackingIssue`.
+- `Value::Hole`, `Value::Mark`, `Computation::Hole`, `Computation::Mark`, `ValueType::Unknown` and `CompType::Unknown`, with `hole::HoleId`, `hole::MarkIndex` and `hole::TermId`: the elaborator's hole surface.
+- `tactic::Tactic`, `hole::HoleId::spliced` and `hole::HoleOrigin::Spliced`: a splice's tactic, carried in its hole's name.
+- `hole::HoleForm`, `hole::HolePlace`, `hole::HoleId::written`, `nominated_in`, `wildcard_in` and `spliced_in`: a hole named by its form and its place among the form's holes of its origin, so an edit to one form renames no hole of another.
+- `hole::matched_thunk`, `matched_product` and `matched_sum` (answering `hole::Components`), `matched_static_pi`, `matched_list`, `matched_stack`, `matched_returner`, `matched_returns`, `matched_function` and `matched_with`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown.
+- `fill_hole`, `wrap_marks`, `substitute_environment`, `substitute_environment_value_type` and `substitute_environment_comp_type`: filling by name, marking by node, and closing a suspended body or a type over an environment.
+- `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers.
+- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`.
+
+## Expected features
+
+- **One arena per run.** The caller keeps every id with the arena that minted it, which [`CoreArena`](src/arena.rs) cannot check.
+- **Admission positions and subterm-table indices from the artifact.** `ConstantIndex` and `GlobalIndex` come from `gandr-kernel-term`; the chain checks their order and does not resolve them.
+
+## Examples
+
+Go under a binder, type its occurrence twice, and close it:
+
+```rust
+use gandr_core_term::Context;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Zone;
+use gandr_kernel_term::DeBruijnIndex;
+
+fn bind_and_close() {
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let mut context = Context::new();
+
+    context.open(Zone::Intuitionistic, unit);
+    let first = context.occurrence(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let again = context.occurrence(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    assert_eq!(first, again);
+    assert_eq!(Ok(unit), context.close(Zone::Intuitionistic));
+}
+```
+
+The definition chain's own example, two definitions sealed in and out of a scope, is on `DefinitionalEnvironment` in [`definition`](src/definition.rs).
+
+## Where the detail lives
+
+Mechanism, rules, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
+
+| Topic | Module |
+| ----- | ------ |
+| The kernel alphabet and the core grammar, nominal data and records, n-ary products and sums, native universe paths, static operators | [`syntax`](src/syntax.rs) |
+| Holes, marks and the unknown type; the tactics a splice runs | [`hole`](src/hole.rs), [`tactic`](src/tactic.rs) |
+| Patterns with holes | [`pattern`](src/pattern.rs) |
+| The native prelude and its runtime assumptions | [`primitive`](src/primitive.rs) |
+| Description decoding | [`description`](src/description.rs) |
+| Universe families | [`classifier`](src/classifier.rs) |
+| Quotes, decode-on-mint and arena ownership | [`arena`](src/arena.rs) |
+| Binder machines | [`rewrite`](src/rewrite.rs) |
+| Zones and the failure state | [`context`](src/context.rs) |
+| Definition heights and per-scope transparency | [`definition`](src/definition.rs) |
+| The failure vocabulary | [`failure`](src/failure.rs) |
+| Effects, handlers and control | [`effect`](src/effect.rs), [`control`](src/control.rs) |
+| The co-de Bruijn carrier, its tiered code and the fence; supports carried on arena nodes | [`support`](src/support.rs), [`arena`](src/arena.rs) |
+| Temporary access, and each grade read as its bound in the usage semiring of `gandr-theory-ordered-algebras` | [`memory`](src/memory.rs) |
+| References and specification attributes | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
+- `Doré-2026-dependent_multiplicities_dependent_linear_type_theory` — background: Maximilian Doré. "Dependent Multiplicities in Dependent Linear Type Theory". 2026, [arXiv:2507.08759](https://arxiv.org/abs/2507.08759) — § 2.2's multiplicity as a term of the host theory, which can depend on other variables; the grades here are static elements of `{0, 1, ω}`.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — each two-point grade reads as its bound in the semiring `{0, 1, ω}`, which `gandr-theory-ordered-algebras` holds.
+- `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
+- `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
+- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
+- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — a grade as a semiring bound on uses.
+- `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface; the four identity rows of `primitive` compute in the kernel, and every other row stays an opaque assumption.
+- `vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf` — anchor: § builtin-binding, the one keyed table of builtins that `builtin` holds.
+- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — newest: § implicits-rule-forced-solutions, a body read with the solutions of its implicits; `Rewrite::Solved` reads them in one walk.
+- `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments` — newest: Liesnikov, Binder and Süberkrüb, "Filling the Gaps of Polarity", Programming 10(3) 19, 2025, `doi:10.22152/programming-journal.org/2025/10/19` — § 9.3's rule Env-∆.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell (`identity::cong_above`).
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: identity never decides validity.
+- `vault:01a178aa-7772-7e72-a3d0-5855883d3db1` — anchor: the crate's page (§ Decisions, item 2) — term ids are not canonical, so `key::NodeKey` names a node by its content and never by an arena id.
+
+## License
+
+Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

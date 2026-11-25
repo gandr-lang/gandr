@@ -1,0 +1,4 @@
+def later : Integer;
+def answer = 42;
+def copy : Integer = later;
+def bad : Integer = "text";

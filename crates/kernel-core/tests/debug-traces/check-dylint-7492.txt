@@ -1,0 +1,9 @@
+command: mise run check:dylint
+issue: #7492
+before: 3f7cc1f0be
+exit: 1
+library case FAILED: #7492: the policy run writes into the checkouts of its cargo home
+  got: 1 of 1 checkouts with a new time
+[check:dylint] ERROR task failed
+after: fc7a24b0e0
+exit: 0

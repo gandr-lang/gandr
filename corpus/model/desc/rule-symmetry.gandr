@@ -1,0 +1,86 @@
+//! A theory states that an operation is commutative, by a rule that swaps
+//! its two arguments.
+//!
+//! The meet of two tallies is one value in each order of its arguments. Each
+//! rule must rewrite, and a rule that swaps two arguments has no direction.
+//! So each reader of the rules must know that form.
+//!
+//! The rule `meet x y <=> meet y x` is a symmetry, and no reader rewrites by
+//! it. Each rule beside it rewrites as before. A model of the theory owes the
+//! law as a member. A case on the terms owes its respect of the law.
+//!
+//! - see: #8291
+
+/// The theory of a vote: two constants and no rule.
+pub theory Vote where
+  /// The sort of votes.
+  sort V : Type;
+  /// The vote against.
+  oper nay : V;
+  /// The vote for.
+  oper aye : V;
+
+/// The theory of a tally of votes, with a commutative meet.
+pub theory Tally where
+  /// The sort of tallies.
+  sort B : Type;
+  /// The tally where no vote is for.
+  oper none : B;
+  /// The tally where each vote is for.
+  oper all : B;
+  /// The meet of two tallies.
+  oper meet : (x : B, y : B) --> B;
+  /// The empty tally on the left absorbs.
+  rule meetNone : meet none x <=> none;
+  /// The full tally on the left is the unit.
+  rule meetAll : meet all x <=> x;
+  /// The meet is commutative. This rule is a symmetry.
+  rule meetComm : meet x y <=> meet y x;
+
+/// The agreement of two votes.
+pub def agree(a : Terms Vote, b : Terms Vote) -> Terms Vote =
+  match a where
+    | Vote.nay => Vote.nay
+    | Vote.aye => b
+
+/// The agreement of two votes is commutative.
+def agreeComm(a : Terms Vote, b : Terms Vote) -> Path (agree a b) (agree b a) =
+  match a where
+    | Vote.nay => match b where
+      | Vote.nay => Path.here Vote.nay
+      | Vote.aye => Path.here Vote.nay
+    | Vote.aye => match b where
+      | Vote.nay => Path.here Vote.nay
+      | Vote.aye => Path.here Vote.aye
+
+/// The meaning of each operation of `Tally`. Its carrier is the votes.
+pub module TallyInVote : Model(Tally) where
+  /// The carrier, a vote.
+  type B = Terms Vote;
+  /// The empty tally means the vote against.
+  def none : Terms Vote = Vote.nay;
+  /// The full tally means the vote for.
+  def all : Terms Vote = Vote.aye;
+  /// The meet means the agreement.
+  def meet(x : Terms Vote, y : Terms Vote) -> Terms Vote = agree x y;
+  /// The absorption law holds by computation.
+  def meetNone(x : Terms Vote) -> Path (meet none x) none = Path.here Vote.nay;
+  /// The unit law holds by computation.
+  def meetAll(x : Terms Vote) -> Path (meet all x) x = Path.here x;
+  /// The symmetry holds by the lemma. The model owes it as it owes each rule.
+  def meetComm(x : Terms Vote, y : Terms Vote) -> Path (meet x y) (meet y x) = agreeComm x y;
+
+/// The vote of a tally. The fold respects the three rules of `Tally`.
+@[respects(*{TallyInVote.meetNone, TallyInVote.meetAll, TallyInVote.meetComm})]
+pub def rec poll(t : Terms Tally) -> Terms Vote =
+  match t where
+    | Tally.none => TallyInVote.none
+    | Tally.all => TallyInVote.all
+    | Tally.meet(x, y) => TallyInVote.meet (poll[<] x) (poll[<] y)
+
+/// A meet whose left side is the full tally runs to its right side.
+@[runs("Vote.aye")]
+def polled() -> Terms Vote = poll (Tally.meet Tally.all Tally.all);
+
+/// A rule that rewrites still decides a path beside the symmetry.
+def absorbed : Path (Tally.meet Tally.none Tally.all) Tally.none = Path.here Tally.none;

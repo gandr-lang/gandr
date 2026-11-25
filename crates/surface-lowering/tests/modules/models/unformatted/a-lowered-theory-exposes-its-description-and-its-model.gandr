@@ -1,0 +1,3 @@
+data Flag : Type where {{ | Off : Flag | On : Flag }}
+{SIGN}module Setoids : Model(CatShape) where {{
+  {{SETOIDS}}}}

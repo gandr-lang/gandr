@@ -1,0 +1,59 @@
+# The owner's set for the crates of the lock file and the manifests of ours.
+# It holds the licences that they may hold, the sources that they may come
+# from and the duplicate versions that the tree holds. The owner alone widens
+# it, by a code owner's review of this file. `mise run check:deny` reads the
+# licences, the sources and the bans in the landing's checks.
+# `mise run report:advisories` reads the advisories each night.
+# - see: #7743, `.github/CODEOWNERS`
+[graph]
+all-features = true
+
+[licenses]
+# Each licence that a crate of the lock file or a manifest of ours may hold.
+# An expression holds when one side of an `OR` holds and both sides of an
+# `AND` hold, so `axboe-liburing`'s `MIT OR LGPL-2.1-only` holds as MIT.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 1.0
+# A licence that one crate alone may bring.
+exceptions = [
+  { crate = "notify", allow = ["CC0-1.0"] },
+  { crate = "spez", allow = ["BSD-2-Clause"] },
+]
+# A licence of the list that no crate holds does not refuse a tree. So a
+# change that removes a crate needs no review of this file.
+unused-allowed-license = "allow"
+# A crate that declares no licence takes a `[[licenses.clarify]]` that names
+# it, with its expression and the digest of its licence file. No crate needs
+# one today, and no default stands for a crate that declares none.
+
+[licenses.private]
+ignore = false
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+  "https://github.com/gandr-lang/anodized",
+  "https://github.com/gandr-lang/quenchant",
+]
+unused-allowed-source = "allow"
+
+[bans]
+# A second version of a crate warns and refuses nothing, so an update of a
+# dependency needs no review of this file.
+multiple-versions = "warn"
+
+[advisories]
+# The database comes from the network, so only the nightly reads it.
+yanked = "deny"

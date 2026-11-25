@@ -1,0 +1,10 @@
+theory Named where {
+  /// Constant 0.
+  oper  : String;
+  /// Constant 1.
+  oper n1 : String;
+  /// Constant 2.
+  oper n2 : String;
+  /// Constant 3.
+  oper n3 : String;
+}

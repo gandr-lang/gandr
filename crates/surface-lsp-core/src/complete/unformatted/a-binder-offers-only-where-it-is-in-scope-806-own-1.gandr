@@ -1,0 +1,2 @@
+{head}n
+    | Succ(p) => Succ (p

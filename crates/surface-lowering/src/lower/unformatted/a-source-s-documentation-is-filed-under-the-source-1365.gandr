@@ -1,0 +1,7 @@
+{base}/// Dangling.
+
+def b = 2 ;
+//! The importer,
+
+//! with two runs. See [gone].
+def c = 3 ;

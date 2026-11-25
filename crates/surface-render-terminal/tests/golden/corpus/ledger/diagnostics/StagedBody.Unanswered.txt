@@ -1,0 +1,8 @@
+error[StagedBody.Unanswered]: no staged answer matches the `thir` mark's file and function
+  ╭▸ corpus/ledger/diagnostics/StagedBody.Unanswered.gandr:5:3
+  │
+5 │ @[thir(("example\t.rs", "identity"))]
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a mark with no staged answer
+  │
+  ├ note: `identityBody` is refused with StagedBody.Unanswered, as its expectation states
+  ╰ help: write the file and the function as two texts with no escape

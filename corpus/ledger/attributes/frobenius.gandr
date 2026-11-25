@@ -1,0 +1,8 @@
+/// `frobenius`: an unindexed sort of a theory whose wires a circuit rule
+/// merges and splits.
+theory Wires where
+  /// A wire that merges and splits.
+  @[frobenius]
+  sort Q : Type;
+  /// A node with one input and one output.
+  oper f : (a : Q) --> (b : Q);

@@ -1,0 +1,39 @@
+/// This source states calls that supply values for dependent types.
+///
+/// A dependent record type reads its first component.
+/// A dependent function type reads its argument.
+///
+/// The checker runs a pure call before a following type reads its value.
+/// `Path.ap` answers at the parameter function span.
+///
+/// - see: #426 — `toLoopThroughImage`, `fromRecord`
+/// - see: #443
+
+// The circle and the integers.
+import "./circle-base.gandr";
+// The map a point and a loop there determine, `fromLoopAt`.
+import "./circle-rotation.gandr";
+
+/// The `loopImage` function maps the circle loop through `f`.
+def loopImage(f : Circle -> Int) -> Path[.A = Int] (f Base) (f Base) =
+  Path.ap f loop
+
+/// The second `toLoopThroughImage` field reads the first
+/// field through `loopImage`.
+def toLoopThroughImage(f : Circle -> Int) -> *{
+  point : Int,
+  around : Path[.A = Int] point point
+} =
+  *{f Base, loopImage f}
+
+/// The checker refuses the loop image of another map.
+@[refuses("TypeMismatch")]
+def toOtherLoop(f : Circle -> Int, g : Circle -> Int) -> *{
+  point : Int,
+  around : Path[.A = Int] point point
+} =
+  *{f Base, loopImage g}
+
+/// The `fromRecord` type reads a record projection through its dependent type.
+def fromRecord(r : *{point : Int, around : Path[.A = Int] point point}, c : Circle) -> Int =
+  fromLoopAt r.point r.around c

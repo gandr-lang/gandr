@@ -1,0 +1,8 @@
+/// `RulesUnoriented`: a rule of a block's rules the path order does not orient,
+/// so the rules may not end.
+@[refuses("RulesUnoriented")]
+data Marks : Type where {
+  | Aye : Marks
+  | Nay : Marks
+  rule : Aye <=> Nay;
+}

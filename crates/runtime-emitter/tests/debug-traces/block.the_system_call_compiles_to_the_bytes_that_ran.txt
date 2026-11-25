@@ -1,0 +1,67 @@
+test: block::the_system_call_compiles_to_the_bytes_that_ran
+package: gandr-runtime-emitter
+command: mise run debug:test gandr-runtime-emitter block::the_system_call_compiles_to_the_bytes_that_ran --break Blocks>::assemble$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-runtime-emitter/98b3e04a8a7ebc41/out/tests-98b3e04a8a7ebc41"
+Current executable set to 'target/debug-trace/debug/build/gandr-runtime-emitter/98b3e04a8a7ebc41/out/tests-98b3e04a8a7ebc41' (x86_64).
+(lldb) settings set -- target.run-args  "block::the_system_call_compiles_to_the_bytes_that_ran" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Blocks>::assemble$
+Breakpoint 1: where = tests-98b3e04a8a7ebc41`<gandr_runtime_emitter::block::Blocks>::assemble + 51 at block.rs:764:13, address = 0x0000000000640c93
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-98b3e04a8a7ebc41`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x0000000000c38888
+(lldb) run
+
+running 1 test
+test block::the_system_call_compiles_to_the_bytes_that_ran ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3111014 launched: 'target/debug-trace/debug/build/gandr-runtime-emitter/98b3e04a8a7ebc41/out/tests-98b3e04a8a7ebc41' (x86_64)
+Process 3111014 stopped
+* thread #2, name = 'block::the_syst', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555b94c93 tests-98b3e04a8a7ebc41`<gandr_runtime_emitter::block::Blocks>::assemble(self={assembler:{0:"/tmp/flex-d-8133-llc"}, directory:None, slots:{raw:{table:{v:{value:{…}}}, collector:strong=1, weak=1, resize:Incremental(64), count:{0:size=32}, initial_capacity:1, hasher:{k0:4856022904393418480, k1:8167536767357883277}}}}, description={target:LinuxX86_64, template:{0:"syscall"}, operands:size=4, answer:Place(Register({0:"rax"})), clobbers:size=2, options:{memory:Clobbered, flags:Clobbered}}) at block.rs:764:13
+(lldb) bt 24
+* thread #2, name = 'block::the_syst', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555b94c93 tests-98b3e04a8a7ebc41`<gandr_runtime_emitter::block::Blocks>::assemble(self={assembler:{0:"/tmp/flex-d-8133-llc"}, directory:None, slots:{raw:{table:{v:{value:{…}}}, collector:strong=1, weak=1, resize:Incremental(64), count:{0:size=32}, initial_capacity:1, hasher:{k0:4856022904393418480, k1:8167536767357883277}}}}, description={target:LinuxX86_64, template:{0:"syscall"}, operands:size=4, answer:Place(Register({0:"rax"})), clobbers:size=2, options:{memory:Clobbered, flags:Clobbered}}) at block.rs:764:13
+     frame #1: 0x0000555555881aa1 tests-98b3e04a8a7ebc41`<gandr_runtime_emitter::block::Blocks>::compile(self={assembler:{0:"/tmp/flex-d-8133-llc"}, directory:None, slots:{raw:{table:{v:{value:{…}}}, collector:strong=1, weak=1, resize:Incremental(64), count:{0:size=32}, initial_capacity:1, hasher:{k0:4856022904393418480, k1:8167536767357883277}}}}, description={target:LinuxX86_64, template:{0:"syscall"}, operands:size=4, answer:Place(Register({0:"rax"})), clobbers:size=2, options:{memory:Clobbered, flags:Clobbered}}) at block.rs:705:33
+     frame #2: 0x00005555558e5f68 tests-98b3e04a8a7ebc41`tests::block::the_system_call_compiles_to_the_bytes_that_ran at block.rs:116:28
+     frame #3: 0x00005555558dd767 tests-98b3e04a8a7ebc41`tests::block::the_system_call_compiles_to_the_bytes_that_ran::{closure#0}((null)={}) at block.rs:94:52
+     frame #4: 0x00005555558afe06 tests-98b3e04a8a7ebc41`<tests::block::the_system_call_compiles_to_the_bytes_that_ran::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x000055555597148b tests-98b3e04a8a7ebc41`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #6: 0x0000555555971489 tests-98b3e04a8a7ebc41`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #7: 0x000055555597e665 tests-98b3e04a8a7ebc41`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #8: 0x000055555597e660 tests-98b3e04a8a7ebc41`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #9: 0x000055555597e660 tests-98b3e04a8a7ebc41`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #10: 0x000055555597e64b tests-98b3e04a8a7ebc41`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #11: 0x000055555597e64b tests-98b3e04a8a7ebc41`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #12: 0x000055555597e64b tests-98b3e04a8a7ebc41`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #13: 0x000055555597e636 tests-98b3e04a8a7ebc41`test::run_test::{closure#0} at lib.rs:645:43
+     frame #14: 0x0000555555979054 tests-98b3e04a8a7ebc41`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #15: 0x0000555555978fd9 tests-98b3e04a8a7ebc41`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #16: 0x00005555559816f2 tests-98b3e04a8a7ebc41`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #17: 0x00005555559816e3 tests-98b3e04a8a7ebc41`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #18: 0x00005555559816e3 tests-98b3e04a8a7ebc41`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #19: 0x00005555559816d3 tests-98b3e04a8a7ebc41`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #20: 0x00005555559816d3 tests-98b3e04a8a7ebc41`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #21: 0x00005555559816d3 tests-98b3e04a8a7ebc41`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #22: 0x00005555559816c4 tests-98b3e04a8a7ebc41`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #23: 0x00005555561b119f tests-98b3e04a8a7ebc41`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+(lldb) frame variable --depth 3
+(gandr_runtime_emitter::block::Blocks *) self = 0x00007ffff7bc9068 {assembler:{0:"/tmp/flex-d-8133-llc"}, directory:None, slots:{raw:{table:{v:{value:{…}}}, collector:strong=1, weak=1, resize:Incremental(64), count:{0:size=32}, initial_capacity:1, hasher:{k0:4856022904393418480, k1:8167536767357883277}}}}
+(gandr_runtime_emitter::block::Description *) description = 0x00007ffff7bc9310 {target:LinuxX86_64, template:{0:"syscall"}, operands:size=4, answer:Place(Register({0:"rax"})), clobbers:size=2, options:{memory:Clobbered, flags:Clobbered}}
+(lldb) up
+frame #1: 0x0000555555881aa1 tests-98b3e04a8a7ebc41`<gandr_runtime_emitter::block::Blocks>::compile(self={assembler:{0:"/tmp/flex-d-8133-llc"}, directory:None, slots:{raw:{table:{v:{value:{…}}}, collector:strong=1, weak=1, resize:Incremental(64), count:{0:size=32}, initial_capacity:1, hasher:{k0:4856022904393418480, k1:8167536767357883277}}}}, description={target:LinuxX86_64, template:{0:"syscall"}, operands:size=4, answer:Place(Register({0:"rax"})), clobbers:size=2, options:{memory:Clobbered, flags:Clobbered}}) at block.rs:705:33
+(lldb) frame variable --depth 3
+(gandr_runtime_emitter::block::Blocks *) self = 0x00007ffff7bc9068 {assembler:{0:"/tmp/flex-d-8133-llc"}, directory:None, slots:{raw:{table:{v:{value:{…}}}, collector:strong=1, weak=1, resize:Incremental(64), count:{0:size=32}, initial_capacity:1, hasher:{k0:4856022904393418480, k1:8167536767357883277}}}}
+(gandr_runtime_emitter::block::Description *) description = 0x00007ffff7bc9310 {target:LinuxX86_64, template:{0:"syscall"}, operands:size=4, answer:Place(Register({0:"rax"})), clobbers:size=2, options:{memory:Clobbered, flags:Clobbered}}
+(gandr_runtime_emitter::block::Key) key = {0:{0:"iV\xb37\x90cn\0\xdfJ\xbf\xe8\U00000016\U00000018A\xbf\x85\xe21\xf0\xa6\rq\U0000001b؁\xf5\U00000001\xad\xe0`\x99"}}
+(gandr_runtime_emitter::block::Target) target = LinuxX86_64
+(alloc::rcs::arc::Arc<gandr_runtime_emitter::block::Slot, alloc::alloc::Global>) slot = strong=2, weak=1 {
+  data = {code:{once:{inner:{state_and_queued:{v:{…}}}}, value:{value:{None:(), value:{value:{…}}}}, _marker:{}}, compiling:{inner:{futex:{v:{value:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{None:()}}}
+}
+(std::sync::poison::mutex::MutexGuard<void>) _compiling = {lock:{inner:{futex:{v:{value:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{None:()}}, poison:{panicking:false}}
+(core::option::Option<std::path::PathBuf>) file = None

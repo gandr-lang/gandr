@@ -1,0 +1,4 @@
+/// `identifier.pattern`: a name bound by a pattern.
+def same(n : Integer) -> Integer =
+  match n where
+    | m => m

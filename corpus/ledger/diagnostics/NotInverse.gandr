@@ -1,0 +1,27 @@
+/// `NotInverse`: translator tables that are not mutually inverse.
+theory Magma where
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+
+def exchange(b : Bool) -> Bool =
+  match b where
+    | true => +{.1 = *{}}
+    | false => +{.0 = *{}}
+
+def boolId(b : Bool) -> Bool =
+  b
+
+def keep(e : +{Unit}) -> +{Unit} =
+  e
+
+def raised = ua[
+  2,
+  4
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+@[refuses("NotInverse")]
+def lopsided = ua[
+  1,
+  4
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = boolId, .one = keep});

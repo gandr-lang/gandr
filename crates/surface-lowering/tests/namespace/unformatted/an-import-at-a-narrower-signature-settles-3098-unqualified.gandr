@@ -1,0 +1,5 @@
+{theory}import "./base.gandr" : Greeting ;
+def one : String ;
+def one = welcome ;
+def two : Integer ;
+def two = count ;

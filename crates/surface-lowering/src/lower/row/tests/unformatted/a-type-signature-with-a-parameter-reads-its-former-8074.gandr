@@ -1,0 +1,13 @@
+/// The finite lists, declared by the row of the one table that the key `list`
+/// names.
+@[builtin("list")]
+pub type Seq(a : Type) : Type;
+
+/// A list literal is a value at the declared former.
+def three : Seq Integer = #[1, 2, 3];
+
+/// A list of words is no list of numbers.
+def words : Seq Integer = #["a"];
+
+/// A number is no value at the declared former.
+def number : Seq Integer = 1;

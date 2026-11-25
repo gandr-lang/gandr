@@ -1,0 +1,3 @@
+type Integer = String ;
+def word(x : Integer) -> String = x ;
+def number() -> Integer = 0 ;

@@ -1,0 +1,37 @@
+// A role that requires the older version of a store's signature, twice.
+//
+// A program and its sites change on their own schedules. A deployment states
+// how a newer module answers an older requirement.
+//
+// `far` requires two stores of strings at the older signature, which reads
+// by `get`: `store` and `cache`. A site whose module models the newer
+// signature answers each one only through a translation. The manifold's
+// policy must admit each translation.
+//
+// - see: `translated.versions.gandr` — the two versions and the flow between
+//   them
+// - see: `translated.site.gandr` — a site that answers `store` through a
+//   renaming and `cache` via a flow
+// - see: `translated.manifold.gandr` — `far` at that site, under `Path`
+// - see: `corpus/pathological/worlds/translated.gandr` — a translation under
+//   `Exact`, refused by name
+// - see: `corpus/pathological/worlds/rewritten.gandr` — a flow with code
+//   under `Path`, refused at its member
+
+// The older store.
+import "./translated.versions.gandr" (Older);
+
+/// The world the entry runs at.
+pub world near;
+
+/// The world the work runs at: two stores of strings, `store` and `cache`, at
+/// the older signature.
+pub world far requires [
+  store : Older with sort V = String,
+  cache : Older with sort V = String
+];
+
+/// `far` computes forty-two and returns it.
+@[entry(*{near, far}), runs("42")]
+def main() -> Integer =
+  migrate [far] { pure (6 * 7) }

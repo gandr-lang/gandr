@@ -1,0 +1,84 @@
+// This source models short string storage.
+//
+// A short string stores its bytes inline. It uses no allocation through the
+// inline capacity. A long string stores bytes in a heap buffer. Both forms
+// expose the same bytes.
+//
+// `store` selects the location. `own` stores code points as bytes and adds a
+// zero.
+//
+// - see: #1481 — `repeatOnto`
+// - see: libc++ `std::string` — small-string representation
+// - see: Rust `compact_str` — inline 24-byte representation
+
+// This source imports declarations for lists, bytes and ownership.
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+import "./nul-terminated.gandr";
+
+/// `Place` records string byte storage.
+pub data Place : Type where
+  | Inside : Place
+  | OnHeap : Place
+
+/// `store` keeps a short byte list inline.
+/// It stores a longer byte list in an unshared heap buffer.
+pub def store(bs : List Integer) -> Repr =
+  let n = count bs
+  let fits = n <= inlineCapacity
+  match fits where
+    | true => Inline bs
+    | false => Shared 1 bs
+
+/// This function stores code points as UTF-8 bytes with a final zero.
+pub def own(cs : List Integer) -> Repr =
+  store (terminated cs)
+
+/// `place` reads byte storage from a string representation.
+pub def place(s : Repr) -> Place =
+  match s where
+    | Inline(bs) => Inside
+    | Shared(n, bs) => OnHeap
+
+/// This function adds `n` copies of `c` before `onto`.
+
+// A loop carries the list and the count.
+
+// The loop can run forever.
+
+// The row states `Partial`.
+pub def repeatOnto(c : Integer, n : Integer, onto : List Integer) -> [Partial] List Integer =
+  var acc = onto
+  var left = n
+  while left > 0 {
+    access acc as a { resume a (Cons c a : List Integer) };
+    access left as v { resume v (v - 1) }
+  };
+  pure acc
+
+/// This test keeps `hi` inline.
+@[runs("Inside")]
+def hiPlace() -> Place = place (own (Cons 104 (Cons 105 Nil) : List Integer));
+
+/// This test keeps a twenty-three-byte string inline.
+@[runs("Inside")]
+def fullPlace() -> [Partial] Place =
+  let cs = repeatOnto 97 23 (Nil : List Integer)
+  place (own cs)
+
+/// This test stores a twenty-four-byte string on the heap.
+@[runs("OnHeap")]
+def spilledPlace() -> [Partial] Place =
+  let cs = repeatOnto 97 24 (Nil : List Integer)
+  place (own cs)
+
+/// This test reads a string as its owned bytes.
+@[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
+def hiBytes() -> List Integer = bytes (own (Cons 104 (Cons 105 Nil) : List Integer));
+
+/// This test counts a spilled string and its final zero.
+@[runs("25")]
+def spilledCount() -> [Partial] Integer =
+  let cs = repeatOnto 97 24 (Nil : List Integer)
+  let s = own cs
+  count (bytes s)

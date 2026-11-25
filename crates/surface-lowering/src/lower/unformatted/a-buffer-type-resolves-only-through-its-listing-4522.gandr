@@ -1,0 +1,3 @@
+
+import std.buffer (Buf, Web) ;
+def b = Buf ; def w = Web ;

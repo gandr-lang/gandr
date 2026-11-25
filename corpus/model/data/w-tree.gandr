@@ -1,0 +1,48 @@
+//! A well-founded tree has a branching function.
+//!
+//! A node maps each branch to a subtree.
+//! The family occurs only to the right of that arrow.
+//! It is thus strictly positive.
+//!
+//! `size` applies the function to each branch.
+//! It recurses one stage below the node.
+//!
+//! - cites: [MartinLof-1982-constructive_mathematics_and_computer_programming]
+//!
+//! [MartinLof-1982-constructive_mathematics_and_computer_programming]: https://doi.org/10.1016/S0049-237X(09)70189-2 "Martin-Löf, Constructive Mathematics and Computer Programming"
+
+// This source uses naturals for fold counts and `Two` for branches.
+import "./data-base.gandr";
+
+/// A `Tree` node maps each branch to a subtree.
+data Tree : Type where
+  | Leaf : Tree
+  | Node : (f : Two -> Tree) --> Tree
+
+/// `size` applies a node function to each branch.
+/// It counts each subtree one stage below that node.
+def rec size(t : Tree) -> Nat =
+  match t where
+    | Leaf => Succ Zero
+    | Node(f) => {
+      let l = f L;
+      let r = f R;
+      plus (size[<] l) (size[<] r)
+    }
+
+/// Every branch a leaf.
+def leaves(x : Two) -> Tree = Leaf;
+
+/// A node over two leaves.
+def cherry : Tree = Node leaves;
+
+/// A node whose left branch is a cherry and whose right is a leaf.
+def lopsided : Tree = Node (fun (x) { match x -> -F Tree { | L => cherry | R => Leaf } });
+
+/// `cherry_leaves` counts two leaves through its function.
+@[runs("Succ (Succ Zero)")]
+def cherry_leaves : () -> Nat = size cherry;
+
+/// `deeper` counts three leaves through two functions.
+@[runs("Succ (Succ (Succ Zero))")]
+def deeper : () -> Nat = size lopsided;

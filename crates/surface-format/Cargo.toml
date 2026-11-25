@@ -1,0 +1,52 @@
+[package]
+name = "gandr-surface-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The source formatter: a parsed gandr source laid out at a page width, its tokens and comments kept, its meaning checked unchanged"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["formatter", "gandr", "pretty-printing"]
+categories = ["text-processing"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The layout engine lays each top-level form out; the parser reads the
+# formatted text back for the meaning check; the grammar names the forms
+# kept verbatim; the syntax tree is the input. A rewrite between the
+# spellings is checked by lowering the source and the rewritten text into
+# one core arena and comparing what each declaration lowered to. The
+# explicit form spells a forgetting map's carriers through the shared
+# printer, under the names the diagnostics give a lowered module's constants
+# and constructors. The checker names the reduct
+# it applies at a crossing by its constant. The grammar's walk direction reads
+# what a token's mold may follow, which tells a shape face's `{` apart.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-layout.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-graphs.workspace = true
+quenchant-shape.workspace = true
+
+# Golden layouts at two widths; the corpus sweep draws its sample through the
+# sweep crate.
+[dev-dependencies]
+expect-test.workspace = true
+gandr-workflow-sweep.workspace = true
+
+[lints]
+workspace = true

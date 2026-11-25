@@ -1,0 +1,22 @@
+/// A carrier.
+theory PartialEq where
+  sort Carrier : Type;
+
+/// Equality over a carrier.
+theory Eq where
+  include PartialEq;
+
+/// An order over a carrier with its equality.
+theory Ord where
+  include Eq;
+  oper lt : (a : Carrier, b : Carrier) --> Bool;
+
+/// The integers' order.
+module OrdInteger : Model(Ord) with sort Carrier = Integer where
+  /// Whether one integer is below another.
+  def lt(a : Integer, b : Integer) -> Bool = int.lt a b;
+
+/// One, after a comparison it does not read.
+def one(c : Integer) -> Integer =
+  let small = c < 128
+  1

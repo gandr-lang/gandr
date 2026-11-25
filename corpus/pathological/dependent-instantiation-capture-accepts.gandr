@@ -1,0 +1,21 @@
+@[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
+def comp(
+  a : Type,
+  b : Type,
+  c : Type,
+  f : a -> b,
+  g : b -> c,
+  x : a
+) -> c =
+  g (f x)
+
+@[refuses("TypeMismatch")]
+def captured(
+  a : Type,
+  b : Type,
+  c : Type,
+  d : Type,
+  u : a -> d,
+  h : d -> d
+) -> a -> d =
+  thunk { comp a c d u h }

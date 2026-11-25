@@ -1,0 +1,9 @@
+theory Counter where {
+  sort C : Type;
+  oper zero : C;
+}
+def shared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> -F Integer {
+  return 0
+}
+def fixed(x : Type, f : Model(Counter) with sort C = x, c : f.C) -> -F x { c }
+def closed(g : Model(Counter) with sort C = Integer, c : g.C) -> -F Integer { c }

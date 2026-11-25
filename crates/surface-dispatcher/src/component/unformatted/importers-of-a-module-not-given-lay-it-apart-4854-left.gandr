@@ -1,0 +1,3 @@
+import "./shared.gandr" ;
+def two : Integer ;
+def two = one ;

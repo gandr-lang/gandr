@@ -1,0 +1,58 @@
+// The twin of `model/desc/second-order-rules.gandr`: β, whose instantiated
+// variable stands under a binder the order cannot see past; β's first-order
+// shadow, which loses the binding; an instantiation at the wrong count; a rule
+// applying an operation the signature does not declare; and ζ beside a rule
+// rewriting its redex apart.
+//
+// - see: #1326 — `Beta`
+// - see: #1324 — `BetaShadow`, `LetTwice`
+// - see: #2375 — `Undeclared`
+
+/// β substitutes `lam`'s body, which stands under `lam` rather than as an
+/// argument of `app`: the order does not put `t(u)` below the redex, so the
+/// rule is not known to end.
+@[refuses("RulesUnoriented")]
+theory Beta where
+  sort Tm : Type+;
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
+  oper app : (t : Tm, u : Tm) --> Tm;
+  rule beta : app (lam t) u <=> t u;
+
+/// β's first-order shadow passes `lam`'s body to `app`, whose port binds
+/// nothing: the binding is lost, and the description check refuses the rule
+/// by the variable's name.
+@[refuses("IllFormedDescription")]
+theory BetaShadow where
+  sort Tm : Type+;
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
+  oper app : (t : Tm, u : Tm) --> Tm;
+  rule betaShadow : app (lam t) u <=> app t u;
+
+/// An instantiation takes one argument per variable its port binds, and `t`
+/// binds one.
+@[refuses("IllFormedDescription")]
+theory LetTwice where
+  sort Tm : Type+;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
+  rule zeta : let u t <=> t u u;
+
+/// `putPut` applies `f`, which no operation declares, once on each side: the
+/// description check refuses the rule once, and its refusal is the theory's
+/// alone, with no overlap check run over the rule it refused.
+@[refuses("IllFormedDescription")]
+theory Undeclared where
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putPut : put s (put (f s) k) <=> put (f s) k;
+
+/// ζ beside a rule rewriting `let` at `zero` to `zero`: their left sides
+/// overlap at the root, and the reducts `t(zero)` and `zero` part.
+@[refuses("RulesOverlapSecondOrder")]
+theory LetToZero where
+  sort Tm : Type+;
+  oper zero : Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
+  rule zeta : let u t <=> t u;
+  rule toZero : let zero t <=> zero;

@@ -1,0 +1,3 @@
+import "./base.gandr" as base;
+def boxed : base.Box;
+def boxed = 1;

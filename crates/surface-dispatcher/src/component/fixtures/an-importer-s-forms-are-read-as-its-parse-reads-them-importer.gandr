@@ -1,0 +1,4 @@
+/// Imports the base.
+import "./base.gandr";
+import "file:///far.gandr" as far;
+def two : Integer = one;

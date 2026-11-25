@@ -1,0 +1,3 @@
+{stated}
+/// A declaration the sweep adds.
+pub def swept = 1;

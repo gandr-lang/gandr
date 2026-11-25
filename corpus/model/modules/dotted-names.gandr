@@ -1,0 +1,30 @@
+// This source shows a dotted declaration name.
+//
+// `Kit` contains a theory and a module through the same prefix.
+//
+// A path resolves the theory, the module and their members. The checker opens
+// each module of a prefix that the source does not declare.
+//
+// - see: #2687
+
+/// `Kit.Labelled` declares a label.
+theory Kit.Labelled where
+  /// The label.
+  oper label : String;
+
+/// `Kit.Tools` defines breadth.
+module Kit.Tools where
+  /// A breadth.
+  def breadth = 4;
+
+/// `Tag` models `Kit.Labelled`.
+module Tag : Model(Kit.Labelled) where
+  /// Its label.
+  def label : String = "tag";
+
+/// `breadth` reads `Kit.Tools.breadth`.
+def breadth = Kit.Tools.breadth;
+
+/// `labelled_breadth` gathers the label and breadth.
+@[runs("*{.breadth = 4, .label = \"tag\"}")]
+def labelled_breadth = *{.label = Tag.label, .breadth = breadth};

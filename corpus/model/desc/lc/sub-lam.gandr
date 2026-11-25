@@ -1,0 +1,16 @@
+//! Law 5 moves substitution under an abstraction.
+//!
+//! `sub(lam(t), s)` equals `lam(sub(t, lift(s)))`.
+//!
+//! The substitution lifts under the abstraction. The abstraction arm of
+//! `subst` proves the law by computation.
+//!
+//! - see: #640
+
+// The syntax and its substitution.
+import "./syntax.gandr";
+
+/// A substitution applied to an abstraction is the abstraction of its body
+/// under the lifted substitution.
+pub def subLam(t : Term, s : Env) -> Path (subst (Lam t) s) (Lam (subst t (Lift s))) =
+  Path.here (Lam (subst t (Lift s)))

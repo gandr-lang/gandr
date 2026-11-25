@@ -1,0 +1,131 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: landing-queue
+
+# The server-side landing watcher (#2701). `pr:watch` queues a pull request
+# the moment its head is green and restacks a dequeued stack, but only while
+# its seat's shell lives; this run reads every open pull request and acts
+# once (`.config/pr-stack/landing.bash`, decided by `landing.jq`).
+#
+# A reading follows the events that change what lands (#2984): a `CI` run
+# completing (a pull request's head turning green or red, a merge-queue
+# entry passing or failing, `main` moving) and the two states no completion
+# marks, a pull request leaving the queue (`dequeued`) and a draft taken back
+# (`ready_for_review`, the end of a `pr:hold`). There is no schedule: GitHub's
+# scheduler ran this repository's schedules four to five hours late. The run
+# checks out the default branch and runs its script there, never a pull
+# request's code, so `workflow_run`'s write token reaches nothing a pull
+# request wrote.
+#
+# The workflow's own token may not enqueue (the queue answers "Enqueuer is
+# not authorized to merge"), and GitHub starts no run for its pushes, so it
+# only tells: one comment per head, `pr-green`, `pr-red`, `pr-dirty`,
+# `pr-dequeued` or `pr-unrun`. With a token that may queue, the run queues a
+# green stack's ready prefix and restacks a dequeued pull request onto its
+# base: the runner rebases it, which runs none of its code (the clone installs
+# no hook, no filter and no merge driver), and replays the result through
+# `createCommitOnBranch`, whose commits GitHub signs (#5214). It also closes
+# and reopens a pull request whose head has no `CI` run, which starts one
+# (#6164).
+# The token is `LANDING_TOKEN` when that secret is set: a fine-grained token
+# of the agents' account (#3355). A linked stack member queues only through
+# the asynchronous merge API, and GitHub refuses an App installation token
+# as a stack's enqueuer; the App's rebases are unsigned, which the trunk's
+# rules refuse. Without it, the landing App's token, minted from
+# `LANDING_APP_ID` and `LANDING_APP_PRIVATE_KEY` (#2706) by
+# `actions/create-github-app-token`, queues an unlinked pull request.
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [landing-checks]
+    types: [completed]
+  pull_request:
+    types: [dequeued, ready_for_review]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# One reading at a time; a run that finds one going waits rather than racing
+# it. Events arriving meanwhile collapse into the one pending reading, which
+# sees everything they changed.
+concurrency:
+  group: landing
+  cancel-in-progress: false
+
+jobs:
+  landing:
+    name: land the green pull requests
+    if: ${{ github.repository_owner == 'gandr-lang' }}
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      # The depth gate's promotion runs a cancelled CI run again (#5074).
+      actions: write
+      contents: read
+      pull-requests: write
+      issues: write
+      checks: read
+      statuses: read
+    env:
+      LANDING_APP_ID: ${{ secrets.LANDING_APP_ID }}
+    steps:
+      # The script runs from the default branch; a landing reads whether one
+      # branch holds another, so the history is whole.
+      - name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+      - name: mint the landing App's token
+        id: app
+        if: ${{ env.LANDING_APP_ID != '' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          # The watcher's needs, no more: queue and restack, comment; read
+          # the checks that decide green.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-merge-queues: write
+          permission-issues: write
+          permission-checks: read
+          permission-statuses: read
+      # The extension comes from the Actions cache, keyed on its pin (#5078):
+      # an install reads its release through the API, once each landing run
+      # before. A miss installs it and saves it.
+      - name: restore gh-stack
+        id: gh-stack
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/gh/extensions/gh-stack
+          key: gh-stack-v0.2.1-${{ runner.os }}-${{ runner.arch }}
+      - name: install gh-stack
+        if: ${{ steps.gh-stack.outputs.cache-hit != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh extension install github/gh-stack --pin v0.2.1
+      - name: save gh-stack
+        if: ${{ steps.gh-stack.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/gh/extensions/gh-stack
+          key: gh-stack-v0.2.1-${{ runner.os }}-${{ runner.arch }}
+      - name: read and land the open pull requests
+        env:
+          GH_TOKEN: ${{ secrets.LANDING_TOKEN || steps.app.outputs.token || github.token }}
+          LANDING_TOKEN_HELD: ${{ secrets.LANDING_TOKEN != '' || steps.app.outputs.token != '' }}
+          # The depth gate's promotion reruns a cancelled CI run through the
+          # workflow's own token, which this job grants `actions: write`; the
+          # fine-grained `LANDING_TOKEN` holds no Actions permission.
+          RERUN_TOKEN: ${{ github.token }}
+        run: .config/pr-stack/landing.bash

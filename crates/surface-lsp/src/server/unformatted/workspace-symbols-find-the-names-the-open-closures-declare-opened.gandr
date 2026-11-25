@@ -1,0 +1,2 @@
+def thrice : Integer ;
+def thrice = 3 ;

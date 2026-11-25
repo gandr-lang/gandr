@@ -1,0 +1,27 @@
+[
+  {
+    "name": "#4875: a reinstall over a loaded agent waits out its teardown and leaves the new agent loaded",
+    "first": "nap",
+    "second": "doze",
+    "teardown": 3,
+    "exit": 0,
+    "runs": "doze"
+  },
+  {
+    "name": "#4875: a reinstall over an agent launchd drops at once leaves the new agent loaded",
+    "first": "nap",
+    "second": "doze",
+    "teardown": 0,
+    "exit": 0,
+    "runs": "doze"
+  },
+  {
+    "name": "#4875: a new agent launchd refuses fails the install and loads the previous agent again",
+    "first": "nap",
+    "second": "doze",
+    "teardown": 3,
+    "refuse": "doze",
+    "exit": 1,
+    "runs": "nap"
+  }
+]

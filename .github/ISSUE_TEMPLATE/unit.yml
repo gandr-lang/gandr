@@ -1,0 +1,190 @@
+# The web's one way to file a unit (#3113, `units.md` § units-issue). GitHub
+# writes each field under a `### <label>` heading; the issues workflow
+# (`.github/workflows/tracker-check-unit-form.yml`) turns a body this form wrote into a unit's
+# `## ` sections and its kind and areas into labels (`.config/issues/form.jq`),
+# then runs `unit:check`'s reading over it. A form binds only the web: an
+# issue filed through the API is checked by the same workflow.
+name: Unit
+description: One slice of work that lands as one pull request, or a short stack
+title: "<area>: <what the unit lands>"
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Every section a unit carries is a field. The issues workflow writes them as the body's sections,
+        sets the kind and areas as labels, and runs `unit:check`: a section left without content labels the
+        issue `status:unsectioned`, and the seat that claims it writes the section first.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - kind:defect
+        - kind:gap
+        - kind:feature
+        - kind:performance
+        - kind:refactor
+        - kind:specification
+        - kind:documentation
+        - kind:ci
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: One or more; an issue may span areas.
+      multiple: true
+      options:
+        - area:kernel
+        - area:theory
+        - area:core
+        - area:storage
+        - area:runtime
+        - area:surface
+        - area:workflow
+        - area:interop
+        - area:analysis
+        - area:ci
+        - area:ux
+        - area:editor
+        - area:lsp
+        - area:mcp
+    validations:
+      required: true
+  - type: textarea
+    id: brief
+    attributes:
+      label: Brief
+      description: What the unit lands and why.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: >-
+        One row per source. The role is primary (read whole, or the cited sections), secondary, oracle (the other system a shallow embedding is compared with, which then needs an `## Embedding owes` section), or not read.
+        Include the vault's two listings. A paper dated before the citation window's cutoff (`.config/references/window.toml`) names the newer
+        work superseding it in What it gives, `superseded by `<key>``, or opens it `exemplar: <why no newer work states what the unit builds>`.
+      value: |
+        | Source | Role | What it gives |
+        | ------ | ---- | ------------- |
+        | `<library stem or design page>` | primary | <what it decides for this unit> |
+    validations:
+      required: true
+  - type: textarea
+    id: embedding-owes
+    attributes:
+      label: Embedding owes
+      description: >-
+        Only when a Sources row has the role oracle: one `- #n — <the operation>` per operation the oracle
+        has and gandr lacks, each its own issue, or `none — <why nothing is owed>`. Leave it empty otherwise.
+    validations:
+      required: false
+  - type: textarea
+    id: readings
+    attributes:
+      label: Readings
+      description: >-
+        Answer every axis with a reason on both marks: `yes — <what the axis gives this unit>` or
+        `no — <why it does not reach it>`. A bare `yes` or `no` is refused.
+      value: |
+        | Family | Axis | Question | Selected |
+        | ------ | ---- | -------- | -------- |
+        | Identity | `univalent` | what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence | |
+        | Locality | `oracle` | which part is decided by certificate replay and which is computed; which modality or dominance classifies it | |
+        | Locality | `descent` | the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left | |
+        | Place | `located` | at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer) | |
+        | Place | `resident` | representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides | |
+        | Dimension | `rewriting` | rules and normal forms; rewrites between rewrites; which coherence tier settles them | |
+        | Cost | `zero-cost` | what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it | |
+        | Cost | `bounded` | whether the unit's path runs under a device's bound: a fixed peak memory, a fixed count of cores, no `std` and no engine at run time; what it needs of each; `yes — bounded: <peak memory, cores>` or `no — <what of std or of the engine the path needs>` | |
+        | Names | `nominal` | what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization | |
+        | Level | `general` | the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it | |
+    validations:
+      required: true
+  - type: textarea
+    id: concerns
+    attributes:
+      label: Concerns
+      description: "Mark each concern of `ledger/concerns.sql` yes or no; a yes carries how: `yes — <how>`."
+      value: |
+        | Concern | Touched |
+        | ------- | ------- |
+        | `fork` | |
+        | `oracle` | |
+        | `sharing` | |
+        | `nominal` | |
+        | `measure` | |
+        | `collapse` | |
+    validations:
+      required: true
+  - type: textarea
+    id: engineering
+    attributes:
+      label: Engineering
+      description: >-
+        Design as for a durable, mission-critical, latency-critical system (`units.md` § units-engineering). Answer
+        every row in its last cell with a bound, a budget or a measured number, or `n/a — <reason>` where the change
+        has no such path. An empty row and a bare `n/a` are refused. The `change` row has two parts,
+        `unchanged: <the work when no input of the result changes>; edit: <the work an edit costs>`, or reads
+        `n/a — <reason>`. The `streaming` row reads `n/a — <reason>` where a result has no use before it is whole.
+      value: |
+        | Row | The issue states | Bound |
+        | --- | ---------------- | ----- |
+        | change | `unchanged:` the work when no input of the result changes (a lookup, none, or a cheap recomputation and why it is cheap); `edit:` the work an edit costs, in what the edit changes; a stored result names its content key | |
+        | complexity | time and space in the input size; the worst case; hostile input | |
+        | latency | the budget of the path the change sits on: a keystroke, a check, a request, a landing | |
+        | parallelism | what runs at once, what serialises, where contention sits, the width left unused | |
+        | memory | allocations and copies per operation, what stays resident | |
+        | failure | a crash mid-operation: what is lost, what resumes, what replays | |
+        | streaming | what a consumer gets before the whole input arrives: the first result, the order of the results, what a later part can still revoke; each result that waits on a part far from it | |
+    validations:
+      required: true
+  - type: textarea
+    id: ledger
+    attributes:
+      label: Ledger
+      description: The features-ledger rows the unit lands, changes or retires, by id, or none.
+    validations:
+      required: true
+  - type: textarea
+    id: surface
+    attributes:
+      label: Surface
+      description: >-
+        A kind:feature in area:surface or area:theory only (a std feature is area:surface): `tier <0–4> — <why the
+        tier below does not read well enough>`, or `none — <why the feature has no surface>`. The tiers: 0 names and
+        combinators, the library alone; 1 a user notation the library declares; 2 a reader `#name{ … }` the library
+        supplies; 3 an attribute `@[…]` the library elaborates; 4 a clause position bound to a `std` interface, only
+        where a name must be bound on a declaration's head. Leave it empty otherwise.
+    validations:
+      required: false
+  - type: textarea
+    id: shape
+    attributes:
+      label: The shape
+      description: "New territory only: the surface spelling, the obligation stated exactly, the fallback."
+  - type: textarea
+    id: try-first
+    attributes:
+      label: Try first
+      description: "New territory only: the probe that settles the open question."
+  - type: textarea
+    id: not-in-this-slice
+    attributes:
+      label: Not in this slice
+      description: The next unit on the lane.
+    validations:
+      required: true
+  - type: textarea
+    id: after
+    attributes:
+      label: After
+      description: >-
+        What this unit waits on: `none`, or one line per issue, `- #n — <what it waits for>`. Each is set as
+        the issue's GitHub `blocked by` dependency; a dependency is never stated in prose.
+      value: none
+    validations:
+      required: true

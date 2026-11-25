@@ -1,0 +1,19 @@
+# A borrowed `dyn Fn` or `dyn FnMut` in a function's parameter takes `impl`:
+# the function is generic over its callback. A closure's parameter, a type
+# alias and a field keep their form for the second phase.
+id: borrowed-callback-is-generic
+language: Rust
+severity: hint
+message: a function takes its callback as a generic, not a trait object
+rule:
+  pattern:
+    context: "fn f(callback: &dyn $TRAIT) {}"
+    selector: dynamic_type
+  regex: ^dyn (?:(?:core|std)::ops::)?Fn(?:Mut)?\b
+  inside:
+    kind: reference_type
+    inside:
+      kind: parameter
+      inside:
+        kind: parameters
+fix: impl $TRAIT

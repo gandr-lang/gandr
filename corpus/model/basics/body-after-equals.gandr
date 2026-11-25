@@ -1,0 +1,28 @@
+// This source shows a definition's body after `=`.
+//
+// A definition writes its body after `=`, as one spelling for each body.
+// The formatter moves a brace body after a head to this spelling.
+//
+// One expression stands alone after `=`. Statements stand in a block after `=`.
+// A recursive definition takes its body after `=` too.
+//
+// - see: #6318
+
+/// A count that is zero or one more than a count.
+data Count : Type where { | None : Count | More : (n : Count) --> Count }
+
+/// Two times its argument, one expression after `=`.
+def summedTwice(n : Integer) -> Integer = n + n;
+
+/// Four times its argument, statements in a block after `=`.
+def quadruple(n : Integer) -> Integer = {
+  let m = summedTwice n;
+  summedTwice m
+};
+
+/// The size of a count, a recursive body after `=`.
+def rec size(n : Count) -> Integer = match n { | None => 0 | More(m) => 1 + size[<] m };
+
+/// Each body reads as the brace body that it replaces.
+@[runs("12")]
+def bodies() -> Integer = quadruple 2 + size (More (More (More (More None))));

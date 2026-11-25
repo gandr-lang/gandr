@@ -1,0 +1,121 @@
+// Higher-order calls preserve recursive stages.
+//
+// `apply` uses one type parameter for its function and argument.
+// A call instantiates that parameter at its argument's stage.
+// The run of `count` waits until the machine takes a type code as an argument.
+//
+// `applyAt` quantifies over a stage.
+// `predAt` returns at its argument's stage.
+// `sameAt` accepts both arguments at one stage.
+// A named stage must agree with the arguments.
+// A higher-order use preserves its supplied stage.
+//
+// - see: #393
+// - see: #452
+// - see: #392
+// - see: #1227 — `agreed`, `appliedAt`
+// - see: #1498 — `passedAt`
+// - see: #2373 — `predAt`, `boundedAt`
+// - see: #1241 — `boundedHelped`
+// - see: `../../pathological/data/sized-higher-order.gandr` — the checker
+//   refuses a `k` not below `j`, a call that no stage fits, and a named stage
+//   that the arguments do not show
+
+// The naturals the recursion takes apart.
+import "./data-base.gandr";
+
+/// This function applies a function and argument at one type parameter.
+pub def apply(a : Type, b : Type, f : a -> b, x : a) -> b =
+  f x
+
+/// `count` rebuilds a number through `apply` at the predecessor's stage.
+/// `count[<]` receives the predecessor.
+def rec count(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (apply Nat Nat count[<] p)
+
+/// This function applies a function at a stage inferred from its arguments.
+pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat =
+  f x
+
+/// `helped` rebuilds a number through `applyAt` at the predecessor's stage.
+/// `helped[<]` receives the predecessor.
+def rec helped(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (applyAt helped[<] p)
+
+/// `helpedTwo` evaluates two through `applyAt`.
+@[runs("Succ (Succ Zero)")]
+def helpedTwo : () -> Nat = helped (Succ (Succ Zero));
+
+/// `predAt` computes a predecessor at stage `i` and returns zero for zero. Its
+/// result stays at stage `i`, since the returner goes over the staged type and
+/// never over its base.
+pub def predAt[i : Size](n : Nat[i]) -> Nat[i] =
+  match n where
+    | Zero => Zero
+    | Succ(p) => p
+
+/// `halvedAt` computes a ceiling half through `predAt` at
+/// the predecessor's stage.
+/// `halvedAt[<]` receives that result.
+def rec halvedAt(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => { let q = predAt p; Succ (halvedAt[<] q) }
+
+/// Half of four: two.
+@[runs("Succ (Succ Zero)")]
+def halvedAtFour : () -> Nat = halvedAt (Succ three);
+
+/// `boundedAt` returns a number below stage `j` without a returner.
+/// Its input stage `k` is below `j`.
+pub def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> Nat[< j] =
+  y
+
+/// `boundedHelped` rebuilds a number from its predecessor stages.
+/// It reads `j` at the number and `k` at its predecessor.
+def rec boundedHelped(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => { let q = boundedAt n p; Succ (boundedHelped[<] q) }
+
+/// `boundedTwo` evaluates two through `boundedAt`.
+@[runs("Succ (Succ Zero)")]
+def boundedTwo : () -> Nat = boundedHelped (Succ (Succ Zero));
+
+/// `sameAt` applies a function and number at the same stage.
+pub def sameAt[i : Size](f : Nat[i] -> Nat, x : Nat[i]) -> Nat =
+  f x
+
+/// `agreed` rebuilds a number.
+/// It calls `sameAt` at the predecessor's stage.
+def rec agreed(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (sameAt agreed[<] p)
+
+/// `agreedTwo` evaluates two through `sameAt`.
+@[runs("Succ (Succ Zero)")]
+def agreedTwo : () -> Nat = agreed (Succ (Succ Zero));
+
+/// `appliedAt` applies a function at the named stage `j`.
+/// Its arguments determine `i` at stage `j`.
+def appliedAt[j : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
+  applyAt[.i = j] f x
+
+/// A function and a number below a stage `j`, handed to a third function
+/// that applies the one to the other.
+def handedAt[j : Size](
+  g : (Nat[< j] -> Nat, Nat[< j]) -> Nat,
+  f : Nat[< j] -> Nat,
+  x : Nat[< j]
+) -> Nat =
+  g f x
+
+/// `applyAt` passed as a value with its stage supplied: a stage crosses only
+/// at a call's head, so the supply stands as `λ f. λ x. applyAt[.i = j](f, x)`.
+def passedAt[j : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
+  handedAt[.j = j] applyAt[.i = j] f x

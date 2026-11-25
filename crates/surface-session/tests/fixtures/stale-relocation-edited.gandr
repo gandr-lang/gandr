@@ -1,0 +1,8 @@
+def inserted(n : Integer) -> Integer =
+  n
+def alpha(x : Integer) -> Integer =
+  2
+def target(y : Integer) -> Integer =
+  y
+def omega(z : Integer) -> Integer =
+  z

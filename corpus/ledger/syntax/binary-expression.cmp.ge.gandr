@@ -1,0 +1,3 @@
+/// `binary_expression.cmp.ge`: an at-least comparison.
+def at_least() -> Bool =
+  2 >= 1

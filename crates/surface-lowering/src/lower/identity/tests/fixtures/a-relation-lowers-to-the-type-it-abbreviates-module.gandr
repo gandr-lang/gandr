@@ -1,0 +1,24 @@
+def isoGlyph : Bool ≅ Integer;
+def isoAlias : Iso Bool Integer;
+def isoRecord : *{
+  into : +U (Bool -> -F Integer),
+  from : +U (Integer -> -F Bool),
+  sect : +U ((a : Bool) -> -F Path[.A = Bool](from (into a), a)),
+  retr : +U ((b : Integer) -> -F Path[.A = Integer](into (from b), b))
+};
+def equivGlyph : Bool ≃ Integer;
+def equivAlias : Bool <~> Integer;
+def equivRecord : *{
+  into : +U (Bool -> -F Integer),
+  linv : *{
+    from : +U (Integer -> -F Bool),
+    sect : +U ((a : Bool) -> -F Path[.A = Bool](from (into a), a))
+  },
+  rinv : *{
+    from : +U (Integer -> -F Bool),
+    retr : +U ((b : Integer) -> -F Path[.A = Integer](into (from b), b))
+  }
+};
+def flowGlyph : Bool ⇝ Integer;
+def flowAlias : Bool ~~> Integer;
+def flowRecord : Flow[.A = Type](Bool, Integer);

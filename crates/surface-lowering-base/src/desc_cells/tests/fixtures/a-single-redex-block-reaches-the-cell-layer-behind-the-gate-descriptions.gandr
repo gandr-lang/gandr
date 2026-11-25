@@ -1,0 +1,9 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+theory Nat where {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+  rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
+    node : p(x) ==> (xp);
+    node : add(xp, y) --> (z);
+  };
+}

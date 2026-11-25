@@ -1,0 +1,34 @@
+//! This source tests the monoid laws of integer addition.
+//!
+//! Conversion does not prove the unit laws or associativity on a variable.
+//! The pathological declarations refuse each law at its endpoints.
+//!
+//! The runtime evaluates arithmetic on a variable.
+//! The checker compares the resulting endpoints.
+//!
+//! - see: HoTT Book §1.12
+
+/// The unit of the sum.
+@[runs("0")]
+def neutral = 0;
+
+/// The sum of two integers.
+def combine(x : Integer, y : Integer) -> Integer =
+  x + y
+
+/// Zero on the left, not by reflexivity.
+@[refuses("EndpointMismatch")]
+def unitL(x : Integer) -> Path (combine neutral x) x =
+  Path.here x
+
+/// Zero on the right, not by reflexivity.
+@[refuses("EndpointMismatch")]
+def unitR(x : Integer) -> Path (combine x neutral) x =
+  Path.here x
+
+/// Associativity, not by reflexivity.
+@[refuses("EndpointMismatch")]
+def assoc(x : Integer, y : Integer, z : Integer) -> Path (combine (combine x y) z) (
+  combine x (combine y z)
+) =
+  Path.here (combine (combine x y) z)

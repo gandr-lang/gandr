@@ -1,0 +1,4 @@
+{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
+                    "textDocument":{{"uri":"file:///tmp/open.gandr"}},
+                    "position":{{"line":{line},"character":{character}}},
+                    "context":{{"triggerKind":1}}}}}}

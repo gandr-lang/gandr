@@ -1,0 +1,2 @@
+module M where {{ type F(a : Type) = a ; type T = Integer ; }}
+def {path} : {written} ;

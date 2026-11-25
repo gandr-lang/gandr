@@ -1,0 +1,30 @@
+[package]
+name = "gandr-surface-lowering-identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The identity family of gandr's lowering: path and flow types, the identity operations, transports, derived operations and their synthesised types, over the lowering's base crate"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "identity-types", "lowering", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# The pinned anodized facade supplies the executable specifications. The base
+# crate holds the lowering's context, the records that the families share and
+# the `Families` trait, through which this family reads the context and calls
+# the other families. The kernel and core crates name the terms the family
+# mints and the levels of a universe, and the syntax crate the tree it reads.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-lowering-base.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

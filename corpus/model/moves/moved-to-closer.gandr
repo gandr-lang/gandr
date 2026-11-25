@@ -1,0 +1,33 @@
+//! `moved-to-closer` sends a file handle to a closer.
+//!
+//! The send consumes the mover's linear handle. The closer owns the handle.
+//! The move twins refuse a repeated move or a post-move close as
+//! `UsedAfterClose`.
+//!
+//! The trace tests settle the send and close events.
+//! The source imports `File` from `file-base`.
+//!
+//! After a C++ move, the object remains valid but unspecified.
+//! No move constructor runs.
+//! Rust moves a non-`Copy` value at `let b = a;`.
+//! - see: `lib.types.movedfrom` in ISO/IEC 14882:2020
+//! - see: file-base.gandr — the file protocol
+import "./file-base.gandr";
+
+/// `movedToCloser` sends a handle to a closer that closes it.
+@[
+  runs("*{}"),
+  traces(decomposes owner (parallel (event left 0) (event right 0))),
+  traces(decomposes
+    closer
+    (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
+]
+def movedToCloser() -> Unit =
+  let file = fork (owner : File.Handle) { close owner };
+  let task = fork (closer : File.Closer) {
+    let held = recv closer;
+    close held;
+    close closer
+  };
+  send task file
+  close task

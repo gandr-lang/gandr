@@ -1,0 +1,51 @@
+[
+  {
+    "name": "#7195: a target whose file holds comments alone is refused, naming its manifest, name and path",
+    "input": [
+      {
+        "file": "crates/surface-features/Cargo.toml",
+        "name": "tests",
+        "path": "tests/lib.rs",
+        "code": "//! The integration tests of `gandr-surface-features`: one target.\n//! The reader's cases are unit tests beside it.\n"
+      }
+    ],
+    "output": "[\"crates/surface-features/Cargo.toml: the integration target `tests` at tests/lib.rs holds no item, so its binary has no coverage data and `cargo llvm-cov report` stops on it (#7195); remove the target until its first case\"]"
+  },
+  {
+    "name": "#7195: an empty file is refused",
+    "input": [
+      { "file": "crates/a/Cargo.toml", "name": "tests", "path": "tests/lib.rs", "code": "" }
+    ],
+    "output": "[\"crates/a/Cargo.toml: the integration target `tests` at tests/lib.rs holds no item, so its binary has no coverage data and `cargo llvm-cov report` stops on it (#7195); remove the target until its first case\"]"
+  },
+  {
+    "name": "#7195: a target that declares a module is admitted, past its comments",
+    "input": [
+      {
+        "file": "crates/a/Cargo.toml",
+        "name": "tests",
+        "path": "tests/lib.rs",
+        "code": "//! The integration tests.\n\nmod reading;\n"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "#7195: a target that holds a test is admitted, and only the empty one of two is refused",
+    "input": [
+      {
+        "file": "crates/a/Cargo.toml",
+        "name": "tests",
+        "path": "tests/lib.rs",
+        "code": "#[test]\nfn reads() {}\n"
+      },
+      {
+        "file": "crates/b/Cargo.toml",
+        "name": "smoke",
+        "path": "tests/smoke.rs",
+        "code": "  // a comment\n\n"
+      }
+    ],
+    "output": "[\"crates/b/Cargo.toml: the integration target `smoke` at tests/smoke.rs holds no item, so its binary has no coverage data and `cargo llvm-cov report` stops on it (#7195); remove the target until its first case\"]"
+  }
+]

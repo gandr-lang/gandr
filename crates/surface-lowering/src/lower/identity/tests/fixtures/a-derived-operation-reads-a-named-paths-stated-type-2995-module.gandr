@@ -1,0 +1,13 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+def named : Path[.A = Circle](Base, Base);
+def named = loop;
+def flipped : Path[.A = Circle](Base, Base);
+def flipped = Path.back named;
+def round : Path[.A = Circle](Base, Base);
+def round = Path.step named (Path.back named);
+def unstated = loop;
+def overUnstated : Path[.A = Circle](Base, Base);
+def overUnstated = Path.back unstated;

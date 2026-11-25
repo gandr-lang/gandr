@@ -1,0 +1,12 @@
+// Pairs sum their halves, read back by every reader of the corpus.
+//
+// Why.
+//
+// How.
+//
+// - see: #1 — not implemented: a long clause that runs past the narrow page
+//   and wraps onto an indented line
+// - see: `pathological/a.gandr` — the refusal
+
+/// The pair. Its sum.
+def a = 1;

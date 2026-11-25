@@ -1,0 +1,84 @@
+//! A rule term can bind a variable in a field.
+//!
+//! A `pi+ (x : S) . T` port accepts `bind x . t`. The variable `x` has the
+//! representable sort `S`. Substitution instantiates it.
+//!
+//! A `bind (a : N) . T` port abstracts atom `a`. A swap renames it.
+//! A `Theory` value stores a field as a `Bind` node and its variable as a
+//! `Bvar` node. It stores an abstraction as an `Abs` node and its atom as an
+//! `Occ` node. A program distinguishes the two binders by `case`.
+//!
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
+
+/// No process outside the restriction can use the channel `c` of `listen`, so
+/// the restricted receive never fires. The checker orients the law, and the
+/// kernel replays its verdict.
+theory Deaf where
+  sort Name : Atom;
+  sort Val : Type+;
+  sort Proc : Type;
+  oper nil : Proc;
+  oper out : (v : Val, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  oper listen : (c : Name, k : pi+ (x : Val). Proc) --> Proc;
+  rule deaf : nu (bind c. (listen c (bind x. (out x nil)))) ==> nil;
+
+/// The field variable `x` does not occur in `q`, so this law needs no atom
+/// freshness condition.
+theory Vacuous where
+  sort Val : Type+;
+  sort Proc : Type;
+  oper new : (body : pi+ (x : Val). Proc) --> Proc;
+  rule gc : new (bind x. q) <=> q;
+
+/// This recursion counts `Bind` nodes in a rule term. It ignores `Abs` nodes.
+def rec fieldsOf(term : Theory) -> Integer =
+  match term where
+    | Bind(var, body) => {
+      let r = fieldsOf[<] body;
+      r + 1
+    }
+    | Abs(atom, body) => fieldsOf[<] body
+    | App(name, args) => fieldsOf[<] args
+    | Arg(head, rest) => {
+      let here = fieldsOf[<] head;
+      let r = fieldsOf[<] rest;
+      here + r
+    }
+    | _ => 0
+
+/// This recursion counts `Abs` nodes in a rule term. It ignores `Bind` nodes.
+def rec abstractionsOf(term : Theory) -> Integer =
+  match term where
+    | Abs(atom, body) => {
+      let r = abstractionsOf[<] body;
+      r + 1
+    }
+    | Bind(var, body) => abstractionsOf[<] body
+    | App(name, args) => abstractionsOf[<] args
+    | Arg(head, rest) => {
+      let here = abstractionsOf[<] head;
+      let r = abstractionsOf[<] rest;
+      here + r
+    }
+    | _ => 0
+
+/// `deaf` uses `bind x` at the `listen` port.
+@[runs("1")]
+def deafFields() -> Integer = match Deaf {
+  | Presents(sorts, opers, rules) => match rules where
+    | Rule(name, lhs, rhs, rest) => fieldsOf lhs
+    | _ => 0
+  | _ => 0
+};
+
+/// `deaf` uses `bind c` at the `nu` port.
+@[runs("1")]
+def deafAbstractions() -> Integer = match Deaf {
+  | Presents(sorts, opers, rules) => match rules where
+    | Rule(name, lhs, rhs, rest) => abstractionsOf lhs
+    | _ => 0
+  | _ => 0
+};

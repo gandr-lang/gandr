@@ -1,0 +1,2 @@
+import "./first.gandr";
+def two : Integer = 2;

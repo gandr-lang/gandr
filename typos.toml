@@ -1,0 +1,51 @@
+#:tombi toml-version = "v1.1.0"
+#:schema https://raw.githubusercontent.com/crate-ci/typos/master/config.schema.json
+
+[files]
+# treefmt.toml: formatter names and glob fragments read as typos to the checker.
+# Runtime/build output, resolver-owned lockfiles, the parser's recovery
+# records, the corpus comment and prose ledgers (hex digests) and the
+# debugger's transcripts (verbatim output naming hashed binaries) are not
+# authored prose.
+extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "crates/surface-parser/tests/recovery/", "corpus/uncommented.ledger", "corpus/prose.ledger", "crates/*/tests/debug-traces/"]
+
+[default]
+# The attribute registry's near-miss witness misspells `identity` on purpose,
+# one edit away, to assert that the misspelling suggests the attribute; the
+# lowering's misspelt-keyword witness misspells `return` three ways, and the
+# parser's misspelt-keyword witness misspells `where` and `match` one way each.
+extend-ignore-re = ['"identiy"', '"retur"', '"retrun"', '"returnn"', "`retur( x)?`", '"wher"', '"matc"', "`matc`", 'matc n \{']
+
+# Standing rule: an unwanted rewrite is fixed by growing this allowlist, never
+# by rewording the prose. Grown from this repo's own vocabulary.
+[default.extend-words]
+# Hyphen-split prose fragments ("mis-ordered", "mis-framed", "mis-shaped").
+mis = "mis"
+# Decoder-error vocabulary: material that cannot be parsed at all, as distinct
+# from material that parses to something refused.
+unparseable = "unparseable"
+# Category-theory vocabulary: the hom family of a category, `Hom(a, b)`.
+hom = "hom"
+# Crate name: the terminal face's renderer, `ratatui`.
+ratatui = "ratatui"
+# Author surname: Donald Yau, co-author of the graphical-map factorizations.
+yau = "yau"
+# Author surname: Lukas Waas, author of the stratified and simple homotopy
+# theory monograph that the Tietze reading of `theory-discrete-morse` cites.
+waas = "waas"
+# ELF vocabulary: `.rela` sections hold relocations with explicit addends.
+rela = "rela"
+# Type-theory vocabulary: a function's implicit parameters, "its implicits".
+implicits = "implicits"
+# Compiler vocabulary: rustc's typed high-level IR, `THIR`, which a Rust
+# function's semantics is read at.
+thir = "thir"
+# Escape-split fragment: a roles fixture's `\\nversion`, an escaped newline
+# then a manifest's `version` key, reads its string fragment as `nversion`.
+nversion = "nversion"
+# Citation label word: the library key `Rossberg-2014-fing_modules` names
+# the paper "F-ing Modules".
+fing = "fing"
+# Quantum vocabulary: Dirac's bra-ket notation, `Ket` in `std.quantum`, the
+# state vector of a qubit.
+ket = "ket"

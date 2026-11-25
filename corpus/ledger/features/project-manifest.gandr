@@ -1,0 +1,47 @@
+/// `project-manifest`: A package, its root and its manifest.
+/// Implemented: a package is its `package.gandr` at its root and the modules
+/// under the directory its `sources` names, found from any path in it, and
+/// `gandr check` writes `package.gandr.toml` beside it from the package
+/// source's `Package` model, the modules its sources make, its `[toolchain]`
+/// table and, when its `spelling` names one, its `[presentation]` table,
+/// refusing a hand edit as drift, and prints the package's address on the
+/// manifest's line; a language server opened on the package writes in that
+/// spelling over the user's; `import text.greet ;` names a module by its path
+/// and binds it qualified, a type reading through a path of any length, and
+/// `import text.greet (greeting) ;` binds the names it lists by their own names
+/// as well; a `workspace.gandr` names its member packages and states what they
+/// share as a model of `Gandr.Workspace`, and `gandr check` in it
+/// checks every member.
+///
+/// - see: #3029 — `Package`
+
+import std.build (Gandr);
+
+/// The model a package source declares: what `gandr check` records in
+/// `package.gandr.toml`. Its fields but what it asks of the toolchain are
+/// inert: only the manifest step reads them.
+pub module Package : Model(Gandr.Package) where {
+  /// The name the manifest records.
+  @[runs("\"hello\"")]
+  def name = "hello";
+  /// The version the manifest records.
+  def version = "0.1.0";
+  /// The package's authors.
+  def authors = "The gandr authors";
+  /// The licence, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the package's documentation stands at.
+  def documentation = "https://github.com/gandr-lang/gandr";
+  /// The address a resolver may fetch the package from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version the sources ask for.
+  def gandr = ">= 0.0";
+  /// The features the sources use.
+  def features = "project-manifest";
+  /// The systems the package builds on: any.
+  def systems = "";
+  /// The spelling the package asks for: the reader's own.
+  def spelling = "";
+  /// The directory the modules sit under, below the package's root.
+  def sources = "src";
+}

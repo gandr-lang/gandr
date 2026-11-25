@@ -1,0 +1,8 @@
+error[IllFormedDescription]: the face `far` holds a name the boundary `Square` does not list
+  ╭▸ corpus/ledger/diagnostics/IllFormedDescription.gandr:5:3
+  │
+5 │   face far = {b, e};
+  │   ━━━━━━━━━━━━━━━━━ what the description check refuses
+  │
+  ├ note: `Past` is refused with IllFormedDescription, as its expectation states
+  ╰ help: put in the face only names that the boundary lists

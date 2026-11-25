@@ -1,0 +1,35 @@
+error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
+   ╭▸ corpus/pathological/desc/terms-of-a-sort.gandr:32:14
+   │
+32 │ def paired : Terms Pair Q = Pair.pair Pair.origin Pair.origin;
+   │              ━━━━━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `paired` is refused with OutOfFragment.terms_type.sorted, as its expectation states
+   ╰ note: tracked by #4150 <https://github.com/gandr-lang/gandr/issues/4150>
+
+error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
+   ╭▸ corpus/pathological/desc/terms-of-a-sort.gandr:52:12
+   │
+52 │ def kept : Terms Open Term Open.bit = Open.low;
+   │            ━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `kept` is refused with OutOfFragment.terms_type.sorted, as its expectation states
+   ╰ note: tracked by #4150 <https://github.com/gandr-lang/gandr/issues/4150>
+
+error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
+   ╭▸ corpus/pathological/desc/terms-of-a-sort.gandr:67:24
+   │
+67 │ def alone(w : Type) -> Terms Bare Term w = Bare.low;
+   │                        ━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `alone` is refused with OutOfFragment.terms_type.sorted, as its expectation states
+   ╰ note: tracked by #4150 <https://github.com/gandr-lang/gandr/issues/4150>
+
+error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
+   ╭▸ corpus/pathological/desc/terms-of-a-sort.gandr:71:25
+   │
+71 │ def absent : Terms Bare Height = Bare.bit;
+   │                         ━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `absent` is refused with OutOfFragment.terms_type.sorted, as its expectation states
+   ╰ note: tracked by #4150 <https://github.com/gandr-lang/gandr/issues/4150>

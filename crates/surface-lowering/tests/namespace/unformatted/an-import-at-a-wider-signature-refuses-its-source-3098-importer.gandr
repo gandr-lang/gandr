@@ -1,0 +1,4 @@
+theory Wanted where {{ {members} }}
+import "./base.gandr" as base : Wanted ;
+def one : Integer ;
+def one = 1 ;

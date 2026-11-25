@@ -1,0 +1,12 @@
+def pair : *{Integer, String};
+def triple : *{Integer, String, Unit};
+def choice : +{Integer, *{String, Unit}};
+def nested : *{+{Integer, String}, Unit};
+def lazy : +U &{-F Integer, -F Integer, -F String};
+def right : +U &{-F Integer, &{-F Integer, -F String}};
+def mixed : +U &{&{-F Integer, -F Integer}, -F String};
+def step : +U (Integer -> String -> -F Unit);
+def dependent : +U ((a : Type) -> a -> -F a);
+def thunked : +U (-F Integer);
+def returned : +U (Integer -> -F *{Integer, String});
+def tuple = *{1, *{2, "b"}};

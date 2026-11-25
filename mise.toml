@@ -1,0 +1,126 @@
+#:tombi toml-version = "v1.1.0"
+#:schema https://mise.jdx.dev/schema/mise.json
+# The published mise schema omits several live `settings` keys; strict mode
+# would reject them.
+#:tombi schema.strict = false
+
+# The floor is the pin, `mise run mise:pin`, so an older mise refuses the
+# tree: an older mise rewrites `mise.lock` (#6976). Each host runs the pin,
+# and `tools:push` on the builder brings each host to it (#7008).
+min_version = "2026.11.4"
+
+[settings]
+activate_aggressive = true
+experimental = true
+env_shell_expand = true
+minimum_release_age = "1d"
+lockfile = true
+# Rust resolves through mise's rust backend. `rust-toolchain.toml` stays the
+# one channel pin. Mise installs that pin through rustup and sets
+# RUSTUP_TOOLCHAIN from it. Mise puts the rustup proxy dir after its shims and
+# ahead of the inherited PATH.
+#
+# A dir that config puts on PATH sits ahead of every mise tool. A config dir
+# that holds a distribution rustup then shadows every pin. So the one
+# `_.path` entry is the gate's, in `[env]` below.
+idiomatic_version_file_enable_tools = ["rust"]
+
+[settings.cargo]
+binstall = true
+# mise's built-in binstall: fetches crate binaries itself, no external
+# cargo-binstall needed — without it, CI falls back to `cargo install`
+# source builds for every cargo pin.
+binstall_native = true
+# mise disables cargo-quickinstall by default (jdx/mise PR 10923), so pins
+# without crate-author binstall artifacts compile from source (~20 min CI
+# lanes). Owner-accepted trust boundary: quickinstall's third-party binaries.
+binstall_quickinstall = true
+
+[settings.npm]
+package_manager = "aube"
+
+[task_config]
+includes = [".config/mise/tasks"]
+
+# Formatter entries and their pins move together; missing commands make treefmt
+# fail at startup. Agent/MCP tools remain project-local rather than accumulated.
+# Every tool that publishes cross-platform release binaries installs through
+# the github backend: a cargo: pin is a source build the moment binstall
+# resolution misses, and that hazard recurs with every upstream default
+# change.
+[tools]
+# The bindgen command makes the liburing crate's bindings for riscv64. Its
+# releases publish no binary, so it is a cargo pin. The builder cross-builds
+# it for the riscv64 hosts, and the CI jobs that do not build for riscv64
+# disable it.
+# - see: #7720, `.config/riscv64/cross.bash`, `.config/host-tools/builds.toml`
+"cargo:bindgen-cli" = "0.72.1"
+"cargo:dylint-link" = "6.3.2"
+"cargo:hotpath" = { version = "0.30.3", features = ["hotpath", "hotpath-mcp", "tui"] }
+# The features ledger's engine (`ledger/README.md`): one pinned sqlite3 writes
+# the same dump on every machine and in CI, and the conda build is the
+# prebuilt sqlite3 CLI mise resolves on every platform.
+"conda:sqlite" = "3.54.1"
+"github:aubepkg/aube" = "2.8.5"
+# The test oracle the `wasm32-wasip3` build of `gandr` runs under (#4882).
+"github:bytecodealliance/wasmtime" = "v50.0.1"
+# The WASI 0.3 C library and the linker that reads it, for `build:wasm`. Its
+# `bin` holds clang, ar and nm, which would shadow the host's, so no
+# directory of it enters PATH: the task names the linker by its path.
+"github:WebAssembly/wasi-sdk" = { version = "34", version_prefix = "wasi-sdk-", bin_path = "share/wasi-sysroot" }
+# The ci:* tasks and the workflows' report steps read and write the server
+# through gh; the CI image carries this pin, as the hosted runner ships its own.
+"github:cli/cli" = "v2.103.3"
+# The licences, sources and bans of the lock file, and the advisories in the
+# nightly.
+# - see: `deny.toml`, #7743
+"github:EmbarkStudios/cargo-deny" = "0.20.2"
+"github:crate-ci/typos" = "v1.51.1"
+"github:j178/prek" = "v0.5.9"
+"github:koalaman/shellcheck" = "0.11.0"
+# The compiler wrapper that caches each compile by its content, on the hosts
+# and in CI. Its release holds the engine beside the client.
+# - see: `.github/actions/setup-rust`, #7789
+"github:kunobi-ninja/kache" = "2.1.1"
+"github:max-sixty/worktrunk" = "v0.81.0"
+"github:nextest-rs/nextest" = { version = "0.9.150", version_prefix = "cargo-nextest-" }
+"github:numtide/treefmt" = "2.6.0"
+# Release-only rendering; formatting never reads Git history.
+"github:orhun/git-cliff" = "2.14.2"
+"github:rvben/rumdl" = "0.3.2"
+"github:taiki-e/cargo-llvm-cov" = "0.9.1"
+"github:tombi-toml/tombi" = "1.9.8"
+# Workflow and composite-action lint belongs to the treefmt wall.
+"github:zizmorcore/zizmor" = "1.31.1"
+"npm:@commitlint/cli" = "21.2.4"
+"npm:oxfmt" = "0.75.0"
+"npm:oxlint-tsgolint" = "7.0.2005"
+# Type-aware oxlint runs its rules and the TypeScript checker through tsgolint.
+"npm:oxlint" = "1.90.0"
+node = "26.13.0"
+
+# Dylint driver and linker; both match the library's `dylint_linting` and
+# `dylint_testing` versions. A library producer owns those dependencies;
+# a Git-library consumer follows the versions at its pinned source revision.
+# The dylint release ships Linux-only binaries, so the pins stay cargo: for
+# macOS workstations; CI's native binstall fetches the Linux assets.
+[tools."cargo:cargo-dylint"]
+version = "6.3.2"
+
+# sizelint publishes no release binaries; the one remaining source build.
+[tools."cargo:sizelint"]
+version = "0.1.6"
+
+# Local workflow runner, so a workflow change is testable without a push.
+[tools."github:nektos/act"]
+version = "0.2.94"
+
+# This entry puts the gate's `cargo` first on PATH. While a gate draws on the
+# host's counter, `gate_hosted` names the gate's `gate-bin` directory in
+# `GANDR_GATE_BIN`. Then each cargo command of the gate runs through its own
+# `gandr tokens`. Elsewhere the entry is a path that holds no command. Mise
+# reads an empty entry as the directory of this file, which puts the tree's
+# root first on PATH.
+# - see: #7688 — the hold of one build command on the host's counter
+[env]
+_.path = ["${GANDR_GATE_BIN:-/nonexistent}"]

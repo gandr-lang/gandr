@@ -1,0 +1,11 @@
+data Two : Type where { | Left : Two | Right : Two }
+def tail() -> +U (Two -> -F Two) = fun (b) { match b { | Left => Right | Right => Left } };
+def afterLet() -> +U (Two -> -F Two) = {
+  let k = Left;
+  fun (b) { match b { | Left => k | Right => Left } }
+};
+def inArm(c : Two) -> +U (Two -> -F Two) = match c {
+  | Left => fun (b) { match b { | Left => Right | Right => Left } }
+  | Right => fun (b) { b }
+};
+def explicitTail() -> +U (Two -> -F Two) = fun (b) { match b { | Left => Right | Right => Left } };

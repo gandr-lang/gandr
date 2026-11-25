@@ -1,0 +1,2 @@
+def first(p : Pair (Pair Integer Integer) (Pair Integer Integer)) -> Integer =
+  0

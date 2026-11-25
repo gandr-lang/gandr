@@ -1,0 +1,9 @@
+theory Two where
+  sort Width : Type;
+  oper word : Width;
+
+data Fragment : Terms Two -> Type where {
+  | Piece : (w : Terms Two) --> Fragment w
+}
+
+def lacked(x : Fragment Two.nope) -> Fragment Two.word = x;

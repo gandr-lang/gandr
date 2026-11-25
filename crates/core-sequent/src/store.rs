@@ -1,0 +1,739 @@
+//! The store a run's answer moves into: an append-only heap of values and
+//! the environment chains their closures close over.
+//!
+//! [`HeapValue`]s are immutable once allocated and addressed by
+//! [`HeapValueId`]; sharing a value is sharing its address. An
+//! [`Environment`] is the innermost binding of a persistent chain of producer
+//! bindings, so extending one never copies it and a closure captures one by
+//! value. A literal stack is held as the core writes one, innermost frame
+//! first, each bind frame a [`ClosedCommand`].
+//!
+//! # Boundaries
+//!
+//! - **The LAM it is.** The store is the location-addressable memory of
+//!   `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`
+//!   § 4.1, appending its only update: each family grows at its end, so a
+//!   [`HeapValueId`] is stable once allocated and never recycled, a value never
+//!   changes at its address, and an address means something in this store
+//!   alone.
+//! - **Where it departs.** Two regions, one per family, rather than one per
+//!   allocation. Every field is an address, so nothing is laid inline and there
+//!   is no wrapping constructor to splice. A value allocated twice stays two
+//!   values, and nothing collects: the store lives as long as its holder. A
+//!   thunk, a fixpoint and a closure name their code in the command arena,
+//!   which the store does not hold, so such a value is read only beside that
+//!   arena.
+//! - **The run keeps its own regions.** `gandr-runtime-emitter` runs a command
+//!   over regions of its own and moves into the store only what leaves the run:
+//!   a host request's payload, the answer, and the values a stuck run names.
+//!   Readback reads the store. The alternative was readback over the run's
+//!   words, which no caller can hold past the run: the regions are the
+//!   thread's, reused by its next run. The choice reverses if a run's regions
+//!   come to outlive it, when readback can read them in place and the move
+//!   disappears.
+//!
+//! # References
+//!
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage
+//!   programme, § storage-programme-memory-model-reading: the store as the LAM
+//!   the runtime's value representation is specified against.
+//! - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled
+//!   runtime programme, § runtime-question-what-runtime-means: the runtime's
+//!   representation, which this store and the emitter's regions state.
+//! - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: chapter 10's
+//!   `ACCU` (Figure 10.2), an accumulator for a free variable: a free value,
+//!   [`HeapValue::Free`], and a force or an application that grew one,
+//!   [`HeapValue::Accumulated`].
+
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+use gandr_core_term::Zone;
+use gandr_core_term::control::StackFrame;
+use gandr_kernel_term::ArenaLength;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Family;
+use gandr_kernel_term::Literal;
+
+use crate::boundary::FamilyAddress as _;
+use crate::boundary::address_wrapper;
+use crate::il::CommandId;
+use crate::il::ConstructorTag;
+use crate::il::ProducerId;
+
+address_wrapper! {
+    /// The address of a [`HeapValue`] in a [`Store`].
+    pub struct HeapValueId;
+}
+
+address_wrapper! {
+    /// The address of one producer binding of an environment chain.
+    struct ValueBindingId;
+}
+
+/// A value a run answered with or named: what a producer evaluates to.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum HeapValue
+{
+    /// A literal stack, innermost frame first.
+    Stack
+    {
+        /// Each frame: an application's argument, a projection's side, or a
+        /// bind frame's command closed over its environment.
+        frames: Box<[StackFrame<HeapValueId, ClosedCommand>]>,
+    },
+    /// A base-type literal.
+    Literal(Literal),
+    /// A constructor applied to evaluated fields.
+    Constructed
+    {
+        /// The head.
+        tag: ConstructorTag,
+        /// The fields, left to right.
+        fields: Box<[HeapValueId]>,
+    },
+    /// A thunk: a suspended command and the environment it closes over.
+    Thunk
+    {
+        /// The suspended command, binding one covariable.
+        body: CommandId,
+        /// The captured environment.
+        environment: Environment,
+    },
+    /// A recursive thunk: a thunk whose forcing binds the thunk itself as its
+    /// body's innermost producer variable, beside the continuation.
+    Fixpoint
+    {
+        /// The suspended command, binding one producer variable and one
+        /// covariable.
+        body: CommandId,
+        /// The captured environment, without the thunk itself.
+        environment: Environment,
+        /// The termination claim the core fixpoint carried.
+        evidence: gandr_kernel_term::FixpointEvidence,
+    },
+    /// A negative value: a copattern object or a suspended context capture,
+    /// closed over its environment.
+    Closure
+    {
+        /// The closed producer: a [`crate::ProducerNode::Cocase`] or a
+        /// [`crate::ProducerNode::Mu`].
+        producer: ProducerId,
+        /// The captured environment.
+        environment: Environment,
+    },
+    /// A constant with no body to run: an owed or refused declaration, which
+    /// a run carries as itself.
+    Opaque(ConstantIndex),
+    /// A code, a quoted type or computation type in the command arena's
+    /// annotations: a type argument a run passes as itself and never
+    /// observes.
+    Code(gandr_core_term::ValueId),
+    /// A capability a handler introduced: its address is its identity.
+    Capability,
+    /// A variable of the context a run's root stands in, held free: an
+    /// accumulator no observation has grown yet.
+    Free
+    {
+        /// The variable's zone.
+        zone: Zone,
+        /// The variable, as that context names it.
+        index: DeBruijnIndex,
+    },
+    /// An accumulator grown by one observation: the stuck observation of
+    /// `of`, which a run carries as a value.
+    Accumulated
+    {
+        /// The accumulator observed.
+        of: HeapValueId,
+        /// The observation.
+        by: Accumulation,
+    },
+}
+
+/// The observation that grew an accumulator.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Accumulation
+{
+    /// A force.
+    Forced,
+    /// An application to the argument.
+    Applied(HeapValueId),
+}
+
+/// A bind frame's command and the environment it runs under.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ClosedCommand
+{
+    /// The command, binding one producer variable and one covariable.
+    pub body: CommandId,
+    /// The environment it runs under.
+    pub environment: Environment,
+}
+
+/// The innermost producer binding of an environment, or none.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ValueScope
+{
+    /// No producer is bound.
+    Empty,
+    /// The innermost binding.
+    Innermost(ValueBindingId),
+}
+
+/// An environment: the producer chain a closed command runs under.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Environment
+{
+    /// The producer bindings, innermost first.
+    values: ValueScope,
+}
+
+impl Environment
+{
+    /// The environment binding nothing.
+    pub const EMPTY: Self = Self {
+        values: ValueScope::Empty,
+    };
+}
+
+/// One producer binding: the value and the chain it extends.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct ValueBinding
+{
+    /// The bound value.
+    value: HeapValueId,
+    /// The chain this binding extends.
+    outer: ValueScope,
+}
+
+/// The families of the store, for a full-family refusal.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HeapFamily
+{
+    /// The values.
+    Values,
+    /// The producer bindings.
+    ValueBindings,
+}
+
+/// Why the store refused an operation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum StoreFault
+{
+    /// A family has reached its address ceiling.
+    RegionFull(HeapFamily),
+}
+
+impl fmt::Display for StoreFault
+{
+    /// Names the full family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::RegionFull(family) => {
+                let name = match family {
+                    HeapFamily::Values => "value",
+                    HeapFamily::ValueBindings => "producer binding",
+                };
+                write!(f, "the {name} family of the store is full")
+            },
+        }
+    }
+}
+
+impl core::error::Error for StoreFault
+{
+}
+
+/// Why a value did not copy into another store.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CopyRefusal
+{
+    /// The source store holds no value at this address, or the value closes
+    /// over a chain that dangles.
+    Dangling(HeapValueId),
+    /// A capability, whose address is its identity: a copy would be another
+    /// capability.
+    Capability(HeapValueId),
+    /// The destination store refused an allocation.
+    Full(StoreFault),
+}
+
+impl fmt::Display for CopyRefusal
+{
+    /// Names the refused value, or the full family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Dangling(value) => {
+                write!(f, "the store holds no value {} reaches", u32::from(value))
+            },
+            Self::Capability(value) => {
+                write!(f, "the value {} is a capability", u32::from(value))
+            },
+            Self::Full(fault) => write!(f, "the copy's store refused: {fault}"),
+        }
+    }
+}
+
+impl core::error::Error for CopyRefusal
+{
+}
+
+/// The values a run moved out and the environments they close over.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Store
+{
+    /// The values.
+    values: Family<HeapValue>,
+    /// The producer bindings of every environment chain.
+    value_bindings: Family<ValueBinding>,
+}
+
+impl Store
+{
+    /// An empty store.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// Allocate a value.
+    ///
+    /// # Specification
+    /// - requires: every address `value` names was allocated by this store.
+    /// - ensures: on success a fresh address, above every value address already
+    ///   allocated, reading back as `value`.
+    /// - provides: the one append point of the value family.
+    /// - fails: [`StoreFault::RegionFull`] at the address ceiling, the store
+    ///   unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — dense distinct allocations, exact retrieval and the
+    ///   first missing offset distinguish address reuse, a shifted offset and a
+    ///   misplaced value. The helper covers the ceiling with families of
+    ///   zero-sized nodes; the store is not populated to the ceiling.
+    /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling_8054`
+    #[inline]
+    #[spec(
+        captures: [entry = usize::from(self.values.len())],
+        ensures: |ret| match ret {
+            | Ok(id) => usize::try_from(u32::from(id)) == Ok(entry)
+                && entry.checked_add(1) == Some(usize::from(self.values.len())),
+            | Err(error) => error == StoreFault::RegionFull(HeapFamily::Values)
+                && self.values.len() == entry,
+        },
+    )]
+    pub fn allocate(
+        &mut self,
+        value: HeapValue,
+    ) -> Result<HeapValueId, StoreFault>
+    {
+        let id =
+            HeapValueId::next_in(&self.values).ok_or(StoreFault::RegionFull(HeapFamily::Values))?;
+        self.values.push(value);
+        Ok(id)
+    }
+
+    /// Resolve a value address, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling address is admissible.
+    /// - ensures: `Some(value)` exactly when the store allocated the address.
+    /// - provides: the read side of the value family.
+    /// - fails: `None` on a dangling address.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, first, last and exact-end reads observe
+    ///   distinct values, distinguishing a wrong offset and endpoint
+    ///   acceptance.
+    /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret {
+        | Some(value) => usize::try_from(u32::from(id)).ok()
+            .and_then(|offset| self.values.get(ArenaLength::from(offset)))
+            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(value))),
+        | None => usize::try_from(u32::from(id)).map_or(true, |offset| offset >= usize::from(self.values.len())),
+    })]
+    pub fn value(
+        &self,
+        id: HeapValueId,
+    ) -> Option<&HeapValue>
+    {
+        id.read_in(&self.values)
+    }
+
+    /// Extend an environment's producer chain with one binding.
+    ///
+    /// # Specification
+    /// - requires: `value` and the chain were allocated by this store.
+    /// - ensures: on success an environment whose walk reads `value` first and
+    ///   then what `environment`'s walk reads.
+    /// - provides: the one way a producer variable is bound.
+    /// - fails: [`StoreFault::RegionFull`], the store unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two bindings walked from the inner and from the outer
+    ///   environment separate the shift from the base.
+    /// - witness: `store::tests::environments_bind_innermost_first`
+    #[inline]
+    #[spec(
+        captures: [entry = usize::from(self.value_bindings.len())],
+        ensures: |ret| match ret {
+            | Ok(extended) => entry.checked_add(1) == Some(usize::from(self.value_bindings.len()))
+                && match extended.values {
+                    | ValueScope::Empty => false,
+                    | ValueScope::Innermost(id) => usize::try_from(u32::from(id)) == Ok(entry)
+                        && id.read_in(&self.value_bindings).is_some_and(|binding|
+                            binding.value == value && binding.outer == environment.values),
+                },
+            | Err(error) => error == StoreFault::RegionFull(HeapFamily::ValueBindings)
+                && self.value_bindings.len() == entry,
+        },
+    )]
+    pub fn bind_value(
+        &mut self,
+        environment: Environment,
+        value: HeapValueId,
+    ) -> Result<Environment, StoreFault>
+    {
+        let id = ValueBindingId::next_in(&self.value_bindings)
+            .ok_or(StoreFault::RegionFull(HeapFamily::ValueBindings))?;
+        self.value_bindings.push(ValueBinding {
+            value,
+            outer: environment.values,
+        });
+        Ok(Environment {
+            values: ValueScope::Innermost(id),
+        })
+    }
+
+    /// The values an environment's producer chain binds, innermost first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the `i`-th item is the value bound `i` links out from the
+    ///   innermost; the walk ends past the chain or at a dangling link.
+    /// - provides: the closing substitution a readback builds from a captured
+    ///   environment, in one pass.
+    /// - fails: never; a dangling link ends the walk.
+    /// - panics: none.
+    /// - executable: none — anodized cannot instrument a postcondition on this
+    ///   opaque return type (E0562: `impl Trait` in a closure return type).
+    ///   There is no nontrivial precondition; replacing the opaque return type
+    ///   would change the public API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and two-element chains, distinct payloads and a
+    ///   dangling link distinguish reversed order, a dropped binding and a walk
+    ///   past the chain.
+    /// - witness: `store::tests::environments_bind_innermost_first`
+    /// - witness: `store::tests::a_dangling_chain_binds_nothing`
+    #[inline]
+    pub fn bound_values(
+        &self,
+        environment: Environment,
+    ) -> impl Iterator<Item = HeapValueId>
+    {
+        let mut scope = environment.values;
+        core::iter::from_fn(move || {
+            let ValueScope::Innermost(id) = scope
+            else {
+                return None;
+            };
+            let binding = id.read_in(&self.value_bindings)?;
+            scope = binding.outer;
+            Some(binding.value)
+        })
+    }
+
+    /// Copy the value `from` holds at `value` into this store, at addresses
+    /// fresh here, with every value it reaches and every chain they close
+    /// over.
+    ///
+    /// A thunk, a fixpoint and a closure keep the command they name, so the
+    /// copy is read beside the same command arena, in the same process. A
+    /// cut's writer takes its captures so, and its reader takes the answer.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling address is refused.
+    /// - ensures: on `Ok`, an address here whose value reads as `value` reads
+    ///   in `from`, field by field and binding by binding. Each value reached
+    ///   is copied once however many hold it, and each link of a chain once
+    ///   however many environments share it. On `Err`, the values copied before
+    ///   the refusal stay, and no address the caller holds reaches them.
+    /// - provides: the one move of a value between two stores of one process.
+    /// - fails: as Errors.
+    /// - panics: none.
+    /// - executable: none — "reads as" quantifies over the reached graph.
+    ///
+    /// # Errors
+    /// [`CopyRefusal::Dangling`] for a value or a chain `from` does not hold;
+    /// [`CopyRefusal::Capability`] for a capability reached;
+    /// [`CopyRefusal::Full`] when this store refuses an allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a fixpoint whose chain binds a pair holding one value
+    ///   twice, beside a closure sharing that chain and a stack whose bind
+    ///   frame closes over it, copies into a store holding other values. It
+    ///   reads back equal, with the shared value and the shared link each
+    ///   copied once. A capability and a dangling address are refused.
+    /// - witness: `store::tests::a_copy_reads_as_its_source_and_keeps_its_sharing`
+    /// - witness: `store::tests::a_capability_and_a_dangling_address_do_not_copy`
+    #[inline]
+    pub fn copy(
+        &mut self,
+        from: &Self,
+        value: HeapValueId,
+    ) -> Result<HeapValueId, CopyRefusal>
+    {
+        let mut copied: BTreeMap<HeapValueId, HeapValueId> = BTreeMap::new();
+        let mut links: BTreeMap<ValueBindingId, Environment> = BTreeMap::new();
+        // A value names only addresses allocated before it, so the graph has
+        // no cycle and each value is entered, then left, once.
+        let mut pending = Vec::from([(value, false)]);
+        while let Some((id, entered)) = pending.pop() {
+            if copied.contains_key(&id) {
+                continue;
+            }
+            let held = from.value(id).ok_or(CopyRefusal::Dangling(id))?;
+            if !entered {
+                pending.push((id, true));
+                pending.extend(
+                    from.reached(held)
+                        .into_iter()
+                        .filter(|reached| !copied.contains_key(reached))
+                        .map(|reached| (reached, false)),
+                );
+                continue;
+            }
+            let image = self.image(from, (id, held), (&copied, &mut links))?;
+            let _fresh = copied.insert(id, self.allocate(image).map_err(CopyRefusal::Full)?);
+        }
+        copied
+            .get(&value)
+            .copied()
+            .ok_or(CopyRefusal::Dangling(value))
+    }
+
+    /// The values `value` names: its fields, the values its chains bind, and
+    /// a stack frame's argument.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reached(
+        &self,
+        value: &HeapValue,
+    ) -> Vec<HeapValueId>
+    {
+        match *value {
+            HeapValue::Constructed { ref fields, .. } => fields.to_vec(),
+            HeapValue::Thunk { environment, .. }
+            | HeapValue::Fixpoint { environment, .. }
+            | HeapValue::Closure { environment, .. } => self.bound_values(environment).collect(),
+            HeapValue::Stack { ref frames } => {
+                let mut reached = Vec::new();
+                for frame in frames {
+                    match *frame {
+                        StackFrame::Apply(argument) => reached.push(argument),
+                        StackFrame::Bind(closed) => {
+                            reached.extend(self.bound_values(closed.environment));
+                        },
+                        StackFrame::Project(_) => {},
+                    }
+                }
+                reached
+            },
+            HeapValue::Accumulated { of, by } => match by {
+                Accumulation::Forced => Vec::from([of]),
+                Accumulation::Applied(argument) => Vec::from([of, argument]),
+            },
+            HeapValue::Literal(_)
+            | HeapValue::Opaque(_)
+            | HeapValue::Code(_)
+            | HeapValue::Capability
+            | HeapValue::Free { .. } => Vec::new(),
+        }
+    }
+
+    /// The image here of `from`'s value `id`, `held`, over the images
+    /// `copied` already holds of what it reaches.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::copy`].
+    fn image(
+        &mut self,
+        from: &Self,
+        (id, held): (HeapValueId, &HeapValue),
+        (copied, links): (
+            &BTreeMap<HeapValueId, HeapValueId>,
+            &mut BTreeMap<ValueBindingId, Environment>,
+        ),
+    ) -> Result<HeapValue, CopyRefusal>
+    {
+        let at = |field: HeapValueId| {
+            copied
+                .get(&field)
+                .copied()
+                .ok_or(CopyRefusal::Dangling(field))
+        };
+        Ok(match *held {
+            HeapValue::Literal(ref literal) => HeapValue::Literal(literal.clone()),
+            HeapValue::Constructed {
+                ref tag,
+                ref fields,
+            } => HeapValue::Constructed {
+                tag: tag.clone(),
+                fields: fields
+                    .iter()
+                    .map(|&field| at(field))
+                    .collect::<Result<_, _>>()?,
+            },
+            HeapValue::Thunk { body, environment } => HeapValue::Thunk {
+                body,
+                environment: self.linked(from, (id, environment), (copied, links))?,
+            },
+            HeapValue::Fixpoint {
+                body,
+                environment,
+                evidence,
+            } => HeapValue::Fixpoint {
+                body,
+                environment: self.linked(from, (id, environment), (copied, links))?,
+                evidence,
+            },
+            HeapValue::Closure {
+                producer,
+                environment,
+            } => HeapValue::Closure {
+                producer,
+                environment: self.linked(from, (id, environment), (copied, links))?,
+            },
+            HeapValue::Stack { ref frames } => {
+                let mut images = Vec::with_capacity(frames.len());
+                for frame in frames {
+                    images.push(match *frame {
+                        StackFrame::Apply(argument) => StackFrame::Apply(at(argument)?),
+                        StackFrame::Bind(closed) => StackFrame::Bind(ClosedCommand {
+                            body: closed.body,
+                            environment: self.linked(
+                                from,
+                                (id, closed.environment),
+                                (copied, links),
+                            )?,
+                        }),
+                        StackFrame::Project(component) => StackFrame::Project(component),
+                    });
+                }
+                HeapValue::Stack {
+                    frames: images.into_boxed_slice(),
+                }
+            },
+            HeapValue::Opaque(constant) => HeapValue::Opaque(constant),
+            HeapValue::Code(code) => HeapValue::Code(code),
+            HeapValue::Capability => return Err(CopyRefusal::Capability(id)),
+            HeapValue::Free { zone, index } => HeapValue::Free { zone, index },
+            HeapValue::Accumulated { of, by } => HeapValue::Accumulated {
+                of: at(of)?,
+                by: match by {
+                    Accumulation::Forced => Accumulation::Forced,
+                    Accumulation::Applied(argument) => Accumulation::Applied(at(argument)?),
+                },
+            },
+        })
+    }
+
+    /// The image here of the chain `environment` binds in `from`, which the
+    /// value `holder` closes over: each link not yet linked is bound once,
+    /// outermost first, over the image of the first link `links` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`CopyRefusal::Dangling`] naming `holder` for a link `from` does not
+    /// hold, or naming a bound value `copied` holds no image of;
+    /// [`CopyRefusal::Full`] as [`Self::bind_value`].
+    fn linked(
+        &mut self,
+        from: &Self,
+        (holder, environment): (HeapValueId, Environment),
+        (copied, links): (
+            &BTreeMap<HeapValueId, HeapValueId>,
+            &mut BTreeMap<ValueBindingId, Environment>,
+        ),
+    ) -> Result<Environment, CopyRefusal>
+    {
+        let mut unlinked = Vec::new();
+        let mut scope = environment.values;
+        let mut base = Environment::EMPTY;
+        while let ValueScope::Innermost(link) = scope {
+            if let Some(&image) = links.get(&link) {
+                base = image;
+                break;
+            }
+            let binding = link
+                .read_in(&from.value_bindings)
+                .ok_or(CopyRefusal::Dangling(holder))?;
+            unlinked.push((link, binding.value));
+            scope = binding.outer;
+        }
+        for (link, value) in unlinked.into_iter().rev() {
+            let value = copied
+                .get(&value)
+                .copied()
+                .ok_or(CopyRefusal::Dangling(value))?;
+            base = self.bind_value(base, value).map_err(CopyRefusal::Full)?;
+            let _fresh = links.insert(link, base);
+        }
+        Ok(base)
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,5 @@
+def fs : Cap { write, read, exit };
+def once : Cap[1] { write };
+def every : Cap[ω] { read };
+def none : Cap[0] { read };
+def named : Cap[n] { read };

@@ -1,0 +1,20 @@
+// This source supplies a flag model of `ResetCount`.
+//
+// `Flips` increments and resets a Boolean carrier.
+//
+// The checker can select this model from a Boolean argument.
+//
+// - see: #739
+import "./model-resolution-tally.gandr";
+
+/// `Flips` toggles and resets a Boolean tally.
+module Flips : Model(ResetCount) where
+  type C = Bool;
+  /// `zero` gives false.
+  def zero = false;
+  /// `incr` toggles the flag.
+  def incr(c : Bool) -> Bool = match c { | true => false | false => true };
+  /// `read` maps true to one.
+  def read(c : Bool) -> Integer = match c { | true => 1 | false => 0 };
+  /// `reset` gives false.
+  def reset(c : Bool) -> Bool = false;

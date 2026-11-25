@@ -1,0 +1,12 @@
+theory Base where {
+  sort C : Type;
+  oper eq : (a : C, b : C) --> Bool;
+  law refl : (a : C) -> Path[.A = Bool](eq a a, true);
+}
+theory Same where {
+  include Base;
+  law sym : (a : C, b : C) -> Path[.A = Bool](eq a b, eq b a);
+  law flat : (a : C) -> Bool;
+  law late : (a : C, p : Path[.A = Bool](eq a a, true), b : C) -> Path[.A = Bool](eq a b, true);
+  law eq : (a : C) -> Path[.A = Bool](eq a a, true);
+}

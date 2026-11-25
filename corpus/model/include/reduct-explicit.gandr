@@ -1,0 +1,16 @@
+//! `reduct-explicit` writes the reduct that the checker otherwise inserts.
+//!
+//! `Monoid.Semigroup endoMonoid` reads a `Monoid` model as `Semigroup`. The
+//! sugared source leaves this application to the checker.
+//!
+//! - see: #2030
+
+// The source imports the included theories.
+import "./monoid.gandr";
+// The source imports the endomorphism model and semigroup reader.
+import "./reduct.gandr";
+
+/// `asSemigroupWritten` writes the reduct before it reads the semigroup.
+@[runs("0"), form(explicit)]
+def asSemigroupWritten() -> -F Integer =
+  become multiplies (Monoid.Semigroup endoMonoid)

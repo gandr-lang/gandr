@@ -1,0 +1,16 @@
+theory Wired where {
+  sort Nat : Type;
+  sort Bool : Type;
+  oper add : (Nat, Nat) --> Nat;
+  oper isz : (Nat) --> Bool;
+  rule late : (rule p : u ==> u2, data x : Nat, data y : Nat) ==> (z : Nat) {
+    node : p(tt) ==> (tlate);
+    node : add(x, y) --> (tt);
+  };
+  rule side : (rule q : x ==> wside, data x : Nat) ==> (o : Nat) {
+    node : q(x) ==> (o);
+  };
+  rule tests : (data x : Nat) ==> (ob : Bool) {
+    node : isz(x) --> (bout);
+  };
+}

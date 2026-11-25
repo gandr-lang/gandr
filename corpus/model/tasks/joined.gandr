@@ -1,0 +1,31 @@
+//! `joined` closes a task end before a scope exits.
+//!
+//! A scope clause can drop or resume its remaining continuation twice. After a
+//! parent joins, the rest holds no task resource. So the scope's operation
+//! checks.
+//!
+//! The handler forks, receives and closes the task. The exit operation resumes
+//! the continuation as `*{}`.
+//!
+//! - see: `authority.gandr` — a parent exits while its task end stays open
+
+// The import gives the task protocols.
+import "./task-base.gandr";
+// The import gives the early-exit host interface.
+import std.process;
+
+/// A scope exits after its parent reads the task end to its close.
+@[runs("*{}")]
+def joined() -> Unit =
+  handle c : std.process.Exit.Eff {
+    let found = fork (task : Task.Join) {
+      send task Task.notes;
+      close task
+    };
+    let text = recv found;
+    close found;
+    c.exit 1
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
+  }

@@ -1,0 +1,5 @@
+data IntOp : Type where {
+  | Z : IntOp
+  | S : (x : IntOp) --> IntOp
+  oper pred : (x : IntOp) --> IntOp;
+}

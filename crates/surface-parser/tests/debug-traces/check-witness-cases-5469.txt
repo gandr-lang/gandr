@@ -1,0 +1,7 @@
+command: mise run check:witness-cases
+issue: #5469
+before: bae084106f
+exit: 1
+witness-shards: #7089: a shard of landing-checks.yml leaves out a package whose tests its members' witnesses name: gandr-surface-parser in rest names a test of gandr-surface-session in engine (crates/surface-parser/src/parse/place.rs)
+after: ee64345476
+exit: 0

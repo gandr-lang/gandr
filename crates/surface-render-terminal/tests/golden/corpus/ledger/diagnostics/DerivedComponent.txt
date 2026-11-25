@@ -1,0 +1,11 @@
+error[DerivedComponent]: the theory `Involution` derives `invFour`, so a model of it writes no component of that name
+   ╭▸ corpus/ledger/diagnostics/DerivedComponent.gandr:15:7
+   │
+ 8 │ rule Involution.invFour : inv (inv (inv (inv x))) <=> x;
+   │ ──────────────────────────────────────────────────────── the derivation that fills it
+   ┆
+15 │   def invFour(x : Integer) -> Path (inv (inv (inv (inv x)))) x = Path.here x;
+   │       ━━━━━━━ a component its theory's derivation fills
+   │
+   ├ note: `invFour` is refused with DerivedComponent, as its expectation states
+   ╰ help: delete `invFour`: the model reads it as `Involution.invFour`, which the derivation fills

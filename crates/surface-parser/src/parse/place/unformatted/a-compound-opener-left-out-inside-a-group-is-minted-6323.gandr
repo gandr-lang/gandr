@@ -1,0 +1,1 @@
+def carried(A : Type, x : A, y : A, carrier : Type -> Type) -> Type = carrier (Path[.A = A](x, y)));

@@ -1,0 +1,36 @@
+// `std.crypto`: a one-time pad over the integers modulo `2^w`. `pad` adds a
+// key to a message, `(message + key) mod 2^w`, and `unpad` takes it away.
+//
+// A key that is uniform over `[0, 2^w)` and used once makes the ciphertext
+// uniform, whatever the message. So the ciphertext is independent of the
+// message, and it tells nothing about it. This is Shannon's perfect secrecy,
+// and probabilistic separation states it as independence.
+//
+// `key` draws a fresh key of `w` bits through `std.rand.Eff`. A width outside
+// 1 to 64 meets the refusal of the draw by name. The corpus source
+// `one-time-pad.gandr` states the uniform distribution of each ciphertext,
+// and a crate test decides the independence over its joint distribution.
+//
+// Limits: a key used twice gives no secrecy, and nothing here stops a second
+// use.
+//
+// - see: #5713
+// - see: Shannon 1949, Communication theory of secrecy systems — perfect
+//   secrecy
+
+// `span`, the `2^w` values of a width, and the interface of randomness.
+import std.rand (span);
+
+/// A fresh key of `w` bits, uniform over `[0, 2^w)`.
+pub def key(w : Integer) -> [std.rand.Eff] Integer =
+  std.rand.draw w
+
+/// The ciphertext of `message` under `key`: `(message + key) mod 2^w`.
+pub def pad(w : Integer, message : Integer, key : Integer) -> Integer =
+  int.mod (message + key) (span w)
+
+/// The message of `ciphertext` under `key`, for a key below `2^w`:
+/// `(ciphertext + 2^w - key) mod 2^w`.
+pub def unpad(w : Integer, ciphertext : Integer, key : Integer) -> Integer =
+  let modulus = span w
+  int.mod (ciphertext + modulus - key) modulus

@@ -1,0 +1,49 @@
+error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an effect
+   ╭▸ corpus/pathological/drop/halted.gandr:29:40
+   │
+26 │ ┌  def halted() -> Integer =
+27 │ │┌   handle h : Halt.Eff with sort R = Integer {
+28 │ ││     var n = 0;
+   │ ││     ─── checked against `-F [Halt.Eff, h : Halt.Eff] Integer`; while checking the scope of this hold
+29 │ ││     access n as v { abort v } unwind { h.halt 1 };
+   │ ││     ┬──────────────────────────────────┯━━━━━━━──
+   │ ││     │                                  │
+   │ ││     │                                  an effect in an unwind
+   │ ││     checked against `-F [Halt.Eff, h : Halt.Eff] Integer`; while checking the unwind of this access under the empty row
+30 │ ││     pure 0
+   ┆ ┆┆
+33 │ ││     | oper halt(code) => pure 7
+34 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Integer`; while checking the body of this thunk
+   │      checked against `-F Integer`; while checking the subject of this scope under its capability; binds h : Cap {halt}
+   │
+   ├ note: `halted` is refused with UnwindEffect, as its expectation states
+   ╰ help: remove the effect from the `unwind`
+
+error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an effect
+   ╭▸ corpus/pathological/drop/halted.gandr:46:42
+   │
+38 │ ┌  def abandoned() -> Integer =
+39 │ │┌   handle c : std.process.Exit.Eff {
+40 │ ││     let _ = c.exit 1;
+41 │ ││     pure 0
+42 │ ││   } with {
+   ┆ ┆┆
+45 │ ││       var n = 0;
+   │ ││       ─── checked against `-F Integer`; while checking the scope of this hold
+46 │ ││       access n as v { abort v } unwind { abandon k };
+   │ ││       ┬──────────────────────────────────┯━━━━━━━━──
+   │ ││       │                                  │
+   │ ││       │                                  an effect in an unwind
+   │ ││       checked against `-F Integer`; while checking the unwind of this access under the empty row
+   ┆ ┆┆
+49 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Integer`; while checking the body of this thunk
+   │      checked against `-F Integer`; while checking an operation clause of this handler; binds c : Integer, _ : Stack (-F Unit) (-F Integer)
+   │
+   ├ note: `abandoned` is refused with UnwindEffect, as its expectation states
+   ╰ help: remove the effect from the `unwind`

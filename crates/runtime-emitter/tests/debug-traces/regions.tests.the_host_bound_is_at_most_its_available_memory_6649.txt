@@ -1,0 +1,75 @@
+test: regions::tests::the_host_bound_is_at_most_its_available_memory_6649
+package: gandr-runtime-emitter
+command: mise run debug:test gandr-runtime-emitter regions::tests::the_host_bound_is_at_most_its_available_memory_6649 --break Memory>?::of$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-runtime-emitter/bdb2d146e20e1883/out/gandr_runtime_emitter-bdb2d146e20e1883"
+Current executable set to 'target/debug-trace/debug/build/gandr-runtime-emitter/bdb2d146e20e1883/out/gandr_runtime_emitter-bdb2d146e20e1883' (x86_64).
+(lldb) settings set -- target.run-args  "regions::tests::the_host_bound_is_at_most_its_available_memory_6649" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Memory>?::of$
+Breakpoint 1: where = gandr_runtime_emitter-bdb2d146e20e1883`<gandr_runtime_emitter::regions::Memory>::of + 10 at regions.rs:418:26, address = 0x0000000000249a6a
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_runtime_emitter-bdb2d146e20e1883`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000000671bc8
+(lldb) run
+
+running 1 test
+test regions::tests::the_host_bound_is_at_most_its_available_memory_6649 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1616748 launched: 'target/debug-trace/debug/build/gandr-runtime-emitter/bdb2d146e20e1883/out/gandr_runtime_emitter-bdb2d146e20e1883' (x86_64)
+Process 1616748 stopped
+* thread #2, name = 'regions::tests:', stop reason = breakpoint 1.1
+       frame #0: 0x000055555579da6a gandr_runtime_emitter-bdb2d146e20e1883`<gandr_runtime_emitter::regions::Memory>::of(readings={available:Some({0:47851896832}), cgroup:Some({0:8589934592}), address_space:None}) at regions.rs:418:26
+   415 	    #[must_use]
+   416 	    fn of(readings: Readings) -> Self
+   417 	    {
+-> 418 	        let available = [readings.available, readings.cgroup, readings.address_space]
+    	                         ^
+   419 	            .into_iter()
+   420 	            .flatten()
+   421 	            .min();
+(lldb) bt 24
+* thread #2, name = 'regions::tests:', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555579da6a gandr_runtime_emitter-bdb2d146e20e1883`<gandr_runtime_emitter::regions::Memory>::of(readings={available:Some({0:47851896832}), cgroup:Some({0:8589934592}), address_space:None}) at regions.rs:418:26
+     frame #1: 0x0000555555822957 gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::the_host_bound_is_at_most_its_available_memory_6649 at regions.rs:1231:20
+     frame #2: 0x0000555555814f17 gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::the_host_bound_is_at_most_its_available_memory_6649::{closure#0}((null)={}) at regions.rs:1227:61
+     frame #3: 0x00005555557ee176 gandr_runtime_emitter-bdb2d146e20e1883`<gandr_runtime_emitter::regions::tests::the_host_bound_is_at_most_its_available_memory_6649::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x000055555589aa2b gandr_runtime_emitter-bdb2d146e20e1883`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x000055555589aa29 gandr_runtime_emitter-bdb2d146e20e1883`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #6: 0x00005555558a7f75 gandr_runtime_emitter-bdb2d146e20e1883`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #7: 0x00005555558a7f70 gandr_runtime_emitter-bdb2d146e20e1883`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x00005555558a7f70 gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #9: 0x00005555558a7f5b gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #10: 0x00005555558a7f5b gandr_runtime_emitter-bdb2d146e20e1883`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x00005555558a7f5b gandr_runtime_emitter-bdb2d146e20e1883`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #12: 0x00005555558a7f46 gandr_runtime_emitter-bdb2d146e20e1883`test::run_test::{closure#0} at lib.rs:677:43
+     frame #13: 0x00005555558a2934 gandr_runtime_emitter-bdb2d146e20e1883`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #14: 0x00005555558a28b9 gandr_runtime_emitter-bdb2d146e20e1883`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x00005555558ab0d2 gandr_runtime_emitter-bdb2d146e20e1883`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x00005555558ab0c3 gandr_runtime_emitter-bdb2d146e20e1883`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x00005555558ab0c3 gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #18: 0x00005555558ab0b3 gandr_runtime_emitter-bdb2d146e20e1883`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x00005555558ab0b3 gandr_runtime_emitter-bdb2d146e20e1883`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x00005555558ab0b3 gandr_runtime_emitter-bdb2d146e20e1883`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x00005555558ab0a4 gandr_runtime_emitter-bdb2d146e20e1883`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x0000555555be8d9f gandr_runtime_emitter-bdb2d146e20e1883`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #23: 0x0000555555be8d98 gandr_runtime_emitter-bdb2d146e20e1883`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+(lldb) frame variable --depth 3
+(gandr_runtime_emitter::regions::Readings) readings = {available:Some({0:47851896832}), cgroup:Some({0:8589934592}), address_space:None}
+(lldb) up
+frame #1: 0x0000555555822957 gandr_runtime_emitter-bdb2d146e20e1883`gandr_runtime_emitter::regions::tests::the_host_bound_is_at_most_its_available_memory_6649 at regions.rs:1231:20
+   1228	    {
+   1229	        let readings = super::Readings::now();
+   1230	        let available = readings.available.expect("Linux reports MemAvailable");
+-> 1231	        let host = Memory::of(readings);
+    	                   ^
+   1232	        assert_eq!(Origin::Available, host.origin(), "{host}");
+   1233	        assert!(host.bytes() <= available, "{host} past {available}");
+   1234	    }
+(lldb) frame variable --depth 3
+(gandr_runtime_emitter::regions::Readings) readings = {available:Some({0:47851896832}), cgroup:Some({0:8589934592}), address_space:None}
+(gandr_runtime_emitter::regions::Bytes) available = {0:47851896832}

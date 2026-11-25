@@ -1,0 +1,310 @@
+[
+  {
+    "name": "a function's witness bullets are its witnesses, in order, and an item that is no function is left out",
+    "program": "items.jq",
+    "input": {
+      "index": {
+        "1": {
+          "span": { "filename": "crates/a/src/lib.rs", "begin": [10, 1], "end": [20, 2] },
+          "inner": { "function": {} },
+          "docs": "Solve.\n\n# Adequacy\n- hypothesis: L3 — both.\n- witness: `tests::solve::first`\n- witness: `solve::tests::second`\nnot a bullet - witness: `tests::nope`"
+        },
+        "2": {
+          "span": { "filename": "crates/a/src/lib.rs", "begin": [22, 1], "end": [24, 2] },
+          "inner": { "function": {} },
+          "docs": null
+        },
+        "3": {
+          "span": { "filename": "crates/a/src/lib.rs", "begin": [1, 1], "end": [8, 2] },
+          "inner": { "struct": {} },
+          "docs": "- witness: `tests::a_struct`"
+        },
+        "4": { "span": null, "inner": { "function": {} }, "docs": "- witness: `tests::external`" }
+      }
+    },
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"begin\":10,\"end\":20,\"witnesses\":[\"tests::solve::first\",\"solve::tests::second\"]},{\"file\":\"crates/a/src/lib.rs\",\"begin\":22,\"end\":24,\"witnesses\":[]}]"
+  },
+  {
+    "name": "#3210: a mutant sits in the function ending on its function's last line, an inner function's mutant in the inner one, and a mutant in no function in the innermost spanning it; each group names the integration targets its witnesses live in, and whether one is a unit test",
+    "program": "groups.jq",
+    "input": {
+      "package": "gandr-a",
+      "targets": ["tests"],
+      "items": [
+        { "file": "crates/a/src/lib.rs", "begin": 10, "end": 40, "witnesses": ["tests::outer"] },
+        {
+          "file": "crates/a/src/lib.rs",
+          "begin": 20,
+          "end": 30,
+          "witnesses": ["inner::tests::unit"]
+        },
+        { "file": "crates/a/src/lib.rs", "begin": 50, "end": 60, "witnesses": [] }
+      ],
+      "mutants": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:12:5: replace outer -> u8 with 0",
+          "function": { "span": { "start": { "line": 6 }, "end": { "line": 40 } } },
+          "span": { "start": { "line": 12 }, "end": { "line": 12 } }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:25:9: replace == with != in inner",
+          "function": { "span": { "start": { "line": 18 }, "end": { "line": 30 } } },
+          "span": { "start": { "line": 25 }, "end": { "line": 25 } }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:55:1: delete match arm",
+          "function": null,
+          "span": { "start": { "line": 55 }, "end": { "line": 55 } }
+        }
+      ]
+    },
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace outer -> u8 with 0\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace outer -> u8 with 0)$\",\"filter\":\"package(=gandr-a) & ((binary(=tests) & test(=outer)))\",\"tests\":[\"tests\"],\"unit\":false},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:20\",\"names\":[\"crates/a/src/lib.rs:25:9: replace == with != in inner\"],\"re\":\"^(crates/a/src/lib\\\\.rs:25:9: replace == with != in inner)$\",\"filter\":\"package(=gandr-a) & (test(=inner::tests::unit))\",\"tests\":[],\"unit\":true},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:50\",\"names\":[\"crates/a/src/lib.rs:55:1: delete match arm\"],\"re\":\"^(crates/a/src/lib\\\\.rs:55:1: delete match arm)$\",\"filter\":null,\"tests\":[],\"unit\":false}]"
+  },
+  {
+    "name": "a function's mutants form one group whose regex escapes each name, and a mutant in no documented function is unwitnessed",
+    "program": "groups.jq",
+    "input": {
+      "package": "gandr-a",
+      "targets": [],
+      "items": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "begin": 10,
+          "end": 20,
+          "witnesses": ["tests::w", "tests::w"]
+        }
+      ],
+      "mutants": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default()",
+          "function": { "span": { "start": { "line": 8 }, "end": { "line": 20 } } },
+          "span": { "start": { "line": 12 }, "end": { "line": 12 } }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:14:9: replace + with * in from",
+          "function": { "span": { "start": { "line": 8 }, "end": { "line": 20 } } },
+          "span": { "start": { "line": 14 }, "end": { "line": 14 } }
+        },
+        {
+          "file": "crates/a/src/other.rs",
+          "name": "crates/a/src/other.rs:3:5: replace f -> [u8; 2] with [0; 2]",
+          "function": { "span": { "start": { "line": 1 }, "end": { "line": 5 } } },
+          "span": { "start": { "line": 3 }, "end": { "line": 3 } }
+        }
+      ]
+    },
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default()\",\"crates/a/src/lib.rs:14:9: replace + with * in from\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default\\\\(\\\\)|crates/a/src/lib\\\\.rs:14:9: replace \\\\+ with \\\\* in from)$\",\"filter\":\"package(=gandr-a) & (test(=tests::w))\",\"tests\":[],\"unit\":true},{\"file\":\"crates/a/src/other.rs\",\"item\":null,\"names\":[\"crates/a/src/other.rs:3:5: replace f -> [u8; 2] with [0; 2]\"],\"re\":\"^(crates/a/src/other\\\\.rs:3:5: replace f -> \\\\[u8; 2\\\\] with \\\\[0; 2\\\\])$\",\"filter\":null,\"tests\":[],\"unit\":false}]"
+  },
+  {
+    "name": "#3596: a survivors issue opens with the sentence that says what it is and a lead, then the report less its marker line",
+    "program": "landed.jq",
+    "input": {
+      "pr": 5100,
+      "report": "<!-- gandr-mutants -->\n| Crate | Mutant |\n| --- | --- |\n| `crates/core-term` | replace len -> usize with 0 |\n\n1 survivor(s).\n"
+    },
+    "output": "This issue lists the mutants of the lines of #5100 that no witness catches.\n\nEach survivor needs a witness, or a `- witness:` bullet that its function lacks. The last mutants report of #5100 follows.\n\n| Crate | Mutant |\n| --- | --- |\n| `crates/core-term` | replace len -> usize with 0 |\n\n1 survivor(s)."
+  },
+  {
+    "name": "#3211: an unwitnessed collector escapes a table cell",
+    "program": "unwitnessed.jq",
+    "input": {
+      "crate": "gandr-core-checker",
+      "mutants": [
+        "crates/core-checker/src/check.rs:8: replace check -> bool with false",
+        "crates/core-checker/src/check.rs:9: replace left | right with left"
+      ]
+    },
+    "output": "This issue lists the mutants of `gandr-core-checker` that no witness names.\n\nNo build starts. Each row is a static coverage gap.\n\n| mutant |\n| --- |\n| `crates/core-checker/src/check.rs:8: replace check -> bool with false` |\n| `crates/core-checker/src/check.rs:9: replace left \\| right with left` |\n\n2 unwitnessed mutant(s)."
+  },
+  {
+    "name": "#3209: a campaign collector lists every surviving mutant",
+    "program": "campaign.jq",
+    "input": {
+      "crate": "gandr-core-checker",
+      "mutants": [
+        "crates/core-checker/src/check.rs:8: replace check -> bool with false",
+        "crates/core-checker/src/check.rs:9: replace left | right with left"
+      ]
+    },
+    "output": "This issue lists the mutants in `gandr-core-checker` that the campaign leaves alive.\n\nEach row needs a witness. A missing witness must name its function.\n\n| mutant |\n| --- |\n| `crates/core-checker/src/check.rs:8: replace check -> bool with false` |\n| `crates/core-checker/src/check.rs:9: replace left \\| right with left` |\n\n2 mutant(s) alive."
+  },
+  {
+    "name": "#6878: each body of a function with a body mutant becomes a match with one arm for each mutant and the body as the default arm; a function with no body mutant and a mutant in no function stay out, and the crate root gets the switch",
+    "program": "schema.jq",
+    "input": {
+      "mutants": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:2:5: replace add -> u32 with 0",
+          "genre": "FnValue",
+          "replacement": "0",
+          "span": { "start": { "line": 2, "column": 5 }, "end": { "line": 2, "column": 10 } },
+          "function": {
+            "function_name": "add",
+            "span": { "start": { "line": 1, "column": 1 }, "end": { "line": 3, "column": 2 } }
+          }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:2:7: replace + with - in add",
+          "genre": "BinaryOperator",
+          "replacement": "-",
+          "span": { "start": { "line": 2, "column": 7 }, "end": { "line": 2, "column": 8 } },
+          "function": {
+            "function_name": "add",
+            "span": { "start": { "line": 1, "column": 1 }, "end": { "line": 3, "column": 2 } }
+          }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:5:5: delete ! in neg",
+          "genre": "UnaryOperator",
+          "replacement": "",
+          "span": { "start": { "line": 5, "column": 5 }, "end": { "line": 5, "column": 6 } },
+          "function": {
+            "function_name": "neg",
+            "span": { "start": { "line": 4, "column": 1 }, "end": { "line": 6, "column": 2 } }
+          }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:1:1: a mutant in no function",
+          "genre": "FnValue",
+          "replacement": "",
+          "span": { "start": { "line": 1, "column": 1 }, "end": { "line": 1, "column": 2 } },
+          "function": null
+        }
+      ],
+      "files": {
+        "crates/a/src/lib.rs": "fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\nfn neg(x: bool) -> bool {\n    !x\n}\n"
+      },
+      "roots": ["crates/a/src/lib.rs"],
+      "dropped": []
+    },
+    "output": "{\"files\":{\"crates/a/src/lib.rs\":\"fn add(a: u32, b: u32) -> u32 {\\n    match crate::__gandr_mutant::active() {\\n1 => {\\n0\\n}\\n2 => {\\na - b\\n}\\n_ => {\\na + b\\n}\\n}\\n}\\nfn neg(x: bool) -> bool {\\n    !x\\n}\\n\\n\\n#[doc(hidden)]\\n#[allow(warnings)]\\npub mod __gandr_mutant {\\n    extern crate std;\\n\\n    pub fn active() -> u32 {\\n        static ACTIVE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();\\n        *ACTIVE.get_or_init(|| std::env::var(\\\"GANDR_MUTANT\\\").ok().and_then(|value| value.parse().ok()).unwrap_or(0))\\n    }\\n}\\n\"},\"arms\":[{\"file\":\"crates/a/src/lib.rs\",\"first\":2,\"last\":2,\"drop\":[\"crates/a/src/lib.rs:2:5: replace add -> u32 with 0\"]},{\"file\":\"crates/a/src/lib.rs\",\"first\":3,\"last\":5,\"drop\":[\"crates/a/src/lib.rs:2:5: replace add -> u32 with 0\"]},{\"file\":\"crates/a/src/lib.rs\",\"first\":6,\"last\":8,\"drop\":[\"crates/a/src/lib.rs:2:7: replace + with - in add\"]},{\"file\":\"crates/a/src/lib.rs\",\"first\":9,\"last\":12,\"drop\":[\"crates/a/src/lib.rs:2:5: replace add -> u32 with 0\"]}],\"held\":[\"crates/a/src/lib.rs:2:5: replace add -> u32 with 0\",\"crates/a/src/lib.rs:2:7: replace + with - in add\"],\"out\":[{\"name\":\"crates/a/src/lib.rs:1:1: a mutant in no function\",\"reason\":\"no function\"},{\"name\":\"crates/a/src/lib.rs:5:5: delete ! in neg\",\"reason\":\"no body\"}]}"
+  },
+  {
+    "name": "#6878: a refused body mutant still gives its function's body, so the function's other mutants stay held and the arms drop them alone",
+    "program": "schema.jq",
+    "input": {
+      "mutants": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:2:5: replace add -> u32 with 0",
+          "genre": "FnValue",
+          "replacement": "0",
+          "span": { "start": { "line": 2, "column": 5 }, "end": { "line": 2, "column": 10 } },
+          "function": {
+            "function_name": "add",
+            "span": { "start": { "line": 1, "column": 1 }, "end": { "line": 3, "column": 2 } }
+          }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:2:7: replace + with - in add",
+          "genre": "BinaryOperator",
+          "replacement": "-",
+          "span": { "start": { "line": 2, "column": 7 }, "end": { "line": 2, "column": 8 } },
+          "function": {
+            "function_name": "add",
+            "span": { "start": { "line": 1, "column": 1 }, "end": { "line": 3, "column": 2 } }
+          }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:5:5: delete ! in neg",
+          "genre": "UnaryOperator",
+          "replacement": "",
+          "span": { "start": { "line": 5, "column": 5 }, "end": { "line": 5, "column": 6 } },
+          "function": {
+            "function_name": "neg",
+            "span": { "start": { "line": 4, "column": 1 }, "end": { "line": 6, "column": 2 } }
+          }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:1:1: a mutant in no function",
+          "genre": "FnValue",
+          "replacement": "",
+          "span": { "start": { "line": 1, "column": 1 }, "end": { "line": 1, "column": 2 } },
+          "function": null
+        }
+      ],
+      "files": {
+        "crates/a/src/lib.rs": "fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\nfn neg(x: bool) -> bool {\n    !x\n}\n"
+      },
+      "roots": ["crates/a/src/lib.rs"],
+      "dropped": ["crates/a/src/lib.rs:2:5: replace add -> u32 with 0"]
+    },
+    "output": "{\"files\":{\"crates/a/src/lib.rs\":\"fn add(a: u32, b: u32) -> u32 {\\n    match crate::__gandr_mutant::active() {\\n2 => {\\na - b\\n}\\n_ => {\\na + b\\n}\\n}\\n}\\nfn neg(x: bool) -> bool {\\n    !x\\n}\\n\\n\\n#[doc(hidden)]\\n#[allow(warnings)]\\npub mod __gandr_mutant {\\n    extern crate std;\\n\\n    pub fn active() -> u32 {\\n        static ACTIVE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();\\n        *ACTIVE.get_or_init(|| std::env::var(\\\"GANDR_MUTANT\\\").ok().and_then(|value| value.parse().ok()).unwrap_or(0))\\n    }\\n}\\n\"},\"arms\":[{\"file\":\"crates/a/src/lib.rs\",\"first\":2,\"last\":2,\"drop\":[\"crates/a/src/lib.rs:2:7: replace + with - in add\"]},{\"file\":\"crates/a/src/lib.rs\",\"first\":3,\"last\":5,\"drop\":[\"crates/a/src/lib.rs:2:7: replace + with - in add\"]},{\"file\":\"crates/a/src/lib.rs\",\"first\":6,\"last\":9,\"drop\":[\"crates/a/src/lib.rs:2:7: replace + with - in add\"]}],\"held\":[\"crates/a/src/lib.rs:2:7: replace + with - in add\"],\"out\":[{\"name\":\"crates/a/src/lib.rs:1:1: a mutant in no function\",\"reason\":\"no function\"},{\"name\":\"crates/a/src/lib.rs:5:5: delete ! in neg\",\"reason\":\"no body\"}]}"
+  },
+  {
+    "name": "#6878: an error on an arm drops the names the arm holds, a warning drops nothing, and an error on no arm or with no span is unplaced",
+    "program": "refused.jq",
+    "input": {
+      "arms": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "first": 2,
+          "last": 2,
+          "drop": ["crates/a/src/lib.rs:2:5: replace add -> u32 with 0"]
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "first": 3,
+          "last": 5,
+          "drop": ["crates/a/src/lib.rs:2:5: replace add -> u32 with 0"]
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "first": 6,
+          "last": 8,
+          "drop": ["crates/a/src/lib.rs:2:7: replace + with - in add"]
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "first": 9,
+          "last": 12,
+          "drop": ["crates/a/src/lib.rs:2:5: replace add -> u32 with 0"]
+        }
+      ],
+      "messages": [
+        {
+          "reason": "compiler-message",
+          "message": {
+            "level": "error",
+            "spans": [
+              { "is_primary": false, "file_name": "crates/a/src/lib.rs", "line_start": 3 },
+              { "is_primary": true, "file_name": "crates/a/src/lib.rs", "line_start": 7 }
+            ]
+          }
+        },
+        {
+          "reason": "compiler-message",
+          "message": {
+            "level": "warning",
+            "spans": [{ "is_primary": true, "file_name": "crates/a/src/lib.rs", "line_start": 4 }]
+          }
+        },
+        {
+          "reason": "compiler-message",
+          "message": {
+            "level": "error",
+            "spans": [{ "is_primary": true, "file_name": "crates/a/src/lib.rs", "line_start": 15 }]
+          }
+        },
+        { "reason": "compiler-message", "message": { "level": "error", "spans": [] } },
+        { "reason": "build-finished", "success": false }
+      ]
+    },
+    "output": {
+      "dropped": ["crates/a/src/lib.rs:2:7: replace + with - in add"],
+      "unplaced": ["?", "crates/a/src/lib.rs:15"]
+    }
+  }
+]

@@ -1,0 +1,33 @@
+//! `closed-statements` closes both mock ring endpoints with statements.
+//!
+//! `close e;` closes `e` and returns unit. The pathological twin refuses a
+//! half that leaves its endpoint open as `LinearResidue`.
+//!
+//! The checker removes the endpoint when a closing statement ends a block.
+//! The source proves that this closing form and a final `close e` agree.
+//!
+//! - see: corpus/pathological/completion/half-unclosed.gandr
+//! - see: #1205
+
+// The ring's protocol and its entries.
+import "./ring-base.gandr";
+
+/// The target's completion reaped first, each half and the body ending in a
+/// closing statement.
+def closedAsStatements() -> Unit =
+  let pending = fork (target : Ring.Submission) {
+    let sqe = recv target;
+    send target Ring.done;
+    close target;
+  };
+  let cancel = fork (canceller : Ring.Submission) {
+    let sqe = recv canceller;
+    send canceller Ring.done;
+    close canceller;
+  };
+  send pending Ring.read
+  send cancel Ring.read
+  let first = recv pending
+  let second = recv cancel
+  close pending
+  close cancel;

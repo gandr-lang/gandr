@@ -1,0 +1,32 @@
+// This source shows a newer package version.
+//
+// `Newer` renames the old answer as `reply` and adds `count`.
+//
+// A flow presents the newer package at the older signature.
+// The checker resolves an importer through that flow. An importer names the
+// flow after `via`, and the body of the flow reads `reply`.
+//
+// - see: #3378
+// - see: model/modules/translated.gandr
+
+/// The older version's signature, which importers still read.
+pub theory Older where
+  /// The answer.
+  oper answer : Integer;
+
+/// The newer version's signature.
+pub theory Newer where
+  /// The answer, renamed.
+  oper reply : Integer;
+  /// A count the older version did not keep.
+  oper count : Integer;
+
+/// The newer version's reply.
+pub def reply : Integer = 42;
+
+/// How many replies the newer version keeps count of.
+pub def count : Integer = 3;
+
+/// The newer version read at the older signature: the answer is the reply.
+pub flow downgrade : Newer ~~> Older where
+  def answer = reply;

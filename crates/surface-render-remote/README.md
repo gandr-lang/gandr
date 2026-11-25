@@ -1,0 +1,122 @@
+# gandr-surface-render-remote
+
+The renderer seam of the gandr surface: highlight and mark spans, diagnostic and goal cards, transcript blocks and the byte-to-position projections a renderer reads, the versioned render-bus frame that carries them across a process boundary, and the visual language every renderer's output is checked against.
+
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
+- [License](#license)
+<!-- tocstop -->
+
+## Synopsis
+
+**What.** Nine modules of owned data. `present` holds `HlSpan` and `MarkSpan` over a validated `ByteRange`, `DiagCard` and `GoalCard`, `TranscriptBlock` with its `OutKind` lines, `pos_of_byte` and `byte_of_pos`, the projection between a `ByteOffset` and a zero-based `Pos` of row and character column, and `LineIndex`, the projection between a `ByteOffset` and a zero-based `Utf16Pos` of row and UTF-16 column. `diagnostic` holds `DiagnosticCode`, the registry of stable codes with their localizable `DiagnosticTemplate`s, and `DiagnosticMessage`, a code's typed arguments. `account` holds `AccountCard`, one declaration's block keyed by its content, and `AccountEdit`, the edits between two lists of cards. `activity` holds `PoolActivity`, the hub's pool at one tick: one `CoreActivity` row per core and the totals. `stack` holds `StackCard`, one `SpineRow` per spine at a cursor. `store` holds `StoreCard`, one `StoreRow` per value of the store under the hub's data directory, and each `OwedCell` with its `UnitNumber`. `derivation` holds `DerivationCard`, one `DerivationRow` per judgement node of a declaration. `wire` holds `RenderFrame`: a `FrameBody` — `Hello`, `Frame` carrying a `ReportView`, `Resync`, `Accounts`, `AccountPatch`, `Activity`, `Store`, `Stack`, `Derivation`, `Open`, `Opened`, `Trace`, `Detach` — routed by a `FrameScope` to the connection or to one `DocId`, under `WIRE_SCHEMA_VERSION`. `visual` holds the visual language: the five `Warrant`s with their glyphs and colour names, a `Frame` of named fields, the `Rendering` of panes, rows and cells a renderer emits for it, and the twenty `RULES` that `conform` checks the rendering against. The crate is `no_std` over `core` and `alloc` and depends on no other workspace crate.
+
+**Why.** A highlighter, a checker's report and a session loop each produce something a terminal, a language server or an agent paints, and each renderer must read the same vocabulary or the renderers fork. Putting that vocabulary in a crate that parses, lowers, types and marks nothing lets every renderer link it without linking the pipeline, and lets the pipeline project into it once. The frame is the same vocabulary for a renderer in another process.
+
+**How.** Every type is owned data — strings, validated ranges and closed enums — so it crosses a thread channel as it is. The default-off `serde` feature derives a serde image for every type; the decode of a range and of a frame validates, so a decoded value holds every invariant a constructed one does. The character projection walks the text once per query; the line index records each row's start once and walks one row per query.
+
+## Provided features
+
+- `ByteOffset`, `ByteRange` and `InvertedRange`: a range's start is at or below its end, built or decoded. Witnesses: `present::tests::an_inverted_range_is_refused`, `present::tests::an_inverted_range_is_refused_on_decode`.
+- `HlRole` and `HlSpan`: one role vocabulary for every renderer.
+- `MarkKind` and `MarkSpan`: an error mark or an empty hole's tint, with its message.
+- `DiagCard` and `GoalCard`: a refusal with its code, message, optional range, offending expression, elaboration note and derivation chain; a hole with its label, note, expected type, local context and range.
+- `TranscriptBlock` and `OutKind`: an echoed submission, its highlights, and its result lines by kind.
+- `SourceText`, `Pos`, `PositionRow`, `PositionColumn`, `pos_of_byte`, `byte_of_pos` and `PosOfByteError`: the projection. Witnesses: `present::tests::positions_round_trip_on_multibyte_text`, `present::tests::pos_of_byte_rejects_interior_multibyte_offsets`.
+- `LineIndex`, `Utf16Pos` and `Utf16Column`: the UTF-16 projection, over rows ended by `\n`, `\r\n` and a lone `\r`. Witnesses: `present::tests::utf16_columns_count_code_units_across_a_multibyte_boundary`, `present::tests::utf16_rows_end_at_every_protocol_terminator`.
+- `DiagnosticCode`, `DIAGNOSTIC_CODES`, `DiagnosticTemplate`, `UnknownDiagnosticCode` and `DiagnosticMessage`: the code registry and the typed arguments. Witnesses: `diagnostic::tests::registry_codes_are_dense_unique_and_round_trip`, `diagnostic::tests::one_message_kind_has_one_code_independent_of_arguments`, `diagnostic::tests::code_wire_image_is_its_stable_spelling`, `diagnostic::tests::message_templates_preserve_argument_roles`.
+- `RenderFrame`, `FrameScope`, `FrameBody`, `ReportView`, `DocId`, `DocumentUri`, `DocVersion`, `WireSchemaVersion` and `WIRE_SCHEMA_VERSION`: the frame. A report carries the document's text at its version, which its byte ranges address, so a renderer that holds no buffer of its own can place them; an image without the text decodes with it empty. Witnesses: the `wire::tests` that the `# Adequacy` of each constructor and of the decode names.
+- `serde`, off by default: the serde image of every type above, with the validating decode of `ByteRange` and `RenderFrame`.
+- `Warrant`, `WARRANTS`, `Glyph`, `Colour`, `DERIVATION_GLYPHS`, `BLOCKS`, `Unit`, `Count`, `Numeral`, `Sparkline`, the frame (`Frame`, `Record`, `Field`, `FieldName`, `Datum`, `Revision`), the rendering (`Rendering`, `Pane`, `Head`, `Row`, `Cell`, `Place`, `Role`, `Align`, `Attribute`) and the check (`RULES`, `Rule`, `Slug`, `conform`, `Shown`, `Breach`, `Spot`, `At`): the palette, the marks a renderer may emit, and the rules as checks over its rendering of a frame. Witnesses: `visual::tests::the_palette_is_the_blueprint_s`, `visual::tests::a_count_reads_as_three_significant_digits`, `visual::tests::a_numeral_matches_one_pattern_per_unit`, `visual::tests::a_rendering_that_keeps_the_language_breaks_no_rule`, `visual::tests::each_rule_refuses_the_rendering_that_breaks_it`, `visual::tests::a_rendering_that_paints_a_border_breaks_no_decoration`, `visual::tests::an_underline_marks_only_the_run_its_datum_marks`.
+- `AccountCard`, `AccountKey`, `CheckerVerdict`, `CompileTier`, `KernelMark`, `AccountCounts`, `AccountEdit`, `account_edits` and `apply_account_edits`: one card per declaration, and the edits that take a held list to a new one; an unchanged list owes no edit. `Samples`, `SampleUnit`, `TooManySamples`, `Numeral::of` and `Sparkline::of`: a ring of at most 32 samples, built or decoded, and its drawing as 32 cells and a numeral. Witnesses: `account::tests::the_edits_take_every_list_to_every_other`, `account::tests::a_changed_tier_puts_one_card_in_place`, `account::tests::an_absent_field_takes_no_bytes_on_the_wire`, `visual::tests::a_ring_holds_at_most_thirty_two_samples`, `visual::tests::a_ring_draws_thirty_two_cells_and_its_last_value`, `visual::tests::a_time_and_a_size_read_as_three_significant_digits`, `wire::tests::the_card_bodies_are_document_scoped`.
+- `PoolActivity`, `CoreActivity`, `Load`, `Lengths`, `TaskKind`, `Samples::bounded` and `Samples::ceiling`: the activity pane of the hub's pool at one tick, connection-scoped on the wire, each core's last 32 cells a full ring under the ceiling of one tick, so the scale of a live sparkline stays as its values move; an absent world, an idle core and a window with no ended task take no bytes. Witnesses: `wire::tests::the_activity_body_is_connection_scoped`, `visual::tests::a_ring_holds_at_most_thirty_two_samples`.
+- `StackCard` and `SpineRow`: the spines at a cursor, innermost first, document-scoped on the wire. Witness: `wire::tests::the_card_bodies_are_document_scoped`.
+- `StoreCard`, `StoreRow`, `StoreKey`, `StoreKind`, `StoreResidence`, `OwedCell` and `UnitNumber`: the values of the store under the hub's data directory, connection-scoped on the wire; an owed cell's unit is never zero. Witness: `wire::tests::the_store_body_is_connection_scoped_6296`.
+- `DerivationCard`, `DerivationRow`, `Direction`, `Memo` and `NodeAt`: a declaration's judgement nodes at a client's columns, document-scoped on the wire and asked for by a trace frame; `focus` finds the node at a cursor and `shown` folds each subtree off its path; `Room` and `elided` cut a row to its room. Witnesses: `derivation::tests::the_focus_is_the_deepest_node_at_the_cursor`, `derivation::tests::a_row_is_cut_to_the_room_of_its_column`.
+
+## Expected features
+
+- **A producer.** The crate classifies, marks and checks nothing: spans come from a highlighter, marks from a marking pass, cards from a checker's report, transcript blocks from a session loop.
+- **A serde format, under the feature.** The crate derives the serde data model; a transport chooses the format. The witnesses use JSON.
+
+## Examples
+
+```rust
+use gandr_surface_render_remote::ByteOffset;
+use gandr_surface_render_remote::ByteRange;
+use gandr_surface_render_remote::DocId;
+use gandr_surface_render_remote::DocVersion;
+use gandr_surface_render_remote::DocumentUri;
+use gandr_surface_render_remote::FrameScope;
+use gandr_surface_render_remote::HlRole;
+use gandr_surface_render_remote::HlSpan;
+use gandr_surface_render_remote::Pos;
+use gandr_surface_render_remote::PositionColumn;
+use gandr_surface_render_remote::PositionRow;
+use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_render_remote::ReportView;
+use gandr_surface_render_remote::SourceText;
+use gandr_surface_render_remote::pos_of_byte;
+
+let source = "def x = 1 ;\ndef y = x ;";
+let keyword = HlSpan {
+    range: ByteRange::new(ByteOffset::from(12_usize), ByteOffset::from(15_usize))?,
+    role: HlRole::Keyword,
+};
+assert_eq!(
+    pos_of_byte(SourceText::from(source), keyword.range.start())?,
+    Pos {
+        row: PositionRow::from(1_usize),
+        col: PositionColumn::from(0_usize),
+    },
+    "the second line's keyword opens the second row"
+);
+
+let document = DocId {
+    uri: DocumentUri::from(String::from("file:///example.gandr")),
+    version: DocVersion::from(3_i32),
+};
+let frame = RenderFrame::frame(
+    document.clone(),
+    ReportView {
+        highlights: vec![keyword],
+        ..ReportView::default()
+    },
+);
+assert_eq!(
+    frame.scope(),
+    &FrameScope::Document(document),
+    "a report frame is routed to its document"
+);
+```
+
+The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-render-remote` runs every test, the codec witnesses included. Set `RUSTFLAGS="--cfg anodized_panic"` to execute the specification predicates as well. Each nontrivial item names its bounded evidence under `# Adequacy`: independent images and boundary observations are L3; finite round-trips are L2, not independent oracles. Formatting witnesses preserve parameter roles rather than English sentences.
+
+## Where the detail lives
+
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
+
+| Topic | Module |
+| ----- | ------ |
+| Readers, a leaf beside the pipeline, serialization behind a feature, forms not carried, references | [`src/lib.rs`](src/lib.rs) |
+| Validated byte ranges, two column units, plain data built by name | [`present`](src/present.rs) |
+| Stable diagnostic codes | [`diagnostic`](src/diagnostic.rs) |
+| The account card, its keys and its edits | [`account`](src/account.rs) |
+| The activity pane of the pool | [`activity`](src/activity.rs) |
+| The stack card | [`stack`](src/stack.rs) |
+| The derivation card | [`derivation`](src/derivation.rs) |
+| The frame | [`wire`](src/wire.rs) |
+| The warrant palette, the rendering data and the twenty rules | [`visual`](src/visual.rs) |
+
+## References
+
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the visual language that `visual` checks.
+
+## License
+
+Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

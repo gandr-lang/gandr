@@ -1,0 +1,5 @@
+pub def welcome : String;
+def welcome = "hi";
+def hidden : String;
+def hidden = "no";
+pub def bare = "bare";

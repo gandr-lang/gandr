@@ -1,0 +1,253 @@
+//! Probe 14 of the presented-spaces frame: distances in the Lawvere quantale,
+//! composed along the two-step derivation that each fusion cell replaces.
+//!
+//! The census fuses each composition overlap of each block, and composes the
+//! fused cell's bound through the two steps of its derivation
+//! ([`Fusions::Composed`]). This suite reads the census's fusion rows over
+//! the corpus, and holds each verdict that the probe found: each fusion
+//! replays, and has a composed bound equal to the census reading of its
+//! cell.
+//!
+//! A cell whose right side writes a wire that its left side does not bind
+//! writes the wire under a fresh name at each firing. So such a cell, fused
+//! with itself, replays: both paths write the wire under the join's name.
+
+use alloc::vec::Vec;
+use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+use gandr_core_fork::Fork as _;
+use gandr_surface_dispatcher::Census;
+use gandr_surface_dispatcher::CensusStep;
+use gandr_surface_dispatcher::FusionRow;
+use gandr_surface_dispatcher::FusionVerdict;
+use gandr_surface_dispatcher::Fusions;
+use gandr_surface_dispatcher::HoleCount;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Width;
+use gandr_theory_cell_complexes::CellId;
+use gandr_theory_cell_complexes::HoleName;
+use gandr_theory_exact_reals::Dyadic;
+use gandr_theory_ordered_algebras::Comparison;
+use gandr_theory_ordered_algebras::Distance;
+use gandr_theory_ordered_algebras::Lawvere;
+use gandr_theory_ordered_algebras::OrderedSemiring as _;
+use gandr_theory_ordered_algebras::check;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Sweep;
+use quenchant_shape::shape::Maybe;
+
+use super::coincide::Kept;
+
+/// The fusion rows of the corpus sources that `sweep` asks for, each with
+/// the source that writes its block, in path order and then in the census's
+/// order. The sources do not depend on each other, so each part of them has
+/// its own census on a thread of the dispatcher's pool. Each thread takes the
+/// next part that no thread took, and a part is a quarter of one thread's
+/// share, so a part of slow sources leaves the other threads busy.
+///
+/// # Specification
+/// trivial.
+fn census(sweep: &Sweep) -> Vec<(PathBuf, FusionRow)>
+{
+    let sources = super::coincide::swept(sweep, FUSIONS, &[CIRCUIT, SHRUBS]);
+    if sources.is_empty() {
+        return Vec::new();
+    }
+    let pool = Pool::new(Width::PerformanceCores);
+    let threads = NonZeroUsize::from(pool.width().threads()).get();
+    let size = sources.len().div_ceil(threads.saturating_mul(4)).max(1);
+    let parts: Vec<&[PathBuf]> = sources.chunks(size).collect();
+    let kept: Vec<OnceLock<Vec<(PathBuf, FusionRow)>>> =
+        parts.iter().map(|_| OnceLock::new()).collect();
+    let cursor = AtomicUsize::new(0);
+    let mut takers = vec![(); threads];
+    pool.each(
+        &mut takers,
+        || (),
+        |&mut (), &mut ()| {
+            let at = || cursor.fetch_add(1, Ordering::Relaxed);
+            while let Some((part, rows)) = {
+                let at = at();
+                parts.get(at).zip(kept.get(at))
+            } {
+                let mut census = Census::new(part.to_vec(), Fusions::Composed);
+                let mut found = Vec::new();
+                while let Maybe::Present(step) = census.step() {
+                    if let CensusStep::Source {
+                        path,
+                        fusions,
+                        over,
+                        ..
+                    } = step
+                    {
+                        assert!(
+                            over.is_empty(),
+                            "{}: a block passes the fusion budget",
+                            path.display()
+                        );
+                        found.extend(fusions.into_iter().map(|row| (path.to_path_buf(), row)));
+                    }
+                }
+                assert!(rows.set(found).is_ok(), "each part is taken once");
+            }
+        },
+    );
+    kept.into_iter()
+        .flat_map(|rows| rows.into_inner().unwrap_or_default())
+        .collect()
+}
+
+/// The composed count of the hole named `hole` in `row`.
+///
+/// # Specification
+/// trivial.
+fn hole_count(
+    row: &FusionRow,
+    hole: &HoleName,
+) -> HoleCount
+{
+    row.holes
+        .iter()
+        .find(|&&(ref var, _)| var.hole() == hole)
+        .map_or_default(|&(_, count)| count)
+}
+
+/// `count` ticks as a distance.
+///
+/// # Specification
+/// trivial.
+fn ticks(count: HoleCount) -> Distance
+{
+    Distance::finite(Dyadic::from(
+        i64::try_from(u64::from(count)).expect("a count fits an i64"),
+    ))
+    .expect("a count is not negative")
+}
+
+/// The source whose circuit rule `cong1` fuses with itself.
+const CIRCUIT: Kept = Kept("model/circuit/circuit-rule-block.gandr");
+
+/// The source whose shrubs `thrice` and `twice` fuse.
+const SHRUBS: Kept = Kept("model/desc/occurrence-count.gandr");
+
+/// The sample of the fusion census: thirty-two sources, ranked by their
+/// BLAKE3 digest under this name, at least one of each corpus class.
+/// - see: #7809
+const FUSIONS: Sample = Sample {
+    name: SampleName("each_fusion_cell_s_composed_bound_is_its_census_reading"),
+    size: SampleSize(32),
+};
+
+/// Each fusion of the sources that `sweep` asks for replays, and has a
+/// composed bound equal to the census reading of its cell.
+///
+/// # Specification
+/// trivial.
+fn bounds_are_readings(sweep: &Sweep)
+{
+    let rows = census(sweep);
+    if rows.is_empty() {
+        return;
+    }
+    let quantale = Lawvere::default();
+    // Each fusion replays, and has a composed bound equal to the census
+    // reading of its cell.
+    for &(ref path, ref row) in &rows {
+        match row.verdict {
+            FusionVerdict::Exact => {},
+            ref other @ (FusionVerdict::Looser(_)
+            | FusionVerdict::Unsound(_)
+            | FusionVerdict::Unread(..)
+            | FusionVerdict::Unfused
+            | FusionVerdict::Refused(_)
+            | FusionVerdict::Outside
+            | FusionVerdict::Unreplayed
+            | FusionVerdict::Unbound(..)) => {
+                panic!("{}:{row}: reads {other:?}", path.display())
+            },
+        }
+    }
+    if sweep.portion() == Portion::Changed {
+        return;
+    }
+    // The circuit rule `cong1`, cell 0, wires `x′` between its two nodes, and
+    // its left side does not bind `x′`. Fused with itself, it replays.
+    assert!(
+        rows.iter().any(|&(ref path, ref row)| {
+            path.ends_with(Path::new("model/circuit/circuit-rule-block.gandr"))
+                && row.left == CellId::from(0_usize)
+                && row.right == row.left
+                && row.verdict == FusionVerdict::Exact
+        }),
+        "`cong1` fused with itself replays"
+    );
+    // `thrice` writes `t` three times. Fused with itself, it writes `t` nine
+    // times in two ticks. Fused with `twice`, it writes `t` six times.
+    let shrub = |left: usize, right: usize| {
+        rows.iter()
+            .find(|&&(ref path, ref row)| {
+                path.ends_with(Path::new("model/desc/occurrence-count.gandr"))
+                    && row.left == CellId::from(left)
+                    && row.right == CellId::from(right)
+            })
+            .map_or_else(
+                || panic!("the shrubs fuse cell {left} into cell {right}"),
+                |&(_, ref row)| row,
+            )
+    };
+    let two = ticks(HoleCount::from(2_u64));
+    let t = HoleName::from("t");
+    for (right, copies) in [(7_usize, 9_u64), (6, 6)] {
+        let row = shrub(7, right);
+        assert_eq!(row.verdict, FusionVerdict::Exact, "{row}");
+        assert_eq!(hole_count(row, &t), HoleCount::from(copies), "{row}");
+        assert!(
+            quantale.compare(&row.ticks, &two) == Comparison::Below
+                && quantale.compare(&two, &row.ticks) == Comparison::Below,
+            "two written rules make two ticks: {row}"
+        );
+    }
+    // The quantale's laws hold on every distance a bound takes.
+    let distances: std::collections::HashSet<Distance> = rows
+        .iter()
+        .flat_map(|&(_, ref row)| {
+            let scales = row.holes.iter().map(|&(_, count)| ticks(count));
+            core::iter::once(row.ticks.clone()).chain(scales)
+        })
+        .collect();
+    assert!(
+        check(&Lawvere::generated(distances.into_iter().collect())).is_ok(),
+        "the Lawvere laws hold on the bounds' distances"
+    );
+}
+
+/// A pull request reads the sample, and the nightly reads the corpus whole.
+/// - see: #7809
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::bounds_are_readings;
+
+    #[test]
+    fn each_fusion_cell_s_composed_bound_is_its_census_reading()
+    {
+        bounds_are_readings(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn each_fusion_cell_s_composed_bound_is_its_census_reading_changed()
+    {
+        bounds_are_readings(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+}

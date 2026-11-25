@@ -1,0 +1,13 @@
+// Pushing in a fold copies the accumulated list at each step, so the fold's
+// cost is the square of the list's length.
+
+// The native finite lists.
+import std.list (List);
+
+/// Four integers, annotated as a list of them (#1544).
+def steps = (#[1, 2, 3, 4] : List Integer);
+
+/// Each element pushed in a fold, through the `list` namespace's projection
+/// (#1106).
+@[refuses("OutOfFragment.projection_expression")]
+def pushed = list.reduce (thunk { fun (acc, n) { return list.push acc n } }) (#[]) steps;

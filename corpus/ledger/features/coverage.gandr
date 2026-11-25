@@ -1,0 +1,21 @@
+/// `coverage`: a match is checked for missing and unreachable arms; every
+/// `Shape` meets one arm here, with no wildcard to hide a gap.
+data Shape : Type where
+  | Dot : Shape
+  | Line : (n : Integer) --> Shape
+  | Pair : (a : Shape, b : Shape) --> Shape
+
+/// Each arm takes values the arms before it left: the literal `0` before the
+/// variable that takes every other length, and a pair split on its left part.
+def weight(s : Shape) -> Integer =
+  match s where
+    | Dot => 0
+    | Line(0) => 0
+    | Line(n) => n
+    | Pair(Dot, b) => 1
+    | Pair(Line(n), b) => n
+    | Pair(Pair(a, c), b) => 2
+
+/// The match run on a pair whose left part is a line of seven.
+@[runs("7")]
+def heavy() -> Integer = weight (Pair (Line 7) Dot);

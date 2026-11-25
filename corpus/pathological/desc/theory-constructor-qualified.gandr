@@ -1,0 +1,16 @@
+// A qualified constructor names one of its family's own constructors, and
+// nothing else.
+//
+// - see: #2428
+
+/// Trees of two constructors.
+data Tree : Type where
+  | Var : (n : Integer) --> Tree
+  | App : (t : Tree, u : Tree) --> Tree
+
+/// `Tree` has no `Lam`, so `Tree.Lam` names nothing.
+@[refuses("UnresolvedName")]
+def lambda(t : Tree) -> Integer =
+  match t where
+    | Tree.Lam(body) => 1
+    | _ => 0

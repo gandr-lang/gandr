@@ -1,0 +1,12 @@
+//! `named` uses a region parameter as a value.
+//!
+//! Regions erase at run time. The checker refuses the returned region as
+//! `RegionAsValue`.
+//!
+//! The parameter appears only in the kept type of `k`.
+//!
+//! - see: corpus/model/regions/lent.gandr — a region parameter in a kept type
+
+/// `named` returns its region parameter as though it were a value.
+@[refuses("RegionAsValue")]
+def named[r : Region](k : (() -> Integer) at r) -> Integer = pure r;

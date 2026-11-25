@@ -1,0 +1,35 @@
+[package]
+name = "gandr-theory-levitation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Datatypes as descriptions for gandr: the code universe, the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs over descriptions, and host well-formedness"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "generic-programming", "levitation", "no-std"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. The path orders decide termination.
+[dependencies]
+anodized.workspace = true
+gandr-theory-path-orders.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-kernel-core.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-spec-combinators.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,4 @@
+def rec compose(xs : List Integer) -> Integer = match xs {
+  | #[] => 0
+  | #[_, ..rest] => compose[<] rest
+};

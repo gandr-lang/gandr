@@ -1,0 +1,34 @@
+[
+  {
+    "name": "#8225: a red member in the middle is cut to the top, the member above it replays onto the member below it, and its lane gets one page",
+    "red": [3],
+    "output": "eject: #3 left the stack: its required check `test the workspace` failed; a holds a's own; b holds b's own, a's own; c holds c's own, a's own; gh: stack unstack 9 | pr edit 4 -R case/case --base a | pr edit 3 -R case/case --base c | pr ready 3 -R case/case --undo | pr comment 3; link: 2 4 | 2 4 3; page: #3 [b] its required check `test the workspace` failed"
+  },
+  {
+    "name": "#8225: a draft at the bottom no longer holds the two members above it, and a member held before gets no draft, no comment and no page",
+    "draft": [2],
+    "output": "eject: #2 left the stack: held; a holds a's own; b holds b's own; c holds c's own, b's own; gh: stack unstack 9 | pr edit 3 -R case/case --base main | pr edit 2 -R case/case --base c; link: 3 4 | 3 4 2; page: "
+  },
+  {
+    "name": "#8225: a member above whose replay past the red bottom conflicts leaves too, and the member above both replays onto the trunk",
+    "red": [2],
+    "builds": 3,
+    "output": "eject: #3 left the stack: its replay past #2 stops: it conflicts in a.txt | #2 left the stack: its required check `test the workspace` failed; a holds a's own; b holds b's own, a's own; c holds c's own; gh: stack unstack 9 | pr edit 4 -R case/case --base a | pr edit 3 -R case/case --base c | pr edit 4 -R case/case --base main | pr edit 2 -R case/case --base c | pr ready 2 -R case/case --undo | pr comment 2 | pr ready 3 -R case/case --undo | pr comment 3; link: 2 4 | 2 4 3 | 4 | 4 2; page: #2 [a] its required check `test the workspace` failed | #3 [b] its replay past #2 stops: it conflicts in a.txt"
+  },
+  {
+    "name": "#8225: a red top with no member above it moves no branch, and becomes a draft so that no new pull request stacks on it",
+    "red": [4],
+    "output": "eject: ; a holds a's own; b holds b's own, a's own; c holds c's own, b's own, a's own; gh: pr ready 4 -R case/case --undo | pr comment 4; link: ; page: #4 [c] its required check `test the workspace` failed"
+  },
+  {
+    "name": "#8225: a member in conflict with its base leaves as a red one does, with its own cause",
+    "conflicting": [3],
+    "output": "eject: #3 left the stack: it conflicts with its base; a holds a's own; b holds b's own, a's own; c holds c's own, a's own; gh: stack unstack 9 | pr edit 4 -R case/case --base a | pr edit 3 -R case/case --base c | pr ready 3 -R case/case --undo | pr comment 3; link: 2 4 | 2 4 3; page: #3 [b] it conflicts with its base"
+  },
+  {
+    "name": "#8225: a cut that waits on a queued member above moves no branch, makes no draft and sends no page",
+    "red": [2],
+    "queued": [4],
+    "output": "eject: , waits; a holds a's own; b holds b's own, a's own; c holds c's own, b's own, a's own; gh: ; link: ; page: "
+  }
+]

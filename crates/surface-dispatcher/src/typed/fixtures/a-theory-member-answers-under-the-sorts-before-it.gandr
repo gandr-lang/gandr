@@ -1,0 +1,6 @@
+theory Cat where {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  oper id : (a : Ob) --> Hom(a, a);
+  rule idem : id a ==> id a;
+}

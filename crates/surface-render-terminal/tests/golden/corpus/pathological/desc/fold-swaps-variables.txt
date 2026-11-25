@@ -1,0 +1,18 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/fold-swaps-variables.gandr:25:3
+   │
+24 │    def rec upper(t : Terms Purse) -> Terms Purse =
+   │    │             ─ checked against `Terms Purse -> -F Terms Purse`; while checking the body of this function; binds t : Terms Purse
+   │ ┌──┘
+   │ │
+25 │ │┏   match t where
+26 │ │┃     | Purse.copper => Purse.copper
+27 │ │┃     | Purse.silver => Purse.silver
+28 │ │┃     | Purse.two(x, y) => upper[<] x
+   │ │┃                                   ╿
+   │ └┃───────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `Terms Purse -> Terms Purse`; while checking the body of this function; binds upper : Terms Purse -> Terms Purse
+   │                                      a case its datatype's rules do not admit
+   │
+   ├ note: `upper` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

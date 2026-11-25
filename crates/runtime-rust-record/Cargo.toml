@@ -1,0 +1,30 @@
+[package]
+name = "gandr-runtime-rust-record"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The record of Rust functions that the pinned toolchain gives: each symbol, convention and layout, its canonical bytes and its cache"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["abi", "gandr", "interop", "rust"]
+categories = ["development-tools::ffi"]
+publish.workspace = true
+
+# The pinned anodized facade supplies the specification attributes. BLAKE3
+# keys each cache entry and digests each source that the reader read. The
+# publish crate writes each entry whole.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-core-publish = { workspace = true, optional = true }
+
+# `std` holds the cache and the request, which read files and run the
+# reader. Without it the crate holds the record and its bytes alone, so the
+# `no_std` lowering reads a staged body.
+[features]
+default = ["std"]
+std = ["dep:gandr-core-publish"]
+
+[lints]
+workspace = true

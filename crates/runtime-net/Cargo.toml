@@ -1,0 +1,54 @@
+[package]
+name = "gandr-runtime-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The host's network for the `Net` interface: streams to peers named by their keys, over QUIC through iroh"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "iroh", "network", "quic"]
+categories = ["network-programming"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# iroh-base spells the keys a peer is named by and an endpoint proves. tokio
+# carries the requests to the endpoint's thread and runs it. The value plane
+# holds the chunks an endpoint serves and fetches, and verifies each on
+# receipt. boxcar's arena keeps each chunk at a fixed address and papaya's
+# index finds its slot, so threads share the holder with no lock. The core's
+# world vocabulary names why a migration answered nothing. The pinned anodized
+# facade supplies the specification attribute.
+[dependencies]
+anodized.workspace = true
+boxcar.workspace = true
+gandr-core-term.workspace = true
+gandr-storage-values.workspace = true
+iroh-base.workspace = true
+papaya.workspace = true
+tokio.workspace = true
+
+# The chunk wire's witnesses commit a run's values through the emitter's
+# crossing: the sequent crate's store holds them, the kernel's term crate
+# spells their literals, and the chunker's constants cut them.
+[dev-dependencies]
+gandr-core-sequent.workspace = true
+gandr-kernel-term.workspace = true
+gandr-runtime-emitter.workspace = true
+gandr-storage-chunker.workspace = true
+
+# iroh dials and accepts, and the mDNS lookup finds peers on the local
+# network when a binding asks for it. WASI 0.3 offers no UDP socket either
+# binds, so there the endpoint's thread refuses its bind.
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+iroh.workspace = true
+iroh-mdns-address-lookup.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,5 @@
+import "./base.gandr" ;
+
+@[ checks ]
+pub def {side} : Point ;
+def {side} = here ;

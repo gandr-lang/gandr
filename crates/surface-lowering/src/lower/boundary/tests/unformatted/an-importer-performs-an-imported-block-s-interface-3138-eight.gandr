@@ -1,0 +1,2 @@
+import "./block.gandr";
+pub def eight(x : u32) -> [Boundary] u32 = { let y = twice x; let z = Boundary.add y y; Boundary.add z z };

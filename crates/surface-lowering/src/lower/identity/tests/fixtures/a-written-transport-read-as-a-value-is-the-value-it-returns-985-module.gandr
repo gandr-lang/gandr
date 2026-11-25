@@ -1,0 +1,8 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+def derived : Path[.A = Circle](Base, Base);
+def derived = Path.step loop loop;
+def written : Path[.A = Circle](Base, Base);
+def written = Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop loop;

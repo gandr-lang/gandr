@@ -1,0 +1,167 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve native parallel image builds.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: build-ci-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - mise.toml
+      - mise.lock
+      - .config/mise/tasks/mise-tasks-fmt.toml
+      # The version-2 lockfile's per-npm-tool sidecars: pin content the image
+      # installs from, which can change while mise.lock's version lines do not.
+      - .mise/locks/**
+      - rust-toolchain.toml
+      - .github/docker/ci.Dockerfile
+      - .github/docker/image-tag.sh
+      - .github/workflows/landing-checks.yml
+      - .github/actions/install-tools/action.yml
+      - .config/mise/tasks/mise-tasks-check.toml
+      - .config/mise/tasks/mise-tasks-mutants.toml
+      - .github/workflows/build-ci-image.yml
+  # Refresh upstream releases and base digest rotations even without pin edits.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+  # CI calls this workflow when its checkout's pin-file tag is not published
+  # yet, and its image jobs wait for the build instead of failing to start.
+  workflow_call: {}
+
+permissions: {}
+
+concurrency:
+  group: ci-image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  template:
+    if: false
+    # Every CI job that runs the image runs on arm64 (landing-checks.yml says
+    # why) except report-coverage.yml's x86-64 Linux run.
+    runs-on: &linux ubuntu-24.04-arm
+    permissions: &image-permissions
+      contents: read
+      packages: write
+    steps:
+      - &git-checkout
+        name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - &registry-login
+        name: log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - &setup-buildx
+        name: set up buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+  # Native compilation on both architectures; never QEMU for Rust tool builds.
+  # The x86-64 image serves report-coverage.yml's x86-64 Linux run.
+  build:
+    name: build the CI image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    permissions: *image-permissions
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: *linux
+    steps:
+      - *git-checkout
+      - *registry-login
+      - *setup-buildx
+      # The image names the pin's channel in `RUSTUP_TOOLCHAIN` (the Dockerfile
+      # says why); the Dockerfile refuses a channel other than the pin's.
+      - id: channel
+        name: read the pinned channel
+        run: printf 'channel=%s\n' "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - id: build
+        name: build and push by digest
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          platforms: ${{ matrix.platform }}
+          context: .
+          file: .github/docker/ci.Dockerfile
+          build-args: |
+            RUST_CHANNEL=${{ steps.channel.outputs.channel }}
+          # BuildKit mounts this only while mise verifies release attestations.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          # zstd layers decompress about 3.5 times faster than gzip, which every
+          # container job pays at start. Level 9 is BuildKit's better-compression
+          # tier; higher levels add build time for little size.
+          outputs: type=image,name=ghcr.io/gandr-lang/gandr-ci,push-by-digest=true,name-canonical=true,push=true,compression=zstd,compression-level=9,force-compression=true
+      - name: create the digest directory
+        run: mkdir -p /tmp/digests
+      - name: export the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: touch "/tmp/digests/${DIGEST#sha256:}"
+      - name: upload the digest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: publish the manifest list
+    needs: build
+    runs-on: *linux
+    permissions: *image-permissions
+    steps:
+      - *git-checkout
+      # The ordered bytes of the pin files and the image's own sources define
+      # the tag, so an edit to either builds a new tag; latest names the newest
+      # manifest built from main, never a pull request's or a queue entry's
+      # candidate, and never a workflow pin.
+      - id: tag
+        name: compute the image tag
+        run: .github/docker/image-tag.sh >> "$GITHUB_OUTPUT"
+      - name: download the digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+      - *registry-login
+      - *setup-buildx
+      - name: create and push the manifest list
+        env: &image-tag
+          TAG: ${{ steps.tag.outputs.tag }}
+          LATEST: ${{ github.ref == 'refs/heads/main' && 'ghcr.io/gandr-lang/gandr-ci:latest' || '' }}
+        working-directory: /tmp/digests
+        # Digest filenames are action outputs, not contributor-controlled text.
+        # Word splitting intentionally supplies one reference per digest.
+        run: >-
+          docker buildx imagetools create
+          --tag "ghcr.io/gandr-lang/gandr-ci:${TAG}"
+          ${LATEST:+--tag "$LATEST"}
+          $(printf 'ghcr.io/gandr-lang/gandr-ci@sha256:%s ' *)
+      - name: inspect the published image
+        env: *image-tag
+        run: docker buildx imagetools inspect "ghcr.io/gandr-lang/gandr-ci:${TAG}"
+      - name: inspect published layer sizes and compression
+        env: *image-tag
+        shell: bash
+        run: >-
+          docker buildx imagetools inspect --raw "ghcr.io/gandr-lang/gandr-ci:${TAG}" |
+          jq -r '.manifests[].digest' |
+          xargs -I{} docker buildx imagetools inspect --raw "ghcr.io/gandr-lang/gandr-ci@{}"

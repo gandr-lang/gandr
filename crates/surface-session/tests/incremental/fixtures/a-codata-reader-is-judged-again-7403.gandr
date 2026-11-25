@@ -1,0 +1,6 @@
+codata Stream : Type[-] where
+  head : Integer;
+  tail : Stream;
+def peek(s : +U Stream) -> Integer =
+  become s.head
+def plain = 1;

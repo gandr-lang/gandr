@@ -1,0 +1,5 @@
+// #1391: a definition whose closing `}` never comes. The parser closes its
+// body with a ghost brace past `return n + 1`, the last thing the body writes,
+// not at the `{` that opens the body.
+def up(n : Integer) -> -F Integer {
+  return n + 1

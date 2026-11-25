@@ -1,0 +1,26 @@
+error[MisplacedAttribute]: the attribute `deprecated` stands on a declaration, not on an operation
+   ╭▸ corpus/pathological/attributes/misplaced-member-attribute.gandr:20:5
+   │
+20 │   @[deprecated]
+   │     ━━━━━━━━━━ an attribute at another place
+   │
+   ├ note: `Deprecated` is refused with MisplacedAttribute, as its expectation states
+   ╰ help: write `deprecated` before a declaration
+
+error[MisplacedAttribute]: the attribute `inert` stands on a declaration or an operation, not on a sort
+   ╭▸ corpus/pathological/attributes/misplaced-member-attribute.gandr:27:5
+   │
+27 │   @[inert]
+   │     ━━━━━ an attribute at another place
+   │
+   ├ note: `InertSort` is refused with MisplacedAttribute, as its expectation states
+   ╰ help: write `inert` before a declaration or an operation
+
+error[MisplacedAttribute]: the attribute `frobenius` stands on a sort, not on an operation
+   ╭▸ corpus/pathological/attributes/misplaced-member-attribute.gandr:38:5
+   │
+38 │   @[frobenius]
+   │     ━━━━━━━━━ an attribute at another place
+   │
+   ├ note: `FrobeniusOperation` is refused with MisplacedAttribute, as its expectation states
+   ╰ help: write `frobenius` before a sort

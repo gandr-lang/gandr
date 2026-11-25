@@ -1,0 +1,9 @@
+import "./a-tree.gandr" ;
+
+pub data Flag : Type where {
+  | Off : Flag
+  | On : Flag
+  oper flip : (f : Flag) --> Flag;
+  rule : flip(Off) ==> On;
+  rule : flip(On) ==> Off;
+}

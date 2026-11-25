@@ -1,0 +1,2 @@
+def v{i} : Integer ;
+def v{i} = {i} ;

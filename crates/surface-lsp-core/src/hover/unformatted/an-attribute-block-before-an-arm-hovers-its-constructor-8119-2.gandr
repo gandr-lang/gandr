@@ -1,0 +1,5 @@
+data Item : Type where
+  @[item("one")]
+  | One : Item
+  @[item("t$0wo")]
+  | Two : Item

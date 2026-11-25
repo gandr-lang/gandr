@@ -1,0 +1,10 @@
+data N : Type where { | Z : N | S : (n : N) --> N }
+data Prog : N -> Type where {
+  | Stop : Prog Z
+  | Ask : (k : Prog Z) --> Prog (S Z)
+  | Tell : (s : Integer, k : Prog Z) --> Prog Z rule : Tell s (Tell u k) <=> Tell u k;
+}
+data Boxed(a : Type) : N -> Type where {
+  | Empty : Boxed a Z
+  | Wrap : (k : Boxed a Z) --> Boxed a Z rule : Wrap (Wrap k) <=> Wrap k;
+}

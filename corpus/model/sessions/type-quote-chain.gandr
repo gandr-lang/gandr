@@ -1,0 +1,22 @@
+// This source quotes product and sum chains for expression arguments.
+//
+// An expression reads `*` as a product operator.
+// An expression reads `+` as a sum operator.
+// The quote gives the chain one argument spelling.
+// A signature writes the chain without the quote.
+//
+// The checker reads the quoted chain as a type argument.
+//
+// - see: #1127
+
+/// The stationary flow at a product of two components.
+def quoted_product : Flow[.A = Type](
+  Unit * Integer,
+  Unit * Integer
+) = Flow.stay (type(Unit * Integer));
+
+/// The stationary flow at a sum of two summands.
+def quoted_chain : Flow[.A = Type](
+  Integer + Unit,
+  Integer + Unit
+) = Flow.stay (type(Integer + Unit));

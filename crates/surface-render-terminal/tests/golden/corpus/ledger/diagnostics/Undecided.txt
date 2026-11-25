@@ -1,0 +1,12 @@
+error[Undecided]: the checker could not decide what this code unfolds to
+   ╭▸ corpus/ledger/diagnostics/Undecided.gandr:27:16
+   │
+27 │   def compared = ua[
+   │ ┌────────────────┘
+28 │ │   1,
+29 │ │   4
+30 │ │ ] Magma Magma (*{.mul = measured, .one = keep}) (*{.mul = measured, .one = keep});
+   │ └─────────────────────────────────────────────────────────────────────────────────┘ synthesised; while checking the translators of this univalence against their corollas
+   │
+   ├ note: `compared` is refused with Undecided, as its expectation states
+   ╰ help: write code whose unfolding the checker can decide

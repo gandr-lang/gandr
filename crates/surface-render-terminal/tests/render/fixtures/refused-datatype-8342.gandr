@@ -1,0 +1,14 @@
+pub data Bit : Type where {
+  | Low : Bit
+  | High : Bit
+  | Not : (b : Bit) --> Bit
+  rule : Not High <=> Low;
+}
+
+def low : Bit = Not High;
+
+def flip(b : Bit) -> Bit =
+  match b where
+    | Low => High
+    | High => Low
+    | Not(c) => c

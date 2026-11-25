@@ -1,0 +1,4 @@
+def answer : Integer = 42;
+def identity(x : Integer) -> Integer = x;
+def applied() -> Integer = become (force identity) answer;
+def konst(x : Integer, y : Integer) -> Integer = x;

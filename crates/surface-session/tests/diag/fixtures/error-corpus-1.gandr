@@ -1,0 +1,2 @@
+def x : String;
+def x = 1;

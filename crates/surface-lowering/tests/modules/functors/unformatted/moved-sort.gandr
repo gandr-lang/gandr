@@ -1,0 +1,3 @@
+theory Mag where { sort M : Type ; oper mul : (x : M, y : M) --> M ; }
+theory Op where { sort C : Type ; oper times : (x : C, y : C) --> C ; }
+path renamed : Mag <~> Op where { into where { type C = M ; def times = mul ; } from where { type M = C ; def mul = times ; } }

@@ -1,0 +1,5 @@
+/// `ViewSpent`: a view used after its resume or abort.
+@[refuses("ViewSpent")]
+def twice() -> Unit =
+  var c = 0
+  access c as v { resume v 1; abort v }

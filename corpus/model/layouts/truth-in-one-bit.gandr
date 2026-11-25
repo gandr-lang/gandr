@@ -1,0 +1,134 @@
+//! A truth value in one bit: its layout is a model of the theory of truth.
+//!
+//! A layout stores a value as bits. The bits here are the terms of a theory
+//! of one machine bit, and the rules of that theory join some terms. Two
+//! terms that a rule joins are one value. So the encoder and the decoder of a
+//! layout must agree with the rules.
+//!
+//! The layout is a module that models the theory of truth, and its carrier is
+//! the bit terms. The meaning is a module that models the theory of the bit,
+//! and each rule is a member that holds a path. The encoder and the decoder
+//! are the two folds. Their round trips give an equivalence, and `ua` gives a
+//! path between the two types.
+//!
+//! - see: #8288
+
+/// The theory of a truth value: two constants and no rule.
+pub theory Truth where
+  /// The sort of truth values.
+  sort T : Type;
+  /// The false value.
+  oper no : T;
+  /// The true value.
+  oper yes : T;
+
+/// The fragment of the `llvm` dialect at one bit.
+pub theory Bit where
+  /// A word of one bit.
+  sort I1 : Type;
+  /// The constant zero.
+  oper zero : I1;
+  /// The constant one.
+  oper one : I1;
+  /// The conjunction of two bits, which the dialect names `and`.
+  oper band : (x : I1, y : I1) --> I1;
+  /// Zero on the left absorbs.
+  rule bandZero : band zero x <=> zero;
+  /// One on the left is the unit.
+  rule bandOne : band one x <=> x;
+
+/// The layout of a truth value in one bit. Its carrier is the terms of `Bit`.
+pub module TruthInBit : Model(Truth) where
+  /// The carrier, a term of one bit.
+  type T = Terms Bit;
+  /// False is the constant zero.
+  def no : Terms Bit = Bit.zero;
+  /// True is the constant one.
+  def yes : Terms Bit = Bit.one;
+
+/// The encoder: the fold of a truth value into its layout.
+pub def encode(t : Terms Truth) -> Terms Bit =
+  match t where
+    | Truth.no => TruthInBit.no
+    | Truth.yes => TruthInBit.yes
+
+/// The conjunction of two truth values.
+pub def conj(a : Terms Truth, b : Terms Truth) -> Terms Truth =
+  match a where
+    | Truth.no => Truth.no
+    | Truth.yes => b
+
+/// The meaning of each operation of `Bit`. Its carrier is the truth values.
+pub module BitInTruth : Model(Bit) where
+  /// The carrier, a truth value.
+  type I1 = Terms Truth;
+  /// Zero means false.
+  def zero : Terms Truth = Truth.no;
+  /// One means true.
+  def one : Terms Truth = Truth.yes;
+  /// The operation `band` means the conjunction.
+  def band(x : Terms Truth, y : Terms Truth) -> Terms Truth = conj x y;
+  /// The absorption law holds by computation.
+  def bandZero(x : Terms Truth) -> Path (band zero x) zero = Path.here Truth.no;
+  /// The unit law holds by computation.
+  def bandOne(x : Terms Truth) -> Path (band one x) x = Path.here x;
+
+/// The decoder: the fold of a bit term into the truth values. It respects
+/// the two rules of `Bit`.
+@[respects(*{BitInTruth.bandZero, BitInTruth.bandOne})]
+pub def rec decode(b : Terms Bit) -> Terms Truth =
+  match b where
+    | Bit.zero => BitInTruth.zero
+    | Bit.one => BitInTruth.one
+    | Bit.band(x, y) => BitInTruth.band (decode[<] x) (decode[<] y)
+
+/// A truth value comes back from its bit.
+pub def there(t : Terms Truth) -> Path (decode (encode t)) t =
+  match t where
+    | Truth.no => Path.here Truth.no
+    | Truth.yes => Path.here Truth.yes
+
+/// A conjunction of bits whose left side is one runs to its right side.
+@[runs("Truth.yes")]
+def decoded() -> Terms Truth = decode (Bit.band Bit.one Bit.one);
+
+/// Two bit terms that a rule joins are one value.
+def joined : Path (Bit.band Bit.one Bit.zero) Bit.zero = Path.here Bit.zero;
+
+/// The encoder carries a conjunction of truth values to `band`. Each arm
+/// holds by the rules of `Bit` alone.
+def encodeConj(a : Terms Truth, b : Terms Truth) -> Path (encode (conj a b)) (
+  Bit.band (encode a) (encode b)
+) =
+  match a where
+    | Truth.no => Path.here Bit.zero
+    | Truth.yes => Path.here (encode b)
+
+/// A bit term comes back from its truth value.
+def rec back(b : Terms Bit) -> Path (encode (decode b)) b =
+  match b where
+    | Bit.zero => Path.here Bit.zero
+    | Bit.one => Path.here Bit.one
+    | Bit.band(x, y) => Path.step
+      (encodeConj (decode x) (decode y))
+      (Path.walk
+        (fun (z) {
+          type(Path[.A = Terms Bit] (Bit.band (encode (decode x)) (encode (decode y))) (Bit.band
+            z
+            y))
+        })
+        (back[<] x)
+        (Path.walk
+          (fun (z) {
+            type(Path[.A = Terms Bit] (Bit.band (encode (decode x)) (encode (decode y))) (Bit.band
+              (encode (decode x))
+              z))
+          })
+          (back[<] y)
+          (Path.here (Bit.band (encode (decode x)) (encode (decode y))))))
+
+/// The layout is admitted by its equivalence with the truth values.
+pub def bitLayout : Terms Truth ≃ Terms Bit = *{encode, *{*{decode, there}, *{decode, back}}};
+
+/// A truth value is its bit, as types.
+pub def bitPath : Path[.A = Type] (Terms Truth) (Terms Bit) = ua bitLayout;

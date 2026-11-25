@@ -1,0 +1,5 @@
+import "./base.gandr" ;
+import "./other.gandr" ;
+import "./later.gandr" ;
+def two : Integer ;
+def two = uno ;

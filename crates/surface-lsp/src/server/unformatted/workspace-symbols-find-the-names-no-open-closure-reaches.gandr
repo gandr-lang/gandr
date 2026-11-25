@@ -1,0 +1,2 @@
+def fresh : Integer ;
+def fresh = 1 ;

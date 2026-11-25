@@ -1,0 +1,113 @@
+// What an inductive-recursive block refuses. The block is one admission, so
+// one refused member refuses every member with it: accessibility is checked
+// across the block, so a family named to the left of an arrow where no stage
+// reaches, in another family's field, refuses the block whole; and a
+// decode a code's field holds must stand below the code, so a field decoding
+// a code it was not built from, or a decoder arm decoding its own code again,
+// refuses the decoder by the stage order and its codes with it. A decode reads
+// a call only when the call returns a code. The block also refuses a
+// hierarchy of universes by level at its universe code. That code decodes
+// to the family itself, one level down.
+// Shared with `../../model/universe/inductive-recursive.gandr`.
+//
+// - owes: #3574 — a hierarchy of universes by level
+// - see: #517 — `Left`
+
+// The naturals and the two branches.
+import "../../model/data/data-base.gandr";
+
+/// Two families, one consuming the other through a definition of their
+/// block: the definition stands for its body, where no stage reaches, so the
+/// block is refused whole.
+rec {
+  /// A family consuming the next one: `right` stands left of the arrow.
+  @[refuses("NegativeOccurrence"), form(explicit)]
+  data Left : Type where {
+    | MkL : (f : +U (right -> -F Two)) --> Left
+  }
+
+  /// The family `Left` consumes: its own field is positive, and it is
+  /// refused with its block.
+  @[refuses("NegativeOccurrence")]
+  data Right : Type where {
+    | MkR : (l : Left) --> Right
+  }
+
+  /// `Right`, named by a definition of the block, refused with it.
+  @[refuses("NegativeOccurrence")]
+  def right : Type;
+  def right = Right;
+}
+
+/// A universe whose field decodes a definition of the block rather than
+/// the code it was built from.
+rec {
+  /// Codes whose function code decodes a code it was not built from,
+  /// refused with their decoder.
+  @[refuses("StageNotBelow")]
+  data Odd : Type where {
+    | TwoC : Odd
+    | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
+  }
+
+  /// The decoder, recursing on the code below: the field's decode does not
+  /// stand below the code it was read from.
+  @[refuses("StageNotBelow")]
+  def rec decode(u : Odd) -> -F Type =
+    match u where
+      | TwoC => return Two
+      | Over(a, b) => decode[<] a
+
+  /// The code the field decodes, a definition of the block, refused with it.
+  @[refuses("StageNotBelow")]
+  def base : Odd;
+  def base = TwoC;
+}
+
+/// A universe whose decoder decodes its own code again.
+rec {
+  /// The codes: one base code, and the dependent functions over a code,
+  /// refused with their decoder.
+  @[refuses("StageNotBelow")]
+  data Loop : Type where {
+    | Base : Loop
+    | PiL : (a : Loop, b : +U (unloop(a) -> -F Loop)) --> Loop
+  }
+
+  /// The decoder decoding a function code again where its domain is wanted.
+  @[refuses("StageNotBelow")]
+  def rec unloop(u : Loop) -> -F Type =
+    match u where
+      | Base => return Two
+      | PiL(a, b) => return (+U ((x : unloop[<](PiL a b)) -> -F Two))
+}
+
+/// A type read off a call that returns no code: `g(L)` is a function still
+/// waiting for its second argument, and only a pure returner's call stands
+/// where a type is read.
+@[refuses("CompoundEndpoint")]
+def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two =
+  return L
+
+/// A hierarchy of universes by level, and its decoder, in one block.
+rec {
+  /// The codes at each level. They share their decoder's refusal.
+  @[refuses("NegativeOccurrence")]
+  data ULevel : Nat -> Type where {
+    /// The naturals, at every level.
+    | NatV : (n : Nat) --> ULevel n
+    /// The universe a level down, a code one level up.
+    | TypeV : (n : Nat) --> ULevel (Succ n)
+    /// The dependent functions from a coded domain at a level.
+    | PiV : (n : Nat, a : ULevel n, b : +U (elLevel(n, a) -> -F ULevel n)) --> ULevel n
+  }
+
+  /// The decoder at each level. Its arm for `TypeV` returns the family
+  /// itself, at the level under `n`.
+  @[refuses("NegativeOccurrence")]
+  def rec elLevel(n : Nat, u : ULevel n) -> -F Type =
+    match u where
+      | NatV(m) => return Nat
+      | TypeV(m) => return (ULevel m)
+      | PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F elLevel[<](m, b(x))))
+}

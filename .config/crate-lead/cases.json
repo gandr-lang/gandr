@@ -1,0 +1,116 @@
+[
+  {
+    "name": "every lead names its layer, each wall its row names and the key: nothing to report",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs (`Rainey-2026-paper_key`).\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `storage-a` | CAM | none | a store | integrity, then validity |\n| `core-b::store` | LAM | none | a store | none |\n\n## Divergences\n\nNone.\n",
+      "sources": {
+        "crates/storage-a/src/lib.rs": "//! The CAM's plane, after\n//! `Rainey-2026-paper_key`: integrity, then validity.\n//!\n//! More.\n",
+        "crates/core-b/src/store.rs": "//! The LAM of `Rainey-2026-paper_key`.\n"
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "a crate row reads its root and a module row its module",
+    "args": {
+      "form": "paths"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs (`Rainey-2026-paper_key`).\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `storage-a` | CAM | none | a store | integrity |\n| `core-b::store` | LAM | none | a store | none |\n\n## Divergences\n\nNone.\n",
+      "sources": {}
+    },
+    "output": "crates/storage-a/src/lib.rs\ncrates/core-b/src/store.rs"
+  },
+  {
+    "name": "a lead missing its layer, its wall and the key is refused once for each",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs (`Rainey-2026-paper_key`).\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `storage-a` | CAM | none | a store | integrity |\n\n## Divergences\n\nNone.\n",
+      "sources": {
+        "crates/storage-a/src/lib.rs": "//! Chunks, cut by content.\n"
+      }
+    },
+    "output": "crates/storage-a/src/lib.rs: its lead paragraph names no `CAM`, its layer in crates/README.md § Storage and distribution\ncrates/storage-a/src/lib.rs: its lead paragraph names no `integrity`, its wall in crates/README.md § Storage and distribution\ncrates/storage-a/src/lib.rs: its lead paragraph names no `Rainey-2026-paper_key`, the paper of crates/README.md § Storage and distribution"
+  },
+  {
+    "name": "only the opening is the lead: a layer and a key under a heading do not count",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs (`Rainey-2026-paper_key`).\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `storage-a` | CAM | none | a store | none |\n\n## Divergences\n\nNone.\n",
+      "sources": {
+        "crates/storage-a/src/lib.rs": "//! Chunks, cut by content.\n//!\n//! # The layer\n//!\n//! The CAM of `Rainey-2026-paper_key`.\n"
+      }
+    },
+    "output": "crates/storage-a/src/lib.rs: its lead paragraph names no `CAM`, its layer in crates/README.md § Storage and distribution\ncrates/storage-a/src/lib.rs: its lead paragraph names no `Rainey-2026-paper_key`, the paper of crates/README.md § Storage and distribution"
+  },
+  {
+    "name": "the lead may be the paragraph after a short summary",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs (`Rainey-2026-paper_key`).\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `storage-a` | CAM | none | a store | none |\n\n## Divergences\n\nNone.\n",
+      "sources": {
+        "crates/storage-a/src/lib.rs": "//! Chunks, cut by content.\n//!\n//! In the storage picture, the CAM of `Rainey-2026-paper_key`.\n//!\n//! # More\n"
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "a layer is a whole word: `LAMs` does not name `LAM`",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs (`Rainey-2026-paper_key`).\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `core-b` | LAM | none | a store | none |\n\n## Divergences\n\nNone.\n",
+      "sources": {
+        "crates/core-b/src/lib.rs": "//! Each world's LAMs, after `Rainey-2026-paper_key`.\n"
+      }
+    },
+    "output": "crates/core-b/src/lib.rs: its lead paragraph names no `LAM`, its layer in crates/README.md § Storage and distribution"
+  },
+  {
+    "name": "a row whose source is missing is named, and the rows after it are still read",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs (`Rainey-2026-paper_key`).\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `storage-gone` | CAM | none | a store | integrity |\n| `core-b` | LAM | none | a store | none |\n\n## Divergences\n\nNone.\n",
+      "sources": {
+        "crates/core-b/src/lib.rs": "//! A LAM of `Rainey-2026-paper_key`.\n"
+      }
+    },
+    "output": "crates/storage-gone/src/lib.rs: crates/README.md § Storage and distribution names it, and the file does not exist"
+  },
+  {
+    "name": "a section with no table is refused rather than passed",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nProse alone.\n\n## Divergences\n",
+      "sources": {}
+    },
+    "output": "crates/README.md § Storage and distribution holds no crate table"
+  },
+  {
+    "name": "a section naming no paper by key is refused once",
+    "args": {
+      "form": "findings"
+    },
+    "input": {
+      "readme": "# crates\n\n## Storage and distribution\n\nThe CAM and the LAMs.\n\n| Crate | Layer | Located | Resident | Wall |\n| ----- | ----- | ------- | -------- | ---- |\n| `core-b` | LAM | none | a store | none |\n\n## Divergences\n\nNone.\n",
+      "sources": {
+        "crates/core-b/src/lib.rs": "//! A LAM.\n"
+      }
+    },
+    "output": "crates/README.md § Storage and distribution names no paper by its key"
+  }
+]

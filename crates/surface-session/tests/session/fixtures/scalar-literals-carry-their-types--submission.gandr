@@ -1,0 +1,2 @@
+def number = 42;
+def text = "hi";

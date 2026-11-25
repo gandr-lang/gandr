@@ -1,0 +1,8 @@
+error[OutOfFragment.NotAtResult]: a row written before a type belongs to the returner a definition's result inserts, and stands nowhere else
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.NotAtResult.gandr:4:19
+  │
+4 │ def rowed(k : +U ([Partial] Unit)) -> Unit =
+  │                   ━━━━━━━━━━━━━━ a row admitted only at a definition's result
+  │
+  ├ note: `rowed` is refused with OutOfFragment.NotAtResult, as its expectation states
+  ╰ help: write the row only before a definition's result type

@@ -1,0 +1,2 @@
+{functions}def same : Path[.A = +U[ω] (+{{Unit, Unit}} -> -F +{{Unit, Unit}})](id, again);
+def same = Path.funext id again;

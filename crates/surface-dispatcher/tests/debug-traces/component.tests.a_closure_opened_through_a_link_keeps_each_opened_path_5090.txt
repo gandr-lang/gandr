@@ -1,0 +1,90 @@
+test: component::tests::a_closure_opened_through_a_link_keeps_each_opened_path_5090
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher component::tests::a_closure_opened_through_a_link_keeps_each_opened_path_5090 --break component::lay_out_written
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/5d2b5bf3af2e9509/out/gandr_surface_dispatcher-5d2b5bf3af2e9509"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/5d2b5bf3af2e9509/out/gandr_surface_dispatcher-5d2b5bf3af2e9509' (x86_64).
+(lldb) settings set -- target.run-args  "component::tests::a_closure_opened_through_a_link_keeps_each_opened_path_5090" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex component::lay_out_written
+Breakpoint 1: 26 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-5d2b5bf3af2e9509`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000006a3b1b8
+(lldb) run
+
+running 1 test
+test component::tests::a_closure_opened_through_a_link_keeps_each_opened_path_5090 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3730600 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/5d2b5bf3af2e9509/out/gandr_surface_dispatcher-5d2b5bf3af2e9509' (x86_64)
+Process 3730600 stopped
+* thread #2, name = 'component::test', stop reason = breakpoint 1.19
+       frame #0: 0x000055555751e218 gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::lay_out_written(grammar={dag:{names:size=25, assocs:size=25, edges:size=22, reachability:size=25, linear_extension:size=25}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:29, alloc:{value:{0:{}}}, _marker:{}}, rules:size=173, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:173, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2989, rctxs:size=2989, bounds:size=2989, owners:size=2989, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:25, items:199}, alloc:{}, marker:{}}}, menus:size=199, mold_labels:size=2989, adjacencies:size=6607, successor_starts:size=2990, has_pred:size=2989, has_succ:size=2989, form_first:size=208, is_first:size=2989, form_last:size=273, complete_last:size=234, is_complete_last:size=2989, required_tail:size=39, is_required_tail:size=2989, closing:size=2989, twins:size=2989, fingerprint:{0:11117951961118616701}}, automaton:{kinds:size=2989, observations:size=2989, width:47, sets:size=846}}, (null)=("/tmp/gandr-component-opened-3730600.linked/main.gandr", Strict, {0:"import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;"}), shadows={pointer:{}, vtable:0x000055555bff4b30}, written=Absent(Unread)) at component.rs:1120:1
+   1117	///   reads is laid out as when it is parsed whole, and over other imports it is
+   1118	///   laid out as those imports name.
+   1119	/// - witness: `component::tests::an_importer_given_its_imports_is_laid_out_as_read_2439`
+-> 1120	#[spec(ensures: |ref ret| ret.text.get(usize::from(ret.base) ..) == Some(text.as_ref())
+    	^
+   1121	    && ret.paths.len() == ret.unit.sources().len()
+   1122	    && ret.opened.len() == ret.paths.len()
+   1123	    && ret.unit.prelude().is_some()
+(lldb) bt 24
+* thread #2, name = 'component::test', stop reason = breakpoint 1.19
+   * frame #0: 0x000055555751e218 gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::lay_out_written(grammar={dag:{names:size=25, assocs:size=25, edges:size=22, reachability:size=25, linear_extension:size=25}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:29, alloc:{value:{0:{}}}, _marker:{}}, rules:size=173, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:173, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2989, rctxs:size=2989, bounds:size=2989, owners:size=2989, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:25, items:199}, alloc:{}, marker:{}}}, menus:size=199, mold_labels:size=2989, adjacencies:size=6607, successor_starts:size=2990, has_pred:size=2989, has_succ:size=2989, form_first:size=208, is_first:size=2989, form_last:size=273, complete_last:size=234, is_complete_last:size=2989, required_tail:size=39, is_required_tail:size=2989, closing:size=2989, twins:size=2989, fingerprint:{0:11117951961118616701}}, automaton:{kinds:size=2989, observations:size=2989, width:47, sets:size=846}}, (null)=("/tmp/gandr-component-opened-3730600.linked/main.gandr", Strict, {0:"import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;"}), shadows={pointer:{}, vtable:0x000055555bff4b30}, written=Absent(Unread)) at component.rs:1120:1
+     frame #1: 0x00005555574ffaec gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::lay_out_shadowed::{closure#0} at component.rs:1088:5
+     frame #2: 0x000055555751e48e gandr_surface_dispatcher-5d2b5bf3af2e9509`anodized::__::eval_once::<gandr_surface_dispatcher::component::Laid, gandr_surface_dispatcher::component::lay_out_shadowed::{closure#0}>(closure={_ref__grammar:{dag:{names:size=25, assocs:size=25, edges:size=22, reachability:size=25, linear_extension:size=25}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:29, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=173, rule_names:{map:{root:Some({…}), length:173, alloc:{value:{…}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2989, rctxs:size=2989, bounds:size=2989, owners:size=2989, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=199, mold_labels:size=2989, adjacencies:size=6607, successor_starts:size=2990, has_pred:size=2989, has_succ:size=2989, form_first:size=208, is_first:size=2989, form_last:size=273, complete_last:size=234, is_complete_last:size=2989, required_tail:size=39, is_required_tail:size=2989, closing:size=2989, twins:size=2989, fingerprint:{0:11117951961118616701}}, automaton:{kinds:size=2989, observations:size=2989, width:47, sets:size=846}}, _ref__path:"/tmp/gandr-component-opened-3730600.linked/main.gandr", _ref__root:0x00007ffff79fd50f, _ref__text:{__0:"import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;"}, _ref__shadows:{pointer:{}, vtable:0x000055555bff4b30}}) at __.rs:32:5 [inlined]
+     frame #3: 0x000055555751e462 gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::lay_out_shadowed(grammar={dag:{names:size=25, assocs:size=25, edges:size=22, reachability:size=25, linear_extension:size=25}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:29, alloc:{value:{0:{}}}, _marker:{}}, rules:size=173, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:173, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2989, rctxs:size=2989, bounds:size=2989, owners:size=2989, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:25, items:199}, alloc:{}, marker:{}}}, menus:size=199, mold_labels:size=2989, adjacencies:size=6607, successor_starts:size=2990, has_pred:size=2989, has_succ:size=2989, form_first:size=208, is_first:size=2989, form_last:size=273, complete_last:size=234, is_complete_last:size=2989, required_tail:size=39, is_required_tail:size=2989, closing:size=2989, twins:size=2989, fingerprint:{0:11117951961118616701}}, automaton:{kinds:size=2989, observations:size=2989, width:47, sets:size=846}}, path="/tmp/gandr-component-opened-3730600.linked/main.gandr", root=Strict, text={0:"import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;"}, shadows={pointer:{}, vtable:0x000055555bff4b30}) at component.rs:1073:1
+     frame #4: 0x000055555751f1d3 gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::lay_out(grammar={dag:{names:size=25, assocs:size=25, edges:size=22, reachability:size=25, linear_extension:size=25}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:29, alloc:{value:{0:{}}}, _marker:{}}, rules:size=173, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:173, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2989, rctxs:size=2989, bounds:size=2989, owners:size=2989, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:25, items:199}, alloc:{}, marker:{}}}, menus:size=199, mold_labels:size=2989, adjacencies:size=6607, successor_starts:size=2990, has_pred:size=2989, has_succ:size=2989, form_first:size=208, is_first:size=2989, form_last:size=273, complete_last:size=234, is_complete_last:size=2989, required_tail:size=39, is_required_tail:size=2989, closing:size=2989, twins:size=2989, fingerprint:{0:11117951961118616701}}, automaton:{kinds:size=2989, observations:size=2989, width:47, sets:size=846}}, path="/tmp/gandr-component-opened-3730600.linked/main.gandr", root=Strict, text={0:"import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;"}) at component.rs:1030:5
+     frame #5: 0x000055555749287c gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::tests::a_closure_opened_through_a_link_keeps_each_opened_path_5090 at component.rs:3005:20
+     frame #6: 0x000055555744ca07 gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::tests::a_closure_opened_through_a_link_keeps_each_opened_path_5090::{closure#0}((null)={}) at component.rs:2993:69
+     frame #7: 0x00005555578cfc56 gandr_surface_dispatcher-5d2b5bf3af2e9509`<gandr_surface_dispatcher::component::tests::a_closure_opened_through_a_link_keeps_each_opened_path_5090::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #8: 0x0000555557a54fdb gandr_surface_dispatcher-5d2b5bf3af2e9509`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #9: 0x0000555557a54fd9 gandr_surface_dispatcher-5d2b5bf3af2e9509`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #10: 0x0000555557a62525 gandr_surface_dispatcher-5d2b5bf3af2e9509`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #11: 0x0000555557a62520 gandr_surface_dispatcher-5d2b5bf3af2e9509`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #12: 0x0000555557a62520 gandr_surface_dispatcher-5d2b5bf3af2e9509`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #13: 0x0000555557a6250b gandr_surface_dispatcher-5d2b5bf3af2e9509`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #14: 0x0000555557a6250b gandr_surface_dispatcher-5d2b5bf3af2e9509`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #15: 0x0000555557a6250b gandr_surface_dispatcher-5d2b5bf3af2e9509`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #16: 0x0000555557a624f6 gandr_surface_dispatcher-5d2b5bf3af2e9509`test::run_test::{closure#0} at lib.rs:677:43
+     frame #17: 0x0000555557a5cee4 gandr_surface_dispatcher-5d2b5bf3af2e9509`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #18: 0x0000555557a5ce69 gandr_surface_dispatcher-5d2b5bf3af2e9509`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #19: 0x0000555557a65682 gandr_surface_dispatcher-5d2b5bf3af2e9509`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #20: 0x0000555557a65673 gandr_surface_dispatcher-5d2b5bf3af2e9509`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #21: 0x0000555557a65673 gandr_surface_dispatcher-5d2b5bf3af2e9509`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #22: 0x0000555557a65663 gandr_surface_dispatcher-5d2b5bf3af2e9509`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #23: 0x0000555557a65663 gandr_surface_dispatcher-5d2b5bf3af2e9509`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) grammar = 0x00007ffff79fda38 {dag:{names:size=25, assocs:size=25, edges:size=22, reachability:size=25, linear_extension:size=25}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:29, alloc:{value:{0:{}}}, _marker:{}}, rules:size=173, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:173, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=65, molds:{molds:size=2989, rctxs:size=2989, bounds:size=2989, owners:size=2989, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:25, items:199}, alloc:{}, marker:{}}}, menus:size=199, mold_labels:size=2989, adjacencies:size=6607, successor_starts:size=2990, has_pred:size=2989, has_succ:size=2989, form_first:size=208, is_first:size=2989, form_last:size=273, complete_last:size=234, is_complete_last:size=2989, required_tail:size=39, is_required_tail:size=2989, closing:size=2989, twins:size=2989, fingerprint:{0:11117951961118616701}}, automaton:{kinds:size=2989, observations:size=2989, width:47, sets:size=846}}
+((&std::path::Path, gandr_surface_dispatcher::root::SourceRoot, gandr_surface_syntax::span::SourceText))  = ("/tmp/gandr-component-opened-3730600.linked/main.gandr", Strict, {0:"import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;"})
+(&dyn gandr_surface_dispatcher::component::Shadows) shadows = {pointer:{}, vtable:0x000055555bff4b30}
+(quenchant_shape::shape::Maybe<&[gandr_surface_dispatcher::component::ImportPath], gandr_surface_dispatcher::component::written::Absent>) written = Absent(Unread) {
+  0 = Unread
+}
+(gandr_surface_dispatcher::root::SourceRoot) root = Strict
+(gandr_surface_syntax::span::SourceText) text = {0:""}
+(&std::path::Path) path = <error: length 0xf4ada7e7e45500 past mapped memory> {
+  data_ptr = 0x00007ffff79fd300 {inner:{inner:{inner:"\U00000002"}}}
+  length = 68870830979044608
+}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x00005555574ffaec gandr_surface_dispatcher-5d2b5bf3af2e9509`gandr_surface_dispatcher::component::lay_out_shadowed::{closure#0} at component.rs:1088:5
+   1085	    shadows: &dyn Shadows,
+   1086	) -> Laid
+   1087	{
+-> 1088	    lay_out_written(
+    	    ^
+   1089	        grammar,
+   1090	        (path, root, text),
+   1091	        shadows,
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg) grammar = <variable not available>
+(std::path::Path) path = <variable not available>
+(gandr_surface_dispatcher::root::SourceRoot) root = <variable not available>
+(gandr_surface_syntax::span::SourceText) text = <variable not available>
+(dyn gandr_surface_dispatcher::component::Shadows) shadows = <variable not available>

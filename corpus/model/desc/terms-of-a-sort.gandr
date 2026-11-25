@@ -1,0 +1,84 @@
+//! The terms of a sort of a theory: a fragment at two widths as one theory.
+//!
+//! A fragment of a machine language has terms at more than one width. An
+//! operation takes terms at some widths and gives a term at one width, and a
+//! rule relates two terms at one width. A theory states this with a sort of
+//! the widths and a sort of the terms that a width indexes.
+//!
+//! `Terms S s` is the type of the closed terms of the sort `s` of the theory
+//! `S`. Each operation into the sort is a constructor, written `S.op`. The
+//! terms of an indexed sort are a family over the terms of its index sort.
+//! `Terms S s i` is the type of the terms at the index `i`. A constructor
+//! stands at the index that its operation states, and a rule of the sort is a
+//! rule of the family.
+//!
+//! - see: #8358
+//! - see: `pathological/desc/terms-of-a-sort.gandr` — the sorts outside the
+//!   slice
+//! - see: `model/desc/family-with-rules.gandr` — the same family, written by
+//!   hand
+//! - owes: #4150 — an operation or a rule across two plain sorts, and an index
+//!   with a variable
+
+/// The fragment at two widths.
+pub theory Frag where
+  /// The widths.
+  sort Width : Type;
+  /// The terms at a width.
+  sort Term(w : Width) : Type;
+
+  /// One bit.
+  oper bit : Width;
+  /// One word.
+  oper word : Width;
+  /// The low bit.
+  oper low : Term bit;
+  /// The high bit.
+  oper high : Term bit;
+  /// The word zero.
+  oper zero : Term word;
+  /// The word one.
+  oper one : Term word;
+  /// The word of a bit.
+  oper zext : (b : Term bit) --> Term word;
+  /// The first word under the high bit, and the second under the low bit.
+  oper choose : (c : Term bit, x : Term word, y : Term word) --> Term word;
+
+  /// The high bit chooses the first word.
+  rule chooseHigh : choose high x y <=> x;
+  /// The low bit chooses the second word.
+  rule chooseLow : choose low x y <=> y;
+
+/// A case on the widths: a word is wide.
+def isWord(w : Terms Frag Width) -> Bool =
+  match w where
+    | Frag.bit => false
+    | Frag.word => true
+
+/// The word one.
+def wordOne() -> Terms Frag Term Frag.word = Frag.one;
+
+/// A choice under the high bit.
+def pickedWord() -> Terms Frag Term Frag.word = Frag.choose Frag.high Frag.one Frag.zero;
+
+/// A choice under the high bit is its first word.
+///
+/// - see: #8358
+def pickedIsOne : Path[.A = Terms Frag Term Frag.word] pickedWord wordOne = Path.here wordOne;
+
+/// A choice below a word that takes a bit.
+def narrowWord() -> Terms Frag Term Frag.word = Frag.choose Frag.low Frag.one (Frag.zext Frag.high);
+
+/// The word of the high bit.
+def lifted() -> Terms Frag Term Frag.word = Frag.zext Frag.high;
+
+/// A choice under the low bit is its second word.
+///
+/// - see: #8358
+def second : Path[.A = Terms Frag Term Frag.word] narrowWord lifted = Path.here lifted;
+
+/// A term at a width that the caller gives.
+def sameWidth(w : Terms Frag Width, t : Terms Frag Term w) -> Terms Frag Term w = t;
+
+/// A term at a bit, given at its width.
+def keptBit() -> Terms Frag Term Frag.bit = sameWidth Frag.bit Frag.low;

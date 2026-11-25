@@ -1,0 +1,57 @@
+[
+  {
+    "name": "#3778: macOS without LLVM's lldb refuses with the install line",
+    "system": "Darwin",
+    "lldb": false,
+    "exit": 2,
+    "error": "brew install lldb"
+  },
+  {
+    "name": "#3863: macOS runs LLVM's lldb on its arguments with neither a scope nor a lowered `ulimit -v`",
+    "system": "Darwin",
+    "lldb": true,
+    "exit": 0,
+    "bound": "none"
+  },
+  {
+    "name": "#4040: macOS runs LLVM's lldb with no bound of its own inside a host scope bounded to 8 GiB",
+    "system": "Darwin",
+    "within": true,
+    "lldb": true,
+    "exit": 0,
+    "bound": "none"
+  },
+  {
+    "name": "#4156: a host with no systemd-run skips the scoped launch by name, as macOS has none",
+    "system": "Darwin",
+    "within": true,
+    "systemd": false,
+    "lldb": true,
+    "exit": 0,
+    "bound": "none",
+    "skipped": "this host has no systemd-run"
+  },
+  {
+    "name": "#3823: Linux runs its lldb on its arguments bounded to 8 GiB",
+    "system": "Linux",
+    "lldb": true,
+    "exit": 0,
+    "bound": "8 GiB"
+  },
+  {
+    "name": "#3867: Linux runs its lldb bounded to 8 GiB on a host whose uname answers Darwin",
+    "system": "Linux",
+    "host": "Darwin",
+    "lldb": true,
+    "exit": 0,
+    "bound": "8 GiB"
+  },
+  {
+    "name": "#3894: Linux refuses its lldb on a host that bounds no process, as macOS's kernel bounds none",
+    "system": "Linux",
+    "bounds": false,
+    "lldb": true,
+    "exit": 2,
+    "error": "it never runs unbounded"
+  }
+]

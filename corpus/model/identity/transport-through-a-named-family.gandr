@@ -1,0 +1,31 @@
+/// `Path.walk` takes its family from a parameter, by name or as a lambda.
+///
+/// A library function over any family receives the family as a parameter.
+/// Its body and its type each carry a value through that family.
+///
+/// Each declaration carries a value through a family that a parameter names.
+///
+/// - see: #3786 — a family that a parameter names is a motive
+
+/// A body carries a value through a family that it names.
+def movedNamed(A : Type, P : A -> Type, x : A, y : A, p : Path x y, v : P x) -> P y =
+  Path.walk P p v
+
+/// A body carries a value through a lambda over the family.
+def movedLambda(A : Type, P : A -> Type, x : A, y : A, p : Path x y, v : P x) -> P y =
+  Path.walk (fun (a) { P a }) p v
+
+/// A type carries a value through a family that it names.
+def statedNamed(A : Type, P : A -> Type, x : A, v : P x) -> Path (Path.walk P (Path.here x) v) v =
+  Path.here v
+
+/// A type carries a value through a lambda over the family.
+def statedLambda(A : Type, P : A -> Type, x : A, v : P x) -> Path (
+  Path.walk (fun (a) { P a }) (Path.here x) v
+) v =
+  Path.here v
+
+/// A body carries a value through a lambda over the family. The path stands
+/// between the family and the value, and no type names it.
+def movedPastThePath(A : Type, x : A, y : A, p : Path x y, P : A -> Type, v : P x) -> P y =
+  Path.walk (fun (a) { P a }) p v

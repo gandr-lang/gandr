@@ -1,0 +1,8 @@
+# The codemod of the writers' and consoles' wave. Each `dyn io::Write` and
+# `dyn fmt::Display` behind a reference in a function's parameter takes
+# `impl`, a generic of the function. Each `dyn Console` there takes
+# `Streams<'_>`, the closed set of the known consoles. The compiler's errors
+# that stay are the wave's second phase.
+# - see: #7387
+ruleDirs:
+  - rules

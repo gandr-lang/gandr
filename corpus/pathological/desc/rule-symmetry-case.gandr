@@ -1,0 +1,23 @@
+//! A case that tells the two orders of two arguments apart is refused.
+//!
+//! Two beacons side by side are one term in their two orders. A case that
+//! answers with the left beacon gives two answers for that one term.
+//!
+//! The checker and the kernel each search the two pairings of two fields. The
+//! search joins no two answers that the symmetry does not join, so the case
+//! stays refused.
+//!
+//! - see: #8385
+
+// `Beacon` with its symmetry.
+import "../../model/desc/rule-symmetry-case.gandr";
+
+/// The left beacon of two is no function of the two.
+///
+/// - see: #8385
+@[refuses("RuleNotRespected")]
+def onLeft(t : Terms Beacon) -> Terms Beacon =
+  match t where
+    | Beacon.dull => Beacon.dull
+    | Beacon.bright => Beacon.bright
+    | Beacon.twin(x, y) => x

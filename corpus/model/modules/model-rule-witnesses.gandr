@@ -1,0 +1,80 @@
+// This source shows rule witnesses in a model.
+//
+// A rule of a theory is a cell that conversion decides. A model witnesses it by
+// a path in its carrier, since a `Path` is a cell that a program carries. A
+// model gives one path witness for each theory rule. `ByLeft` and `ByRight`
+// use different witnesses for the left unit rule.
+//
+// The checker accepts `Path.here` when the rule sides convert. The kernel
+// checks an explicit path when the sides remain distinct. The presented type is
+// the initial model, where each witness is `Path.here`.
+//
+// - see: model-ascription.gandr
+// - see: model-laws.gandr
+
+/// `Ticks` defines natural numbers.
+data Ticks : Type where
+  /// `NoTick` gives zero.
+  | NoTick : Ticks
+  /// `Tick` adds one.
+  | Tick : (n : Ticks) --> Ticks
+
+/// `LeftUnit` states a unit and a product.
+theory LeftUnit where
+  /// `M` names the carrier.
+  sort M : Type;
+  /// `e` gives the unit.
+  oper e : M;
+  /// `mul` gives the product.
+  oper mul : (x : M, y : M) --> M;
+  /// `unitL` states the left unit rule.
+  rule unitL : mul e x <=> x;
+
+/// `tick` adds one natural number.
+def tick(n : Ticks) -> Ticks = Tick n;
+
+/// `joinLeft` recurses on its left argument.
+def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
+  match m where
+    | NoTick => n
+    | Tick(k) => Tick (joinLeft[<] k n)
+
+/// `joinRight` recurses on its right argument.
+def rec joinRight(m : Ticks, n : Ticks) -> Ticks =
+  match n where
+    | NoTick => m
+    | Tick(k) => Tick (joinRight[<] m k)
+
+/// `noTickJoinsRight` proves a left unit for `joinRight`.
+def rec noTickJoinsRight(n : Ticks) -> Path (joinRight NoTick n) n =
+  match n where
+    | NoTick => Path.here NoTick
+    | Tick(k) => Path.ap tick (noTickJoinsRight[<] k)
+
+/// `ByLeft` proves the rule by conversion.
+module ByLeft : Model(LeftUnit) where
+  /// `M` names `Ticks`.
+  type M = Ticks;
+
+  /// `e` gives `NoTick`.
+  def e : Ticks = NoTick;
+
+  /// `mul` uses `joinLeft`.
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y;
+
+  /// `unitL` uses `Path.here`.
+  def unitL(x : Ticks) -> Path (mul e x) x = Path.here x;
+
+/// `ByRight` proves the rule by induction.
+module ByRight : Model(LeftUnit) where
+  /// `M` names `Ticks`.
+  type M = Ticks;
+
+  /// `e` gives `NoTick`.
+  def e : Ticks = NoTick;
+
+  /// `mul` uses `joinRight`.
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinRight x y;
+
+  /// `unitL` uses `noTickJoinsRight`.
+  def unitL(x : Ticks) -> Path (mul e x) x = noTickJoinsRight x;

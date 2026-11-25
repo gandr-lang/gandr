@@ -1,0 +1,12 @@
+theory Carrier where {
+  sort T : Type;
+  oper zero : T;
+}
+theory Outer where {
+  oper inner : Model(Carrier);
+}
+module Sealed :> Model(Outer) where {
+  module inner : Model(Carrier) where { type T = Integer; def zero = 0; }
+}
+def leaked : Integer ;
+def leaked = Sealed.inner.zero ;

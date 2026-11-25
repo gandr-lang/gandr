@@ -1,0 +1,2 @@
+theory Older where { oper answer : Integer ; oper tag : Integer ; }
+theory Newer where { oper reply : Integer ; oper label : Integer ; }

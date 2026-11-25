@@ -1,0 +1,13 @@
+command: mise exec -- cargo test --locked -p gandr-runtime-uring
+issue: #7720
+host: riscv64, kernel-headers 7.2, gcc 16.2.1 with no PIE by default
+before: a723a91e0, with no bindgen that mise lists and no LIBURING_CFLAGS
+exit: 101
+  thread 'main' panicked at axboe-liburing-2.15.3/liburing-rs/build.rs:128:50:
+  called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+before: a723a91e0, with BINDGEN_PATH and no LIBURING_CFLAGS
+exit: 101
+  mold: error: libliburing_rs.rlib(setup.ol):(.text): R_RISCV_HI20 relocation at offset 0x310 against symbol `cache_val.0' can not be used; recompile with -fPIC
+after: a723a91e0, with the bindgen 0.72.1 of the host's mise tools and LIBURING_CFLAGS=-fPIC in the host's profile
+exit: 0
+test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out

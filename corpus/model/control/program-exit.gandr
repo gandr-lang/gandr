@@ -1,0 +1,17 @@
+// This source shows early program exit.
+//
+// `std.process.Exit.exit` ends the program before its entry returns.
+//
+// The runtime uses the given integer as the exit code.
+//
+// - see: IEEE Std 1003.1-2017, `exit`
+
+// Early exit's host interface.
+import std.process;
+
+/// The process capability, owed by the host that grants it.
+@[owes(1)]
+def proc : Cap { exit };
+
+/// The entry: it exits with 7 before it can return 0.
+def main() -> [std.process.Exit.Eff] Integer = { proc.exit 7; 0 };

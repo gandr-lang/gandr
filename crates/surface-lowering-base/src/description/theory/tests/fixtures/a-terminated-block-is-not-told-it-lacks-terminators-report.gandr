@@ -1,0 +1,5 @@
+theory S where {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  oper id : (a : Ob) --> Ob;
+}

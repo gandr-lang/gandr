@@ -1,0 +1,23 @@
+@[builtin("string.join")]
+def unrowed : (a : String, b : String) -> String;
+
+@[builtin("string.append")]
+def bodied(a : String, b : String) -> String = a;
+
+@[builtin("string.append")]
+def narrow : (a : String) -> String;
+
+@[builtin("string.append")]
+def first : (a : String, b : String) -> String;
+
+@[builtin("string.append")]
+def second : (a : String, b : String) -> String;
+
+@[builtin("irDecode")]
+def unbodied : (a : String) -> String;
+
+@[builtin("irArgs")]
+def held(a : String) -> String = a;
+
+@[builtin("irArgs")]
+def again(a : String) -> String = a;

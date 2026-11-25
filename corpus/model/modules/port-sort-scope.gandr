@@ -1,0 +1,21 @@
+// This source shows a theory whose port names a type of its own source.
+//
+// A port sort that no sort of the theory declares names a type member. The
+// scope of the source that declares the theory resolves it. A source that
+// uses the theory reads the same member, whatever its own scope binds.
+//
+// Here `Integer` names the strings, and the source keeps that binding private.
+//
+// - see: #8139
+// - see: model/modules/port-sort-scope-use.gandr
+// - see: pathological/modules/port-sort-scope.gandr
+
+/// `Integer` names the strings in this source alone.
+type Integer = String;
+
+/// `Shout` says a word of this source's `Integer`.
+pub theory Shout where
+  /// The carrier.
+  sort C : Type;
+  /// `say` gives the word of a carrier.
+  oper say : (c : C) --> Integer;

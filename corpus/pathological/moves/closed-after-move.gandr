@@ -1,0 +1,26 @@
+//! `closed-after-move` closes a handle after it moves to a closer.
+//!
+//! The send consumes the mover's slot. The checker reports `UsedAfterClose`
+//! at the second close.
+//!
+//! The checker marks the spent slot at the final close.
+//! The source imports `File` from `file-base`.
+//!
+//! C++ calls a destructor for an object after a move.
+//! After a C++ move, the object remains valid but unspecified.
+//! - see: `lib.types.movedfrom` in ISO/IEC 14882:2020
+//! - see: file-base.gandr — the file protocol
+import "../../model/moves/file-base.gandr";
+
+/// `closedAfterMove` closes a handle that its send already consumed.
+@[refuses("UsedAfterClose")]
+def closedAfterMove() -> Unit =
+  let file = fork (owner : File.Handle) { close owner };
+  let task = fork (closer : File.Closer) {
+    let held = recv closer;
+    close held;
+    close closer
+  };
+  send task file
+  close file
+  close task

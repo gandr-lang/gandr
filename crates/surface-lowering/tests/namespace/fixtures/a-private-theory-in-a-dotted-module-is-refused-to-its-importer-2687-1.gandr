@@ -1,0 +1,6 @@
+pub theory Kit.Shown where {
+  oper label : String;
+}
+theory Kit.Hidden where {
+  oper label : String;
+}

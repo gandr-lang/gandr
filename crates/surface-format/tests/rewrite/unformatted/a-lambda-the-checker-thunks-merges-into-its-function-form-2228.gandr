@@ -1,0 +1,5 @@
+def identity : Integer -> Integer ;
+def identity = fun (x) { x } ;
+
+def add : (Integer, Integer) -> Integer ;
+def add = fun (a) { fun (b) { a + b } } ;

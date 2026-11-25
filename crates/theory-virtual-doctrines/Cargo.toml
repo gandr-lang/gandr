@@ -1,0 +1,29 @@
+[package]
+name = "gandr-theory-virtual-doctrines"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Virtual double categories, reflected judgments and directed laws over replayable rewriting evidence"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+anodized.workspace = true
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-decomposition-spaces.workspace = true
+gandr-theory-levitation.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

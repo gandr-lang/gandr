@@ -1,0 +1,11 @@
+error[HoldElsewhere]: `hold` makes a handle at the world it runs at; migrate there to hold a value of that world
+   ╭▸ corpus/ledger/diagnostics/HoldElsewhere.gandr:35:4
+   │
+34 │ ┌ def forged() -> -F (Seat.Report at seat) =
+35 │ │   (hold Seat.progress)
+   │ └────┯━━━━━━━━━━━━━━━━━┘ checked against `() -> Seat.Report at seat`; while checking the body of this thunk
+   │      │
+   │      a hold wanted at another world
+   │
+   ├ note: `forged` is refused with HoldElsewhere, as its expectation states
+   ╰ help: migrate to the handle's world before using `hold`

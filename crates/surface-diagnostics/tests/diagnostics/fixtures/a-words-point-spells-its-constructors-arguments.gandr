@@ -1,0 +1,7 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (p : Nat) --> Nat
+  | Pair : (a : Nat, b : Nat) --> Nat
+  | step : Succ Zero <-> Succ Zero
+  | both : Pair Zero Zero <-> Pair Zero Zero
+}

@@ -1,0 +1,5 @@
+A path type:
+
+```gandr
+def p : Path(Integer, 4, 4);
+```

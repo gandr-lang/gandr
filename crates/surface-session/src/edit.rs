@@ -1,0 +1,6434 @@
+//! Edit-action reconstruction: a localized structured diff of the lowered
+//! core, and the localizer that maps a source range to the smallest core term
+//! enclosing it.
+//!
+//! # Soundness is total; localization is partial
+//!
+//! [`diff`] aligns two revisions' items and descends each kept pair's bodies
+//! together: where the two nodes have one former and one payload it goes on
+//! into their children, where a leaf differs it emits one in-place action,
+//! and where the formers differ it replaces the subtree wholesale. [`apply`]
+//! of a diff to the old items reproduces the new items exactly, so the worst
+//! a diff can be is coarse, never wrong.
+//!
+//! # Trees are read out of the arena, free of ids
+//!
+//! A [`Tree`] is one core term as a table of the incremental checker's
+//! [`ContentNode`]s, numbered from the root in the order a breadth-first walk
+//! first reaches them, with each constant read as the [`Reference`] its
+//! admission position resolves to. The read keeps the arena's sharing: an
+//! arena node that two parents name is one entry, so the read is linear in the
+//! arena nodes, not in the term written out. A let spine whose levels each read
+//! the level below twice is one entry per level, not `2^d` (#6470).
+//!
+//! Each entry carries a content name, the digest of its former, its payload
+//! and its children's names. Two trees are equal exactly when their roots'
+//! names agree, whatever ids their arenas gave the nodes and however they
+//! share them, which is what lets two revisions, lowered into two arenas, be
+//! compared at all. The numbering is only the index of an entry, and no
+//! comparison reads it.
+//!
+//! # Paths
+//!
+//! A [`CorePath`] names an item and the child slots from its body's root. An
+//! action anchored in the old revision — a deletion, a signature change, a
+//! hole filled or erased, a subtree replaced or a leaf set — carries the
+//! item's old ordinal; an insertion has no old anchor and carries the new
+//! ordinal.
+//!
+//! # Edits are a diff of the lowered core
+//!
+//! Each accepted submission carries the `EditScript` from the latest accepted
+//! revision: the `diff` of their `Snapshot`s. A snapshot retains each item's
+//! `DeclarationTree`: value signature and body roots, or a complete native data
+//! signature. Each root reads out of the arena as a `Tree` of the incremental
+//! checker's `ContentNode`s, each constant read as the `Reference` it resolves
+//! to, so two revisions lowered into two arenas compare by content names.
+//! Items align by reference — key and occurrence — keeping the
+//! largest set whose order both revisions share; each kept pair's bodies are
+//! walked together, a pair with one content name ending the walk there, a
+//! changed literal, variable or constant becoming one in-place action and any
+//! other change one `Replace` of the old subtree. `apply` of a diff to the old
+//! items reproduces the new ones exactly, but for a collision of two content
+//! names: soundness is total, localization is partial. A path names an item and
+//! the child slots from its body's root; an action anchored in the old revision
+//! carries the old ordinal, an insertion the new one.
+//!
+//! A snapshot holds each item's image behind a shared pointer. The leading
+//! items of a document laid after an import closure read alike in every
+//! revision, so `Snapshot::of_after` takes their images from the closure's
+//! `Snapshot::leading` rather than reading them out of the arena again, and
+//! `diff` passes over the leading items whose images two snapshots share
+//! without reading them: the cost of both follows the document's own items.
+//!
+//! Over a named surface core the contract would carry actions for grades,
+//! injection sides, binder names and annotations, and align items by a longest
+//! common subsequence of their names in an `n·m` table. The core here carries
+//! none of those payloads — binders are de Bruijn indices, so renaming one
+//! reconstructs to no action — and its actions are the core's own leaves.
+//! Because references are unique within a revision, the longest common
+//! subsequence is the longest increasing run of matched old ordinals, which
+//! patience sorting finds in `n log n`. The alternatives were a text diff,
+//! which names bytes rather than terms, and a diff of content-addressed tables,
+//! which numbers nodes and loses the path a face surfaces. The choice reverses
+//! when the lowering emits structured edits itself; the session would then
+//! forward them.
+//!
+//! Effect and control edits use the portable child ordering of
+//! `gandr-core-incremental`'s `content` module. Interface and operation names,
+//! clause order, frame kind and projection side participate in payload
+//! agreement; operation types and binder-local bodies remain child content. A
+//! metadata-only change therefore replaces its node rather than disappearing
+//! from the edit script. Witness:
+//! `edit::tests::control_edits_preserve_names_scopes_and_frame_order`.
+//!
+//! # Native declaration snapshots
+//!
+//! `DeclarationTree::Value`, `DeclarationTree::Data`,
+//! `DeclarationTree::Abstract`, `DeclarationTree::World` and
+//! `DeclarationTree::Codata` preserve distinct declaration categories. Data
+//! snapshots retain their kind, parameter telescope and every constructor
+//! field; an abstract type its kind, its representation, the extent of its
+//! seal, its minting site, the mobility its signature marks and its interface's
+//! relation, reflexivity and law; a world declaration and a codata declaration
+//! have no roots. A schema or category change replaces the item through
+//! delete/insert; native term children still receive localized edits.
+//! Record labels, constructor tags, nominal identities and all variadic
+//! children participate in agreement. The child reader is an unbounded borrowed
+//! iterator, not a fixed three-child buffer.
+//!
+//! `edit::native_snapshots_preserve_schema_and_fourth_children` checks literal
+//! edits beneath fourth nominal arguments, constructor fields, case branches
+//! and record fields, plus schema and category replacements; applying each diff
+//! reconstructs the exact new snapshot. Native declarations have no runtime
+//! body: evaluation returns `UnrunnableData`. No source notation or command-IL
+//! implementation is inferred from retaining this programmatic content.
+//!
+//! **Choice.** Extend the snapshot and diff contract rather than maintain a
+//! second nominal identity table. **Reversal.** A source reader or runtime
+//! consumer must add its own syntax and execution rules before these native
+//! items become runnable from the session.
+//!
+//! # Native universe-path content
+//!
+//! Edit snapshots retain native `Path_U` classifiers, reflexivity, equivalence
+//! maps and evidence, product paths, and transport operands as the incremental
+//! layer’s content nodes. Their child ordering is the ordinary constructor
+//! ordering. Both ordered dialogue lists participate in non-child payload
+//! agreement: an evidence-only change produces a replacement even when every
+//! child is unchanged. The witness
+//! `edit::tests::path_evidence_changes_are_reconstructed` observes source- and
+//! target-dialogue changes separately, exact reader child order, and replay of
+//! the new content. Evidence-insensitive certificate conversion is not content
+//! equality. No session revision becomes a certificate admission receipt by
+//! retaining this content.
+//!
+//! **Choice.** Extend the structural edit vocabulary rather than maintain a
+//! second path identity table. These forms are programmatic core content;
+//! source-level identity operations, bridge-mode observations, higher fields,
+//! funext, `Flow_U` and guarded List values are not introduced by this adapter.
+//! **Reversal.** An interactive identity consumer must define its own
+//! application and persistence boundary over the kernel APIs.
+//!
+//! # Localization descends extents
+//!
+//! `Snapshot::localize` returns the body node whose span encloses a range with
+//! the fewest bytes, the outermost of a shared span and the leftmost at one
+//! depth, so a contiguous edit's locus is the common ancestor of the changes it
+//! induces. Descending the nesting of the origin map does not work here, since
+//! a node's recorded origin need not enclose its children: a function's lambda
+//! records its parameter. A snapshot therefore spans each node by its extent,
+//! the hull of its own origin and its children's extents, which nests by
+//! construction. The descent examines the children of the enclosing nodes
+//! alone, level by level, so its work follows the locus's depth; it keeps every
+//! enclosing sibling rather than the first, which keeps it exact where a point
+//! touches two siblings. A linear scan of every node is its oracle. The extent
+//! step retires if the lowering's origins come to nest, when each extent equals
+//! its origin.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite keeps
+//!   its node across an edit while its stratum, pasting and cell count hold.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::collections::VecDeque;
+use alloc::sync::Arc;
+use core::mem;
+
+use anodized::spec;
+use gandr_core_checker::body;
+use gandr_core_checker::signature;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Reference;
+use gandr_core_content::Sort;
+use gandr_core_content::map_children;
+use gandr_core_incremental::ItemOrdinal;
+use gandr_core_incremental::Program;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::SplitMotive;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Literal;
+use gandr_surface_lowering::OriginTable;
+use gandr_surface_syntax::ByteLength;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use quenchant_shape::shape::Maybe;
+
+quenchant_shape::reason_enum! {
+    /// Why a path of a revision's core has no source span.
+    pub mod spanned {
+        /// The reason no span is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The path names no node of the revision.
+            Unaddressed,
+            /// The lowering recorded no origin for the node, nor for any node
+            /// beneath it.
+            Unrecorded,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a path names no node of a revision's core.
+    pub mod addressed {
+        /// The reason no node is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The revision holds no item at the path's ordinal.
+            NoItem,
+            /// The item owes its body.
+            NoBody,
+            /// A slot of the path names no child of the node it is read at.
+            NoChild,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a source range localizes to no core term.
+    pub mod located {
+        /// The reason no term is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No item's body encloses the range: it falls in a signature,
+            /// between declarations, or outside the source.
+            Outside,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an action carries no body path.
+    pub mod body_path {
+        /// The reason no path is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The action edits the item list or an item's halves, not a node
+            /// within a body.
+            ItemLevel,
+        }
+    }
+}
+
+/// The position of a child among its parent's children, in the parent
+/// former's order.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ChildSlot(usize);
+
+impl From<usize> for ChildSlot
+{
+    /// The slot at position `slot`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(slot: usize) -> Self
+    {
+        Self(slot)
+    }
+}
+
+impl From<ChildSlot> for usize
+{
+    /// The position `slot` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(slot: ChildSlot) -> Self
+    {
+        slot.0
+    }
+}
+
+/// A position in a revision's lowered core: an item, and the child slots
+/// from its body's root to the node.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: An item ordinal and ordered child slots identify a proposed body
+///   locus; the empty slot sequence names the body root. A snapshot decides
+///   whether that locus exists.
+/// - executable: none — A path does not carry its snapshot or expose a callable
+///   validation boundary; `Snapshot::node`, `Snapshot::span` and `path_of`
+///   check its interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CorePath
+{
+    /// The item.
+    item: ItemOrdinal,
+    /// The slots from the body's root; empty for the root itself.
+    slots: Vec<ChildSlot>,
+}
+
+impl CorePath
+{
+    /// The path from `item`'s body root through `slots`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        item: ItemOrdinal,
+        slots: Vec<ChildSlot>,
+    ) -> Self
+    {
+        Self { item, slots }
+    }
+
+    /// The item.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn item(&self) -> ItemOrdinal
+    {
+        self.item
+    }
+
+    /// The slots from the body's root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn slots(&self) -> &[ChildSlot]
+    {
+        &self.slots
+    }
+}
+
+/// One core term read out of its arena: content nodes and their names.
+///
+/// The nodes are numbered from the root in the order a breadth-first walk
+/// first reaches them, the root first, each child an index into the same
+/// table.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: A body or signature is represented root-first, each node numbered
+///   when the walk first reaches it; a node the term reaches from two parents
+///   is one entry, which both parents name. Each node carries the content name
+///   of the term beneath it, and two trees are equal exactly when their roots'
+///   names agree.
+/// - executable: none — The aggregate has no callable boundary; read, subtree
+///   and graft check the discovery numbering, and `diff/apply` witnesses check
+///   the represented term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation; a let spine whose levels each read the level below
+///   twice separates one entry for each shared node from one for each
+///   occurrence.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+#[derive(Clone, Debug)]
+pub struct Tree
+{
+    /// The nodes, the root first.
+    nodes: Vec<ContentNode>,
+    /// The content name of each node, by table index.
+    names: Vec<ContentName>,
+}
+
+impl PartialEq for Tree
+{
+    /// Whether the two trees hold one term: whether their roots' content names
+    /// agree, however each table shares its nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.names.first() == other.names.first()
+    }
+}
+
+impl Eq for Tree
+{
+}
+
+impl core::hash::Hash for Tree
+{
+    /// Feed the root's content name to `state`, which equal trees share.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<State>(
+        &self,
+        state: &mut State,
+    ) where
+        State: core::hash::Hasher,
+    {
+        self.names.first().hash(state);
+    }
+}
+
+impl Tree
+{
+    /// The nodes, the root first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn nodes(&self) -> &[ContentNode]
+    {
+        &self.nodes
+    }
+
+    /// The node `slots` reach from the root.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns root index zero for an empty path, otherwise follows
+    ///   each child slot in order; the first missing step yields `NoChild`. The
+    ///   caller checks whether the resulting index names a node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every child slot of hand-built multi-child body
+    ///   formers and absent item/body/child paths. Exact node payloads and
+    ///   distinct absence reasons distinguish slot reversal and premature or
+    ///   delayed absence.
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    let expected = slots
+        .iter()
+        .try_fold(
+            NodeIndex::from(0_usize),
+            |at, &slot| {
+                let node = self.nodes.get(usize::from(at))?;
+                children(node).nth(slot.0)
+            },
+        );
+    match (ret, expected) {
+        (Maybe::Present(found), Some(expected)) => found == expected,
+        (Maybe::Absent(addressed::Absent::NoChild), None) => true,
+        _ => false,
+    }
+},
+    )]
+    fn resolve(
+        &self,
+        slots: &[ChildSlot],
+    ) -> Maybe<NodeIndex, addressed::Absent>
+    {
+        let mut at = NodeIndex::from(0_usize);
+        for &slot in slots {
+            let next = self
+                .nodes
+                .get(usize::from(at))
+                .and_then(|node| children(node).nth(slot.0));
+            match next {
+                Some(child) => at = child,
+                None => return Maybe::Absent(addressed::Absent::NoChild),
+            }
+        }
+        Maybe::Present(at)
+    }
+
+    /// The subtree rooted at `root`, renumbered from it in discovery order.
+    ///
+    /// # Specification
+    /// - requires: the reachable child graph is finite and every present child
+    ///   names a node.
+    /// - ensures: copies the subtree rooted at `root`, preserving formers,
+    ///   payloads, the sharing of its nodes and their content names, while it
+    ///   renumbers each node in the order a breadth-first walk first reaches
+    ///   it; an absent root gives an empty tree.
+    /// - panics: none.
+    /// - intension: copies each node of the subtree once, however many parents
+    ///   name it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor change at a nested node and every
+    ///   multi-child body former, replayed to the independently lowered target
+    ///   snapshot. Root/payload preservation and discovery numbering are
+    ///   executable; full descendant correspondence is observed by replay.
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    ///
+    /// # Cost
+    /// - allocation: the renumbered subtree, growth within the tree
+    #[spec(
+        ensures: |ret| match self.nodes.get(usize::from(root)) {
+    Some(original) => {
+        ret
+            .nodes
+            .first()
+            .is_some_and(|node| agreement(original, node) == Agreement::Same)
+            && numbering(&ret.nodes) == Numbering::Discovered
+            && ret.names.first() == self.names.get(usize::from(root))
+    }
+    None => ret.nodes.is_empty(),
+},
+    )]
+    fn subtree(
+        &self,
+        root: NodeIndex,
+    ) -> Self
+    {
+        let mut nodes = Vec::new();
+        let mut names = Vec::new();
+        let mut queue = VecDeque::from([root]);
+        let mut numbered = BTreeMap::from([(root, NodeIndex::from(0_usize))]);
+        while let Some(index) = queue.pop_front() {
+            let (Some(node), Some(&name)) = (
+                self.nodes.get(usize::from(index)),
+                self.names.get(usize::from(index)),
+            )
+            else {
+                continue;
+            };
+            nodes.push(map_children(node, &mut |child| {
+                let fresh = NodeIndex::from(numbered.len());
+                *numbered.entry(child).or_insert_with(|| {
+                    queue.push_back(child);
+                    fresh
+                })
+            }));
+            names.push(name);
+        }
+        Self { nodes, names }
+    }
+
+    /// The tree of `nodes`, each node named by its content.
+    ///
+    /// # Specification
+    /// - requires: `nodes` is a finite acyclic table, the root first.
+    /// - ensures: the tree of `nodes`, each with the name [`names_of`] gives
+    ///   it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`names_of`].
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    #[spec(ensures: |ret| ret.names.len() == ret.nodes.len())]
+    fn named(nodes: Vec<ContentNode>) -> Self
+    {
+        let names = names_of(&nodes, &topological(&nodes));
+        Self { nodes, names }
+    }
+}
+
+/// The content name of a node: a digest of its former, its payload and the
+/// names of its children in slot order.
+///
+/// The name reads no table index, so two nodes of two tables have one name
+/// exactly when the terms beneath them are equal, but for a collision of the
+/// name's sixteen bytes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ContentName([u8; 16]);
+
+/// A [`core::hash::Hasher`] that feeds each word it is given to a BLAKE3
+/// digest, so that a node's derived hash names its content.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct Naming(blake3::Hasher);
+
+impl core::hash::Hasher for Naming
+{
+    /// The first eight bytes of the digest so far.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn finish(&self) -> u64
+    {
+        let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = *self.0.finalize().as_bytes();
+        u64::from_le_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
+    }
+
+    /// Feed `bytes` to the digest.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn write(
+        &mut self,
+        bytes: &[u8],
+    )
+    {
+        let _fed = self.0.update(bytes);
+    }
+}
+
+/// The content name of each node of `nodes`, by table index, named in
+/// `order`.
+///
+/// # Specification
+/// - requires: `nodes` is a finite acyclic table, and `order` is
+///   [`topological`] of it.
+/// - ensures: one name for each node: the digest of the node with each child
+///   index set to zero, then of its children's names in slot order. Two nodes
+///   whose terms are equal have one name, whichever table holds them and
+///   however it shares their nodes.
+/// - panics: none.
+/// - intension: names each node once, children first.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two revisions of one term read out of two arenas, a graft
+///   and a subtree compare equal through their names; a changed leaf changes
+///   the name of each node above it, which the diff witnesses observe.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::self_diff_is_empty_and_apply_is_identity`
+/// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+///
+/// # Cost
+/// - allocation: the content name of each node, growth within the table
+#[spec(ensures: |ret| ret.len() == nodes.len())]
+fn names_of(
+    nodes: &[ContentNode],
+    order: &[NodeIndex],
+) -> Vec<ContentName>
+{
+    use core::hash::Hash as _;
+
+    let mut names = vec![ContentName::default(); nodes.len()];
+    for &at in order {
+        let at = usize::from(at);
+        let Some(node) = nodes.get(at)
+        else {
+            continue;
+        };
+        let mut naming = Naming(blake3::Hasher::new());
+        map_children(node, &mut |_| NodeIndex::from(0_usize)).hash(&mut naming);
+        for child in children(node) {
+            if let Some(&ContentName(name)) = names.get(usize::from(child)) {
+                core::hash::Hasher::write(&mut naming, &name);
+            }
+        }
+        let [
+            n0,
+            n1,
+            n2,
+            n3,
+            n4,
+            n5,
+            n6,
+            n7,
+            n8,
+            n9,
+            n10,
+            n11,
+            n12,
+            n13,
+            n14,
+            n15,
+            ..,
+        ] = *naming.0.finalize().as_bytes();
+        if let Some(slot) = names.get_mut(at) {
+            *slot = ContentName([
+                n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15,
+            ]);
+        }
+    }
+    names
+}
+
+/// The table indices of `nodes`, each node after every node beneath it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each index of `nodes` once; in an acyclic table each node comes
+///   after each of its children.
+/// - panics: none.
+/// - intension: visits each node and each child edge once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shared child numbered after one of its parents, which a
+///   reverse pass over the indices would settle too late; the hull and the
+///   names of a let spine observe the order.
+/// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+/// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+///
+/// # Cost
+/// - allocation: the ordered table indices, growth within the table
+#[spec(ensures: |ret| ret.len() == nodes.len())]
+fn topological(nodes: &[ContentNode]) -> Vec<NodeIndex>
+{
+    // Each index is unseen, open on the stack, or settled.
+    let mut settled = vec![false; nodes.len()];
+    let mut opened = vec![false; nodes.len()];
+    let mut order = Vec::with_capacity(nodes.len());
+    let mut stack = Vec::new();
+    for start in 0 .. nodes.len() {
+        stack.push((start, false));
+        while let Some((at, expanded)) = stack.pop() {
+            if expanded {
+                if let Some(slot) = settled.get_mut(at)
+                    && !*slot
+                {
+                    *slot = true;
+                    order.push(NodeIndex::from(at));
+                }
+                continue;
+            }
+            match opened.get_mut(at) {
+                Some(slot) if !*slot => *slot = true,
+                _ => continue,
+            }
+            stack.push((at, true));
+            if let Some(node) = nodes.get(at) {
+                stack.extend(
+                    children(node)
+                        .map(usize::from)
+                        .filter(|&child| opened.get(child) == Some(&false))
+                        .map(|child| (child, false)),
+                );
+            }
+        }
+    }
+    order
+}
+
+/// How a table is numbered.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Numbering
+{
+    /// Walked in order, each child is a node already numbered or the next
+    /// one: the order a breadth-first walk first reaches the nodes in.
+    Discovered,
+    /// A child skips ahead of the next number.
+    Other,
+}
+
+/// How `nodes` is numbered.
+///
+/// # Specification
+/// trivial.
+fn numbering(nodes: &[ContentNode]) -> Numbering
+{
+    let mut expected = 1_usize;
+    let ordered = nodes.iter().all(|node| {
+        children(node).all(|child| {
+            let child = usize::from(child);
+            if child == expected {
+                expected = expected.saturating_add(1_usize);
+                true
+            }
+            else {
+                child < expected
+            }
+        })
+    });
+    if ordered && (nodes.is_empty() || expected == nodes.len()) {
+        Numbering::Discovered
+    }
+    else {
+        Numbering::Other
+    }
+}
+
+/// Arena-independent declaration content, retaining native signatures
+/// separately.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeclarationTree
+{
+    /// An ordinary value declaration's independent halves.
+    Value
+    {
+        /// Its optional classifier.
+        signature: Maybe<Tree, signature::Absent>,
+        /// Its body or a genuine value obligation.
+        body: Maybe<Tree, body::Absent>,
+    },
+    /// A nominal signature; none of these roots is a value obligation.
+    Data
+    {
+        /// The parameter telescope, in order.
+        parameters: Vec<Tree>,
+        /// Constructor field classifiers, in tag and field order.
+        constructors: Vec<Vec<Tree>>,
+        /// The declared universe.
+        kind: Tree,
+    },
+    /// A sealed abstract type; none of its roots is a value obligation.
+    Abstract
+    {
+        /// The declared universe.
+        kind: Tree,
+        /// The type the atom is sealed over.
+        representation: Tree,
+        /// How many declarations after it the seal reaches.
+        extent: gandr_kernel_term::SealExtent,
+        /// The site that mints the atom.
+        site: gandr_core_checker::SealSite,
+        /// Whether its signature marks it mobile.
+        mobility: gandr_core_checker::worlds::Mobility,
+        /// The interface its elements are related by, when stated.
+        interface: Maybe<InterfaceTree, gandr_core_checker::interface::Absent>,
+    },
+    /// A world declaration; it has no roots.
+    World,
+    /// A codata declaration; its signature has no content form, so it has no
+    /// roots.
+    Codata,
+}
+
+/// A sealed atom's interface, read out of the arena: its relation, the
+/// relation's reflexivity and, when stated, its law.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InterfaceTree
+{
+    /// The relation between two elements.
+    relation: Tree,
+    /// The relation's reflexivity.
+    reflexivity: Tree,
+    /// The singleton's contraction onto its centre, when stated.
+    law: Maybe<Tree, gandr_core_checker::law::Absent>,
+}
+
+/// One item of a revision: its identity, its signature and its body, each
+/// read out of the arena.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The reference identifies the declaration; signature and body
+///   images independently preserve present or owed halves.
+/// - executable: none — The data declaration has no runtime invocation;
+///   `Snapshot::of` checks reference and half correspondence, while
+///   `diff/apply` observe their transitions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::hole_fill_and_erase`
+/// - witness: `tests::edit::item_ascription_change_is_one_set_item_ascription`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ItemTree
+{
+    /// The item's identity across revisions: its key and occurrence.
+    reference: Reference,
+    /// The declaration content, with native signatures distinct from value
+    /// halves.
+    declaration: DeclarationTree,
+}
+
+impl ItemTree
+{
+    /// The item's identity across revisions.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reference(&self) -> &Reference
+    {
+        &self.reference
+    }
+
+    /// The complete value or nominal declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn declaration(&self) -> &DeclarationTree
+    {
+        &self.declaration
+    }
+
+    /// The present classifier of a value declaration; native signatures are
+    /// separate.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a signed and an unsigned value declaration.
+    /// - witness: `edit::tests::a_value_declaration_reports_its_signature_and_an_unsigned_one_none`
+    #[inline]
+    #[must_use]
+    pub const fn signature(&self) -> Option<&Tree>
+    {
+        match self.declaration {
+            DeclarationTree::Value {
+                signature: Maybe::Present(ref tree),
+                ..
+            } => Some(tree),
+            DeclarationTree::Value {
+                signature: Maybe::Absent(_),
+                ..
+            }
+            | DeclarationTree::Data { .. }
+            | DeclarationTree::Abstract { .. }
+            | DeclarationTree::World
+            | DeclarationTree::Codata => None,
+        }
+    }
+
+    /// The present body of a value declaration. A native declaration has no
+    /// body.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn body(&self) -> Option<&Tree>
+    {
+        match self.declaration {
+            DeclarationTree::Value {
+                body: Maybe::Present(ref tree),
+                ..
+            } => Some(tree),
+            DeclarationTree::Value {
+                body: Maybe::Absent(_),
+                ..
+            }
+            | DeclarationTree::Data { .. }
+            | DeclarationTree::Abstract { .. }
+            | DeclarationTree::World
+            | DeclarationTree::Codata => None,
+        }
+    }
+}
+
+/// How many nodes a localization examined.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Visited(usize);
+
+/// A revision's lowered core as items of trees, with the source extent of
+/// every body node.
+///
+/// A node's extent is the hull of its own origin and its children's extents.
+/// The lowering records where each node came from, which for a function's
+/// lambda is its parameter, not its body; the extent restores the nesting a
+/// localizer descends by, every node enclosing everything beneath it.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The item order agrees with the source program, body span tables
+///   parallel body nodes, and indexed body extents ascend by start position.
+/// - executable: none — The aggregate has no runtime invocation or source
+///   program of its own; `Snapshot::of` checks its image and the localizer
+///   checks source containment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Snapshot
+{
+    /// The items, in source order, each image shared with every snapshot
+    /// holding it.
+    items: Vec<Arc<ItemTree>>,
+    /// Per item, the extent of each body node, by table index.
+    spans: Vec<Arc<[Maybe<ByteSpan, spanned::Absent>]>>,
+    /// Each body root's span beside its item, ascending by start; the bodies
+    /// of distinct declarations do not overlap.
+    bodies: Vec<(ByteSpan, ItemOrdinal)>,
+}
+
+impl Snapshot
+{
+    /// The snapshot of `program`, its nodes located through `origins`.
+    ///
+    /// # Specification
+    /// - requires: `origins` is the origin table of the lowering `program` was
+    ///   offered from.
+    /// - ensures: one item per program item, in order, carrying the item's
+    ///   reference and its signature and body read out of the arena, children
+    ///   in each former's order; each body node spans its extent, the hull of
+    ///   its recorded origin and its children's extents.
+    /// - provides: the id-free image [`diff`] compares and [`Self::localize`]
+    ///   descends.
+    /// - panics: none.
+    /// - intension: reads each arena node an item reaches once, however many
+    ///   parents name it, so the work is linear in the arena nodes of the items
+    ///   read, not in the size of the term written out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every multi-child body former in a hand-built arena,
+    ///   source-localized nested terms, holes and missing origins. Exact leaf
+    ///   paths and spans distinguish child permutations and lost origins;
+    ///   predicates additionally check item identities, body/signature
+    ///   presence, discovery numbering and sorted body extents. A let spine
+    ///   twice as deep reads at most twice the nodes.
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    ret.items.len() == program.items().len() && ret.spans.len() == ret.items.len()
+        && ret
+            .items
+            .iter()
+            .zip(&ret.spans)
+            .zip(program.items().iter().zip(program.references()))
+            .all(|((item, spans), (original, reference))| {
+                item.reference == *reference
+                    && {
+                        let ordered = |tree: &Tree| numbering(&tree.nodes) == Numbering::Discovered;
+                        { let (matched_left_value, matched_right_value) = (&item.declaration,original.declaration().content());
+if let DeclarationTree::Value {ref signature,ref body} = *matched_left_value && let gandr_core_checker::DeclarationContent::Value {signature:ref source_signature,body:ref source_body} = *matched_right_value { {
+                                ({ let (matched_left_value, matched_right_value) = (signature,source_signature);
+if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right_value, Maybe::Present(_)) { ordered(tree) }
+ else if let Maybe::Absent(left) = *matched_left_value && let Maybe::Absent(right) = *matched_right_value { left == right }
+ else { false }
+}) && { let (matched_left_value, matched_right_value) = (body,source_body);
+if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right_value, Maybe::Present(_)) { ordered(tree) && spans.len() == tree.nodes.len() }
+ else if let Maybe::Absent(left) = *matched_left_value && let Maybe::Absent(right) = *matched_right_value { left == right && spans.is_empty() }
+ else { false }
+}
+                            } }
+ else if let DeclarationTree::Data {ref parameters,ref constructors,ref kind} = *matched_left_value && let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_right_value { {
+                                parameters.len() == signature.parameters().len()
+                                    && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
+                                    && parameters.iter().chain(constructors.iter().flatten()).chain(core::iter::once(kind)).all(ordered)
+                                    && spans.is_empty()
+                            } }
+ else if let DeclarationTree::Abstract {ref kind,ref representation,extent,site,mobility,ref interface} = *matched_left_value && let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_right_value { ordered(kind) && ordered(representation) && extent == sealed.extent() && site == sealed.site() && mobility == sealed.mobility() && spans.is_empty()
+    && match (interface, sealed.interface()) {
+        (&Maybe::Present(ref tree), Maybe::Present(source)) => ordered(&tree.relation) && ordered(&tree.reflexivity) && match (&tree.law, source.law()) { (&Maybe::Present(ref law), Maybe::Present(_)) => ordered(law), (&Maybe::Absent(left), Maybe::Absent(right)) => left == right, (&Maybe::Present(_), Maybe::Absent(_)) | (&Maybe::Absent(_), Maybe::Present(_)) => false },
+        (&Maybe::Absent(left), Maybe::Absent(right)) => left == right,
+        (&Maybe::Present(_), Maybe::Absent(_)) | (&Maybe::Absent(_), Maybe::Present(_)) => false,
+    } }
+ else if (matches!(*matched_left_value, DeclarationTree::World) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::World(_))) || (matches!(*matched_left_value, DeclarationTree::Codata) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::Codata(_))) { spans.is_empty() }
+ else { false }
+}
+                    }
+            })
+        && ret
+            .bodies
+            .windows(2)
+            .all(|pair| {
+                matches!(pair, [(left, _), (right, _)] if left.start() <= right.start())
+            })
+        && ret.bodies.len()
+            == ret
+                .spans
+                .iter()
+                .filter(|spans| matches!(spans.first(), Some(Maybe::Present(_))))
+                .count()
+        && ret
+            .bodies
+            .iter()
+            .all(|&(span, item)| {
+                ret.spans
+                    .get(usize::from(item))
+                    .and_then(|spans| spans.first())
+                    .is_some_and(|found| *found == Maybe::Present(span))
+            })
+},
+    )]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        program: &Program,
+        origins: &OriginTable,
+    ) -> Self
+    {
+        Self::of_after(program, origins, &Self::default())
+    }
+
+    /// The snapshot of `program`, its nodes located through `origins`, the
+    /// images of the items `leading` holds taken from it.
+    ///
+    /// # Specification
+    /// - requires: `leading` holds the images [`Self::of`] reads for the items
+    ///   leading `program` through `origins`: it is [`Self::leading`] of the
+    ///   snapshot of a program whose items lead `program`'s, lowered into
+    ///   `program`'s arena.
+    /// - ensures: [`Self::of`] of `program` and `origins`, each image `leading`
+    ///   holds shared rather than read again.
+    /// - provides: a snapshot whose reading follows the items after
+    ///   `leading`'s, and whose leading images [`diff`] passes over by
+    ///   identity.
+    /// - panics: none.
+    /// - economy: the items after `leading`'s are read out of the arena; the
+    ///   leading ones cost a reference count each.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a revision's snapshot after the leading images of an
+    ///   earlier revision of the same leading items, against the snapshot read
+    ///   whole, and the diff of two revisions sharing them.
+    /// - witness: `edit::tests::a_snapshot_after_leading_images_is_the_whole_snapshot_776`
+    ///
+    /// # Cost
+    /// - allocation: the snapshot of the program, growth within the program
+    #[spec(
+        requires: leading.items.len() <= program.items().len()
+            && leading.items.iter().zip(program.references()).all(|(item, reference)| item.reference == *reference),
+        ensures: |ret| {
+            ret.items.len() == program.items().len()
+                && ret.spans.len() == ret.items.len()
+                && ret.items.iter().zip(&leading.items).all(|(item, kept)| Arc::ptr_eq(item, kept))
+                && ret.items.iter().zip(program.references()).all(|(item, reference)| item.reference == *reference)
+                && ret.bodies.windows(2).all(|pair| matches!(pair, [(left, _), (right, _)] if left.start() <= right.start()))
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn of_after(
+        program: &Program,
+        origins: &OriginTable,
+        leading: &Self,
+    ) -> Self
+    {
+        let held = leading.items.len().min(program.items().len());
+        let mut items = Vec::with_capacity(program.items().len());
+        let mut spans = Vec::with_capacity(program.items().len());
+        items.extend(leading.items.iter().take(held).cloned());
+        spans.extend(leading.spans.iter().take(held).cloned());
+        let mut bodies: Vec<(ByteSpan, ItemOrdinal)> = leading
+            .bodies
+            .iter()
+            .filter(|&&(_, item)| usize::from(item) < held)
+            .copied()
+            .collect();
+        for (ordinal, (item, reference)) in program
+            .items()
+            .iter()
+            .zip(program.references())
+            .enumerate()
+            .skip(held)
+        {
+            let (declaration, located) = match *(item.declaration().content()) {
+                gandr_core_checker::DeclarationContent::Value {
+                    ref signature,
+                    ref body,
+                } => {
+                    let signature =
+                        signature.map(|root| read(program, origins, Root::ValueType(root)).0);
+                    let (body, located) = match *body {
+                        Maybe::Present(root) => {
+                            let (tree, located) = read(program, origins, Root::Value(root));
+                            (Maybe::Present(tree), located)
+                        },
+                        Maybe::Absent(reason) => (Maybe::Absent(reason), Vec::new()),
+                    };
+                    (DeclarationTree::Value { signature, body }, located)
+                },
+                gandr_core_checker::DeclarationContent::Data(ref signature) => {
+                    let parameters = signature
+                        .parameters()
+                        .iter()
+                        .map(|&root| read(program, origins, Root::ValueType(root)).0)
+                        .collect();
+                    let constructors = signature
+                        .constructors()
+                        .iter()
+                        .map(|fields| {
+                            fields
+                                .iter()
+                                .map(|&root| read(program, origins, Root::ValueType(root)).0)
+                                .collect()
+                        })
+                        .collect();
+                    let kind = read(program, origins, Root::ValueType(signature.kind())).0;
+                    (
+                        DeclarationTree::Data {
+                            parameters,
+                            constructors,
+                            kind,
+                        },
+                        Vec::new(),
+                    )
+                },
+                gandr_core_checker::DeclarationContent::Abstract(sealed) => (
+                    DeclarationTree::Abstract {
+                        kind: read(program, origins, Root::ValueType(sealed.kind())).0,
+                        representation: read(
+                            program,
+                            origins,
+                            Root::ValueType(sealed.representation()),
+                        )
+                        .0,
+                        extent: sealed.extent(),
+                        site: sealed.site(),
+                        mobility: sealed.mobility(),
+                        interface: sealed.interface().map(|interface| InterfaceTree {
+                            relation: read(program, origins, Root::Value(interface.relation())).0,
+                            reflexivity: read(
+                                program,
+                                origins,
+                                Root::Value(interface.reflexivity()),
+                            )
+                            .0,
+                            law: interface
+                                .law()
+                                .map(|law| read(program, origins, Root::Value(law)).0),
+                        }),
+                    },
+                    Vec::new(),
+                ),
+                gandr_core_checker::DeclarationContent::World(_) => {
+                    (DeclarationTree::World, Vec::new())
+                },
+                gandr_core_checker::DeclarationContent::Codata(_) => {
+                    (DeclarationTree::Codata, Vec::new())
+                },
+            };
+            if let Some(&Maybe::Present(span)) = located.first() {
+                bodies.push((span, ItemOrdinal::from(ordinal)));
+            }
+            items.push(Arc::new(ItemTree {
+                reference: reference.clone(),
+                declaration,
+            }));
+            spans.push(Arc::from(located));
+        }
+        bodies.sort_by_key(|&(span, _)| span.start());
+        Self {
+            items,
+            spans,
+            bodies,
+        }
+    }
+
+    /// The snapshot of the items before `end`, sharing their images.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the items before `end` and their extents, each image shared
+    ///   with `self`, and the bodies of those items in `self`'s order; every
+    ///   item when `self` holds fewer.
+    /// - provides: the leading images [`Self::of_after`] takes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::of_after`].
+    /// - witness: `edit::tests::a_snapshot_after_leading_images_is_the_whole_snapshot_776`
+    #[spec(
+        ensures: |ret| {
+            ret.items.len() == usize::from(end).min(self.items.len())
+                && ret.spans.len() == ret.items.len()
+                && ret.items.iter().zip(&self.items).all(|(item, kept)| Arc::ptr_eq(item, kept))
+                && ret.bodies.iter().all(|&(_, item)| item < end)
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn leading(
+        &self,
+        end: ItemOrdinal,
+    ) -> Self
+    {
+        let kept = usize::from(end).min(self.items.len());
+        Self {
+            items: self.items.get(.. kept).unwrap_or_default().to_vec(),
+            spans: self.spans.get(.. kept).unwrap_or_default().to_vec(),
+            bodies: self
+                .bodies
+                .iter()
+                .filter(|&&(_, item)| item < end)
+                .copied()
+                .collect(),
+        }
+    }
+
+    /// The items, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn items(&self) -> &[Arc<ItemTree>]
+    {
+        &self.items
+    }
+
+    /// The body node `path` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the node reached from the body root of the item at
+    ///   `path.item()` by taking each slot's child in turn.
+    /// - fails: never; [`addressed::Absent`] names the first step that has no
+    ///   node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independently named leaves of multi-child formers and
+    ///   separate absent-item, absent-body and absent-child paths. Exact
+    ///   payloads, borrow identity and absence tags distinguish wrong traversal
+    ///   and collapsed failure causes.
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    ///
+    /// # Cost
+    /// - allocation: the path of the walk, growth within the body
+    #[spec(
+        ensures: |ret| {
+    self.items
+        .get(usize::from(path.item))
+        .map_or(
+            matches!(ret, Maybe::Absent(addressed::Absent::NoItem)),
+            |item| item.body().map_or(matches!(ret, Maybe::Absent(addressed::Absent::NoBody)), |tree| match tree.resolve(&path.slots) {
+                        Maybe::Present(index) => {
+                            tree.nodes
+                                .get(usize::from(index))
+                                .map_or(
+                                    matches!(ret, Maybe::Absent(addressed::Absent::NoChild)),
+                                    |node| {
+                                        matches!(
+                                            ret, Maybe::Present(found) if
+                                            core::ptr::eq(core::ptr::from_ref(found),
+                                            core::ptr::from_ref(node))
+                                        )
+                                    },
+                                )
+                        }
+                        Maybe::Absent(_) => {
+                            matches!(ret, Maybe::Absent(addressed::Absent::NoChild))
+                        }
+                    }),
+        )
+},
+    )]
+    #[inline]
+    pub fn node(
+        &self,
+        path: &CorePath,
+    ) -> Maybe<&ContentNode, addressed::Absent>
+    {
+        let Some(item) = self.items.get(usize::from(path.item))
+        else {
+            return Maybe::Absent(addressed::Absent::NoItem);
+        };
+        let Some(tree) = item.body()
+        else {
+            return Maybe::Absent(addressed::Absent::NoBody);
+        };
+        tree.resolve(&path.slots).and_then(|at| {
+            tree.nodes
+                .get(usize::from(at))
+                .map_or(Maybe::Absent(addressed::Absent::NoChild), Maybe::Present)
+        })
+    }
+
+    /// The source span of the body node `path` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the extent of the node [`Self::node`] reaches: the hull of
+    ///   its recorded origin and every span beneath it.
+    /// - fails: never; [`spanned::Absent::Unaddressed`] when the path names no
+    ///   node, [`spanned::Absent::Unrecorded`] when neither the node nor any
+    ///   node beneath it has an origin.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a literal and its enclosing body, missing
+    ///   item/body/child paths, and a valid node with no recorded origin. Exact
+    ///   spans and distinct Unaddressed/Unrecorded reasons distinguish lost
+    ///   provenance from absent nodes.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    ret
+        == match (
+            self.items.get(usize::from(path.item)),
+            self.spans.get(usize::from(path.item)),
+        ) {
+            (Some(item), Some(spans)) => {
+                item.body().map_or(Maybe::Absent(spanned::Absent::Unaddressed), |tree| match tree.resolve(&path.slots) {
+                            Maybe::Present(index) => {
+                                spans
+                                    .get(usize::from(index))
+                                    .copied()
+                                    .unwrap_or(Maybe::Absent(spanned::Absent::Unaddressed))
+                            }
+                            Maybe::Absent(_) => {
+                                Maybe::Absent(spanned::Absent::Unaddressed)
+                            }
+                        })
+            }
+            _ => Maybe::Absent(spanned::Absent::Unaddressed),
+        }
+},
+    )]
+    #[inline]
+    pub fn span(
+        &self,
+        path: &CorePath,
+    ) -> Maybe<ByteSpan, spanned::Absent>
+    {
+        let (
+            Some(&ItemTree {
+                declaration:
+                    DeclarationTree::Value {
+                        body: Maybe::Present(ref tree),
+                        ..
+                    },
+                ..
+            }),
+            Some(spans),
+        ) = (
+            self.items.get(usize::from(path.item)).map(|item| &**item),
+            self.spans.get(usize::from(path.item)),
+        )
+        else {
+            return Maybe::Absent(spanned::Absent::Unaddressed);
+        };
+        match tree.resolve(&path.slots) {
+            Maybe::Present(at) => spans
+                .get(usize::from(at))
+                .copied()
+                .unwrap_or(Maybe::Absent(spanned::Absent::Unaddressed)),
+            Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unaddressed),
+        }
+    }
+
+    /// The one body that can enclose `range`: the last whose span starts at or
+    /// before the range's start. Bodies ascend by start and do not overlap, so
+    /// no other body can enclose it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last body whose span starts at or before `range`'s start;
+    ///   [`located::Absent::Outside`] when every body starts after it.
+    /// - provides: the root [`Self::descend`] starts from, and the reading the
+    ///   locus clauses state absence through.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: one binary search over the bodies and one read beside it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the descent built on it agrees with an independent
+    ///   linear scan over five source shapes, which a candidate one body off or
+    ///   past the range would break.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(&(span, _)) => span.start() <= range.start(),
+        Maybe::Absent(_) => self.bodies.first().is_none_or(|&(span, _)| range.start() < span.start()),
+    })]
+    fn candidate(
+        &self,
+        range: ByteSpan,
+    ) -> Maybe<&(ByteSpan, ItemOrdinal), located::Absent>
+    {
+        self.bodies
+            .partition_point(|&(span, _)| span.start() <= range.start())
+            .checked_sub(1_usize)
+            .and_then(|at| self.bodies.get(at))
+            .map_or(Maybe::Absent(located::Absent::Outside), Maybe::Present)
+    }
+
+    /// The smallest body term enclosing `range`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the path of the body node whose span encloses `range` with
+    ///   the fewest bytes; among nodes sharing that span the outermost, and
+    ///   among those at one depth the leftmost.
+    /// - provides: the core term a source range is about. Nodes the lowering
+    ///   synthesised share their source's span, so the outermost of a shared
+    ///   span is the common ancestor of every change an edit there induces, not
+    ///   one of several overlapping descendants.
+    /// - fails: never; [`located::Absent::Outside`] when no item's body
+    ///   encloses the range.
+    /// - panics: none.
+    /// - intension: one binary search over the bodies, then a descent that
+    ///   examines the children of the nodes enclosing the range and no other:
+    ///   the work grows with the depth of the locus, not with the snapshot.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 over the node spans and endpoints of five named source
+    ///   shapes: an independent linear scan orders candidates by extent, depth
+    ///   and left-to-right position. L3 for traversal cost: the same nested
+    ///   locus with eight and forty unrelated declarations has equal visited
+    ///   counts. The predicate checks containment, and checks Outside through
+    ///   [`Self::candidate`], the one body that could enclose the range,
+    ///   without replaying the allocating localizer.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
+    /// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
+    #[spec(
+        ensures: |ret| match ret {
+    Maybe::Present(ref path) => {
+        matches!(
+            self.span(path), Maybe::Present(span) if span.start() <= range.start() &&
+            range.end() <= span.end()
+        )
+    }
+    Maybe::Absent(located::Absent::Outside) => {
+        !matches!(self.candidate(range), Maybe::Present(&(span, _)) if range.end() <= span.end())
+    }
+},
+    )]
+    #[inline]
+    pub fn localize(
+        &self,
+        range: ByteSpan,
+    ) -> Maybe<CorePath, located::Absent>
+    {
+        self.descend(range).0
+    }
+
+    /// The smallest body term enclosing the bytes `edit` replaced.
+    ///
+    /// # Specification
+    /// - requires: `edit` is measured against this snapshot's revision.
+    /// - ensures: [`Self::localize`] of the edit's old extent.
+    /// - provides: the term an incoming source edit touches, before the edited
+    ///   revision is lowered.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a literal replacement and generated source edits,
+    ///   observed at the old-span locus and reconstructed action paths. Using
+    ///   new coordinates or an unrelated body changes containment or the
+    ///   independent path witness. Outside is checked through
+    ///   [`Self::candidate`] of the old extent.
+    /// - witness: `edit::tests::edit_locus_maps_a_source_edit_to_its_old_span_locus`
+    /// - witness: `tests::edit::edit_locus_contains_the_diff`
+    #[spec(
+        ensures: |ret| match ret {
+    Maybe::Present(ref path) => {
+        matches!(
+            self.span(path), Maybe::Present(span) if span.start() <= edit.old.start() &&
+            edit.old.end() <= span.end()
+        )
+    }
+    Maybe::Absent(located::Absent::Outside) => {
+        !matches!(self.candidate(edit.old), Maybe::Present(&(span, _)) if edit.old.end() <= span.end())
+    }
+},
+    )]
+    #[inline]
+    pub fn edit_locus(
+        &self,
+        edit: SourceEdit,
+    ) -> Maybe<CorePath, located::Absent>
+    {
+        self.localize(edit.old)
+    }
+
+    /// The locus of `range`, and how many nodes the descent examined.
+    ///
+    /// # Specification
+    /// - requires: the body extents and child trees are the snapshot’s
+    ///   canonical source image.
+    /// - ensures: returns the smallest enclosing body term, preferring
+    ///   shallower then leftmost ties, and counts the body root plus each
+    ///   inspected child; Outside inspects no nodes.
+    /// - panics: none.
+    /// - intension: binary-searches body starts, then visits only children of
+    ///   enclosing nodes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 for five source shapes and their node-span endpoints
+    ///   against an independent linear scan; L3 for a fixed deep locus with
+    ///   increasing unrelated declarations. Exact paths and visited counts
+    ///   distinguish wrong ties, skipped nodes and a whole-map traversal.
+    ///   Outside is checked through [`Self::candidate`].
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
+    ///
+    /// # Cost
+    /// - allocation: the path of the descent, growth within the body
+    #[spec(
+        ensures: |ret| {
+    (match ret.0 {
+        Maybe::Present(ref path) => {
+            matches!(
+                self.span(path), Maybe::Present(span) if span.start() <= range.start() &&
+                range.end() <= span.end()
+            )
+        }
+        Maybe::Absent(located::Absent::Outside) => {
+            !matches!(self.candidate(range), Maybe::Present(&(span, _)) if range.end() <= span.end())
+        }
+    })
+        && match ret.0 {
+            Maybe::Present(ref path) => {
+                self.items
+                    .get(usize::from(path.item))
+                    .is_some_and(|item| match item.body() {
+                        Some(tree) => {
+                            ret.1.0 > 0_usize && ret.1.0 <= tree.nodes.len()
+                        }
+                        None => false,
+                    })
+            }
+            Maybe::Absent(_) => ret.1.0 == 0_usize,
+        }
+},
+    )]
+    fn descend(
+        &self,
+        range: ByteSpan,
+    ) -> (Maybe<CorePath, located::Absent>, Visited)
+    {
+        let outside = (Maybe::Absent(located::Absent::Outside), Visited::default());
+        let encloses = |span: ByteSpan| span.start() <= range.start() && range.end() <= span.end();
+        let Maybe::Present(&(root_span, item)) = self.candidate(range)
+        else {
+            return outside;
+        };
+        let (
+            true,
+            Some(&ItemTree {
+                declaration:
+                    DeclarationTree::Value {
+                        body: Maybe::Present(ref tree),
+                        ..
+                    },
+                ..
+            }),
+            Some(spans),
+        ) = (
+            encloses(root_span),
+            self.items.get(usize::from(item)).map(|item| &**item),
+            self.spans.get(usize::from(item)),
+        )
+        else {
+            return outside;
+        };
+        // Level by level, left to right, over the nodes enclosing the range:
+        // a strictly smaller span displaces the best, so a tie keeps the
+        // shallower node, and at one depth the leftmost. A node two parents
+        // name is examined where the walk first reaches it, which is its
+        // shallowest and leftmost place, so its later places add nothing.
+        let mut frames = vec![Frame {
+            nodes: NodeIndex::from(0_usize),
+            parent: None,
+            slot: ChildSlot(0_usize),
+        }];
+        let mut best: (ByteLength, FrameIndex) = (root_span.length(), FrameIndex(0_usize));
+        let mut frontier = vec![FrameIndex(0_usize)];
+        let mut visited = 1_usize;
+        let mut reached = BTreeSet::from([NodeIndex::from(0_usize)]);
+        while !frontier.is_empty() {
+            let mut next = Vec::new();
+            for &at in &frontier {
+                let Some(node) = frames
+                    .get(at.0)
+                    .and_then(|frame| tree.nodes.get(usize::from(frame.nodes)))
+                else {
+                    continue;
+                };
+                for (slot, child) in children(node).enumerate() {
+                    if !reached.insert(child) {
+                        continue;
+                    }
+                    visited = visited.saturating_add(1_usize);
+                    let Some(&Maybe::Present(span)) = spans.get(usize::from(child))
+                    else {
+                        continue;
+                    };
+                    if !encloses(span) {
+                        continue;
+                    }
+                    let reached = FrameIndex(frames.len());
+                    frames.push(Frame {
+                        nodes: child,
+                        parent: Some(at),
+                        slot: ChildSlot(slot),
+                    });
+                    next.push(reached);
+                    if span.length() < best.0 {
+                        best = (span.length(), reached);
+                    }
+                }
+            }
+            frontier = next;
+        }
+        (
+            Maybe::Present(path_of(&frames, best.1, item)),
+            Visited(visited),
+        )
+    }
+}
+
+/// A source edit: the bytes it replaced in the old revision, and where the
+/// replacement ends in the new one.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The old span names the replaced source extent; `new_end` names
+///   the replacement end in the new revision. Localization uses old
+///   coordinates.
+/// - executable: none — The two source revisions needed to validate an edit are
+///   not stored in this data record; `edit_locus` checks containment in the old
+///   snapshot.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `edit::tests::edit_locus_maps_a_source_edit_to_its_old_span_locus`
+/// - witness: `tests::edit::edit_locus_contains_the_diff`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SourceEdit
+{
+    /// The bytes of the old revision the edit replaced.
+    old: ByteSpan,
+    /// The offset in the new revision where the replacement ends.
+    new_end: ByteOffset,
+}
+
+impl SourceEdit
+{
+    /// The edit replacing `old` with text ending at `new_end`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        old: ByteSpan,
+        new_end: ByteOffset,
+    ) -> Self
+    {
+        Self { old, new_end }
+    }
+
+    /// The bytes of the old revision the edit replaced.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn old(&self) -> ByteSpan
+    {
+        self.old
+    }
+
+    /// The offset in the new revision where the replacement ends.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new_end(&self) -> ByteOffset
+    {
+        self.new_end
+    }
+}
+
+/// One localized structured edit action.
+///
+/// The item actions edit the list of declarations or an item's halves; the
+/// path-addressed ones edit one body. [`Self::Replace`], [`Self::FillHole`]
+/// and [`Self::EraseToHole`] all install or remove a whole tree, and stay
+/// distinct because the distinction is what a consumer reports: a hole
+/// filled, a body erased to a hole, a former replaced.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Deletion and body/signature edits use old ordinals and paths;
+///   insertion uses its new ordinal. Leaf actions retain before and after
+///   payloads.
+/// - executable: none — An action alone does not contain the two revisions that
+///   give its anchors meaning and has no callable boundary; diff checks anchors
+///   and apply witnesses check replay.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Action
+{
+    /// A new item, at its ordinal in the new revision.
+    InsertItem
+    {
+        /// The item's ordinal in the new revision.
+        at: ItemOrdinal,
+        /// The item, shared with the new revision's snapshot.
+        item: Arc<ItemTree>,
+    },
+    /// An item removed, at its ordinal in the old revision.
+    DeleteItem
+    {
+        /// The item's ordinal in the old revision.
+        at: ItemOrdinal,
+    },
+    /// A kept item's declared type changed, wholesale.
+    SetSignature
+    {
+        /// The item's ordinal in the old revision.
+        at: ItemOrdinal,
+        /// The old declared type.
+        from: Maybe<Tree, signature::Absent>,
+        /// The new declared type.
+        to: Maybe<Tree, signature::Absent>,
+    },
+    /// A kept item owed its body, and now has one.
+    FillHole
+    {
+        /// The item's ordinal in the old revision.
+        at: ItemOrdinal,
+        /// The body.
+        to: Tree,
+    },
+    /// A kept item had a body, and now owes it.
+    EraseToHole
+    {
+        /// The item's ordinal in the old revision.
+        at: ItemOrdinal,
+    },
+    /// A body node whose former or payload changed, replaced wholesale.
+    Replace
+    {
+        /// The node's path in the old revision.
+        path: CorePath,
+        /// The new subtree.
+        to: Tree,
+    },
+    /// A literal changed in place.
+    SetLiteral
+    {
+        /// The literal's path in the old revision.
+        path: CorePath,
+        /// The old literal.
+        from: Literal,
+        /// The new literal.
+        to: Literal,
+    },
+    /// A bound variable occurrence changed in place.
+    SetVariable
+    {
+        /// The occurrence's path in the old revision.
+        path: CorePath,
+        /// The old zone and index.
+        from: (Zone, DeBruijnIndex),
+        /// The new zone and index.
+        to: (Zone, DeBruijnIndex),
+    },
+    /// A constant changed in place to name another declaration.
+    SetConstant
+    {
+        /// The constant's path in the old revision.
+        path: CorePath,
+        /// The declaration it named.
+        from: Reference,
+        /// The declaration it names.
+        to: Reference,
+    },
+}
+
+impl Action
+{
+    /// The body node a path-addressed action edits.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: borrows the old-body path for a subtree or leaf action;
+    ///   item-list and item-half actions report `ItemLevel`. The const
+    ///   predicate checks the path’s own child-slot scalars; exact item and
+    ///   path values are observed by witnesses.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — named leaf, constructor, insertion, deletion,
+    ///   signature and hole transitions. Exact action paths and item-level
+    ///   absence distinguish confusing old and new ordinals or inventing a path
+    ///   for an item edit; no const equality of a foreign ordinal is assumed.
+    /// - witness: `tests::edit::literal_edit_is_one_set_int`
+    /// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+    /// - witness: `tests::edit::hole_fill_and_erase`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| match *self {
+    Self::Replace { ref path, .. }
+    | Self::SetLiteral { ref path, .. }
+    | Self::SetVariable { ref path, .. }
+    | Self::SetConstant { ref path, .. } => {
+        match ret {
+            Maybe::Present(found) => {
+                let mut left = found.slots.as_slice();
+                let mut right = path.slots.as_slice();
+                let mut equal = left.len() == right.len();
+                while let (&[first, ref rest @ ..], &[second, ref tail @ ..]) = (
+                    left,
+                    right,
+                ) {
+                    if first.0 != second.0 {
+                        equal = false;
+                        break;
+                    }
+                    left = rest;
+                    right = tail;
+                }
+                equal
+            }
+            Maybe::Absent(_) => false,
+        }
+    }
+    Self::InsertItem { .. }
+    | Self::DeleteItem { .. }
+    | Self::SetSignature { .. }
+    | Self::FillHole { .. }
+    | Self::EraseToHole { .. } => {
+        matches!(ret, Maybe::Absent(body_path::Absent::ItemLevel))
+    }
+},
+    )]
+    #[inline]
+    pub const fn path(&self) -> Maybe<&CorePath, body_path::Absent>
+    {
+        match *self {
+            Self::Replace { ref path, .. }
+            | Self::SetLiteral { ref path, .. }
+            | Self::SetVariable { ref path, .. }
+            | Self::SetConstant { ref path, .. } => Maybe::Present(path),
+            Self::InsertItem { .. }
+            | Self::DeleteItem { .. }
+            | Self::SetSignature { .. }
+            | Self::FillHole { .. }
+            | Self::EraseToHole { .. } => Maybe::Absent(body_path::Absent::ItemLevel),
+        }
+    }
+}
+
+/// The actions transforming one revision into the next.
+///
+/// They are kept in the order the diff emitted them: deletions by old
+/// ordinal, insertions by new ordinal, then each kept item's signature, hole
+/// and body actions, items in old order and body actions in pre-order.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Actions are emitted in deletion, insertion and aligned-item
+///   order, with body edits in preorder; replay produces the next item image.
+/// - executable: none — A script does not own its source and target snapshots
+///   or a runtime validation boundary; diff checks the emitted anchors and
+///   apply/replay supplies the relational witness.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EditScript(Vec<Action>);
+
+impl EditScript
+{
+    /// The actions, in emission order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn actions(&self) -> &[Action]
+    {
+        &self.0
+    }
+}
+
+/// The edit script transforming `old` into `new`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`apply`] of the script to `old`'s items equals `new`'s items.
+///   Items are aligned by reference — key and occurrence — keeping the largest
+///   set whose order both revisions share; an item outside it is deleted and
+///   reinserted. A kept pair's differing signatures are one
+///   [`Action::SetSignature`]; a body gained or lost is one
+///   [`Action::FillHole`] or [`Action::EraseToHole`]; two bodies are descended
+///   together, slot by slot through nodes of one former, payload and arity, a
+///   differing literal, variable or constant leaf becoming one in-place action
+///   and any other difference — a tuple gaining or losing a component among
+///   them — one [`Action::Replace`] of the old subtree. The script is empty
+///   exactly when the revisions are equal.
+/// - provides: the localized edit a consumer reads instead of a text diff.
+/// - panics: none.
+/// - intension: the leading items whose images the two snapshots share are
+///   passed over by identity, unread; the rest align in time `n log n` by
+///   patience sorting, each body pair is walked once, and a path is built only
+///   for an action.
+///
+/// # Adequacy
+/// - hypothesis: L2 over generated revision pairs: replay is compared with the
+///   independently lowered target snapshot. L3 over each named edit kind: exact
+///   old paths and before/after payloads distinguish coarse, misanchored and
+///   wrong-kind scripts. Predicates check identity, anchors and source payloads
+///   without allocating a replay.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::self_diff_is_identity`
+/// - witness: `tests::edit::literal_edit_is_one_set_int`
+/// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+/// - witness: `tests::edit::hole_fill_and_erase`
+/// - witness: `edit::tests::a_changed_nominal_declaration_is_replaced_and_an_unchanged_one_kept`
+/// - witness: `tests::edit::item_ascription_change_is_one_set_item_ascription`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `tests::edit::comp_constructor_change_is_one_replace`
+/// - witness: `tests::edit::item_deletion_is_one_delete`
+/// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
+/// - witness: `tests::edit::growing_a_tuple_replaces_it_325`
+///
+/// # Cost
+/// - allocation: the edit script, growth within the two trees
+#[spec(
+    ensures: |ret| {
+    ret.0.is_empty() == (old.items == new.items)
+        && ret
+            .0
+            .iter()
+            .all(|action| match *action {
+                Action::InsertItem { .. } => true,
+                Action::DeleteItem { at }
+                | Action::SetSignature { at, .. }
+                | Action::FillHole { at, .. }
+                | Action::EraseToHole { at } => usize::from(at) < old.items.len(),
+                Action::Replace { ref path, .. }
+                | Action::SetLiteral { ref path, .. }
+                | Action::SetVariable { ref path, .. }
+                | Action::SetConstant { ref path, .. } => {
+                    old.items
+                        .get(usize::from(path.item))
+                        .is_some_and(|item| item.body().is_some_and(|tree| matches!(
+                                    tree.resolve(& path.slots), Maybe::Present(index) if
+                                    usize::from(index) < tree.nodes.len()
+                                )))
+                }
+            })
+        && ret
+            .0
+            .iter()
+            .all(|action| match *action {
+                Action::InsertItem { at, ref item } => {
+                    new.items.get(usize::from(at)) == Some(item)
+                }
+                Action::SetSignature { at, ref from, .. } => {
+                    old.items
+                        .get(usize::from(at))
+                        .is_some_and(|item| matches!(item.declaration,DeclarationTree::Value {ref signature,..} if signature == from))
+                }
+                Action::FillHole { at, .. } => {
+                    old.items
+                        .get(usize::from(at))
+                        .is_some_and(|item| matches!(item.declaration,DeclarationTree::Value {body:Maybe::Absent(_),..}))
+                }
+                Action::EraseToHole { at } => {
+                    old.items
+                        .get(usize::from(at))
+                        .is_some_and(|item| item.body().is_some())
+                }
+                Action::SetLiteral { ref path, ref from, .. } => {
+                    match old.node(path) {
+                        Maybe::Present(node) => {
+                            matches!(
+                                * node, ContentNode::Literal(ref literal) if literal == from
+                            )
+                        }
+                        Maybe::Absent(_) => false,
+                    }
+                }
+                Action::SetVariable { ref path, from, .. } => {
+                    matches!(
+                        old.node(path), Maybe::Present(& ContentNode::Variable { zone,
+                        index }) if (zone, index) == from
+                    )
+                }
+                Action::SetConstant { ref path, ref from, .. } => {
+                    match old.node(path) {
+                        Maybe::Present(node) => {
+                            matches!(
+                                * node, ContentNode::Constant(ref reference) if reference ==
+                                from
+                            )
+                        }
+                        Maybe::Absent(_) => false,
+                    }
+                }
+                Action::DeleteItem { .. } | Action::Replace { .. } => true,
+            })
+},
+)]
+#[inline]
+#[must_use]
+pub fn diff(
+    old: &Snapshot,
+    new: &Snapshot,
+) -> EditScript
+{
+    // The leading images the two snapshots share are one item each: equal,
+    // and so without an action.
+    let shared = old
+        .items
+        .iter()
+        .zip(&new.items)
+        .take_while(|&(before, after)| Arc::ptr_eq(before, after))
+        .count();
+    let old_rest = old.items.get(shared ..).unwrap_or_default();
+    let new_rest = new.items.get(shared ..).unwrap_or_default();
+    let ordinal = |at: usize| ItemOrdinal::from(at.saturating_add(shared));
+    let kept = align(old_rest, new_rest);
+    let mut actions = Vec::new();
+    let mut kept_old = vec![false; old_rest.len()];
+    let mut kept_new = vec![false; new_rest.len()];
+    for &(old_at, new_at) in &kept {
+        if let Some(slot) = kept_old.get_mut(usize::from(old_at)) {
+            *slot = true;
+        }
+        if let Some(slot) = kept_new.get_mut(usize::from(new_at)) {
+            *slot = true;
+        }
+    }
+    for (at, &is_kept) in kept_old.iter().enumerate() {
+        if !is_kept {
+            actions.push(Action::DeleteItem { at: ordinal(at) });
+        }
+    }
+    for ((at, &is_kept), item) in kept_new.iter().enumerate().zip(new_rest) {
+        if !is_kept {
+            actions.push(Action::InsertItem {
+                at: ordinal(at),
+                item: Arc::clone(item),
+            });
+        }
+    }
+    for (at, new_at) in kept {
+        let (Some(before), Some(after)) = (
+            old_rest.get(usize::from(at)),
+            new_rest.get(usize::from(new_at)),
+        )
+        else {
+            continue;
+        };
+        if Arc::ptr_eq(before, after) {
+            continue;
+        }
+        let (at, new_at) = (ordinal(usize::from(at)), ordinal(usize::from(new_at)));
+        let DeclarationTree::Value {
+            signature: ref before_signature,
+            body: ref before_body,
+        } = before.declaration
+        else {
+            if before.declaration != after.declaration {
+                actions.push(Action::DeleteItem { at });
+                actions.push(Action::InsertItem {
+                    at: new_at,
+                    item: Arc::clone(after),
+                });
+            }
+            continue;
+        };
+        let DeclarationTree::Value {
+            signature: ref after_signature,
+            body: ref after_body,
+        } = after.declaration
+        else {
+            if before.declaration != after.declaration {
+                actions.push(Action::DeleteItem { at });
+                actions.push(Action::InsertItem {
+                    at: new_at,
+                    item: Arc::clone(after),
+                });
+            }
+            continue;
+        };
+        if before_signature != after_signature {
+            actions.push(Action::SetSignature {
+                at,
+                from: before_signature.clone(),
+                to: after_signature.clone(),
+            });
+        }
+        match (before_body, after_body) {
+            (&Maybe::Absent(_), &Maybe::Absent(_)) => {},
+            (&Maybe::Absent(_), &Maybe::Present(ref body)) => {
+                actions.push(Action::FillHole {
+                    at,
+                    to: body.clone(),
+                });
+            },
+            (&Maybe::Present(_), &Maybe::Absent(_)) => actions.push(Action::EraseToHole { at }),
+            (&Maybe::Present(ref from), &Maybe::Present(ref to)) => {
+                diff_trees(from, to, at, &mut actions);
+            },
+        }
+    }
+    EditScript(actions)
+}
+
+/// `old` with `script` applied.
+///
+/// # Specification
+/// - requires: `script` was reconstructed by [`diff`] from a snapshot whose
+///   items are `old`.
+/// - ensures: the items of the snapshot the script was reconstructed towards.
+///   An action whose anchor `old` does not hold is not applied.
+/// - provides: the adjoint of [`diff`], the oracle its soundness is stated
+///   against.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 over generated revision pairs: applying a diff equals the
+///   independently lowered target. L3 for every action kind, each multi-child
+///   slot and root replacement. The predicate checks item conservation,
+///   insertion positions and the empty-script identity without rebuilding a
+///   second result.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::self_diff_is_empty_and_apply_is_identity`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `tests::edit::hole_fill_and_erase`
+/// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+///
+/// # Cost
+/// - allocation: the edited tree, growth within the tree and the script
+#[spec(
+    ensures: |ret| {
+    ret.len()
+        == old
+            .len()
+            .saturating_sub(
+                script
+                    .0
+                    .iter()
+                    .filter(|action| matches!(action, Action::DeleteItem { .. }))
+                    .count(),
+            )
+            .saturating_add(
+                script
+                    .0
+                    .iter()
+                    .filter(|action| matches!(action, Action::InsertItem { .. }))
+                    .count(),
+            ) && (!script.0.is_empty() || ret == old)
+        && script
+            .0
+            .iter()
+            .all(|action| match *action {
+                Action::InsertItem { at, ref item } => {
+                    ret.get(usize::from(at)) == Some(item)
+                }
+                Action::DeleteItem { .. } | Action::SetSignature { .. } | Action::FillHole { .. } | Action::EraseToHole { .. } | Action::Replace { .. } | Action::SetLiteral { .. } | Action::SetVariable { .. } | Action::SetConstant { .. } => true,
+            })
+},
+)]
+#[inline]
+#[must_use]
+pub fn apply(
+    old: &[Arc<ItemTree>],
+    script: &EditScript,
+) -> Vec<Arc<ItemTree>>
+{
+    // An item no action touches stays the image `old` holds.
+    let mut items: Vec<Option<Arc<ItemTree>>> = old.iter().cloned().map(Some).collect();
+    let mut grafts: BTreeMap<ItemOrdinal, Vec<(&CorePath, Graft<'_>)>> = BTreeMap::new();
+    let mut inserted: Vec<(ItemOrdinal, &Arc<ItemTree>)> = Vec::new();
+    for action in script.actions() {
+        match *action {
+            Action::InsertItem { at, ref item } => inserted.push((at, item)),
+            Action::DeleteItem { at } => {
+                if let Some(slot) = items.get_mut(usize::from(at)) {
+                    *slot = None;
+                }
+            },
+            Action::SetSignature { at, ref to, .. } => {
+                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
+                    && let DeclarationTree::Value {
+                        ref mut signature, ..
+                    } = Arc::make_mut(item).declaration
+                {
+                    signature.clone_from(to);
+                }
+            },
+            Action::FillHole { at, ref to } => {
+                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
+                    && let DeclarationTree::Value { ref mut body, .. } =
+                        Arc::make_mut(item).declaration
+                {
+                    *body = Maybe::Present(to.clone());
+                }
+            },
+            Action::EraseToHole { at } => {
+                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
+                    && let DeclarationTree::Value { ref mut body, .. } =
+                        Arc::make_mut(item).declaration
+                {
+                    *body = Maybe::Absent(body::Absent::Hole);
+                }
+            },
+            Action::Replace { ref path, ref to } => {
+                grafts
+                    .entry(path.item)
+                    .or_default()
+                    .push((path, Graft::Subtree(to)));
+            },
+            Action::SetLiteral {
+                ref path, ref to, ..
+            } => {
+                grafts
+                    .entry(path.item)
+                    .or_default()
+                    .push((path, Graft::Leaf(ContentNode::Literal(to.clone()))));
+            },
+            Action::SetVariable {
+                ref path,
+                to: (zone, index),
+                ..
+            } => {
+                grafts
+                    .entry(path.item)
+                    .or_default()
+                    .push((path, Graft::Leaf(ContentNode::Variable { zone, index })));
+            },
+            Action::SetConstant {
+                ref path, ref to, ..
+            } => {
+                grafts
+                    .entry(path.item)
+                    .or_default()
+                    .push((path, Graft::Leaf(ContentNode::Constant(to.clone()))));
+            },
+        }
+    }
+    for (at, edits) in grafts {
+        if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
+            && let DeclarationTree::Value {
+                body: Maybe::Present(ref mut body),
+                ..
+            } = Arc::make_mut(item).declaration
+        {
+            *body = graft(body, &edits);
+        }
+    }
+    let mut result: Vec<Arc<ItemTree>> = items.into_iter().flatten().collect();
+    inserted.sort_by_key(|&(at, _)| at);
+    for (at, item) in inserted {
+        let position = usize::from(at).min(result.len());
+        result.insert(position, Arc::clone(item));
+    }
+    result
+}
+
+/// What a path-addressed action installs at its node.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: A replacement is either an entire borrowed subtree or an owned
+///   leaf; descendants of a replaced subtree are not edited again.
+/// - executable: none — The replacement lacks the old tree and its anchor, and
+///   the enum has no invocation; graft checks its installed root and canonical
+///   numbering.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[derive(Clone, Debug)]
+enum Graft<'script>
+{
+    /// A whole subtree.
+    Subtree(&'script Tree),
+    /// A leaf node.
+    Leaf(ContentNode),
+}
+
+/// Where a rebuilt node is copied from.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Queued nodes are read from either the original tree or the
+///   particular grafted subtree that owns their index, named by its edit's
+///   position; a source is also the key a shared node is copied once by.
+/// - executable: none — An original-node variant lacks its original tree;
+///   interpretation is checked at graft, not at this inert queue element.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Source
+{
+    /// A node of the tree being rebuilt.
+    Old(NodeIndex),
+    /// A node of the subtree that the edit at this position grafts.
+    Grafted(usize, NodeIndex),
+}
+
+/// One step of the edited paths: the edit installed where the step ends, and
+/// the step each child slot continues to.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The places form a trie over the edits' slots, the root first.
+/// - executable: none — a place lacks the edits and the tree; graft reads them
+///   together.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`graft`].
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+#[derive(Clone, Debug, Default)]
+struct Place
+{
+    /// The position of the edit installed here, when one is.
+    edit: Option<usize>,
+    /// The place each child slot leads to.
+    slots: BTreeMap<ChildSlot, usize>,
+}
+
+/// `tree` with each of `edits` installed at its path, renumbered in discovery
+/// order.
+///
+/// # Specification
+/// - requires: the tree and grafted subtrees have discovery numbering and
+///   finite acyclic child graphs; edits are the non-overlapping old paths a
+///   diff emits.
+/// - ensures: installs each addressed leaf or subtree at its path alone, and
+///   retains every other node, shared as `tree` shares it; renumbers the result
+///   in discovery order; an unresolved path changes nothing.
+/// - panics: none.
+/// - intension: a node on no edited path is copied once, however many parents
+///   name it; a node on an edited path is copied for that path.
+///
+/// # Adequacy
+/// - hypothesis: L2 over generated diff/replay pairs and L3 over leaf
+///   replacements at every multi-child slot and a whole-body constructor
+///   change. Exact target snapshots distinguish lost siblings, wrong anchors
+///   and renumbering mistakes; root replacement and numbering are executable
+///   without a second graft.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+///
+/// # Cost
+/// - allocation: the grafted tree, growth within the tree and the edits
+#[spec(
+    ensures: |ret| {
+    numbering(&ret.nodes) == Numbering::Discovered
+        && match edits.iter().rev().find(|edit| edit.0.slots.is_empty()) {
+            Some(&(_, Graft::Subtree(subtree))) => ret == *subtree,
+            Some(&(_, Graft::Leaf(ref leaf))) => {
+                ret.nodes.as_slice() == core::slice::from_ref(leaf)
+            }
+            None => {
+                match tree.nodes.first() {
+                    Some(root) => {
+                        ret.nodes
+                            .first()
+                            .is_some_and(|found| {
+                                agreement(root, found) == Agreement::Same
+                            })
+                    }
+                    None => ret.nodes.is_empty(),
+                }
+            }
+        }
+},
+)]
+fn graft(
+    tree: &Tree,
+    edits: &[(&CorePath, Graft<'_>)],
+) -> Tree
+{
+    // The edited paths as a trie over their slots: a node on a path is
+    // rebuilt for that path alone, and every other node is shared.
+    let mut places = vec![Place::default()];
+    for (at, &(path, _)) in edits.iter().enumerate() {
+        let mut place = 0_usize;
+        for &slot in &path.slots {
+            let fresh = places.len();
+            let Some(found) = places.get_mut(place)
+            else {
+                break;
+            };
+            place = *found.slots.entry(slot).or_insert(fresh);
+            if place == fresh {
+                places.push(Place::default());
+            }
+        }
+        if let Some(found) = places.get_mut(place) {
+            found.edit = Some(at);
+        }
+    }
+    let mut nodes = Vec::with_capacity(tree.nodes.len());
+    let mut queue = VecDeque::from([(Source::Old(NodeIndex::from(0_usize)), Some(0_usize))]);
+    let mut shared: BTreeMap<Source, NodeIndex> = BTreeMap::new();
+    let mut numbered = 1_usize;
+    while let Some((source, place)) = queue.pop_front() {
+        let edit = place
+            .and_then(|place| places.get(place))
+            .and_then(|place| place.edit)
+            .and_then(|at| edits.get(at).map(|&(_, ref edit)| (at, edit)));
+        let (source, place) = match (source, edit) {
+            (Source::Old(_), Some((at, &Graft::Subtree(_)))) => {
+                (Source::Grafted(at, NodeIndex::from(0_usize)), None)
+            },
+            (Source::Old(_), Some((_, &Graft::Leaf(ref leaf)))) => {
+                nodes.push(leaf.clone());
+                continue;
+            },
+            _ => (source, place),
+        };
+        let node = match source {
+            Source::Old(index) => tree.nodes.get(usize::from(index)),
+            Source::Grafted(at, index) => match edits.get(at) {
+                Some(&(_, Graft::Subtree(subtree))) => subtree.nodes.get(usize::from(index)),
+                Some(&(_, Graft::Leaf(_))) | None => None,
+            },
+        };
+        let Some(node) = node
+        else {
+            continue;
+        };
+        let steps = place
+            .and_then(|place| places.get(place))
+            .map(|place| &place.slots);
+        let mut slot = 0_usize;
+        nodes.push(map_children(node, &mut |child| {
+            let from = match source {
+                Source::Old(_) => Source::Old(child),
+                Source::Grafted(at, _) => Source::Grafted(at, child),
+            };
+            let next = steps.and_then(|steps| steps.get(&ChildSlot(slot)).copied());
+            slot = slot.saturating_add(1_usize);
+            let fresh = NodeIndex::from(numbered);
+            if next.is_some() {
+                queue.push_back((from, next));
+                numbered = numbered.saturating_add(1_usize);
+                return fresh;
+            }
+            *shared.entry(from).or_insert_with(|| {
+                queue.push_back((from, None));
+                numbered = numbered.saturating_add(1_usize);
+                fresh
+            })
+        }));
+    }
+    Tree::named(nodes)
+}
+
+/// The kept pairs of old and new ordinals: the largest set of items present
+/// in both revisions by reference whose order the two share, ascending.
+///
+/// # Specification
+/// - requires: item references are unique within each revision, as the
+///   program’s key-and-occurrence scheme establishes.
+/// - ensures: returns an order-preserving set of equal-reference pairs of
+///   maximum cardinality; both ordinal projections strictly ascend.
+/// - panics: none.
+/// - intension: uses patience sorting in n log n time rather than a quadratic
+///   alignment table.
+///
+/// # Adequacy
+/// - hypothesis: L2 over all subsets and permutations of three distinct
+///   references: exhaustive old subsequences independently determine the
+///   maximum cardinality. Exact matched references and ascending ordinals
+///   distinguish mismatched identities and order violations; replay witnesses
+///   observe the resulting edits.
+/// - witness: `edit::tests::alignment_matches_exhaustive_reference_subsequences`
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+///
+/// # Cost
+/// - allocation: the kept pairs of ordinals, growth within the two programs
+#[spec(
+    ensures: |ret| {
+    ret.len() <= old.len().min(new.len())
+        && ret
+            .iter()
+            .all(|&(before, after)| {
+                matches!(
+                    (old.get(usize::from(before)), new.get(usize::from(after))),
+                    (Some(left), Some(right)) if left.reference == right.reference
+                )
+            })
+        && ret
+            .windows(2)
+            .all(|pair| {
+                matches!(
+                    pair, [(left_old, left_new), (right_old, right_new)] if left_old <
+                    right_old && left_new < right_new
+                )
+            }) && (old != new || ret.len() == old.len())
+},
+)]
+fn align(
+    old: &[Arc<ItemTree>],
+    new: &[Arc<ItemTree>],
+) -> Vec<(ItemOrdinal, ItemOrdinal)>
+{
+    let by_reference: BTreeMap<&Reference, usize> = old
+        .iter()
+        .enumerate()
+        .map(|(at, item)| (&item.reference, at))
+        .collect();
+    let candidates: Vec<(usize, usize)> = new
+        .iter()
+        .enumerate()
+        .filter_map(|(new_at, item)| {
+            by_reference
+                .get(&item.reference)
+                .map(|&old_at| (old_at, new_at))
+        })
+        .collect();
+    // Patience sorting: `tails[k]` is the candidate ending the increasing run
+    // of length `k + 1` with the smallest old ordinal found so far.
+    let mut tails: Vec<usize> = Vec::new();
+    let mut previous: Vec<Option<usize>> = Vec::with_capacity(candidates.len());
+    for (index, &(old_at, _)) in candidates.iter().enumerate() {
+        let length = tails.partition_point(|&tail| {
+            candidates
+                .get(tail)
+                .is_some_and(|&(tail_old, _)| tail_old < old_at)
+        });
+        previous.push(
+            length
+                .checked_sub(1_usize)
+                .and_then(|before| tails.get(before).copied()),
+        );
+        if let Some(slot) = tails.get_mut(length) {
+            *slot = index;
+        }
+        else {
+            tails.push(index);
+        }
+    }
+    let mut kept = Vec::with_capacity(tails.len());
+    let mut cursor = tails.last().copied();
+    while let Some(index) = cursor {
+        if let Some(&(old_at, new_at)) = candidates.get(index) {
+            kept.push((ItemOrdinal::from(old_at), ItemOrdinal::from(new_at)));
+        }
+        cursor = previous.get(index).copied().flatten();
+    }
+    kept.reverse();
+    kept
+}
+
+/// The position of a frame in a walk's frame table.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct FrameIndex(usize);
+
+/// One node, or pair of nodes, a walk reached, and how it was reached.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: A frame records its nodes, parent and child slot; parent links
+///   used for paths point to earlier frames.
+/// - executable: none — The frame does not know its position or enclosing frame
+///   table; `path_of` checks parent indices where the complete table is
+///   available.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[derive(Clone, Copy, Debug)]
+struct Frame<Nodes>
+{
+    /// The node or nodes reached.
+    nodes: Nodes,
+    /// The frame of the parent, absent at the root.
+    parent: Option<FrameIndex>,
+    /// The slot the frame was reached through from its parent.
+    slot: ChildSlot,
+}
+
+/// The path of the frame `at`, walking its parents.
+///
+/// # Specification
+/// - requires: each parent points to an earlier frame, so the parent chain
+///   terminates.
+/// - ensures: retains `item` and returns the non-root frame slots in
+///   root-to-leaf order; a missing frame terminates the chain.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested localized terms and each multi-child body slot,
+///   with exact independently named root-to-leaf paths. Reversed slots, a
+///   spurious root slot or wrong item ordinal change those paths; the
+///   precondition checks parent-chain well-foundedness.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[spec(
+    requires: frames
+    .iter()
+    .enumerate()
+    .all(|(index, frame)| frame.parent.is_none_or(|parent| parent.0 < index)),
+    ensures: |ret| {
+    ret.item == item
+        && {
+            let mut cursor = Some(at);
+            let mut slots = ret.slots.iter().rev();
+            let mut exact = true;
+            while let Some(index) = cursor {
+                let Some(frame) = frames.get(index.0) else { break };
+                if frame.parent.is_some() && slots.next() != Some(&frame.slot) {
+                    exact = false;
+                    break;
+                }
+                cursor = frame.parent;
+            }
+            exact && slots.next().is_none()
+        }
+},
+)]
+fn path_of<Nodes>(
+    frames: &[Frame<Nodes>],
+    at: FrameIndex,
+    item: ItemOrdinal,
+) -> CorePath
+{
+    let mut slots = Vec::new();
+    let mut cursor = Some(at);
+    while let Some(index) = cursor {
+        let Some(frame) = frames.get(index.0)
+        else {
+            break;
+        };
+        if frame.parent.is_some() {
+            slots.push(frame.slot);
+        }
+        cursor = frame.parent;
+    }
+    slots.reverse();
+    CorePath { item, slots }
+}
+
+/// Push the actions turning the body `old` into `new`, of the item at old
+/// ordinal `item`, in pre-order.
+///
+/// # Specification
+/// - requires: both trees are finite acyclic images of bodies, each node named
+///   by its content; existing actions belong to earlier items.
+/// - ensures: appends only old-body paths for `item`, in preorder; a pair of
+///   nodes with one content name appends nothing, equal formers descend,
+///   unequal leaves become leaf actions and other differences become subtree
+///   replacements. Equal trees append nothing.
+/// - panics: none.
+/// - intension: reads the pairs on a path from the root to a change, once for
+///   each such path; a pair with one content name ends its path.
+///
+/// # Adequacy
+/// - hypothesis: L2 over generated replay pairs and L3 over exact leaf and
+///   constructor edits in nested and multi-child bodies. Wrong item anchors,
+///   skipped changes or destructive prefix handling alter the final action
+///   sequence or reconstructed target.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+///
+/// # Cost
+/// - allocation: the actions of the edit, growth within the two bodies
+#[spec(
+    captures: before = actions.len(),
+    ensures: |_| {
+    actions.len() >= before
+        && actions
+            .get(before..)
+            .is_some_and(|added| {
+                added
+                    .iter()
+                    .all(|action| match *action {
+                        Action::Replace { ref path, .. }
+                        | Action::SetLiteral { ref path, .. }
+                        | Action::SetVariable { ref path, .. }
+                        | Action::SetConstant { ref path, .. } => {
+                            path.item == item
+                                && matches!(
+                                    old.resolve(& path.slots), Maybe::Present(index) if
+                                    usize::from(index) < old.nodes.len()
+                                )
+                                && matches!(
+                                    new.resolve(& path.slots), Maybe::Present(index) if
+                                    usize::from(index) < new.nodes.len()
+                                )
+                        }
+                        Action::InsertItem { .. } | Action::DeleteItem { .. } | Action::SetSignature { .. } | Action::FillHole { .. } | Action::EraseToHole { .. } => false,
+                    })
+            }) && (old != new || actions.len() == before)
+},
+)]
+fn diff_trees(
+    old: &Tree,
+    new: &Tree,
+    item: ItemOrdinal,
+    actions: &mut Vec<Action>,
+)
+{
+    // Two nodes with one content name hold one term: the walk passes over them
+    // and so reads only the nodes on a path to a change.
+    let differs = |(before, after): (NodeIndex, NodeIndex)| {
+        old.names.get(usize::from(before)) != new.names.get(usize::from(after))
+    };
+    let root = NodeIndex::from(0_usize);
+    if !differs((root, root)) {
+        return;
+    }
+    let mut frames = vec![Frame {
+        nodes: (root, root),
+        parent: None,
+        slot: ChildSlot(0_usize),
+    }];
+    let mut pending = vec![FrameIndex(0_usize)];
+    while let Some(at) = pending.pop() {
+        let Some(&Frame {
+            nodes: (old_at, new_at),
+            ..
+        }) = frames.get(at.0)
+        else {
+            continue;
+        };
+        let (Some(before), Some(after)) = (
+            old.nodes.get(usize::from(old_at)),
+            new.nodes.get(usize::from(new_at)),
+        )
+        else {
+            continue;
+        };
+        if agreement(before, after) == Agreement::Same {
+            let first = frames.len();
+            let (old_children, new_children) = (children(before), children(after));
+            for (slot, nodes) in old_children.zip(new_children).enumerate() {
+                if differs(nodes) {
+                    frames.push(Frame {
+                        nodes,
+                        parent: Some(at),
+                        slot: ChildSlot(slot),
+                    });
+                }
+            }
+            pending.extend((first .. frames.len()).rev().map(FrameIndex));
+            continue;
+        }
+        let path = path_of(&frames, at, item);
+        actions.push(match (before, after) {
+            (&ContentNode::Literal(ref from), &ContentNode::Literal(ref to)) => {
+                Action::SetLiteral {
+                    path,
+                    from: from.clone(),
+                    to: to.clone(),
+                }
+            },
+            (
+                &ContentNode::Variable {
+                    zone: from_zone,
+                    index: from_index,
+                },
+                &ContentNode::Variable {
+                    zone: to_zone,
+                    index: to_index,
+                },
+            ) => Action::SetVariable {
+                path,
+                from: (from_zone, from_index),
+                to: (to_zone, to_index),
+            },
+            (&ContentNode::Constant(ref from), &ContentNode::Constant(ref to)) => {
+                Action::SetConstant {
+                    path,
+                    from: from.clone(),
+                    to: to.clone(),
+                }
+            },
+            _ => Action::Replace {
+                path,
+                to: new.subtree(new_at),
+            },
+        });
+    }
+}
+
+/// Whether two nodes share their former, payload and arity.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Same means equal former, non-child payload and child count, not
+///   equal descendants; A difference requires replacing a leaf or subtree.
+/// - executable: none — The comparison operands are absent from this result
+///   enum; agreement carries the executable equivalence and diff/replay
+///   observes its consequences.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Agreement
+{
+    /// One former, one payload, one arity: the walk descends into the
+    /// children, pairing them slot by slot.
+    Same,
+    /// The former, the payload or the arity differs: the walk emits an
+    /// action.
+    Differs,
+}
+
+/// Whether `old` and `new` share their former, payload and arity, children
+/// aside.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: agrees exactly on the former, the non-child payload and the
+///   number of children: leaf values, injection side, classifier targets, a
+///   constructor's family and tag, path evidence, a memory form's kind and
+///   slot, and a tuple's or product's component count matter; child indices do
+///   not. The walk pairs children by slot, so two nodes it descends into have
+///   every child paired.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the unit-carrying copies of moves that the comparison builds,
+///   growth within the nodes' recorded and dialogue entries
+///
+/// # Adequacy
+/// - hypothesis: L3 — literal, variable, constant and constructor edits, a
+///   tuple gaining a component, plus payload-bearing node pairs whose children
+///   alone differ. Distinct actions and exact payloads distinguish ignoring
+///   semantic data, ignoring a component the pairing would drop, or treating
+///   renumbered children as a change. Independent source- and target-dialogue
+///   edits retain their evidence even when every child is unchanged.
+/// - witness: `tests::edit::growing_a_tuple_replaces_it_325`
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `edit::tests::effect_row_edits_preserve_names_and_rebuild_operation_types`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
+/// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_grade_mode_place_and_slot`
+/// - witness: `edit::tests::every_node_family_agrees_exactly_on_its_payload`
+///
+/// # Cost
+/// - allocation: the copies of the field labels that the predicate compares,
+///   diagnostic
+#[spec(
+    ensures: |ret| {
+    (ret == Agreement::Same)
+        == (mem::discriminant(old) == mem::discriminant(new)
+            && children(old).count() == children(new).count()
+            && match *old {
+                ContentNode::Data {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Data {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
+                ContentNode::Codata {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Codata {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
+                ContentNode::Constructor {family:ref left,tag,ref fields,..} => matches!(*new,ContentNode::Constructor {family:ref right,tag:other,fields:ref theirs,..} if left == right && tag == other && fields.len() == theirs.len()),
+                ContentNode::Record(ref fields) => matches!(*new,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
+                ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
+                ContentNode::Patched { ref fixed, .. } => matches!(*new,ContentNode::Patched { fixed: ref other, .. } if fixed.keys().eq(other.keys())),
+                ContentNode::DataCase {ref branches,..} => matches!(*new,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
+                ContentNode::RecordProjection(_,ref label) => matches!(*new,ContentNode::RecordProjection(_,ref other) if label == other),
+                ContentNode::TupleProjection(_,component) => matches!(*new,ContentNode::TupleProjection(_,other) if component == other),
+                ContentNode::Reify(ref left) => matches!(*new, ContentNode::Reify(ref right) if left.iter().zip(right.iter()).all(|(left, right)| match (*left, *right) { (gandr_core_term::control::StackFrame::Apply(_), gandr_core_term::control::StackFrame::Apply(_)) | (gandr_core_term::control::StackFrame::Bind(_), gandr_core_term::control::StackFrame::Bind(_)) => true, (gandr_core_term::control::StackFrame::Project(left), gandr_core_term::control::StackFrame::Project(right)) => left == right, _ => false }) && left.len() == right.len()),
+                ContentNode::Project(left, _) => matches!(*new, ContentNode::Project(right, _) if left == right),
+                ContentNode::Perform { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Perform { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Handle { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Handle { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Returner { effects: ref left, .. } | ContentNode::Returns { effects: ref left, .. } | ContentNode::RowValue(ref left) => matches!(*new, ContentNode::Returner { effects: ref right, .. } | ContentNode::Returns { effects: ref right, .. } | ContentNode::RowValue(ref right) if left.tail().is_some() == right.tail().is_some() && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
+                ContentNode::BindAll(_, left, _) => matches!(*new, ContentNode::BindAll(_, right, _) if left == right),
+                ContentNode::Exercise { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Exercise { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Scope { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Scope { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Capability { authority: ref left, grade, region } => matches!(*new, ContentNode::Capability { authority: ref right, grade: other_grade, region: other_region } if grade == other_grade && region == other_region && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
+                ContentNode::PathEquiv { evidence: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::PathEquiv { evidence : ref right, .. } if
+                        left == right
+                    )
+                }
+                ContentNode::Injection(left, _) => {
+                    matches!(* new, ContentNode::Injection(right, _) if left == right)
+                }
+                ContentNode::ValueLift { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::ValueLift { target : ref right, .. } if left
+                        == right
+                    )
+                }
+                ContentNode::TypeLift { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::TypeLift { target : ref right, .. } if left
+                        == right
+                    )
+                }
+                ContentNode::Element { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::Element { target : ref right, .. } if left ==
+                        right
+                    )
+                }
+                ContentNode::ComputationElement { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::ComputationElement { target : ref right, .. }
+                        if left == right
+                    )
+                }
+                ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
+                ContentNode::Leta { world: ref left, .. } => matches!(*new, ContentNode::Leta { world: ref right, .. } if left == right),
+                ContentNode::Migrate { world: ref left, .. } => matches!(*new, ContentNode::Migrate { world: ref right, .. } if left == right),
+                ContentNode::HeldType { world: ref left, .. } => matches!(*new, ContentNode::HeldType { world: ref right, .. } if left == right),
+                ContentNode::KeptType { region: left, .. } => matches!(*new, ContentNode::KeptType { region: right, .. } if left == right),
+                ContentNode::Compose { composite: left, .. } => matches!(*new, ContentNode::Compose { composite: right, .. } if left == right),
+                ContentNode::Fill { composite: left, .. } => matches!(*new, ContentNode::Fill { composite: right, .. } if left == right),
+                _ if children(old).next().is_none() => old == new,
+                ContentNode::Dialogue(ref left) => matches!(*new, ContentNode::Dialogue(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.endpoint == right.endpoint && left.movement.carrying(()) == right.movement.carrying(()))),
+                ContentNode::Recorded(ref left) => matches!(*new, ContentNode::Recorded(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.carrying(()) == right.carrying(()))),
+                ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
+                ContentNode::ReturnAll(_) |
+                ContentNode::Hold(_) | ContentNode::CapabilityType(_) |
+                ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::LinearLambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::QubitType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::LinearArrow { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
+            })
+},
+)]
+fn agreement(
+    old: &ContentNode,
+    new: &ContentNode,
+) -> Agreement
+{
+    let same = match (old, new) {
+        (&ContentNode::Reify(ref left), &ContentNode::Reify(ref right)) => {
+            left.iter()
+                .zip(right.iter())
+                .all(|(left, right)| match (*left, *right) {
+                    (
+                        gandr_core_term::control::StackFrame::Apply(_),
+                        gandr_core_term::control::StackFrame::Apply(_),
+                    )
+                    | (
+                        gandr_core_term::control::StackFrame::Bind(_),
+                        gandr_core_term::control::StackFrame::Bind(_),
+                    ) => true,
+                    (
+                        gandr_core_term::control::StackFrame::Project(left),
+                        gandr_core_term::control::StackFrame::Project(right),
+                    ) => left == right,
+                    _ => false,
+                })
+                && left.len() == right.len()
+        },
+        (&ContentNode::Project(left, _), &ContentNode::Project(right, _)) => left == right,
+        (&ContentNode::Injection(left, _), &ContentNode::Injection(right, _)) => left == right,
+        (
+            &ContentNode::Perform {
+                signature: ref left,
+                operation: ref first,
+                ..
+            },
+            &ContentNode::Perform {
+                signature: ref right,
+                operation: ref second,
+                ..
+            },
+        ) => {
+            first == second
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        (
+            &ContentNode::Handle {
+                signature: ref left,
+                clauses: ref first,
+                ..
+            },
+            &ContentNode::Handle {
+                signature: ref right,
+                clauses: ref second,
+                ..
+            },
+        ) => {
+            first
+                .iter()
+                .map(|clause| &clause.operation)
+                .eq(second.iter().map(|clause| &clause.operation))
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        // A row's shape is its openness and its interfaces' and operations'
+        // names; its types are children.
+        (
+            &ContentNode::Returner {
+                effects: ref left, ..
+            },
+            &ContentNode::Returner {
+                effects: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::Returns {
+                effects: ref left, ..
+            },
+            &ContentNode::Returns {
+                effects: ref right, ..
+            },
+        )
+        | (&ContentNode::RowValue(ref left), &ContentNode::RowValue(ref right)) => {
+            left.tail().is_some() == right.tail().is_some()
+                && left.signatures().len() == right.signatures().len()
+                && left
+                    .signatures()
+                    .zip(right.signatures())
+                    .all(|(left, right)| {
+                        left.name() == right.name()
+                            && left.operations().len() == right.operations().len()
+                            && left
+                                .operations()
+                                .zip(right.operations())
+                                .all(|(left, right)| left.name == right.name)
+                    })
+        },
+        (&ContentNode::BindAll(_, left, _), &ContentNode::BindAll(_, right, _)) => left == right,
+        (
+            &ContentNode::Exercise {
+                signature: ref left,
+                operation: ref first,
+                ..
+            },
+            &ContentNode::Exercise {
+                signature: ref right,
+                operation: ref second,
+                ..
+            },
+        ) => {
+            first == second
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        (
+            &ContentNode::Scope {
+                signature: ref left,
+                clauses: ref first,
+                ..
+            },
+            &ContentNode::Scope {
+                signature: ref right,
+                clauses: ref second,
+                ..
+            },
+        ) => {
+            first
+                .iter()
+                .map(|clause| &clause.operation)
+                .eq(second.iter().map(|clause| &clause.operation))
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        (
+            &ContentNode::Capability {
+                authority: ref left,
+                grade: first_grade,
+                region: first_region,
+            },
+            &ContentNode::Capability {
+                authority: ref right,
+                grade: second_grade,
+                region: second_region,
+            },
+        ) => {
+            first_grade == second_grade
+                && first_region == second_region
+                && left.signatures().len() == right.signatures().len()
+                && left
+                    .signatures()
+                    .zip(right.signatures())
+                    .all(|(left, right)| {
+                        left.name() == right.name()
+                            && left.operations().len() == right.operations().len()
+                            && left
+                                .operations()
+                                .zip(right.operations())
+                                .all(|(left, right)| left.name == right.name)
+                    })
+        },
+        (
+            &ContentNode::Data {
+                declaration: ref left,
+                arguments: ref a,
+            },
+            &ContentNode::Data {
+                declaration: ref right,
+                arguments: ref b,
+            },
+        )
+        | (
+            &ContentNode::Codata {
+                declaration: ref left,
+                arguments: ref a,
+            },
+            &ContentNode::Codata {
+                declaration: ref right,
+                arguments: ref b,
+            },
+        ) => left == right && a.len() == b.len(),
+        (
+            &ContentNode::Constructor {
+                family: ref first,
+                tag: a,
+                fields: ref left,
+                ..
+            },
+            &ContentNode::Constructor {
+                family: ref second,
+                tag: b,
+                fields: ref right,
+                ..
+            },
+        ) => first == second && a == b && left.len() == right.len(),
+        (&ContentNode::Record(ref left), &ContentNode::Record(ref right))
+        | (&ContentNode::RecordType(ref left), &ContentNode::RecordType(ref right))
+        | (
+            &ContentNode::Patched {
+                fixed: ref left, ..
+            },
+            &ContentNode::Patched {
+                fixed: ref right, ..
+            },
+        ) => left.keys().eq(right.keys()),
+        (
+            &ContentNode::DataCase {
+                branches: ref left,
+                arities: ref left_arities,
+                ..
+            },
+            &ContentNode::DataCase {
+                branches: ref right,
+                arities: ref right_arities,
+                ..
+            },
+        ) => left.len() == right.len() && left_arities == right_arities,
+        (
+            &ContentNode::RecordProjection(_, ref left),
+            &ContentNode::RecordProjection(_, ref right),
+        ) => left == right,
+        (&ContentNode::TupleProjection(_, left), &ContentNode::TupleProjection(_, right)) => {
+            left == right
+        },
+        (
+            &ContentNode::PathEquiv {
+                evidence: ref left, ..
+            },
+            &ContentNode::PathEquiv {
+                evidence: ref right,
+                ..
+            },
+        ) => left == right,
+        (
+            &ContentNode::ValueLift {
+                target: ref left, ..
+            },
+            &ContentNode::ValueLift {
+                target: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::TypeLift {
+                target: ref left, ..
+            },
+            &ContentNode::TypeLift {
+                target: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::Element {
+                target: ref left, ..
+            },
+            &ContentNode::Element {
+                target: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::ComputationElement {
+                target: ref left, ..
+            },
+            &ContentNode::ComputationElement {
+                target: ref right, ..
+            },
+        ) => left == right,
+        (
+            &ContentNode::KeptType { region: left, .. },
+            &ContentNode::KeptType { region: right, .. },
+        ) => left == right,
+        (
+            &ContentNode::Compose {
+                composite: left, ..
+            },
+            &ContentNode::Compose {
+                composite: right, ..
+            },
+        )
+        | (
+            &ContentNode::Fill {
+                composite: left, ..
+            },
+            &ContentNode::Fill {
+                composite: right, ..
+            },
+        ) => left == right,
+        (&ContentNode::Memory(ref left), &ContentNode::Memory(ref right)) => {
+            left.shape() == right.shape()
+        },
+        (
+            &ContentNode::Leta {
+                world: ref left, ..
+            },
+            &ContentNode::Leta {
+                world: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::Migrate {
+                world: ref left, ..
+            },
+            &ContentNode::Migrate {
+                world: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::HeldType {
+                world: ref left, ..
+            },
+            &ContentNode::HeldType {
+                world: ref right, ..
+            },
+        ) => left == right,
+        (&ContentNode::Recorded(ref left), &ContentNode::Recorded(ref right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right.iter())
+                    .all(|(left, right)| left.carrying(()) == right.carrying(()))
+        },
+        (&ContentNode::Dialogue(ref left), &ContentNode::Dialogue(ref right)) => {
+            left.len() == right.len()
+                && left.iter().zip(right.iter()).all(|(left, right)| {
+                    left.endpoint == right.endpoint
+                        && left.movement.carrying(()) == right.movement.carrying(())
+                })
+        },
+        _ if children(old).next().is_none() => old == new,
+        _ => mem::discriminant(old) == mem::discriminant(new),
+    };
+    if same && children(old).count() == children(new).count() {
+        Agreement::Same
+    }
+    else {
+        Agreement::Differs
+    }
+}
+
+/// The canonical children of a node, with sort annotations omitted.
+///
+/// # Specification
+/// trivial.
+fn children(node: &ContentNode) -> impl DoubleEndedIterator<Item = NodeIndex> + Clone + '_
+{
+    node.child_indices().map(|(child, _)| child)
+}
+
+/// The root a tree is read from.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Each arena identifier retains the sort in which it must be read;
+///   a missing entry yields Unresolved of that sort.
+/// - executable: none — The enum does not hold the arena that gives an
+///   identifier meaning; read and the four sort-specific readers check the
+///   interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — missing roots of all four arena sorts and independently
+///   named child paths. Exact sort tags and replay images distinguish
+///   misinterpretation.
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Root
+{
+    /// A value.
+    Value(ValueId),
+    /// A computation.
+    Computation(ComputationId),
+    /// A value type.
+    ValueType(ValueTypeId),
+    /// A computation type.
+    CompType(CompTypeId),
+}
+
+/// The tree rooted at `root` in `program`'s arena, and each node's span.
+///
+/// # Specification
+/// - requires: the reachable arena graph is finite and acyclic, and origins
+///   refer to the same arena.
+/// - ensures: returns the root-first content image in discovery order, one node
+///   for each arena node reached, with one span entry per node and each node's
+///   content name; missing entries retain their arena sort, and recorded
+///   extents enclose every recorded descendant.
+/// - panics: none.
+/// - intension: reads each arena node it reaches once, however many parents
+///   name it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — multi-child body terms, nested source extents and absent
+///   roots of all four sorts. Exact node paths, source slices and
+///   unresolved-sort tags distinguish shape, numbering and provenance errors; a
+///   direct span-hull witness separates absent origins from recorded
+///   descendants.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+/// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+///
+/// # Cost
+/// - allocation: the tree and the span of each node, growth within the program
+#[spec(
+    ensures: |ret| {
+    ret.0.nodes.len() == ret.1.len() && !ret.0.nodes.is_empty()
+        && ret.0.names.len() == ret.0.nodes.len()
+        && numbering(&ret.0.nodes) == Numbering::Discovered
+        && ret
+            .0
+            .nodes
+            .iter()
+            .enumerate()
+            .all(|(index, node)| {
+                children(node)
+                    .all(|child| match ret.1.get(usize::from(child)) {
+                        Some(&Maybe::Present(child_span)) => {
+                            matches!(
+                                ret.1.get(index), Some(& Maybe::Present(parent)) if parent
+                                .start() <= child_span.start() && child_span.end() <= parent
+                                .end()
+                            )
+                        }
+                        _ => true,
+                    })
+            })
+},
+)]
+fn read(
+    program: &Program,
+    origins: &OriginTable,
+    root: Root,
+) -> (Tree, Vec<Maybe<ByteSpan, spanned::Absent>>)
+{
+    let mut nodes = Vec::new();
+    let mut spans = Vec::new();
+    let mut queue = VecDeque::from([root]);
+    let mut numbered = BTreeMap::from([(root, NodeIndex::from(0_usize))]);
+    while let Some(at) = queue.pop_front() {
+        let mut child = |next: Root| {
+            let fresh = NodeIndex::from(numbered.len());
+            *numbered.entry(next).or_insert_with(|| {
+                queue.push_back(next);
+                fresh
+            })
+        };
+        let (node, origin) = match at {
+            Root::Value(id) => (read_value(program, id, &mut child), origins.value(id)),
+            Root::Computation(id) => (
+                read_computation(program, id, &mut child),
+                origins.computation(id),
+            ),
+            Root::ValueType(id) => (
+                read_value_type(program, id, &mut child),
+                origins.value_type(id),
+            ),
+            Root::CompType(id) => (
+                read_comp_type(program, id, &mut child),
+                origins.comp_type(id),
+            ),
+        };
+        nodes.push(node);
+        spans.push(match origin {
+            Maybe::Present(origin) => Maybe::Present(origin.span()),
+            Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unrecorded),
+        });
+    }
+    // One order, each node after the nodes beneath it, serves the names and
+    // the extents alike.
+    let order = topological(&nodes);
+    let tree = Tree {
+        names: names_of(&nodes, &order),
+        nodes,
+    };
+    hull(&tree, &mut spans, &order);
+    (tree, spans)
+}
+
+/// The content node of the value `id`, each child numbered by `child`.
+///
+/// # Specification
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants and a constructor's family by program identity, and invokes
+///   `child` in former order with each child’s sort. An absent arena entry is
+///   Unresolved at the requested sort.
+/// - panics: only if `child` panics.
+///
+/// # Cost
+/// - allocation: the content node's child lists, labels and frames, growth
+///   within the value's fields
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children and labels, growth
+///   within the arena's node
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .value(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::Value)),
+            |node| match *node {
+                Value::Constructor {family,tag,ref fields,..} => matches!(ret,ContentNode::Constructor {family:ref named,tag:found,fields:ref other,..} if tag == found && fields.len() == other.len() && program.items().iter().position(|item| item.declaration().constant() == family).and_then(|ordinal| program.references().get(ordinal)).map_or(matches!(named, Reference::Unoccupied), |expected| named == expected)),
+                Value::Record(ref fields) => matches!(ret,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
+                Value::Reify(_) => matches!(ret, ContentNode::Reify(_)),
+                Value::Primitive { primitive, .. } => ret == ContentNode::PrimitiveValue(primitive),
+                Value::PathRefl(_) => matches!(ret, ContentNode::PathRefl(_)),
+                Value::Here(_) => matches!(ret, ContentNode::Here(_)),
+                Value::Returned(_) => matches!(ret, ContentNode::Returned(_)),
+                Value::Nested(_) => matches!(ret, ContentNode::Nested(_)),
+                Value::Run(_) => matches!(ret, ContentNode::Run(_)),
+                Value::RecordUpdate { .. } => matches!(ret, ContentNode::RecordUpdate(..)),
+                Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
+                Value::Funext(..) => matches!(ret, ContentNode::Funext(..)),
+                Value::Equiv(..) => matches!(ret, ContentNode::Equiv(..)),
+                Value::Univalence(..) => matches!(ret, ContentNode::Univalence(..)),
+                Value::SessionRelated { relation, .. } => {
+                    matches!(ret, ContentNode::SessionRelated { relation: found, .. } if found == relation)
+                }
+                Value::Stay(_) => matches!(ret, ContentNode::Stay(_)),
+                Value::Then(..) => matches!(ret, ContentNode::Then(..)),
+                Value::FlowProduct(..) => matches!(ret, ContentNode::FlowProduct(..)),
+                Value::Forward(_) => matches!(ret, ContentNode::Forward(_)),
+                Value::FunctionFlow(..) => matches!(ret, ContentNode::FunctionFlow(..)),
+                Value::Recorded(ref moves) => {
+                    matches!(ret, ContentNode::Recorded(ref found) if found.len() == moves.len()
+                        && found.iter().zip(moves.iter()).all(|(left, right)| left.carrying(()) == right.carrying(())))
+                }
+                Value::Dialogue(ref moves) => {
+                    matches!(ret, ContentNode::Dialogue(ref found) if found.len() == moves.len()
+                        && found.iter().zip(moves.iter()).all(|(left, right)| left.endpoint == right.endpoint && left.movement.carrying(()) == right.movement.carrying(())))
+                }
+                Value::Web(ref pieces) => matches!(ret, ContentNode::Web(ref found) if found == pieces),
+                Value::Ua { stratum, ref sides, .. } => {
+                    matches!(
+                        ret, ContentNode::Ua { stratum: found, sides: ref other, .. } if found
+                        == stratum && other == sides
+                    )
+                }
+                Value::Compose { composite, ref cells, .. } => {
+                    matches!(ret, ContentNode::Compose { composite: found, cells: ref other, .. } if found == composite && other.len() == cells.len())
+                }
+                Value::Fill { composite, ref cells, .. } => {
+                    matches!(ret, ContentNode::Fill { composite: found, cells: ref other, .. } if found == composite && other.len() == cells.len())
+                }
+                Value::PathEquiv { ref evidence, .. } => {
+                    matches!(
+                        ret, ContentNode::PathEquiv { evidence : ref found, .. } if found
+                        == evidence
+                    )
+                }
+                Value::Variable { zone, index } => {
+                    matches!(
+                        ret, ContentNode::Variable { zone : found_zone, index :
+                        found_index } if found_zone == zone && found_index == index
+                    )
+                }
+                Value::Constant(position) => {
+                    matches!(
+                        ret, ContentNode::Constant(ref found) if program.items().iter()
+                        .position(| item | item.declaration().constant() == position)
+                        .and_then(| ordinal | program.references().get(ordinal))
+                        .map_or(matches!(found, Reference::Unoccupied), | expected |
+                        found == expected)
+                    )
+                }
+                Value::Tuple(ref components) => {
+                    matches!(ret, ContentNode::Tuple(ref found) if found.len() == components.len())
+                }
+                Value::ListNil => matches!(ret, ContentNode::ListNil),
+                Value::ListCons(..) => matches!(ret, ContentNode::ListCons(..)),
+                Value::Literal(ref expected) => {
+                    matches!(ret, ContentNode::Literal(ref found) if found == expected)
+                }
+                Value::Injection(side, _) => {
+                    matches!(ret, ContentNode::Injection(found, _) if found == side)
+                }
+                Value::Lift { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::ValueLift { target : ref found, .. } if found
+                        == target
+                    )
+                }
+                Value::Thunk(..) => matches!(ret, ContentNode::Thunk(..)),
+                Value::Ascribe { .. } => matches!(ret, ContentNode::ValueAscribe { .. }),
+                Value::Quote(..) => matches!(ret, ContentNode::Quote(..)),
+                Value::QuoteComputation(..) => {
+                    matches!(ret, ContentNode::QuoteComputation(..))
+                }
+                Value::Row(ref row) => matches!(ret, ContentNode::RowValue(ref found) if found.tail().is_some() == row.tail().is_some() && found.signatures().len() == row.signatures().len()),
+                Value::StaticLambda(..) => matches!(ret, ContentNode::StaticLambda(..)),
+                Value::StaticApplication(..) => {
+                    matches!(ret, ContentNode::StaticApplication(..))
+                }
+                Value::Hole(hole) => ret == ContentNode::Hole(hole),
+                Value::Mark { mark, .. } => {
+                    matches!(ret, ContentNode::ValueMark { mark: found, .. } if found == mark)
+                }
+            },
+        )
+},
+)]
+fn read_value<Child>(
+    program: &Program,
+    id: ValueId,
+    child: &mut Child,
+) -> ContentNode
+where
+    Child: FnMut(Root) -> NodeIndex,
+{
+    match program.arena().value(id) {
+        Some(&Value::Constructor {
+            family,
+            datatype,
+            tag,
+            ref fields,
+        }) => ContentNode::Constructor {
+            family: program.resolve(family),
+            datatype: child(Root::ValueType(datatype)),
+            tag,
+            fields: fields
+                .iter()
+                .map(|&field| child(Root::Value(field)))
+                .collect(),
+        },
+        Some(&Value::Record(ref fields)) => ContentNode::Record(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), child(Root::Value(field))))
+                .collect(),
+        ),
+        Some(&Value::Reify(ref frames)) => ContentNode::Reify(
+            frames
+                .iter()
+                .map(|frame| match *frame {
+                    gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(child(Root::Value(value)))
+                    },
+                    gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(child(Root::Computation(body)))
+                    },
+                    gandr_core_term::control::StackFrame::Project(side) => {
+                        gandr_core_term::control::StackFrame::Project(side)
+                    },
+                })
+                .collect(),
+        ),
+        Some(&Value::Primitive { primitive, .. }) => ContentNode::PrimitiveValue(primitive),
+        Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
+        Some(&Value::Here(point)) => ContentNode::Here(child(Root::Value(point))),
+        Some(&Value::Returned(computation)) => {
+            ContentNode::Returned(child(Root::Computation(computation)))
+        },
+        Some(&Value::Nested(computation)) => {
+            ContentNode::Nested(child(Root::Computation(computation)))
+        },
+        Some(&Value::Run(computation)) => ContentNode::Run(child(Root::Computation(computation))),
+        Some(&Value::RecordUpdate { base, overlay }) => {
+            let base = child(Root::Value(base));
+            ContentNode::RecordUpdate(base, child(Root::Value(overlay)))
+        },
+        Some(&Value::PathProduct(first, second)) => {
+            let first = child(Root::Value(first));
+            ContentNode::PathProduct(first, child(Root::Value(second)))
+        },
+        Some(&Value::Funext(left, right)) => {
+            let left = child(Root::Value(left));
+            ContentNode::Funext(left, child(Root::Value(right)))
+        },
+        Some(&Value::Equiv(forward, backward)) => {
+            let forward = child(Root::Value(forward));
+            ContentNode::Equiv(forward, child(Root::Value(backward)))
+        },
+        Some(&Value::Univalence(record, forward)) => {
+            let record = child(Root::Value(record));
+            ContentNode::Univalence(record, child(Root::Value(forward)))
+        },
+        Some(&Value::SessionRelated {
+            relation,
+            source,
+            target,
+            payloads,
+        }) => {
+            let source = child(Root::Value(source));
+            let target = child(Root::Value(target));
+            ContentNode::SessionRelated {
+                relation,
+                source,
+                target,
+                payloads: child(Root::Value(payloads)),
+            }
+        },
+        Some(&Value::Stay(point)) => ContentNode::Stay(child(Root::Value(point))),
+        Some(&Value::Then(first, second)) => {
+            let first = child(Root::Value(first));
+            ContentNode::Then(first, child(Root::Value(second)))
+        },
+        Some(&Value::FlowProduct(first, second)) => {
+            let first = child(Root::Value(first));
+            ContentNode::FlowProduct(first, child(Root::Value(second)))
+        },
+        Some(&Value::Forward(translator)) => ContentNode::Forward(child(Root::Value(translator))),
+        Some(&Value::FunctionFlow(domain, codomain)) => {
+            let domain = child(Root::Value(domain));
+            ContentNode::FunctionFlow(domain, child(Root::Value(codomain)))
+        },
+        Some(&Value::Recorded(ref moves)) => ContentNode::Recorded(
+            moves
+                .iter()
+                .map(|step| {
+                    step.try_map(|payload| {
+                        Ok::<_, core::convert::Infallible>(child(Root::Value(payload)))
+                    })
+                    .unwrap_or_else(|never| match never {})
+                })
+                .collect(),
+        ),
+        Some(&Value::Dialogue(ref moves)) => ContentNode::Dialogue(
+            moves
+                .iter()
+                .map(|turn| gandr_core_term::session::DialogueMove {
+                    endpoint: turn.endpoint,
+                    movement: turn
+                        .movement
+                        .try_map(|payload| {
+                            Ok::<_, core::convert::Infallible>(child(Root::Value(payload)))
+                        })
+                        .unwrap_or_else(|never| match never {}),
+                })
+                .collect(),
+        ),
+        Some(&Value::Web(ref pieces)) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
+        Some(&Value::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        }) => {
+            let forward = child(Root::Value(forward));
+            ContentNode::Ua {
+                stratum,
+                sides: alloc::sync::Arc::clone(sides),
+                forward,
+                backward: child(Root::Value(backward)),
+            }
+        },
+        Some(&Value::Compose {
+            composite,
+            ref cells,
+            realised,
+        }) => {
+            let realised = child(Root::Computation(realised));
+            ContentNode::Compose {
+                composite,
+                cells: cells.iter().map(|&cell| child(Root::Value(cell))).collect(),
+                realised,
+            }
+        },
+        Some(&Value::Fill {
+            composite,
+            generator,
+            ref cells,
+        }) => {
+            let generator = child(Root::Computation(generator));
+            ContentNode::Fill {
+                composite,
+                generator,
+                cells: cells.iter().map(|&cell| child(Root::Value(cell))).collect(),
+            }
+        },
+        Some(&Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        }) => ContentNode::PathEquiv {
+            path_type: child(Root::ValueType(path_type)),
+            forward: child(Root::Value(forward)),
+            backward: child(Root::Value(backward)),
+            evidence: gandr_kernel_data::Shared::clone(evidence),
+        },
+        Some(&Value::Variable { zone, index }) => ContentNode::Variable { zone, index },
+        Some(&Value::Constant(position)) => ContentNode::Constant(program.resolve(position)),
+        Some(&Value::ListNil) => ContentNode::ListNil,
+        Some(&Value::ListCons(head, tail)) => {
+            ContentNode::ListCons(child(Root::Value(head)), child(Root::Value(tail)))
+        },
+        Some(&Value::Literal(ref literal)) => ContentNode::Literal(literal.clone()),
+        Some(&Value::Tuple(ref components)) => ContentNode::Tuple(
+            components
+                .iter()
+                .map(|&component| child(Root::Value(component)))
+                .collect(),
+        ),
+        Some(&Value::Injection(side, body)) => {
+            ContentNode::Injection(side, child(Root::Value(body)))
+        },
+        Some(&Value::Thunk(body)) => ContentNode::Thunk(child(Root::Computation(body))),
+        Some(&Value::Ascribe { value, ty }) => {
+            let value = child(Root::Value(value));
+            ContentNode::ValueAscribe {
+                value,
+                ty: child(Root::ValueType(ty)),
+            }
+        },
+        Some(&Value::Lift { ref target, body }) => ContentNode::ValueLift {
+            target: target.clone(),
+            body: child(Root::Value(body)),
+        },
+        Some(&Value::Quote(quoted)) => ContentNode::Quote(child(Root::ValueType(quoted))),
+        Some(&Value::QuoteComputation(quoted)) => {
+            ContentNode::QuoteComputation(child(Root::CompType(quoted)))
+        },
+        Some(&Value::Row(ref row)) => ContentNode::RowValue(
+            row.try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {}),
+        ),
+        Some(&Value::StaticLambda(body)) => ContentNode::StaticLambda(child(Root::Value(body))),
+        Some(&Value::StaticApplication(head, argument)) => {
+            let head = child(Root::Value(head));
+            ContentNode::StaticApplication(head, child(Root::Value(argument)))
+        },
+        Some(&Value::Hole(hole)) => ContentNode::Hole(hole),
+        Some(&Value::Mark { mark, body }) => ContentNode::ValueMark {
+            mark,
+            body: child(Root::Value(body)),
+        },
+        None => ContentNode::Unresolved(Sort::Value),
+    }
+}
+
+/// The content node of the computation `id`, each child numbered by `child`.
+///
+/// # Specification
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants by program identity, and invokes `child` in former order with
+///   each child’s sort. An absent arena entry is Unresolved at the requested
+///   sort, and so is a world form, as incremental content lists it.
+/// - panics: only if `child` panics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children and labels, growth
+///   within the arena's node
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .computation(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::Computation)),
+            |node| match *node {
+                Computation::DataCase {ref branches,..} => matches!(ret,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
+                Computation::RecordProjection(_,ref label) => matches!(ret,ContentNode::RecordProjection(_,ref other) if label == other),
+                Computation::TupleProjection(_,component) => matches!(ret,ContentNode::TupleProjection(_,other) if component == other),
+                Computation::Perform { ref operation, ref signature, .. } => matches!(ret, ContentNode::Perform { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
+                Computation::Handle { ref signature, .. } => matches!(ret, ContentNode::Handle { signature: ref mapped, .. } if signature.name() == mapped.name()),
+                Computation::Scope { ref signature, .. } => matches!(ret, ContentNode::Scope { signature: ref mapped, .. } if signature.name() == mapped.name()),
+                Computation::Exercise { ref operation, ref signature, .. } => matches!(ret, ContentNode::Exercise { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
+                Computation::Resume(..) => matches!(ret, ContentNode::Resume(..)),
+                Computation::Abandon(_) => matches!(ret, ContentNode::Abandon(_)),
+                Computation::Split { arity, motive: SplitMotive::Ambient, .. } => matches!(ret, ContentNode::Split(_, actual, _) if actual == arity),
+                Computation::Split { arity, motive: SplitMotive::Scrutinee(_), .. } => matches!(ret, ContentNode::DependentSplit { arity: actual, .. } if actual == arity),
+                Computation::Reset(_) => matches!(ret, ContentNode::Reset(_)),
+                Computation::Shift(_) => matches!(ret, ContentNode::Shift(_)),
+                Computation::With(..) => matches!(ret, ContentNode::With(..)),
+                Computation::Ascribe { .. } => matches!(ret, ContentNode::Ascribe { .. }),
+                Computation::Project(side, _) => matches!(ret, ContentNode::Project(actual, _) if actual == side),
+                Computation::Primitive { primitive, .. } => matches!(ret, ContentNode::Primitive(actual, _) if actual == primitive),
+                Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
+                Computation::PathTransport { .. } => matches!(ret, ContentNode::ElementTransport { .. }),
+                Computation::TelescopeTransport { .. } => matches!(ret, ContentNode::TelescopeTransport { .. }),
+                Computation::Ride { .. } => matches!(ret, ContentNode::Ride { .. }),
+                Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
+                Computation::LinearLambda(..) => matches!(ret, ContentNode::LinearLambda(..)),
+                Computation::Application(..) => {
+                    matches!(ret, ContentNode::Application(..))
+                }
+                Computation::Return(..) => matches!(ret, ContentNode::Return(..)),
+                Computation::Bind(..) => matches!(ret, ContentNode::Bind(..)),
+                Computation::ReturnAll(ref values) => matches!(ret, ContentNode::ReturnAll(ref read) if read.len() == values.len()),
+                Computation::BindAll { arity, .. } => matches!(ret, ContentNode::BindAll(_, actual, _) if actual == arity),
+                Computation::Force(..) => matches!(ret, ContentNode::Force(..)),
+                Computation::Decompose(..) => matches!(ret, ContentNode::Decompose(..)),
+                Computation::Case { .. } => matches!(ret, ContentNode::Case { .. }),
+                Computation::Hole(hole) => ret == ContentNode::ComputationHole(hole),
+                Computation::Mark { mark, .. } => {
+                    matches!(ret, ContentNode::ComputationMark { mark: found, .. } if found == mark)
+                }
+                Computation::Fixpoint { evidence, .. } => {
+                    matches!(ret, ContentNode::Fixpoint { evidence: found, .. } if found == evidence)
+                }
+                Computation::ListFold { .. } => matches!(ret, ContentNode::ListFold { .. }),
+                Computation::ListCase { .. } => matches!(ret, ContentNode::ListCase { .. }),
+                Computation::Session(ref action) => matches!(ret, ContentNode::Session(ref found) if found.shape() == action.shape()),
+                Computation::Memory(ref form) => matches!(ret, ContentNode::Memory(ref found) if found.shape() == form.shape()),
+                Computation::World(gandr_core_term::world::WorldForm::Hold { .. }) => matches!(ret, ContentNode::Hold(_)),
+                Computation::World(gandr_core_term::world::WorldForm::Leta { world, .. }) => matches!(ret, ContentNode::Leta { world: ref found, .. } if *found == world_content(program, world)),
+                Computation::World(gandr_core_term::world::WorldForm::Migrate { world, .. }) => matches!(ret, ContentNode::Migrate { world: ref found, .. } if *found == world_content(program, world)),
+            },
+        )
+},
+)]
+fn read_computation<Child>(
+    program: &Program,
+    id: ComputationId,
+    child: &mut Child,
+) -> ContentNode
+where
+    Child: FnMut(Root) -> NodeIndex,
+{
+    match program.arena().computation(id) {
+        Some(&Computation::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+            ref arities,
+            equations,
+        }) => ContentNode::DataCase {
+            scrutinee: child(Root::Value(scrutinee)),
+            motive: child(Root::CompType(motive)),
+            branches: branches
+                .iter()
+                .map(|&branch| child(Root::Computation(branch)))
+                .collect(),
+            arities: arities.to_vec(),
+            equations,
+        },
+        Some(&Computation::RecordProjection(record, ref label)) => {
+            ContentNode::RecordProjection(child(Root::Value(record)), label.clone())
+        },
+        Some(&Computation::TupleProjection(tuple, component)) => {
+            ContentNode::TupleProjection(child(Root::Value(tuple)), component)
+        },
+        Some(&Computation::Ride {
+            motive,
+            flow,
+            value,
+        }) => {
+            let motive = child(Root::ValueType(motive));
+            let flow = child(Root::Value(flow));
+            ContentNode::Ride {
+                motive,
+                flow,
+                value: child(Root::Value(value)),
+            }
+        },
+        Some(&Computation::Perform {
+            ref signature,
+            ref operation,
+            payload,
+        }) => {
+            let payload = child(Root::Value(payload));
+            let signature = signature
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Perform {
+                signature,
+                operation: operation.clone(),
+                payload,
+            }
+        },
+        Some(
+            computation @ &(Computation::Handle {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }
+            | Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }),
+        ) => {
+            let subject = child(Root::Computation(subject));
+            let on_return = child(Root::Computation(on_return));
+            let signature = signature
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            let clauses = clauses
+                .iter()
+                .map(|clause| gandr_core_term::control::EffectClause {
+                    operation: clause.operation.clone(),
+                    body: child(Root::Computation(clause.body)),
+                })
+                .collect();
+            if matches!(*computation, Computation::Scope { .. }) {
+                ContentNode::Scope {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+            else {
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+        },
+        Some(&Computation::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        }) => {
+            let capability = child(Root::Value(capability));
+            let payload = child(Root::Value(payload));
+            let signature = signature
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Exercise {
+                capability,
+                signature,
+                operation: operation.clone(),
+                payload,
+            }
+        },
+        Some(&Computation::Resume(stack, body)) => {
+            ContentNode::Resume(child(Root::Value(stack)), child(Root::Computation(body)))
+        },
+        Some(&Computation::Abandon(stack)) => ContentNode::Abandon(child(Root::Value(stack))),
+        Some(&Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Ambient,
+            body,
+        }) => ContentNode::Split(
+            child(Root::Value(scrutinee)),
+            arity,
+            child(Root::Computation(body)),
+        ),
+        Some(&Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
+            body,
+        }) => {
+            let scrutinee = child(Root::Value(scrutinee));
+            let motive = child(Root::CompType(motive));
+            ContentNode::DependentSplit {
+                scrutinee,
+                arity,
+                motive,
+                body: child(Root::Computation(body)),
+            }
+        },
+        Some(&Computation::Reset(body)) => ContentNode::Reset(child(Root::Computation(body))),
+        Some(&Computation::Shift(body)) => ContentNode::Shift(child(Root::Computation(body))),
+        Some(&Computation::With(ref components)) => ContentNode::With(
+            components
+                .iter()
+                .map(|&component| child(Root::Computation(component)))
+                .collect(),
+        ),
+        Some(&Computation::Ascribe { body, ty }) => {
+            let body = child(Root::Computation(body));
+            ContentNode::Ascribe {
+                body,
+                ty: child(Root::CompType(ty)),
+            }
+        },
+        Some(&Computation::Project(component, body)) => {
+            ContentNode::Project(component, child(Root::Computation(body)))
+        },
+        Some(&Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        }) => ContentNode::ListFold {
+            element: child(Root::ValueType(element)),
+            result: child(Root::ValueType(result)),
+            list: child(Root::Value(list)),
+            on_nil: child(Root::Computation(on_nil)),
+            on_cons: child(Root::Computation(on_cons)),
+        },
+        Some(&Computation::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        }) => ContentNode::ListCase {
+            list: child(Root::Value(list)),
+            on_nil: child(Root::Computation(on_nil)),
+            on_cons: child(Root::Computation(on_cons)),
+        },
+        Some(&Computation::Primitive {
+            primitive,
+            arguments,
+        }) => {
+            use gandr_core_term::primitive::Arguments;
+            let arguments = match arguments {
+                Arguments::Unary(argument) => Arguments::Unary(child(Root::Value(argument))),
+                Arguments::Binary([first, second]) => {
+                    Arguments::Binary([child(Root::Value(first)), child(Root::Value(second))])
+                },
+            };
+            ContentNode::Primitive(primitive, arguments)
+        },
+        Some(&Computation::Transport(path, value)) => {
+            let path = child(Root::Value(path));
+            ContentNode::Transport(path, child(Root::Value(value)))
+        },
+        Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) => {
+            let motive = child(Root::ValueType(motive));
+            let path = child(Root::Value(path));
+            ContentNode::ElementTransport {
+                motive,
+                path,
+                value: child(Root::Value(value)),
+            }
+        },
+        Some(&Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        }) => {
+            let motive = child(Root::CompType(motive));
+            let path = child(Root::Value(path));
+            let start = child(Root::Value(start));
+            let over = child(Root::Value(over));
+            ContentNode::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value: child(Root::Value(value)),
+            }
+        },
+        Some(&Computation::Lambda(body)) => ContentNode::Lambda(child(Root::Computation(body))),
+        Some(&Computation::LinearLambda(body)) => {
+            ContentNode::LinearLambda(child(Root::Computation(body)))
+        },
+        Some(&Computation::Application(head, argument)) => {
+            let head = child(Root::Computation(head));
+            ContentNode::Application(head, child(Root::Value(argument)))
+        },
+        Some(&Computation::Return(value)) => ContentNode::Return(child(Root::Value(value))),
+        Some(&Computation::Bind(bound, rest)) => {
+            let bound = child(Root::Computation(bound));
+            ContentNode::Bind(bound, child(Root::Computation(rest)))
+        },
+        Some(&Computation::ReturnAll(ref values)) => ContentNode::ReturnAll(
+            values
+                .iter()
+                .map(|&value| child(Root::Value(value)))
+                .collect(),
+        ),
+        Some(&Computation::BindAll { bound, arity, body }) => {
+            let bound = child(Root::Computation(bound));
+            ContentNode::BindAll(bound, arity, child(Root::Computation(body)))
+        },
+        Some(&Computation::Force(value)) => ContentNode::Force(child(Root::Value(value))),
+        Some(&Computation::Decompose(value)) => ContentNode::Decompose(child(Root::Value(value))),
+        Some(&Computation::Case {
+            scrutinee,
+            ref branches,
+        }) => {
+            let scrutinee = child(Root::Value(scrutinee));
+            ContentNode::Case {
+                scrutinee,
+                branches: branches
+                    .iter()
+                    .map(|&branch| child(Root::Computation(branch)))
+                    .collect(),
+            }
+        },
+        Some(&Computation::Hole(hole)) => ContentNode::ComputationHole(hole),
+        Some(&Computation::Mark { mark, body }) => ContentNode::ComputationMark {
+            mark,
+            body: child(Root::Computation(body)),
+        },
+        Some(&Computation::Fixpoint { body, evidence }) => ContentNode::Fixpoint {
+            body: child(Root::Computation(body)),
+            evidence,
+        },
+        Some(&Computation::Session(ref action)) => ContentNode::Session(
+            action
+                .try_map(
+                    gandr_core_term::session::ChildOrder::Forward,
+                    child,
+                    |child, value| Ok::<_, core::convert::Infallible>(child(Root::Value(value))),
+                    |child, body| Ok(child(Root::Computation(body))),
+                    |child, ty| Ok(child(Root::ValueType(ty))),
+                )
+                .unwrap_or_else(|never| match never {}),
+        ),
+        Some(&Computation::Memory(ref form)) => ContentNode::Memory(
+            form.try_map(
+                gandr_core_term::session::ChildOrder::Forward,
+                child,
+                |child, value| Ok::<_, core::convert::Infallible>(child(Root::Value(value))),
+                |child, body| Ok(child(Root::Computation(body))),
+            )
+            .unwrap_or_else(|never| match never {}),
+        ),
+        Some(&Computation::World(gandr_core_term::world::WorldForm::Hold { value })) => {
+            ContentNode::Hold(child(Root::Value(value)))
+        },
+        Some(&Computation::World(gandr_core_term::world::WorldForm::Leta {
+            world,
+            value,
+            body,
+        })) => {
+            let value = child(Root::Value(value));
+            ContentNode::Leta {
+                world: world_content(program, world),
+                value,
+                body: child(Root::Computation(body)),
+            }
+        },
+        Some(&Computation::World(gandr_core_term::world::WorldForm::Migrate { world, body })) => {
+            ContentNode::Migrate {
+                world: world_content(program, world),
+                body: child(Root::Computation(body)),
+            }
+        },
+        None => ContentNode::Unresolved(Sort::Computation),
+    }
+}
+
+/// The content of `world`, a declared world named by its item's reference.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the reference of a declared world, growth within the program
+fn world_content(
+    program: &Program,
+    world: gandr_core_term::world::World,
+) -> gandr_core_content::WorldContent
+{
+    match world {
+        gandr_core_term::world::World::Host => gandr_core_content::WorldContent::Host,
+        gandr_core_term::world::World::Declared(constant) => {
+            gandr_core_content::WorldContent::Declared(program.resolve(constant))
+        },
+    }
+}
+
+/// The content node of the value type `id`, each child numbered by `child`.
+///
+/// # Specification
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants by program identity, and invokes `child` in former order with
+///   sort, and so is a staged type: a stage is one judgement's own and names
+///   nothing a program's content could hold. A world type is Unresolved too, as
+///   incremental content lists it.
+/// - panics: only if `child` panics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children, growth within the
+///   arena's node
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .value_type(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::ValueType)),
+            |node| match *node {
+                ValueType::Data {declaration,ref arguments} => matches!(ret,ContentNode::Data {declaration:ref found,arguments:ref other} if *found == program.resolve(declaration) && arguments.len() == other.len()),
+                ValueType::Record(ref fields) => matches!(ret,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
+                ValueType::Patched { ref fixed, .. } => matches!(ret,ContentNode::Patched { fixed: ref other, .. } if fixed.keys().eq(other.keys())),
+                ValueType::Stack { .. } => matches!(ret, ContentNode::Stack { .. }),
+                ValueType::Capability { grade, region, .. } => matches!(ret, ContentNode::Capability { grade: found_grade, region: found_region, .. } if found_grade == grade && found_region == region),
+                ValueType::PathUniverse(..) => {
+                    matches!(ret, ContentNode::PathUniverse(..))
+                }
+                ValueType::Path { .. } => matches!(ret, ContentNode::PathType { .. }),
+                ValueType::Bridge { .. } => matches!(ret, ContentNode::BridgeType { .. }),
+                ValueType::Flow { .. } => matches!(ret, ContentNode::FlowType { .. }),
+                ValueType::Run(_) => matches!(ret, ContentNode::RunType(_)),
+                ValueType::Prefix(_) => matches!(ret, ContentNode::PrefixType(_)),
+                ValueType::Dialogue(_) => matches!(ret, ContentNode::DialogueType(_)),
+                ValueType::Web => matches!(ret, ContentNode::WebType),
+                ValueType::Base(base) => {
+                    matches!(ret, ContentNode::Base(found) if found == base)
+                }
+                ValueType::Product(ref parts) => matches!(ret, ContentNode::Product(ref found) if found.len() == parts.len()),
+                ValueType::Sum(ref parts) => matches!(ret, ContentNode::Sum(ref found) if found.len() == parts.len()),
+                ValueType::List(_) => matches!(ret, ContentNode::List(_)),
+                ValueType::Kept { region, .. } => matches!(ret, ContentNode::KeptType { region: found, .. } if found == region),
+                ValueType::Thunk(_) => matches!(ret, ContentNode::ThunkType(_)),
+                ValueType::Universe { sort, ref level } => {
+                    matches!(
+                        ret, ContentNode::Universe { sort : found_sort, level : ref
+                        found_level } if found_sort == sort && found_level == level
+                    )
+                }
+                ValueType::Lift { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::TypeLift { target : ref found, .. } if found ==
+                        target
+                    )
+                }
+                ValueType::Element { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::Element { target : ref found, .. } if found ==
+                        target
+                    )
+                }
+                ValueType::Abstract(position) => {
+                    matches!(
+                        ret, ContentNode::Abstract(ref found) if program.items().iter()
+                        .position(| item | item.declaration().constant() == position)
+                        .and_then(| ordinal | program.references().get(ordinal))
+                        .map_or(matches!(found, Reference::Unoccupied), | expected |
+                        found == expected)
+                    )
+                }
+                ValueType::StaticPi { .. } => matches!(ret, ContentNode::StaticPi { .. }),
+                ValueType::Sigma { .. } => matches!(ret, ContentNode::Sigma { .. }),
+                ValueType::Session(ref session) => matches!(ret, ContentNode::SessionType(ref found)
+                    if found.protocol() == session.protocol() && found.state() == session.state()
+                        && found.payloads().len() == session.payloads().len()),
+                ValueType::Unknown => ret == ContentNode::UnknownType,
+                ValueType::Buffer => ret == ContentNode::BufferType,
+                ValueType::Qubit => ret == ContentNode::QubitType,
+                ValueType::Row => ret == ContentNode::RowKind,
+                ValueType::RowTail(_) => matches!(ret, ContentNode::RowTail(_)),
+                ValueType::World(gandr_core_term::world::WorldType::At { world, .. }) => matches!(ret, ContentNode::HeldType { world: ref found, .. } if *found == world_content(program, world)),
+                ValueType::World(gandr_core_term::world::WorldType::Capability(world)) => ret == ContentNode::CapabilityType(world_content(program, world)),
+                ValueType::Staged { .. } => ret == ContentNode::Unresolved(Sort::ValueType),
+            },
+        )
+},
+)]
+fn read_value_type<Child>(
+    program: &Program,
+    id: ValueTypeId,
+    child: &mut Child,
+) -> ContentNode
+where
+    Child: FnMut(Root) -> NodeIndex,
+{
+    match program.arena().value_type(id) {
+        Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }) => ContentNode::Data {
+            declaration: program.resolve(declaration),
+            arguments: arguments
+                .iter()
+                .map(|&argument| child(Root::Value(argument)))
+                .collect(),
+        },
+        Some(&ValueType::Record(ref fields)) => ContentNode::RecordType(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), child(Root::ValueType(field))))
+                .collect(),
+        ),
+        Some(&ValueType::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        }) => ContentNode::Patched {
+            base: child(Root::ValueType(base)),
+            fixed: fixed
+                .iter()
+                .map(|(label, &value)| (label.clone(), child(Root::Value(value))))
+                .collect(),
+            meets: meets
+                .iter()
+                .map(|met| (met.0.clone(), child(Root::Value(met.1))))
+                .collect(),
+        },
+        Some(&ValueType::Stack { input, output }) => ContentNode::Stack {
+            input: child(Root::CompType(input)),
+            output: child(Root::CompType(output)),
+        },
+        Some(&ValueType::Capability {
+            ref authority,
+            grade,
+            region,
+        }) => ContentNode::Capability {
+            authority: authority
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {}),
+            grade,
+            region,
+        },
+        Some(&ValueType::PathUniverse(source, target)) => {
+            let source = child(Root::Value(source));
+            ContentNode::PathUniverse(source, child(Root::Value(target)))
+        },
+        Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }) => {
+            let carrier = child(Root::ValueType(carrier));
+            let left = child(Root::Value(left));
+            ContentNode::PathType {
+                carrier,
+                left,
+                right: child(Root::Value(right)),
+            }
+        },
+        Some(&ValueType::Bridge {
+            carrier,
+            left,
+            right,
+        }) => {
+            let carrier = child(Root::ValueType(carrier));
+            let left = child(Root::Value(left));
+            ContentNode::BridgeType {
+                carrier,
+                left,
+                right: child(Root::Value(right)),
+            }
+        },
+        Some(&ValueType::Flow {
+            carrier,
+            source,
+            target,
+        }) => {
+            let carrier = child(Root::ValueType(carrier));
+            let source = child(Root::Value(source));
+            ContentNode::FlowType {
+                carrier,
+                source,
+                target: child(Root::Value(target)),
+            }
+        },
+        Some(&ValueType::Run(code)) => ContentNode::RunType(child(Root::Value(code))),
+        Some(&ValueType::Prefix(code)) => ContentNode::PrefixType(child(Root::Value(code))),
+        Some(&ValueType::Dialogue(code)) => ContentNode::DialogueType(child(Root::Value(code))),
+        Some(&ValueType::Web) => ContentNode::WebType,
+        Some(&ValueType::Base(base)) => ContentNode::Base(base),
+        Some(&ValueType::Product(ref parts)) => ContentNode::Product(
+            parts
+                .iter()
+                .map(|&part| child(Root::ValueType(part)))
+                .collect(),
+        ),
+        Some(&ValueType::Sum(ref parts)) => ContentNode::Sum(
+            parts
+                .iter()
+                .map(|&part| child(Root::ValueType(part)))
+                .collect(),
+        ),
+        Some(&ValueType::List(element)) => ContentNode::List(child(Root::ValueType(element))),
+        Some(&ValueType::Kept { value, region }) => ContentNode::KeptType {
+            value: child(Root::ValueType(value)),
+            region,
+        },
+        Some(&ValueType::Thunk(body)) => ContentNode::ThunkType(child(Root::CompType(body))),
+        Some(&ValueType::Universe { sort, ref level }) => ContentNode::Universe {
+            sort,
+            level: level.clone(),
+        },
+        Some(&ValueType::Lift { inner, ref target }) => ContentNode::TypeLift {
+            inner: child(Root::ValueType(inner)),
+            target: target.clone(),
+        },
+        Some(&ValueType::Element { code, ref target }) => ContentNode::Element {
+            code: child(Root::Value(code)),
+            target: target.clone(),
+        },
+        Some(&ValueType::Abstract(position)) => ContentNode::Abstract(program.resolve(position)),
+        Some(&ValueType::StaticPi { domain, codomain }) => {
+            let domain = child(Root::ValueType(domain));
+            ContentNode::StaticPi {
+                domain,
+                codomain: child(Root::ValueType(codomain)),
+            }
+        },
+        Some(&ValueType::Sigma { first, second }) => {
+            let first = child(Root::ValueType(first));
+            ContentNode::Sigma {
+                first,
+                second: child(Root::ValueType(second)),
+            }
+        },
+        Some(&ValueType::Session(ref session)) => ContentNode::SessionType(
+            session
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {}),
+        ),
+        Some(&ValueType::Unknown) => ContentNode::UnknownType,
+        Some(&ValueType::Buffer) => ContentNode::BufferType,
+        Some(&ValueType::Qubit) => ContentNode::QubitType,
+        Some(&ValueType::Row) => ContentNode::RowKind,
+        Some(&ValueType::RowTail(code)) => ContentNode::RowTail(child(Root::Value(code))),
+        Some(&ValueType::World(gandr_core_term::world::WorldType::At { inner, world })) => {
+            ContentNode::HeldType {
+                inner: child(Root::ValueType(inner)),
+                world: world_content(program, world),
+            }
+        },
+        Some(&ValueType::World(gandr_core_term::world::WorldType::Capability(world))) => {
+            ContentNode::CapabilityType(world_content(program, world))
+        },
+        // A staged type has no content form, and stays opaque.
+        Some(&ValueType::Staged { .. }) | None => ContentNode::Unresolved(Sort::ValueType),
+    }
+}
+
+/// The content node of the computation type `id`, each child numbered by
+/// `child`.
+///
+/// # Specification
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants by program identity, and invokes `child` in former order with
+///   each child’s sort. An absent arena entry is Unresolved at the requested
+///   sort.
+/// - panics: only if `child` panics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children, growth within the
+///   arena's node
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .comp_type(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::CompType)),
+            |node| match *node {
+                CompType::With(..) => matches!(ret, ContentNode::WithType(..)),
+                CompType::Returner { .. } => matches!(ret, ContentNode::Returner { .. }),
+                CompType::Returns { ref results, .. } => matches!(ret, ContentNode::Returns { results: ref read, .. } if read.len() == results.len()),
+                CompType::Arrow { .. } => matches!(ret, ContentNode::Arrow { .. }),
+                CompType::Pi { .. } => matches!(ret, ContentNode::Pi { .. }),
+                CompType::LinearArrow { .. } => matches!(ret, ContentNode::LinearArrow { .. }),
+                CompType::Element { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::ComputationElement { target : ref found, .. }
+                        if found == target
+                    )
+                }
+                CompType::Unknown => ret == ContentNode::UnknownComputationType,
+                CompType::Codata { declaration, ref arguments } => matches!(ret, ContentNode::Codata { declaration: ref found, arguments: ref other } if *found == program.resolve(declaration) && arguments.len() == other.len()),
+            },
+        )
+},
+)]
+fn read_comp_type<Child>(
+    program: &Program,
+    id: CompTypeId,
+    child: &mut Child,
+) -> ContentNode
+where
+    Child: FnMut(Root) -> NodeIndex,
+{
+    match program.arena().comp_type(id) {
+        Some(&CompType::With(ref components)) => ContentNode::WithType(
+            components
+                .iter()
+                .map(|&component| child(Root::CompType(component)))
+                .collect(),
+        ),
+        Some(&CompType::Returner {
+            result,
+            ref effects,
+        }) => {
+            let result = child(Root::ValueType(result));
+            let effects = effects
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returner { result, effects }
+        },
+        Some(&CompType::Returns {
+            ref results,
+            ref effects,
+        }) => {
+            let results = results
+                .iter()
+                .map(|&result| child(Root::ValueType(result)))
+                .collect();
+            let effects = effects
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returns { results, effects }
+        },
+        Some(&CompType::Arrow { domain, codomain }) => {
+            let domain = child(Root::ValueType(domain));
+            ContentNode::Arrow {
+                domain,
+                codomain: child(Root::CompType(codomain)),
+            }
+        },
+        Some(&CompType::Pi { domain, codomain }) => {
+            let domain = child(Root::ValueType(domain));
+            ContentNode::Pi {
+                domain,
+                codomain: child(Root::CompType(codomain)),
+            }
+        },
+        Some(&CompType::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        }) => {
+            let domain = child(Root::ValueType(domain));
+            let multiplicity = child(Root::Value(multiplicity));
+            ContentNode::LinearArrow {
+                domain,
+                multiplicity,
+                codomain: child(Root::CompType(codomain)),
+            }
+        },
+        Some(&CompType::Element { code, ref target }) => ContentNode::ComputationElement {
+            code: child(Root::Value(code)),
+            target: target.clone(),
+        },
+        Some(&CompType::Unknown) => ContentNode::UnknownComputationType,
+        Some(&CompType::Codata {
+            declaration,
+            ref arguments,
+        }) => ContentNode::Codata {
+            declaration: program.resolve(declaration),
+            arguments: arguments
+                .iter()
+                .map(|&argument| child(Root::Value(argument)))
+                .collect(),
+        },
+        None => ContentNode::Unresolved(Sort::CompType),
+    }
+}
+
+/// Widen every node's span of `tree` to its extent: the hull of its own
+/// origin and its children's extents.
+///
+/// # Specification
+/// - requires: the tree is acyclic, `order` is [`topological`] of its nodes,
+///   and the span table has one entry per node.
+/// - ensures: widens each recorded extent to the hull of itself and every
+///   recorded descendant; an unknown parent inherits recorded descendants,
+///   while a wholly unrecorded subtree remains unrecorded.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unrecorded branching root with disjoint recorded
+///   children and an unknown leaf, plus source-localized nested terms. Exact
+///   union endpoints and retained absence distinguish overwriting a span,
+///   dropping descendants or inventing source provenance.
+/// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body visits every node and each of its children once; the check visits each once and counts the recorded spans twice"
+    )
+)]
+#[spec(
+    requires: spans.len() == tree.nodes.len() && order.len() == tree.nodes.len(),
+    captures: recorded = spans
+    .iter()
+    .filter(|span| matches!(span, Maybe::Present(_)))
+    .count(),
+    ensures: |_| {
+    spans.iter().filter(|span| matches!(span, Maybe::Present(_))).count() >= recorded
+        && tree
+            .nodes
+            .iter()
+            .enumerate()
+            .all(|(index, node)| {
+                children(node)
+                    .all(|child| match spans.get(usize::from(child)) {
+                        Some(&Maybe::Present(child_span)) => {
+                            matches!(
+                                spans.get(index), Some(& Maybe::Present(parent)) if parent
+                                .start() <= child_span.start() && child_span.end() <= parent
+                                .end()
+                            )
+                        }
+                        _ => true,
+                    })
+            })
+},
+)]
+fn hull(
+    tree: &Tree,
+    spans: &mut [Maybe<ByteSpan, spanned::Absent>],
+    order: &[NodeIndex],
+)
+{
+    // Each node comes after every node beneath it in `order`, so one pass
+    // settles each child before any of its parents.
+    for &index in order {
+        let index = usize::from(index);
+        let Some(node) = tree.nodes.get(index)
+        else {
+            continue;
+        };
+        let mut covered = match spans.get(index) {
+            Some(&Maybe::Present(span)) => Some(span),
+            Some(&Maybe::Absent(_)) | None => None,
+        };
+        for child in children(node) {
+            if let Some(&Maybe::Present(span)) = spans.get(usize::from(child)) {
+                covered = Some(covered.map_or(span, |held| held.join(span)));
+            }
+        }
+        if let (Some(span), Some(slot)) = (covered, spans.get_mut(index)) {
+            *slot = Maybe::Present(span);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::String;
+    use alloc::sync::Arc;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use core::fmt::Write as _;
+
+    use anodized::spec;
+    use gandr_core_incremental::ItemOrdinal;
+    use gandr_surface_dispatcher::Lowered;
+    use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::item_program;
+    use gandr_surface_dispatcher::lower_source;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
+
+    use super::ChildSlot;
+    use super::CorePath;
+    use super::ItemTree;
+    use super::Snapshot;
+    use super::SourceEdit;
+    use super::children;
+    use super::located;
+
+    /// The snapshot of `text`, which the lowering must read as a module.
+    ///
+    /// # Specification
+    /// - requires: the fixture text parses and lowers to an ordered module.
+    /// - ensures: returns its source-provenanced body and signature image.
+    /// - panics: if the fixture grammar, lowering or module ordering is
+    ///   invalid.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independently located nested literals, holes and
+    ///   adjacent declarations; exact node paths and source slices distinguish
+    ///   an incorrectly adapted fixture.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    #[spec(
+        ensures: |ret| {
+    ret.spans
+        .iter()
+        .flat_map(|spans| spans.iter())
+        .all(|span| match *span {
+            Maybe::Present(span) => span.end() <= text.end(),
+            Maybe::Absent(_) => true,
+        })
+},
+    )]
+    fn snapshot_of(text: SourceText<'_>) -> Snapshot
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let mut lowerings = LoweringCount::default();
+        let lowering = lower_source(&grammar, text, &mut lowerings).expect("the revision lowers");
+        let Lowered::Module { module, arena } = lowering.into_lowered()
+        else {
+            panic!("the lowering reads a module: {text:?}");
+        };
+        let program = item_program(&module, arena).expect("positions ascend");
+        Snapshot::of(&program, module.origins())
+    }
+
+    /// The reference localizer: every body node of every item scanned, the
+    /// enclosing one with the fewest bytes kept, then the shallowest, then
+    /// the first in item and breadth-first order.
+    ///
+    /// # Specification
+    /// - requires: the snapshot is a canonical source image.
+    /// - ensures: chooses the enclosing span with least extent, then least
+    ///   depth, then first item and breadth-first position; reports Outside
+    ///   exactly when no body contains the range.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 over the spans and endpoints of five source shapes
+    ///   against the independently implemented indexed descent. The two
+    ///   algorithms share span containment, not candidate enumeration or
+    ///   ranking.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    #[spec(
+        ensures: |ret| match ret {
+    Maybe::Present(ref path) => {
+        matches!(
+            snapshot.span(path), Maybe::Present(span) if span.start() <= range.start() &&
+            range.end() <= span.end()
+        )
+    }
+    Maybe::Absent(located::Absent::Outside) => {
+        snapshot
+            .bodies
+            .iter()
+            .all(|&(span, _)| {
+                !(span.start() <= range.start() && range.end() <= span.end())
+            })
+    }
+},
+    )]
+    fn stab(
+        snapshot: &Snapshot,
+        range: ByteSpan,
+    ) -> Maybe<CorePath, located::Absent>
+    {
+        let mut best: Option<(ByteSpan, usize, CorePath)> = None;
+        let mut reached: Vec<Option<(usize, ChildSlot)>> = Vec::new();
+        let mut depth: Vec<usize> = Vec::new();
+        for (ordinal, (item, spans)) in snapshot.items.iter().zip(&snapshot.spans).enumerate() {
+            let &ItemTree {
+                declaration:
+                    super::DeclarationTree::Value {
+                        body: Maybe::Present(ref tree),
+                        ..
+                    },
+                ..
+            } = &**item
+            else {
+                continue;
+            };
+            // Breadth-first numbering lists every parent before its children.
+            reached.clear();
+            reached.resize(tree.nodes.len(), None);
+            depth.clear();
+            depth.resize(tree.nodes.len(), 0_usize);
+            for (index, node) in tree.nodes.iter().enumerate() {
+                let below = depth
+                    .get(index)
+                    .copied()
+                    .unwrap_or_default()
+                    .saturating_add(1);
+                for (slot, child) in children(node).enumerate() {
+                    if let (Some(parent), Some(level)) = (
+                        reached.get_mut(usize::from(child)),
+                        depth.get_mut(usize::from(child)),
+                    ) {
+                        *parent = Some((index, ChildSlot(slot)));
+                        *level = below;
+                    }
+                }
+            }
+            for (index, span) in spans.iter().enumerate() {
+                let &Maybe::Present(span) = span
+                else {
+                    continue;
+                };
+                if !(span.start() <= range.start() && range.end() <= span.end()) {
+                    continue;
+                }
+                let level = depth.get(index).copied().unwrap_or_default();
+                if best.as_ref().is_some_and(|&(held, held_level, _)| {
+                    (held.length(), held_level) <= (span.length(), level)
+                }) {
+                    continue;
+                }
+                let mut slots = Vec::new();
+                let mut cursor = index;
+                while let Some(&Some((parent, slot))) = reached.get(cursor) {
+                    slots.push(slot);
+                    cursor = parent;
+                }
+                slots.reverse();
+                best = Some((span, level, CorePath {
+                    item: ItemOrdinal::from(ordinal),
+                    slots,
+                }));
+            }
+        }
+        match best {
+            Some((_, _, path)) => Maybe::Present(path),
+            None => Maybe::Absent(located::Absent::Outside),
+        }
+    }
+
+    #[test]
+    fn descent_agrees_with_the_linear_stab_oracle()
+    {
+        let sources = [
+            "def deep = thunk { return thunk { return thunk { return 1 } } } ;\n",
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-1.gandr"),
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-2.gandr"),
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-3.gandr"),
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-4.gandr"),
+            // The tail return the lowering inserts spans the value it returns:
+            // a tie the descent breaks by depth.
+            "def g(x : Integer) -> -F Integer { x }\n",
+        ];
+        for source in sources {
+            let snapshot = snapshot_of(SourceText::from(source));
+
+            for spans in &snapshot.spans {
+                for &span in spans.iter() {
+                    let Maybe::Present(span) = span
+                    else {
+                        continue;
+                    };
+                    let start = ByteSpan::new(span.start(), span.start()).expect("a point");
+                    let end = ByteSpan::new(span.end(), span.end()).expect("a point");
+                    for probe in [span, start, end] {
+                        assert_eq!(
+                            snapshot.localize(probe),
+                            stab(&snapshot, probe),
+                            "{source:?}: the descent and the linear stab disagree at {probe:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn missing_paths_and_unrecorded_origins_stay_distinct()
+    {
+        use super::addressed;
+        use super::spanned;
+        let snapshot = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/missing-paths-and-unrecorded-origins-stay-distinct-snapshot.gandr"
+        )));
+        let missing_item = CorePath::new(ItemOrdinal::from(2_usize), Vec::new());
+        let missing_body = CorePath::new(ItemOrdinal::from(0_usize), Vec::new());
+        let missing_child =
+            CorePath::new(ItemOrdinal::from(1_usize), vec![ChildSlot::from(0_usize)]);
+        assert_eq!(
+            snapshot.node(&missing_item),
+            Maybe::Absent(addressed::Absent::NoItem)
+        );
+        assert_eq!(
+            snapshot.node(&missing_body),
+            Maybe::Absent(addressed::Absent::NoBody)
+        );
+        assert_eq!(
+            snapshot.node(&missing_child),
+            Maybe::Absent(addressed::Absent::NoChild)
+        );
+        for path in [&missing_item, &missing_body, &missing_child] {
+            assert_eq!(
+                snapshot.span(path),
+                Maybe::Absent(spanned::Absent::Unaddressed)
+            );
+        }
+        let body = CorePath::new(ItemOrdinal::from(1_usize), Vec::new());
+        let mut unrecorded = snapshot.clone();
+        for spans in &mut unrecorded.spans {
+            *spans = spans
+                .iter()
+                .map(|_| Maybe::Absent(spanned::Absent::Unrecorded))
+                .collect();
+        }
+        unrecorded.bodies.clear();
+        assert_eq!(unrecorded.node(&body), snapshot.node(&body));
+        assert_eq!(
+            unrecorded.span(&body),
+            Maybe::Absent(spanned::Absent::Unrecorded)
+        );
+        let range = ByteSpan::new(
+            super::ByteOffset::from(0_usize),
+            super::ByteOffset::from(0_usize),
+        )
+        .expect("a point");
+        assert_eq!(
+            unrecorded.localize(range),
+            Maybe::Absent(located::Absent::Outside)
+        );
+        assert_eq!(
+            children(&super::ContentNode::Tuple(Vec::new())).next(),
+            None
+        );
+    }
+
+    #[test]
+    fn child_mapping_preserves_payloads_without_replaying_the_callback()
+    {
+        use gandr_kernel_term::Side;
+
+        use super::ContentNode;
+        use super::NodeIndex;
+        let original = ContentNode::Case {
+            scrutinee: NodeIndex::from(7_usize),
+            branches: vec![NodeIndex::from(3_usize), NodeIndex::from(11_usize)],
+        };
+        let mut seen = Vec::new();
+        let mapped = super::map_children(&original, &mut |index| {
+            seen.push(index);
+            NodeIndex::from(19_usize.saturating_add(seen.len()))
+        });
+        assert_eq!(seen, vec![
+            NodeIndex::from(7_usize),
+            NodeIndex::from(3_usize),
+            NodeIndex::from(11_usize)
+        ]);
+        assert_eq!(mapped, ContentNode::Case {
+            scrutinee: NodeIndex::from(20_usize),
+            branches: vec![NodeIndex::from(21_usize), NodeIndex::from(22_usize)],
+        });
+        assert_eq!(children(&mapped).nth(3), None);
+        let left = ContentNode::Injection(Side::Left.into(), NodeIndex::from(7_usize));
+        let changed = super::map_children(&left, &mut |_| NodeIndex::from(8_usize));
+        assert_eq!(
+            changed,
+            ContentNode::Injection(Side::Left.into(), NodeIndex::from(8_usize))
+        );
+        assert_eq!(super::agreement(&left, &changed), super::Agreement::Same);
+        assert_ne!(
+            super::agreement(
+                &left,
+                &ContentNode::Injection(Side::Right.into(), NodeIndex::from(7_usize))
+            ),
+            super::Agreement::Same
+        );
+        assert_eq!(
+            super::map_children(&ContentNode::Tuple(Vec::new()), &mut |_| panic!(
+                "a leaf has no child"
+            )),
+            ContentNode::Tuple(Vec::new())
+        );
+    }
+
+    #[test]
+    fn a_memory_form_agrees_on_its_kind_grade_mode_place_and_slot()
+    {
+        use gandr_core_term::memory::AccessMode;
+        use gandr_core_term::memory::HoldGrade;
+        use gandr_core_term::memory::MemoryForm;
+        use gandr_core_term::memory::Place;
+        use gandr_kernel_term::DeBruijnIndex;
+
+        use super::Agreement;
+        use super::ContentNode;
+        use super::NodeIndex;
+        let (first, second) = (NodeIndex::from(3_usize), NodeIndex::from(5_usize));
+        let access = |held| {
+            ContentNode::Memory(MemoryForm::Access {
+                mode: AccessMode::Exclusive { unwind: second },
+                held,
+                place: Place::Whole,
+                body: first,
+            })
+        };
+        let held = |grade| {
+            ContentNode::Memory(MemoryForm::Hold {
+                value: first,
+                body: second,
+                grade,
+            })
+        };
+        let hold = held(HoldGrade::Many);
+        let slot = DeBruijnIndex::from(0_u32);
+        assert_eq!(
+            super::agreement(&access(slot), &access(slot)),
+            Agreement::Same,
+            "one access over one slot agrees"
+        );
+        assert_eq!(
+            super::agreement(&access(slot), &hold),
+            Agreement::Differs,
+            "an access and a hold of one arity are two formers"
+        );
+        assert_eq!(
+            super::agreement(&access(slot), &access(DeBruijnIndex::from(1_u32))),
+            Agreement::Differs,
+            "an access over another slot is another payload"
+        );
+        let shared = ContentNode::Memory(MemoryForm::Access {
+            mode: AccessMode::Shared,
+            held: slot,
+            place: Place::Whole,
+            body: first,
+        });
+        assert_eq!(
+            super::agreement(&access(slot), &shared),
+            Agreement::Differs,
+            "a shared access and an exclusive one over one slot are two formers"
+        );
+        let placed = ContentNode::Memory(MemoryForm::Access {
+            mode: AccessMode::Exclusive { unwind: second },
+            held: slot,
+            place: Place::At { index: second },
+            body: first,
+        });
+        assert_eq!(
+            super::agreement(&access(slot), &placed),
+            Agreement::Differs,
+            "an access at a place and one of the whole held value are two formers"
+        );
+        assert_eq!(
+            super::agreement(&hold, &held(HoldGrade::One)),
+            Agreement::Differs,
+            "a hold at grade one and one at grade ω are two formers"
+        );
+    }
+
+    #[test]
+    fn every_node_family_agrees_exactly_on_its_payload()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::sync::Arc;
+
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
+        use gandr_core_term::Component;
+        use gandr_core_term::ConstructorTag;
+        use gandr_core_term::FieldLabel;
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        use gandr_core_term::effect::capability::CapabilityGrade;
+        use gandr_core_term::effect::capability::Region;
+        use gandr_core_term::effect::capability::RegionDepth;
+        use gandr_core_term::session::DialogueMove;
+        use gandr_core_term::session::Endpoint;
+        use gandr_core_term::session::RecordedMove;
+        use gandr_kernel_strata::Level;
+
+        use super::Agreement;
+        use super::Agreement::Differs;
+        use super::Agreement::Same;
+        use super::ContentNode;
+        use super::NodeIndex;
+
+        let node = |index: usize| NodeIndex::from(index);
+        let interface = |name: &str, operations: &[&str]| {
+            EffectSig::new(
+                EffectName::from(name),
+                operations.iter().map(|&operation| EffectOp {
+                    name: OperationName::from(operation),
+                    payload: node(1_usize),
+                    reply: node(2_usize),
+                }),
+            )
+            .expect("distinct operations")
+        };
+        let state = || interface("State", &["get", "put"]);
+        let perform = |signature, operation: &str, payload| ContentNode::Perform {
+            signature,
+            operation: OperationName::from(operation),
+            payload: node(payload),
+        };
+        let exercise = |signature, operation: &str, payload| ContentNode::Exercise {
+            capability: node(5_usize),
+            signature,
+            operation: OperationName::from(operation),
+            payload: node(payload),
+        };
+        let scope = |signature, operation: &str, body| ContentNode::Scope {
+            signature,
+            subject: node(3_usize),
+            on_return: node(4_usize),
+            clauses: Arc::from([EffectClause {
+                operation: OperationName::from(operation),
+                body: node(body),
+            }]),
+        };
+        let capability =
+            |signatures: Vec<EffectSig<NodeIndex>>, grade, region| ContentNode::Capability {
+                authority: EffectRow::from_signatures(signatures).expect("distinct interfaces"),
+                grade,
+                region,
+            };
+        let held = Region::Held;
+        let durable = CapabilityGrade::Durable;
+        let item = |key: &str| Reference::Item {
+            key: ItemKey::from(key),
+            occurrence: Occurrence::from(0_usize),
+        };
+        let data = |key: &str, argument| ContentNode::Data {
+            declaration: item(key),
+            arguments: vec![node(argument)],
+        };
+        let constructor = |family: &str, tag: usize, field| ContentNode::Constructor {
+            family: item(family),
+            datatype: node(1_usize),
+            tag: ConstructorTag::from(tag),
+            fields: vec![node(field)],
+        };
+        let label = |text: &str| FieldLabel::from(String::from(text));
+        let record =
+            |key: &str, field| ContentNode::Record(BTreeMap::from([(label(key), node(field))]));
+        let reify =
+            |frames: &[StackFrame<NodeIndex, NodeIndex>]| ContentNode::Reify(Arc::from(frames));
+        let zero = Level::zero();
+        let one = zero.succ().expect("level one");
+        let lift = |target: &Level, body| ContentNode::ValueLift {
+            target: target.clone(),
+            body: node(body),
+        };
+        let element = |target: &Level, code| ContentNode::Element {
+            target: target.clone(),
+            code: node(code),
+        };
+        let cases: [(&str, ContentNode, ContentNode, Agreement); 29] = [
+            (
+                "a perform over other children",
+                perform(state(), "get", 3),
+                perform(state(), "get", 4),
+                Same,
+            ),
+            (
+                "a perform of another operation",
+                perform(state(), "get", 3),
+                perform(state(), "put", 3),
+                Differs,
+            ),
+            (
+                "a perform of another interface",
+                perform(state(), "get", 3),
+                perform(interface("Store", &["get", "put"]), "get", 3),
+                Differs,
+            ),
+            (
+                "a perform naming other operations",
+                perform(state(), "get", 3),
+                perform(interface("State", &["get", "set"]), "get", 3),
+                Differs,
+            ),
+            (
+                "an exercise over other children",
+                exercise(state(), "get", 3),
+                exercise(state(), "get", 4),
+                Same,
+            ),
+            (
+                "an exercise of another operation",
+                exercise(state(), "get", 3),
+                exercise(state(), "put", 3),
+                Differs,
+            ),
+            (
+                "an exercise of another interface",
+                exercise(state(), "get", 3),
+                exercise(interface("Store", &["get", "put"]), "get", 3),
+                Differs,
+            ),
+            (
+                "an exercise naming other operations",
+                exercise(state(), "get", 3),
+                exercise(interface("State", &["get", "set"]), "get", 3),
+                Differs,
+            ),
+            (
+                "a scope over other children",
+                scope(state(), "get", 6),
+                scope(state(), "get", 7),
+                Same,
+            ),
+            (
+                "a scope handling another operation",
+                scope(state(), "get", 6),
+                scope(state(), "put", 6),
+                Differs,
+            ),
+            (
+                "a scope of another interface",
+                scope(state(), "get", 6),
+                scope(interface("Store", &["get", "put"]), "get", 6),
+                Differs,
+            ),
+            (
+                "a scope naming other operations",
+                scope(state(), "get", 6),
+                scope(interface("State", &["get", "set"]), "get", 6),
+                Differs,
+            ),
+            (
+                "one capability",
+                capability(vec![state()], durable, held),
+                capability(vec![state()], durable, held),
+                Same,
+            ),
+            (
+                "a capability of another grade",
+                capability(vec![state()], durable, held),
+                capability(vec![state()], CapabilityGrade::Consumable, held),
+                Differs,
+            ),
+            (
+                "a capability of another region",
+                capability(vec![state()], durable, held),
+                capability(
+                    vec![state()],
+                    durable,
+                    Region::Scoped(RegionDepth::from(0_u32)),
+                ),
+                Differs,
+            ),
+            (
+                "a capability of another interface",
+                capability(vec![state()], durable, held),
+                capability(vec![interface("Store", &["get", "put"])], durable, held),
+                Differs,
+            ),
+            (
+                "a capability of fewer operations",
+                capability(vec![state()], durable, held),
+                capability(vec![interface("State", &["get"])], durable, held),
+                Differs,
+            ),
+            (
+                "a capability naming other operations",
+                capability(vec![state()], durable, held),
+                capability(vec![interface("State", &["get", "set"])], durable, held),
+                Differs,
+            ),
+            (
+                "a family over another argument",
+                data("List", 1),
+                data("List", 2),
+                Same,
+            ),
+            ("another family", data("List", 1), data("Tree", 1), Differs),
+            (
+                "a constructor over another field",
+                constructor("Celsius", 0, 1),
+                constructor("Celsius", 0, 2),
+                Same,
+            ),
+            (
+                "another constructor",
+                constructor("Celsius", 0, 1),
+                constructor("Celsius", 1, 1),
+                Differs,
+            ),
+            (
+                "a constructor of another family at one classifier",
+                constructor("Celsius", 0, 1),
+                constructor("Fahrenheit", 0, 1),
+                Differs,
+            ),
+            (
+                "a record of another label",
+                record("x", 1),
+                record("y", 1),
+                Differs,
+            ),
+            (
+                "a record projection of another label",
+                ContentNode::RecordProjection(node(1_usize), label("x")),
+                ContentNode::RecordProjection(node(1_usize), label("y")),
+                Differs,
+            ),
+            (
+                "a tuple projection of another component",
+                ContentNode::TupleProjection(node(1_usize), Component::from(0_usize)),
+                ContentNode::TupleProjection(node(1_usize), Component::from(1_usize)),
+                Differs,
+            ),
+            (
+                "a lift over another body",
+                lift(&zero, 1),
+                lift(&zero, 2),
+                Same,
+            ),
+            (
+                "a lift to another level",
+                lift(&zero, 1),
+                lift(&one, 1),
+                Differs,
+            ),
+            (
+                "an element at another level",
+                element(&zero, 1),
+                element(&one, 1),
+                Differs,
+            ),
+        ];
+        for (what, old, new, expected) in cases {
+            assert_eq!(super::agreement(&old, &new), expected, "{what}");
+        }
+        let played = |endpoint, payload: usize| {
+            ContentNode::Dialogue(Arc::from([DialogueMove {
+                endpoint,
+                movement: RecordedMove::Sent(node(payload)),
+            }]))
+        };
+        let frames = [
+            StackFrame::Apply(node(1_usize)),
+            StackFrame::Bind(node(2_usize)),
+        ];
+        let renumbered = [
+            StackFrame::Apply(node(3_usize)),
+            StackFrame::Bind(node(4_usize)),
+        ];
+        for (what, old, new, expected) in [
+            (
+                "a stack over other frames' children",
+                reify(&frames),
+                reify(&renumbered),
+                Same,
+            ),
+            (
+                "a stack projecting one component",
+                reify(&[StackFrame::Project(Component::from(0_usize))]),
+                reify(&[StackFrame::Project(Component::from(0_usize))]),
+                Same,
+            ),
+            (
+                "a stack projecting another component",
+                reify(&[StackFrame::Project(Component::from(0_usize))]),
+                reify(&[StackFrame::Project(Component::from(1_usize))]),
+                Differs,
+            ),
+            (
+                "a tuple over other children",
+                ContentNode::Tuple(vec![node(1_usize), node(2_usize)]),
+                ContentNode::Tuple(vec![node(3_usize), node(4_usize)]),
+                Same,
+            ),
+            (
+                "a dialogue over other payloads",
+                played(Endpoint::Left, 1),
+                played(Endpoint::Left, 3),
+                Same,
+            ),
+            (
+                "a dialogue whose move the other endpoint makes",
+                played(Endpoint::Left, 1),
+                played(Endpoint::Right, 1),
+                Differs,
+            ),
+        ] {
+            assert_eq!(super::agreement(&old, &new), expected, "{what}");
+        }
+    }
+
+    /// A recorded run agrees with another exactly when their moves agree in
+    /// kind and label, move by move, whatever payload nodes they point at: a
+    /// label or a move kind changed in a run that carries a payload is an edit
+    /// (#2074).
+    #[test]
+    fn a_recording_agrees_on_its_moves_and_labels_2074()
+    {
+        use alloc::sync::Arc;
+
+        use gandr_core_term::FieldLabel;
+        use gandr_core_term::session::RecordedMove;
+
+        use super::Agreement::Differs;
+        use super::Agreement::Same;
+        use super::ContentNode;
+        use super::NodeIndex;
+
+        let recording = |choice: &str, payload: RecordedMove<NodeIndex>| {
+            ContentNode::Recorded(Arc::from([
+                RecordedMove::Selected(FieldLabel::from(String::from(choice))),
+                payload,
+            ]))
+        };
+        let sent = |index: usize| RecordedMove::Sent(NodeIndex::from(index));
+        let received = |index: usize| RecordedMove::Received(NodeIndex::from(index));
+        for (what, old, new, expected) in [
+            (
+                "a recording over other payloads",
+                recording("report", sent(1)),
+                recording("report", sent(3)),
+                Same,
+            ),
+            (
+                "a recording that selects another label",
+                recording("report", sent(1)),
+                recording("handoff", sent(1)),
+                Differs,
+            ),
+            (
+                "a recording that receives where the other sends",
+                recording("report", sent(1)),
+                recording("report", received(1)),
+                Differs,
+            ),
+        ] {
+            assert_eq!(super::agreement(&old, &new), expected, "{what}");
+        }
+    }
+
+    /// A data declaration whose constructors change is deleted and inserted
+    /// afresh, and an unchanged one is kept: the script is empty.
+    #[test]
+    fn a_changed_nominal_declaration_is_replaced_and_an_unchanged_one_kept()
+    {
+        let two = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/a-changed-nominal-declaration-is-replaced-and-an-unchanged-one-kept-two.gandr"
+        )));
+        let three = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/a-changed-nominal-declaration-is-replaced-and-an-unchanged-one-kept-three.gandr"
+        )));
+        assert!(
+            super::diff(&two, &two).actions().is_empty(),
+            "an unchanged data declaration is kept"
+        );
+        for (old, new, what) in [
+            (&two, &three, "a data declaration gaining a constructor"),
+            (&three, &two, "a data declaration losing a constructor"),
+        ] {
+            let script = super::diff(old, new);
+            assert!(
+                script.actions().iter().any(|action| matches!(
+                    *action,
+                    super::Action::DeleteItem { at } if at == ItemOrdinal::from(0_usize)
+                )),
+                "{what} is replaced: {:?}",
+                script.actions()
+            );
+            assert_eq!(super::apply(old.items(), &script), new.items(), "{what}");
+        }
+    }
+
+    /// A revision's snapshot taken after the leading images of an earlier
+    /// revision's is the snapshot read whole, those images shared rather than
+    /// read again, and the diff from the earlier revision is the diff of the
+    /// two read whole, every action anchored after the shared items (#776).
+    #[test]
+    fn a_snapshot_after_leading_images_is_the_whole_snapshot_776()
+    {
+        let read = |text: &'static str| {
+            let grammar = built_in().expect("the built-in grammar builds");
+            let mut lowerings = LoweringCount::default();
+            let lowering = lower_source(&grammar, SourceText::from(text), &mut lowerings)
+                .expect("the revision lowers");
+            let Lowered::Module { module, arena } = lowering.into_lowered()
+            else {
+                panic!("the lowering reads a module: {text:?}");
+            };
+            let program = item_program(&module, arena).expect("positions ascend");
+            (program, module)
+        };
+        let (first, first_module) = read(include_str!("edit/fixtures/str-1.gandr"));
+        let (second, second_module) = read(include_str!("edit/fixtures/str-2.gandr"));
+        let shared = ItemOrdinal::from(3_usize);
+        let before = Snapshot::of(&first, first_module.origins());
+        let kept = before.leading(shared);
+        assert_eq!(
+            kept.items(),
+            before.items().get(.. 3).expect("three leading items")
+        );
+        let after = Snapshot::of_after(&second, second_module.origins(), &kept);
+        let whole = Snapshot::of(&second, second_module.origins());
+        assert_eq!(
+            after, whole,
+            "the leading images read as the whole snapshot reads them"
+        );
+        assert!(
+            after
+                .items()
+                .iter()
+                .zip(kept.items())
+                .all(|(item, kept)| Arc::ptr_eq(item, kept)),
+            "the leading images are shared, not read again"
+        );
+        let script = super::diff(&before, &after);
+        assert_eq!(
+            script,
+            super::diff(&before, &whole),
+            "passing over the shared images changes no action"
+        );
+        let anchor = |action: &super::Action| match *action {
+            super::Action::InsertItem { at, .. }
+            | super::Action::DeleteItem { at }
+            | super::Action::SetSignature { at, .. }
+            | super::Action::FillHole { at, .. }
+            | super::Action::EraseToHole { at } => at,
+            super::Action::Replace { ref path, .. }
+            | super::Action::SetLiteral { ref path, .. }
+            | super::Action::SetVariable { ref path, .. }
+            | super::Action::SetConstant { ref path, .. } => path.item,
+        };
+        assert!(
+            !script.actions().is_empty()
+                && script
+                    .actions()
+                    .iter()
+                    .all(|action| anchor(action) >= shared),
+            "the edits are the document's own: {:?}",
+            script.actions()
+        );
+        assert_eq!(super::apply(before.items(), &script), after.items());
+    }
+
+    #[test]
+    fn a_value_declaration_reports_its_signature_and_an_unsigned_one_none()
+    {
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
+        use gandr_core_incremental::Program;
+        use gandr_core_term::CoreArena;
+        use gandr_surface_lowering::OriginTable;
+
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let program = Program::new(arena, Vec::new()).expect("empty declaration order");
+        let (tree, _spans) =
+            super::read(&program, &OriginTable::default(), super::Root::Value(value));
+        let item = |signature| ItemTree {
+            reference: Reference::Item {
+                key: ItemKey::from("f"),
+                occurrence: Occurrence::from(0_usize),
+            },
+            declaration: super::DeclarationTree::Value {
+                signature,
+                body: Maybe::Present(tree.clone()),
+            },
+        };
+        assert_eq!(item(Maybe::Present(tree.clone())).signature(), Some(&tree));
+        assert_eq!(
+            item(Maybe::Absent(super::signature::Absent::Unsigned)).signature(),
+            None
+        );
+    }
+
+    #[test]
+    fn effect_row_edits_preserve_names_and_rebuild_operation_types()
+    {
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
+        use gandr_core_incremental::Program;
+        use gandr_core_term::CoreArena;
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        use gandr_kernel_term::BaseType;
+        use gandr_surface_lowering::OriginTable;
+        let snapshot = |name: &str, reply| {
+            let mut arena = CoreArena::new();
+            let unit = arena.value_type_unit();
+            let reply = arena.value_type_base(reply);
+            let signature = EffectSig::new(EffectName::from(name), [EffectOp {
+                name: OperationName::from("get"),
+                payload: unit,
+                reply,
+            }])
+            .expect("one operation");
+            let returner =
+                arena.comp_type_returner_with_effects(unit, EffectRow::singleton(signature));
+            let code = arena.value_quote_computation(returner);
+            let program = Program::new(arena, Vec::new()).expect("empty declaration order");
+            let (body, spans) =
+                super::read(&program, &OriginTable::default(), super::Root::Value(code));
+            Snapshot {
+                items: vec![Arc::new(ItemTree {
+                    reference: Reference::Item {
+                        key: ItemKey::from("row"),
+                        occurrence: Occurrence::from(0_usize),
+                    },
+                    declaration: super::DeclarationTree::Value {
+                        signature: Maybe::Absent(super::signature::Absent::Unsigned),
+                        body: Maybe::Present(body),
+                    },
+                })],
+                spans: vec![Arc::from(spans)],
+                bodies: Vec::new(),
+            }
+        };
+        let old = snapshot("State", BaseType::Integer);
+        for (new, slots) in [
+            (snapshot("State", BaseType::String), vec![
+                ChildSlot::from(0_usize),
+                ChildSlot::from(2_usize),
+            ]),
+            (snapshot("Other", BaseType::Integer), vec![ChildSlot::from(
+                0_usize,
+            )]),
+        ] {
+            let expected = CorePath::new(ItemOrdinal::from(0_usize), slots);
+            let script = super::diff(&old, &new);
+            assert!(
+                matches!(script.actions(), [super::Action::Replace { path, .. }] if path == &expected)
+            );
+            assert_eq!(super::apply(old.items(), &script), new.items());
+        }
+    }
+
+    #[test]
+    fn control_edits_preserve_names_scopes_and_frame_order()
+    {
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
+        use gandr_core_incremental::Program;
+        use gandr_core_term::Component;
+        use gandr_core_term::CoreArena;
+        use gandr_core_term::Zone;
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_kernel_term::BaseType;
+        use gandr_surface_lowering::OriginTable;
+        let snapshot =
+            |interface: &str, operation: &str, reply, bound: u32, side, reverse: bool| {
+                let mut arena = CoreArena::new();
+                let unit = arena.value_unit();
+                let variable = arena.value_variable(Zone::Intuitionistic, bound.into());
+                let unit_type = arena.value_type_unit();
+                let reply = arena.value_type_base(reply);
+                let signature = EffectSig::new(interface.into(), [EffectOp {
+                    name: operation.into(),
+                    payload: unit_type,
+                    reply,
+                }])
+                .expect("one operation");
+                let returned = arena.computation_return(variable);
+                let mut frames = [
+                    StackFrame::Apply(unit),
+                    StackFrame::Bind(returned),
+                    StackFrame::Project(side),
+                ];
+                if reverse {
+                    frames.reverse();
+                }
+                let stack = arena.value_reify(alloc::sync::Arc::from(frames));
+                let performed =
+                    arena.computation_perform(signature.clone(), operation.into(), stack);
+                let resumed = arena.computation_resume(variable, performed);
+                let shifted = arena.computation_shift(resumed);
+                let reset = arena.computation_reset(shifted);
+                let pair = arena.computation_with(&[reset, returned]);
+                let projected = arena.computation_project(side, pair);
+                let handled = arena.computation_handle(
+                    signature,
+                    projected,
+                    returned,
+                    alloc::sync::Arc::from([EffectClause {
+                        operation: operation.into(),
+                        body: returned,
+                    }]),
+                );
+                let value = arena.value_thunk(handled);
+                let program = Program::new(arena, Vec::new()).expect("empty declaration order");
+                let (body, spans) =
+                    super::read(&program, &OriginTable::default(), super::Root::Value(value));
+                Snapshot {
+                    items: vec![Arc::new(ItemTree {
+                        reference: Reference::Item {
+                            key: ItemKey::from("control"),
+                            occurrence: Occurrence::from(0_usize),
+                        },
+                        declaration: super::DeclarationTree::Value {
+                            signature: Maybe::Absent(super::signature::Absent::Unsigned),
+                            body: Maybe::Present(body),
+                        },
+                    })],
+                    spans: vec![Arc::from(spans)],
+                    bodies: Vec::new(),
+                }
+            };
+        let first = Component::from(0_usize);
+        let old = snapshot("E", "op", BaseType::Integer, 0, first, false);
+        for new in [
+            snapshot("Other", "op", BaseType::Integer, 0, first, false),
+            snapshot("E", "other", BaseType::Integer, 0, first, false),
+            snapshot("E", "op", BaseType::String, 0, first, false),
+            snapshot("E", "op", BaseType::Integer, 1, first, false),
+            snapshot(
+                "E",
+                "op",
+                BaseType::Integer,
+                0,
+                Component::from(1_usize),
+                false,
+            ),
+            snapshot("E", "op", BaseType::Integer, 0, first, true),
+        ] {
+            assert_ne!(
+                old.items(),
+                new.items(),
+                "each revision changes a semantic field"
+            );
+            let script = super::diff(&old, &new);
+            assert_eq!(
+                super::apply(old.items(), &script),
+                new.items(),
+                "annotations, names, frame order and branch-local indices survive reconstruction"
+            );
+        }
+    }
+
+    #[test]
+    fn path_evidence_changes_are_reconstructed()
+    {
+        use alloc::sync::Arc;
+
+        use gandr_core_content::ContentNode;
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::NodeIndex;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
+        use gandr_core_incremental::Program;
+        use gandr_core_term::CoreArena;
+        use gandr_kernel_term::BaseType;
+        use gandr_kernel_term::PathEvidence;
+        use gandr_surface_lowering::OriginTable;
+
+        use super::Action;
+        use super::Root;
+        use super::Tree;
+        use super::apply;
+        use super::diff;
+        use super::read;
+        use super::spanned;
+
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let source = arena.value_quote(unit_type);
+        let target = arena.value_quote(integer_type);
+        let classifier = arena.value_type_path_universe(source, target);
+        let forward = arena.value_path_refl(source);
+        let backward = arena.value_path_refl(target);
+        let evidence = gandr_kernel_data::Shared::new(PathEvidence::default());
+        let equivalence = arena.value_path_equiv(
+            classifier,
+            forward,
+            backward,
+            gandr_kernel_data::Shared::clone(&evidence),
+        );
+        let product = arena.value_path_product(forward, backward);
+        let unit = arena.value_unit();
+        let transport = arena.computation_transport(product, unit);
+        let program = Program::new(arena, Vec::new()).expect("empty item order");
+        let origins = OriginTable::default();
+        let (signature, _) = read(&program, &origins, Root::ValueType(classifier));
+        assert_eq!(signature.nodes(), &[
+            ContentNode::PathUniverse(NodeIndex::from(1_usize), NodeIndex::from(2_usize)),
+            ContentNode::Quote(NodeIndex::from(3_usize)),
+            ContentNode::Quote(NodeIndex::from(4_usize)),
+            ContentNode::Product(Vec::new()),
+            ContentNode::Base(BaseType::Integer),
+        ]);
+        let (body, spans) = read(&program, &origins, Root::Value(equivalence));
+        assert_eq!(
+            body.nodes().get(.. 4_usize),
+            Some(
+                [
+                    ContentNode::PathEquiv {
+                        path_type: NodeIndex::from(1_usize),
+                        forward: NodeIndex::from(2_usize),
+                        backward: NodeIndex::from(3_usize),
+                        evidence: gandr_kernel_data::Shared::clone(&evidence),
+                    },
+                    ContentNode::PathUniverse(NodeIndex::from(4_usize), NodeIndex::from(5_usize)),
+                    // The reflexivities name the quotes the universe names:
+                    // one entry for each arena node.
+                    ContentNode::PathRefl(NodeIndex::from(4_usize)),
+                    ContentNode::PathRefl(NodeIndex::from(5_usize)),
+                ]
+                .as_slice()
+            )
+        );
+        assert!(
+            spans
+                .iter()
+                .all(|span| *span == Maybe::Absent(spanned::Absent::Unrecorded))
+        );
+        let (transported, _) = read(&program, &origins, Root::Computation(transport));
+        assert_eq!(
+            transported.nodes().get(.. 5_usize),
+            Some(
+                [
+                    ContentNode::Transport(NodeIndex::from(1_usize), NodeIndex::from(2_usize)),
+                    ContentNode::PathProduct(NodeIndex::from(3_usize), NodeIndex::from(4_usize)),
+                    ContentNode::Tuple(Vec::new()),
+                    ContentNode::PathRefl(NodeIndex::from(5_usize)),
+                    ContentNode::PathRefl(NodeIndex::from(6_usize)),
+                ]
+                .as_slice()
+            )
+        );
+
+        let old = Snapshot {
+            items: vec![Arc::new(ItemTree {
+                reference: Reference::Item {
+                    key: ItemKey::from("equivalence"),
+                    occurrence: Occurrence::from(0_usize),
+                },
+                declaration: super::DeclarationTree::Value {
+                    signature: Maybe::Present(signature),
+                    body: Maybe::Present(body),
+                },
+            })],
+            spans: vec![Arc::from(spans)],
+            bodies: Vec::new(),
+        };
+        for replacement in [
+            PathEvidence {
+                source: gandr_kernel_data::SmallVec::from_iter(
+                    [gandr_kernel_data::SmallVec::new()],
+                ),
+                target: gandr_kernel_data::SmallVec::new(),
+            },
+            PathEvidence {
+                source: gandr_kernel_data::SmallVec::new(),
+                target: gandr_kernel_data::SmallVec::from_iter(
+                    [gandr_kernel_data::SmallVec::new()],
+                ),
+            },
+        ] {
+            let mut new = old.clone();
+            let item = Arc::make_mut(new.items.first_mut().expect("one item"));
+            let super::DeclarationTree::Value {
+                body: Maybe::Present(ref mut tree),
+                ..
+            } = item.declaration
+            else {
+                panic!("the equivalence body");
+            };
+            let mut nodes = core::mem::take(&mut tree.nodes);
+            let root = nodes.first_mut().expect("the equivalence root");
+            let ContentNode::PathEquiv {
+                ref mut evidence, ..
+            } = *root
+            else {
+                panic!("the equivalence former");
+            };
+            *evidence = gandr_kernel_data::Shared::new(replacement);
+            *tree = Tree::named(nodes);
+            let script = diff(&old, &new);
+            assert!(matches!(script.actions(), [Action::Replace { path, .. }]
+                if path == &CorePath::new(ItemOrdinal::from(0_usize), Vec::new())));
+            assert_eq!(apply(old.items(), &script), new.items());
+        }
+    }
+
+    #[test]
+    fn alignment_matches_exhaustive_reference_subsequences()
+    {
+        let snapshot = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/descent-agrees-with-the-linear-stab-oracle-2.gandr"
+        )));
+        let old = snapshot.items();
+        let permutations = [
+            [0_usize, 1_usize, 2_usize],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        for permutation in permutations {
+            for selected in 0_u8 .. 8_u8 {
+                let new: Vec<_> = permutation
+                    .into_iter()
+                    .filter(|&index| selected & (1_u8 << index) != 0_u8)
+                    .map(|index| Arc::clone(old.get(index).expect("three fixture items")))
+                    .collect();
+                let pairs = super::align(old, &new);
+                let maximum = (0_u8 .. 8_u8)
+                    .filter_map(|mask| {
+                        let wanted: Vec<_> = old
+                            .iter()
+                            .enumerate()
+                            .filter(|&(index, _)| mask & (1_u8 << index) != 0_u8)
+                            .map(|(_, item)| &item.reference)
+                            .collect();
+                        let mut remaining = new.iter();
+                        wanted
+                            .iter()
+                            .all(|reference| remaining.any(|item| &item.reference == *reference))
+                            .then_some(wanted.len())
+                    })
+                    .max()
+                    .expect("the empty subsequence is valid");
+                assert_eq!(
+                    pairs.len(),
+                    maximum,
+                    "permutation {permutation:?}, subset {selected}"
+                );
+                assert!(pairs.iter().all(|&(left, right)| {
+                    old.get(usize::from(left))
+                        .zip(new.get(usize::from(right)))
+                        .is_some_and(|(before, after)| before.reference == after.reference)
+                }));
+                assert!(pairs.windows(2).all(|pair| matches!(pair, [(left_old, left_new), (right_old, right_new)] if left_old < right_old && left_new < right_new)));
+            }
+        }
+    }
+
+    #[test]
+    fn hulls_cover_descendants_without_inventing_origins()
+    {
+        use super::ContentNode;
+        use super::NodeIndex;
+        use super::spanned;
+        let tree = super::Tree::named(vec![
+            ContentNode::Case {
+                scrutinee: NodeIndex::from(1_usize),
+                branches: vec![NodeIndex::from(2_usize), NodeIndex::from(3_usize)],
+            },
+            ContentNode::Tuple(Vec::new()),
+            ContentNode::Tuple(Vec::new()),
+            ContentNode::Tuple(Vec::new()),
+        ]);
+        let left = ByteSpan::new(
+            super::ByteOffset::from(17_usize),
+            super::ByteOffset::from(20_usize),
+        )
+        .expect("ordered extent");
+        let right = ByteSpan::new(
+            super::ByteOffset::from(4_usize),
+            super::ByteOffset::from(9_usize),
+        )
+        .expect("ordered extent");
+        let unknown = Maybe::Absent(spanned::Absent::Unrecorded);
+        let mut spans = vec![
+            unknown,
+            Maybe::Present(left),
+            unknown,
+            Maybe::Present(right),
+        ];
+        super::hull(&tree, &mut spans, &super::topological(&tree.nodes));
+        assert_eq!(spans, vec![
+            Maybe::Present(
+                ByteSpan::new(
+                    super::ByteOffset::from(4_usize),
+                    super::ByteOffset::from(20_usize)
+                )
+                .expect("union")
+            ),
+            Maybe::Present(left),
+            unknown,
+            Maybe::Present(right)
+        ]);
+    }
+
+    #[test]
+    fn absent_arena_roots_keep_their_sorts()
+    {
+        use gandr_core_term::CoreArena;
+        let program =
+            super::Program::new(CoreArena::new(), Vec::new()).expect("empty positions ascend");
+        let mut foreign = CoreArena::new();
+        let value = foreign.value_unit();
+        let computation = foreign.computation_return(value);
+        let value_type = foreign.value_type_unit();
+        let comp_type = foreign.comp_type_returner(value_type);
+        let roots = [
+            (super::Root::Value(value), super::Sort::Value),
+            (
+                super::Root::Computation(computation),
+                super::Sort::Computation,
+            ),
+            (super::Root::ValueType(value_type), super::Sort::ValueType),
+            (super::Root::CompType(comp_type), super::Sort::CompType),
+        ];
+        for (root, sort) in roots {
+            let (tree, spans) = super::read(&program, &super::OriginTable::default(), root);
+            assert_eq!(tree.nodes, vec![super::ContentNode::Unresolved(sort)]);
+            assert_eq!(spans, vec![Maybe::Absent(
+                super::spanned::Absent::Unrecorded
+            )]);
+        }
+    }
+
+    /// How deeply the first declaration nests its literal.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    struct Depth(usize);
+
+    /// How many shallow declarations follow the deep one.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    struct Breadth(usize);
+
+    /// A deeply nested first declaration followed by `breadth` shallow ones:
+    /// the first's bytes are the same whatever the breadth.
+    ///
+    /// # Specification
+    /// - requires: the fixture size fits memory.
+    /// - ensures: the first declaration nests one literal at the requested
+    ///   depth, followed by exactly the requested number of independent shallow
+    ///   declarations.
+    /// - panics: none; writing to a String cannot refuse formatting.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — depth eight with eight and forty following
+    ///   declarations. The same independently located literal path and equal
+    ///   visit counts distinguish breadth leaking into the first declaration.
+    /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
+    #[spec(
+        ensures: |ret| {
+    ret.lines().count() == breadth.0.saturating_add(1_usize)
+        && ret.matches("thunk { return ").count() == depth.0
+        && ret.starts_with("def deep = ") && ret.ends_with(" ;\n")
+},
+    )]
+    fn deep_then_shallow(
+        depth: Depth,
+        breadth: Breadth,
+    ) -> String
+    {
+        let mut nested = String::from("1");
+        for _ in 0 .. depth.0 {
+            nested = format!("thunk {{ return {nested} }}");
+        }
+        let mut text = format!("def deep = {nested} ;\n");
+        for index in 0 .. breadth.0 {
+            writeln!(text, "def d{index} = {index} ;").expect("a string takes every write");
+        }
+        text
+    }
+
+    /// A pair spine of `depth` levels, in the two spellings of
+    /// `corpus/model/records/iterated-pair.gandr`: each type level names the
+    /// level below twice, and the let spine reads each bound level twice.
+    ///
+    /// # Specification
+    /// - requires: the fixture size fits memory.
+    /// - ensures: one type alias for each level from 0 to `depth`, then one
+    ///   declaration whose signature names the top level and whose body binds
+    ///   each level in turn.
+    /// - panics: none; writing to a String cannot refuse formatting.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — depths 12 and 24, whose images the regression
+    ///   compares.
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+    #[spec(
+        ensures: |ret| ret.matches("pub type T").count() == depth.0.saturating_add(1_usize)
+            && ret.matches("  let s").count() == depth.0.saturating_add(1_usize),
+    )]
+    fn pair_spine(depth: Depth) -> String
+    {
+        let mut text = String::from("pub type T0 = Unit;\n");
+        for level in 1 ..= depth.0 {
+            let below = level.saturating_sub(1_usize);
+            writeln!(text, "pub type T{level} = *{{l : T{below}, r : T{below}}};")
+                .expect("a string takes every write");
+        }
+        writeln!(text, "def pair() -> T{} =", depth.0).expect("a string takes every write");
+        text.push_str("  let s0 = pure *{};\n");
+        for level in 1 ..= depth.0 {
+            let below = level.saturating_sub(1_usize);
+            writeln!(
+                text,
+                "  let s{level} = pure *{{.l = s{below}, .r = s{below}}};"
+            )
+            .expect("a string takes every write");
+        }
+        writeln!(text, "  s{}", depth.0).expect("a string takes every write");
+        text
+    }
+
+    /// How many entries a snapshot's image holds.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Entries(usize);
+
+    /// The entries of the pair's signature and body in the snapshot of a pair
+    /// spine `depth` levels deep.
+    ///
+    /// # Specification
+    /// - requires: the fixture lowers to a module.
+    /// - ensures: the entry count of the last item's signature and body images,
+    ///   at least one for each level of the signature.
+    /// - panics: if the fixture does not lower.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`pair_spine`].
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+    #[spec(ensures: |ret| ret.0 > depth.0)]
+    fn pair_image(depth: Depth) -> Entries
+    {
+        let text = pair_spine(depth);
+        let snapshot = snapshot_of(SourceText::from(text.as_str()));
+        let pair = snapshot
+            .items
+            .last()
+            .expect("the spine declares the pair last");
+        let signature = pair.signature().map_or(0_usize, |tree| tree.nodes.len());
+        let body = pair.body().map_or(0_usize, |tree| tree.nodes.len());
+        Entries(signature.saturating_add(body))
+    }
+
+    #[test]
+    fn a_let_spine_reads_each_shared_node_once_6470()
+    {
+        // An image with one entry for each arena node grows linearly in the
+        // depth, so the doubled depth at most doubles it. An image with one
+        // entry for each occurrence grows as 2^depth: 2^12 times more entries.
+        let (Entries(half), Entries(whole)) =
+            (pair_image(Depth(12_usize)), pair_image(Depth(24_usize)));
+        assert!(
+            whole <= half.saturating_mul(2_usize),
+            "the spine 24 levels deep reads {whole} nodes, against {half} at 12 levels"
+        );
+    }
+
+    #[test]
+    fn localize_descends_in_depth_not_map_size()
+    {
+        let depth = Depth(8_usize);
+        let narrow_text = deep_then_shallow(depth, Breadth(8_usize));
+        let wide_text = deep_then_shallow(depth, Breadth(40_usize));
+        let narrow = snapshot_of(SourceText::from(narrow_text.as_str()));
+        let wide = snapshot_of(SourceText::from(wide_text.as_str()));
+        let nodes = |snapshot: &Snapshot| {
+            snapshot
+                .spans
+                .iter()
+                .map(|spans| spans.len())
+                .sum::<usize>()
+        };
+        assert!(
+            nodes(&wide) > nodes(&narrow),
+            "the wide snapshot holds more nodes: {} against {}",
+            nodes(&wide),
+            nodes(&narrow)
+        );
+
+        // The literal: under a thunk and a return per level.
+        let literal = CorePath {
+            item: ItemOrdinal::from(0_usize),
+            slots: vec![ChildSlot(0_usize); depth.0.saturating_mul(2)],
+        };
+        let Maybe::Present(span) = narrow.span(&literal)
+        else {
+            panic!("the literal has a span");
+        };
+        let (narrow_locus, narrow_visited) = narrow.descend(span);
+        let (wide_locus, wide_visited) = wide.descend(span);
+        assert_eq!(
+            narrow_locus,
+            Maybe::Present(literal.clone()),
+            "the literal localizes to itself"
+        );
+        assert_eq!(
+            narrow_locus, wide_locus,
+            "the same span localizes alike in both"
+        );
+        assert_eq!(
+            narrow_visited, wide_visited,
+            "the descent examines as many nodes whatever follows the declaration"
+        );
+        let bound = literal.slots.len().saturating_mul(3).saturating_add(1);
+        assert!(
+            narrow_visited.0 <= bound,
+            "{narrow_visited:?} examined, at most three children for each of {} levels",
+            literal.slots.len()
+        );
+        assert!(
+            narrow_visited.0 < nodes(&wide),
+            "the descent is no scan: {narrow_visited:?} of {} nodes",
+            nodes(&wide)
+        );
+    }
+
+    #[test]
+    fn edit_locus_maps_a_source_edit_to_its_old_span_locus()
+    {
+        let snapshot = snapshot_of(SourceText::from("def v = thunk { return 1 } ;\n"));
+        let literal = CorePath {
+            item: ItemOrdinal::from(0_usize),
+            slots: vec![ChildSlot(0_usize), ChildSlot(0_usize)],
+        };
+        let Maybe::Present(span) = snapshot.span(&literal)
+        else {
+            panic!("the literal has a span");
+        };
+        let edit = SourceEdit::new(span, span.end());
+        assert_eq!(
+            snapshot.edit_locus(edit),
+            snapshot.localize(span),
+            "the edit's locus is its old extent's"
+        );
+        assert_eq!(
+            snapshot.edit_locus(edit),
+            Maybe::Present(literal),
+            "which is the literal"
+        );
+    }
+}

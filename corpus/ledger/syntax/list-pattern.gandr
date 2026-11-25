@@ -1,0 +1,10 @@
+/// `list_pattern`: a list pattern.
+
+// The native finite lists.
+import std.list (List);
+
+/// The first element of a list, or zero for the empty list.
+def head(xs : List Integer) -> Integer =
+  match xs where
+    | #[x, ..rest] => x
+    | #[] => 0

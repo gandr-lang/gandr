@@ -1,0 +1,3 @@
+theory Boolean where {
+  sort Bit : Type;
+}

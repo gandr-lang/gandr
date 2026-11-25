@@ -1,0 +1,21 @@
+error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second time
+   ╭▸ corpus/ledger/diagnostics/ContinuationUsedTwice.gandr:44:50
+   │
+31 │ ┌  def resumedTwice() -> Unit =
+32 │ │┌   handle c : std.process.Exit.Eff {
+33 │ ││     let ring = fork (kernel : Ring.Submission) {
+34 │ ││       let sqe = recv kernel;
+35 │ ││       send kernel Ring.done;
+   ┆ ┆┆
+44 │ ││     | oper exit(code, k) => { let first = k *{}; k *{} }
+   │ ││                               ┬──                ━━━━━ a continuation already ended
+   │ ││                               │
+   │ ││                               checked against `-F Unit`; while checking the body under this binding; binds first : Unit
+45 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Unit`; while checking the body of this thunk
+   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack (-F Unit) (-F Unit)
+   │
+   ├ note: `resumedTwice` is refused with ContinuationUsedTwice, as its expectation states
+   ╰ help: end the continuation only once

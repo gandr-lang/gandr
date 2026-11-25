@@ -1,0 +1,76 @@
+test: dyadic::the_simplest_point_of_each_boundary
+package: gandr-theory-exact-reals
+command: mise run debug:test gandr-theory-exact-reals dyadic::the_simplest_point_of_each_boundary --break simplest_above_zero
+
+(lldb) target create "target/debug-trace/debug/build/gandr-theory-exact-reals/e24b3ac148249fcc/out/tests-e24b3ac148249fcc"
+Current executable set to 'target/debug-trace/debug/build/gandr-theory-exact-reals/e24b3ac148249fcc/out/tests-e24b3ac148249fcc' (x86_64).
+(lldb) settings set -- target.run-args  "dyadic::the_simplest_point_of_each_boundary" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex simplest_above_zero
+Breakpoint 1: 9 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-e24b3ac148249fcc`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000000519a68
+(lldb) run
+
+running 1 test
+test dyadic::the_simplest_point_of_each_boundary ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3241039 launched: 'target/debug-trace/debug/build/gandr-theory-exact-reals/e24b3ac148249fcc/out/tests-e24b3ac148249fcc' (x86_64)
+Process 3241039 stopped
+* thread #2, name = 'dyadic::the_sim', stop reason = breakpoint 1.1
+       frame #0: 0x000055555596e943 tests-e24b3ac148249fcc`gandr_theory_exact_reals::dyadic::simplest_above_zero(low={mantissa:Small(25), exponent:{0:2}}, high={mantissa:Small(65), exponent:{0:1}}) at dyadic.rs:2139:9
+   2136	) -> Result<Dyadic, DyadicError>
+   2137	{
+   2138	    // The place of a positive value's leading bit.
+-> 2139	    let top = |value: &Dyadic| {
+    	        ^
+   2140	        return i64::from(value.exponent.0)
+   2141	            .saturating_add(i64::try_from(value.width().0).unwrap_or(i64::MAX))
+   2142	            .saturating_sub(1);
+(lldb) bt 24
+* thread #2, name = 'dyadic::the_sim', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555596e943 tests-e24b3ac148249fcc`gandr_theory_exact_reals::dyadic::simplest_above_zero(low={mantissa:Small(25), exponent:{0:2}}, high={mantissa:Small(65), exponent:{0:1}}) at dyadic.rs:2139:9
+     frame #1: 0x00005555558c480e tests-e24b3ac148249fcc`<gandr_theory_exact_reals::dyadic::Dyadic>::simplest(lower={mantissa:Small(25), exponent:{0:2}}, upper={mantissa:Small(65), exponent:{0:1}}) at dyadic.rs:539:16
+     frame #2: 0x0000555555767d30 tests-e24b3ac148249fcc`tests::dyadic::the_simplest_point_of_each_boundary::{closure#1}((null)={}, lower={mantissa:Small(25), exponent:{0:2}}, upper={mantissa:Small(65), exponent:{0:1}}) at dyadic.rs:393:51
+     frame #3: 0x000055555577c65b tests-e24b3ac148249fcc`tests::dyadic::the_simplest_point_of_each_boundary at dyadic.rs:402:9
+     frame #4: 0x00005555557677e7 tests-e24b3ac148249fcc`tests::dyadic::the_simplest_point_of_each_boundary::{closure#0}((null)={}) at dyadic.rs:389:41
+     frame #5: 0x0000555555885206 tests-e24b3ac148249fcc`<tests::dyadic::the_simplest_point_of_each_boundary::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #6: 0x00005555558e269b tests-e24b3ac148249fcc`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #7: 0x00005555558e2699 tests-e24b3ac148249fcc`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #8: 0x00005555558efbe5 tests-e24b3ac148249fcc`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #9: 0x00005555558efbe0 tests-e24b3ac148249fcc`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #10: 0x00005555558efbe0 tests-e24b3ac148249fcc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #11: 0x00005555558efbcb tests-e24b3ac148249fcc`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #12: 0x00005555558efbcb tests-e24b3ac148249fcc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #13: 0x00005555558efbcb tests-e24b3ac148249fcc`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #14: 0x00005555558efbb6 tests-e24b3ac148249fcc`test::run_test::{closure#0} at lib.rs:677:43
+     frame #15: 0x00005555558ea5a4 tests-e24b3ac148249fcc`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #16: 0x00005555558ea529 tests-e24b3ac148249fcc`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #17: 0x00005555558f2d42 tests-e24b3ac148249fcc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #18: 0x00005555558f2d33 tests-e24b3ac148249fcc`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #19: 0x00005555558f2d33 tests-e24b3ac148249fcc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #20: 0x00005555558f2d23 tests-e24b3ac148249fcc`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #21: 0x00005555558f2d23 tests-e24b3ac148249fcc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #22: 0x00005555558f2d23 tests-e24b3ac148249fcc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #23: 0x00005555558f2d14 tests-e24b3ac148249fcc`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+(lldb) frame variable --depth 3
+(gandr_theory_exact_reals::dyadic::Dyadic *) low = 0x00007ffff7bc7e10 {mantissa:Small(25), exponent:{0:2}}
+(gandr_theory_exact_reals::dyadic::Dyadic *) high = 0x00007ffff7bc7e38 {mantissa:Small(65), exponent:{0:1}}
+(lldb) up
+frame #1: 0x00005555558c480e tests-e24b3ac148249fcc`<gandr_theory_exact_reals::dyadic::Dyadic>::simplest(lower={mantissa:Small(25), exponent:{0:2}}, upper={mantissa:Small(65), exponent:{0:1}}) at dyadic.rs:539:16
+   536 	            // An interval at or below zero mirrors one at or above it.
+   537 	            return simplest_above_zero(&upper.neg(), &lower.neg()).map(|point| (&point).neg());
+   538 	        }
+-> 539 	        return simplest_above_zero(lower, upper);
+    	               ^
+   540 	    }
+   541 	
+   542 	    /// The sign.
+(lldb) frame variable --depth 3
+(gandr_theory_exact_reals::dyadic::Dyadic *) lower = 0x00007ffff7bc7e10 {mantissa:Small(25), exponent:{0:2}}
+(gandr_theory_exact_reals::dyadic::Dyadic *) upper = 0x00007ffff7bc7e38 {mantissa:Small(65), exponent:{0:1}}

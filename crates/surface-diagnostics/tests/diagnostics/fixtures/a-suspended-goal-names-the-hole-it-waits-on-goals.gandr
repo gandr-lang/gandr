@@ -1,0 +1,2 @@
+def code : Type;
+def three : code = 3;

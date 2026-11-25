@@ -1,0 +1,29 @@
+import "./package.gandr";
+module Package : Model(Gandr.Package) where {
+  def name : String;
+  def name = "probe";
+  def version : String;
+  def version = "0.1.0";
+  def authors : String;
+  def authors = "Ada";
+  def licence : String;
+  def licence = "MIT";
+  def documentation : String;
+  def documentation = "d";
+  def endpoint : String;
+  def endpoint = "e";
+  def gandr : String;
+  def gandr = "";
+  def features : String;
+  def features = "";
+  def systems : String;
+  def systems = "";
+  def spelling : String;
+  def spelling = "";
+  def sources : String;
+  def sources = "src";
+}
+module Partial : Model(Gandr.Package) where {
+  def name : String;
+  def name = "partial";
+}

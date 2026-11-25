@@ -1,0 +1,32 @@
+// This manifold places the older role at the newer site under `Path`.
+//
+// A translation is code at a site's boundary, so the manifold states the
+// policy that admits it.
+//
+// `Path` admits a translation each of whose members renames one member: the
+// renaming at `store`, and the flow `downgrade` at `cache`. The check writes
+// the site's module through each translation, and takes the result at the
+// older signature.
+//
+// - see: `translated.gandr` — the program it deploys
+// - see: `translated.site.gandr` — the site `far` runs at
+
+// The deployment theories, and the translation policy.
+import std.manifold (Site, Manifold, Placement, At, Translation, Path);
+// The site where the manifold places `far`.
+import "./translated.site.gandr" as far;
+// The native finite lists.
+import std.list (List);
+
+/// The program this manifold deploys.
+pub module Manifold : Model(Manifold) where
+  /// The older role, beside this file.
+  def artifact = "translated.gandr";
+
+/// The manifold admits only translations that rename.
+pub def translation : Translation = Path;
+
+/// `far` at the newer site, as one process.
+pub def placements : List Placement = #[
+  At "far" far.site,
+];

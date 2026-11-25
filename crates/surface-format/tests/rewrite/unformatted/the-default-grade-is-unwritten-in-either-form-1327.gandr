@@ -1,0 +1,9 @@
+def step : +U[ω] (Integer -> -F Integer) ;
+def lazy : +U[inf] &{-F Integer, -F Integer} ;
+def noted : +U[/* every use */ ω] (-F Integer) ;
+def once : +U[1] (Integer -> -F Integer) ;
+theory Counting where {
+  sort T : Type;
+  oper next : +U[ω] (T -> -F T);
+  oper add : +U[ω] (T -> T -> -F T);
+}

@@ -1,0 +1,30 @@
+// A motive that names a path type, a bridge type or a flow type.
+//
+// A motive maps each index to a type. An eliminator reads its motive at each
+// index, so the motive must be a function value.
+//
+// The body of a function is a computation, and a type is a value. So the body
+// writes `return` before the type, as it does before any value. The function
+// is a value too, so the definition returns its thunk.
+//
+// - see: #6491
+
+/// Sequences over a type.
+data Seq(a : Type) : Type where
+  /// The empty sequence.
+  | Nil : Seq a
+  /// A head before the rest.
+  | Cons : (h : a, t : Seq a) --> Seq a
+
+/// At each index `d`, the paths from `d` to `a`.
+def pathsTo(a : Integer) -> Integer -> Type = fun (d) { return Path d a };
+
+/// At each index `d`, the bridges from `d` to `a`.
+def bridgesTo(a : Integer) -> Integer -> Type = fun (d) { return Bridge d a };
+
+/// At each index `d`, the flows from `d` to `a`.
+def flowsTo(a : Integer) -> Integer -> Type = fun (d) { return Flow d a };
+
+/// At each index, the sequences over the integers: a declared family takes
+/// the same spelling as a builtin former.
+def sequencesAt(a : Integer) -> Integer -> Type = fun (d) { return Seq Integer };

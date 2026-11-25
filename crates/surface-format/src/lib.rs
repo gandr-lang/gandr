@@ -1,0 +1,2703 @@
+//! The source formatter: a parsed gandr source laid out at a page width.
+//!
+//! [`format`] reads the concrete syntax tree, never the core, so every token
+//! and comment the source wrote is kept, in order, and only the layout
+//! between them changes. Each top-level form is laid out on its own: its
+//! brackets nest as groups, a group stays on one line when it fits and
+//! breaks one item per line when it does not. A form the parser repaired, a
+//! string and a hole are copied byte for byte.
+//!
+//! The formatted text is parsed again before it is returned: its content
+//! digest must equal the source's, its tokens and comments must be the
+//! source's, and each comment must belong to the node it belonged to, or
+//! [`format`] refuses with [`FormatError::Changed`] and returns nothing.
+//!
+//! # Copied as written
+//!
+//! Some material is laid down byte for byte, the line breaks inside it
+//! included:
+//!
+//! - A string: its fragments are its text.
+//! - A hole: holes are left as written, as error regions are.
+//! - A repaired form: a top-level form holding grout or a minted close, or that
+//!   a parser obligation touches, is copied from its first token to its last,
+//!   so formatting a source mid-edit never moves what the parser had to guess
+//!   at. Its [`Piece`] says [`Layout::Repaired`].
+//!
+//! A comment spanning lines, or holding a tab, is copied the same way.
+//!
+//! # Every comment belongs to a node
+//!
+//! The parser places each comment among the children of the node it
+//! describes. [`comments`] reads that placement back as a record beside the
+//! tree: for each comment its [`CommentKind`] — line, block or
+//! documentation — its [`Role`] among its owner's children, its owner and the
+//! owner's cross-tree key (its top-level form's digest and its rank there),
+//! its source column and the width of its text. A comment on its own line
+//! before material of its owner leads it; one after material on that
+//! material's line trails it; one on its own line with nothing of its owner
+//! after it but a closing bracket dangles on it. [`format`] reads the record
+//! of the source and of its own text and refuses with
+//! [`Change::Attachment`] when a comment would leave its owner or change its
+//! role, so a layout that breaks a group or joins one moves each comment with
+//! the node it describes.
+//!
+//! - Choice: a record beside the tree, keyed by the owner's cross-tree key, so
+//!   the tree, its losslessness and every digest are untouched, and the record
+//!   read from the formatted text compares with the source's.
+//! - Alternative: comments re-homed into the tree as leading and trailing
+//!   trivia of tokens, as Rowan's green trees hold them, which every reader of
+//!   a form's children would have to learn.
+//! - Reversal: a reader that needs the attachment inside the tree, at which
+//!   point the parser places trivia there and the record reads it.
+//!
+//! Comment reflow runs after layout at 80 columns. A reflow pass would
+//! rewrap each comment's text at the page width — paragraph breaks and code
+//! fences kept, a URL never broken, where `rustfmt`'s `wrap_comments` goes
+//! wrong — running over the attached comments before layout and reading the
+//! column each comment is laid at and its width. No layout here rewraps a
+//! comment.
+//!
+//! # The form a source is spelled in
+//!
+//! A source is spelled in the surface's sugared form, `A * B`, `(a, b)`,
+//! `(A) -> B`, or in the explicit form, every former the sugar stands for
+//! written out: `*{A, B}`, `*{a, b}`, `+U (A -> -F B)`. [`FormatOptions::form`]
+//! asks for a [`Form`] — [`Form::Explicit`] or [`Form::Sugared`], or
+//! [`Form::Source`], the source's own spelling, by default — and a source
+//! states its own at its head, as an entry of an attribute block on its first
+//! declaration, after its imports: `@[ form(explicit) ]` or
+//! `@[ form(sugared) ]`, an attribute the lowering registers and files
+//! without lowering its word. The declaration wins over the option, so one
+//! command lays out sources of both spellings.
+//!
+//! [`Form::Source`] keeps every token: the layout is the only change, and
+//! the content digest is its check. Either other form runs the rewrites of
+//! its direction from [`REWRITES`], the table of every pair of spellings the
+//! presentation printer (`gandr-surface-pretty`) tells apart — the eager
+//! product, the sum, the lazy product, the tuple, the value function, the
+//! path composite, the path inverse and a map's action on a path — each
+//! moving one form between its two spellings, and the default grade `ω` of a
+//! thunk type, which the printer writes in neither form and both leave
+//! unwritten, so a value function written with it is sugared as one written
+//! without. The sugared form also leaves out a tail's `return` where the
+//! lowering would infer it, as the printer's canonical body does: a `return`
+//! of a value where a path through its body ends, which the lowering lists
+//! (`gandr_surface_lowering::ElidableExit`), and one of a call or an operator
+//! there, which the checker runs and returns as it runs the bare tail. An
+//! early `return`, one an `explicit_exits` attribute asks for and every
+//! written `become` keep their keyword, and the explicit form writes none it
+//! was not given. A value-function alias written longer than the printer
+//! writes it, `(x : A) -> B` where nothing reads `x`, is sugared to its
+//! shortest, `A -> B`. The `let x = c ;` statements ending a block
+//! whose binders its tail reads once each, first and in order, are written
+//! away, each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`), a
+//! match branch's as any other's; a block left with no statement is written as
+//! its one computation where that computation fits without the braces. A
+//! `thunk { e }` of one computation, no grade and no statement written, is
+//! written `e` where the checker would insert the thunk: where it checks `e`
+//! against a thunk type. An application of a reduct, `T.S m` where a theory
+//! `T` includes `S`, is written `m` where the checker would apply the reduct:
+//! where a model of `T` stands where a model of `S` is asked; the explicit
+//! form writes each reduct the checker applies, `m` as `T.S (m)` (the
+//! `reduct` module). Each moves its form on the concrete syntax tree: its
+//! operands and their comments are kept, its own tiles are the other
+//! spelling's, each comment it owns goes before the operand it preceded, and
+//! an operand is parenthesised or unwrapped as its new position's binding
+//! needs, as the printer writes it. [`Selection`] narrows the rewrites by
+//! [`RewriteName`]; there is no other knob.
+//!
+//! | rewrite          | explicit                | sugared         |
+//! | ---------------- | ----------------------- | --------------- |
+//! | `product`        | `*{A, B, …}`            | `A * B * …`     |
+//! | `sum`            | `+{A, B, …}`            | `A + B + …`     |
+//! | `lazy-product`   | `&{C, D}`               | `C & D`         |
+//! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) -> C` |
+//! | `default-grade`  | `+U B`, from `+U[ω] B`  | `+U B`, from `+U[ω] B` |
+//! | `path-composite` | `Path.step(p, q)`, from `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` | `Path.step(p, q)`, from `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` |
+//! | `path-inverse`   | `Path.back(p)`, from `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` | `Path.back(p)`, from `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` |
+//! | `path-action`    | `Path.ap(f, p)`, from `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` | `Path.ap(f, p)`, from `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` |
+//! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
+//! | `inserted-returner` | `-> -F B`, as written | `-> B`, at a definition's result |
+//! | `short-alias`    | `(x : A) -> B`, as written | `A -> B`, `x` unread |
+//! | `linear-run`     | `let x = c ; f x`, as written | `f c`, beside a checker |
+//! | `inserted-thunk` | `thunk { e }`, as written | `e`, beside a checker |
+//! | `inserted-reduct` | `T.S (m)`, beside a checker | `m`, beside a checker |
+//! | `inserted-forget` | `forget[sort C = A](m) at Model(T)`, beside a checker | `m`, beside a checker |
+//! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> B { c }`, from `def f : () -> B ; def f = thunk { c } ;` |
+//! | `joined-definition` | `def x : T ; def x = e ;`, from `def x : T = e ;` | `def x : T = e ;`, the definition directly after |
+//!
+//! A rewrite changes tokens, so its check is the meaning, never the digest:
+//! the source and the rewritten text are each lowered into one core arena
+//! and every declaration must lower to the same core. A declaration that
+//! lowers otherwise has its top-level forms — signature and definition —
+//! written again without rewrites, until every declaration agrees. One that
+//! still lowers otherwise, written as it was, reads a rewritten declaration's
+//! spelling rather than its type (#812): each respelled declaration whose
+//! name it writes is written again too, reported for that reader
+//! ([`Withdrawn::Read`]). Text whose declarations do not pair up, or that
+//! still disagrees with no such declaration left, is refused with
+//! [`Change::Meaning`]. A withdrawal is never silent:
+//! [`Formatted::withdrawn`] names each such declaration, its span and the
+//! reason ([`Withdrawn`]), and `gandr fmt` prints one line for each. A
+//! rewrite never applies where its other spelling reads otherwise: a
+//! parenthesised list after a rule's `<=>` is the rule's outputs, not a
+//! tuple, and the value-function alias is written where the parser reads
+//! it: in a type, a static abstraction's body among them, and where a value
+//! is read every spelling but `() -> A`, which reads as an expression there.
+//! The value-function alias names a domain's binder where a later domain or
+//! the result reads it and writes it bare otherwise, as the printer does. A
+//! declaration the lowering refuses in the source has no meaning to compare,
+//! so no rewrite enters its forms, and it is reported where a rewrite would
+//! have. A labelled entry, a comment inside a chain of arrows and a thunk
+//! with a grade keep their spelling too, since no sugar spells them.
+//!
+//! - Choice: rewrites on the tree, each named, checked by meaning and withdrawn
+//!   from a declaration whose meaning they would change, so every comment is
+//!   kept, no spelling changes what a source means, and the sugar a source may
+//!   write grows rule by rule until it is the printer's.
+//! - Alternative: printing each declaration through the presentation printer,
+//!   one printing per form; the printer reads the core, so a comment inside a
+//!   declaration, a binder's written name and every spelling the core does not
+//!   keep would be lost. Refusing the whole source on one disagreeing
+//!   declaration was the other alternative; it leaves a source with one such
+//!   declaration unformattable in either form.
+//! - Reversal: a printer that carries the source's comments and names, at which
+//!   point one printing serves both and this table retires.
+//!
+//! A linear run, a tail's `return` of a call, an inserted thunk and an
+//! inserted reduct are the rewrites whose two spellings lower to different
+//! cores: a bind, and a nested call the checker elaborates to that bind; a
+//! nested call returned, and the call, which the checker's elaboration
+//! makes one by the returner's right unit; a thunk, and the computation the
+//! checker wraps in one; a call of a reduct, and the value the checker
+//! applies it to. Their meaning check is the checker's, through
+//! [`Elaborate`], which a caller that judges modules supplies to
+//! [`format_beside`] (the crate depends on no checker): where the lowerings
+//! differ, a declaration agrees when the checker elaborates both to equal
+//! bodies. The source is elaborated at most once: up front when the lowering
+//! lists a run or such a tail or mints a reduct — the explicit form writes a
+//! reduct where the checker applied it ([`Elaboration::crossings`]) — and
+//! otherwise only when a rewritten source first lowers otherwise. Without a
+//! checker no statement or such `return` is written away, no thunk left out
+//! and no reduct written or left out, and in a declaration the checker
+//! refuses as written no statement or such `return` is written away and no
+//! reduct moved; a thunk left out there elaborates to nothing on either side,
+//! so the declaration keeps it. A nested call the checker would suspend
+//! rather than run, at a thunk-typed parameter, elaborates otherwise and is
+//! withdrawn as any rewrite is, a returned one among them. A declaration
+//! that elaborates otherwise with its thunks left out, or a reduct written or
+//! left out, keeps them and is formatted again, unreported: there the checker
+//! inserts no thunk — a returned one, one around a value — or applies no
+//! reduct — a model a type reads by its value — so the rewrite does not
+//! apply, as a `return` the lowering would not infer stays.
+//!
+//! - Choice: the checker's elaboration as the oracle, so the sugar is written
+//!   exactly where the checker reads the nested call as the run it replaces,
+//!   and the bare computation as the thunk it leaves out.
+//! - Alternative: a syntactic rule in the lowering alone, which cannot see the
+//!   expected type that decides whether a nested call runs or is suspended, or
+//!   whether a computation is checked against a thunk type.
+//! - Reversal: a lowering that writes the bind for a nested call and the thunk
+//!   around a checked computation itself, so the two spellings lower alike and
+//!   the core comparison suffices.
+//!
+//! A signature at a suspended returner and the thunk defining it after it
+//! are the two halves of one function form: `def f : () => B ; def f = thunk
+//! { c } ;` is written `def f() -> -F B { c }` in either form, as the
+//! presentation printer writes such a declaration. The merge reads two
+//! top-level forms where every other rewrite reads one; both spellings lower
+//! to the same thunk at the same type, and a declaration whose merged form
+//! lowers or elaborates otherwise keeps its halves and is formatted again,
+//! unreported. A thunk holding a comment, a graded one and a definition the
+//! source writes as anything but a thunk keep their halves.
+//!
+//! A source that imports a sibling is lowered beside it: alone, every
+//! declaration that reads an imported name is refused and none could be
+//! rewritten. [`format_beside`] takes the text its imports reach, laid out
+//! before it, and the lowering unit that admits them ([`Beside`]); `gandr fmt`
+//! lays the closure out as `gandr check` does. [`format`] formats a source
+//! alone.
+//!
+//! `Path.step(p, q)` is the transport `Path.walk(fun (y) { Path[.A = A](a, y)
+//! }, q, p)`, and `Path.back(p)` and `Path.ap(f, p)` are transports too. The
+//! printer writes each such transport the lowering returns as its operation
+//! in both forms (`gandr-surface-pretty`, § Two forms, one walk), so both
+//! forms fold it into the operation and neither form unfolds an operation
+//! (#5206). A transport a body runs as written stays `Path.walk …`, and so
+//! does a composite of flows, which the core holds as written.
+//!
+//! - Choice: the operation in both forms, as the printer reads it, so that the
+//!   explicit form needs no motive from the lowering and the two writers agree
+//!   token for token.
+//! - Alternative: the transport in the explicit form, its motive spelled by the
+//!   printer from the lowering; a composite under a binder the source names
+//!   nothing then kept its operation, and the printer and the formatter
+//!   disagreed on the same type (#5205).
+//! - Reversal: the three operations as definitions in `std` (#5523), at which
+//!   point each is a call that both forms write as written.
+//!
+//! | item              | what it is                                              |
+//! | ----------------- | ------------------------------------------------------- |
+//! | [`format`]        | a parsed source formatted at a page width               |
+//! | [`format_beside`] | the same, lowered beside the sources it imports         |
+//! | [`Beside`]        | the sources a source's rewrites are checked beside      |
+//! | [`Formatted`]     | the formatted text and where each top-level form landed |
+//! | [`Withdrawal`]    | a declaration that kept its spelling, and why           |
+//! | [`Piece`]         | one top-level form's source span and formatted span     |
+//! | [`FormatOptions`] | the page width, the form and the rewrites               |
+//! | [`Form`]          | the spelling a source is laid out in                    |
+//! | [`REWRITES`]      | every rewrite: its name, direction, form and spellings  |
+//! | [`Selection`]     | the rewrites a form runs                                |
+//! | [`FormatError`]   | why a source was not formatted                          |
+//! | [`comments`]      | every comment of a source beside the node it belongs to |
+//! | [`Comment`]       | one comment, its owner, role, kind, column and width    |
+
+// Module documentation that predates the shape lint: 2 headings outside the
+// vocabulary, 3 decision records, 3 issue references and 1 budget exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
+#![no_std]
+
+extern crate alloc;
+
+mod attach;
+
+mod composite;
+
+mod forget;
+
+mod layout;
+
+mod leaf;
+
+mod meaning;
+
+mod merge;
+
+mod reduct;
+
+mod rewrite;
+
+mod site;
+
+mod space;
+
+mod tail;
+
+mod thunk;
+
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+use gandr_core_term::CoreArena;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_layout::ComputationWidth;
+use gandr_surface_layout::LayoutOptions;
+pub use gandr_surface_layout::PageWidth;
+use gandr_surface_layout::PhysicalLineEnding;
+use gandr_surface_layout::RenderError;
+use gandr_surface_layout::error::BuildError;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Returned;
+use gandr_surface_lowering::Unit as LoweringUnit;
+use gandr_surface_parser::MeldError;
+use gandr_surface_parser::ParseResult;
+use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
+
+pub use crate::attach::Attachment;
+pub use crate::attach::Column;
+pub use crate::attach::Comment;
+pub use crate::attach::CommentKind;
+pub use crate::attach::Role;
+pub use crate::attach::Width;
+pub use crate::attach::comments;
+pub use crate::forget::forgettings;
+use crate::layout::Gap;
+use crate::leaf::Integrity;
+use crate::leaf::Leaf;
+use crate::leaf::Material;
+use crate::leaf::Owner;
+use crate::meaning::Agreement;
+pub use crate::meaning::Elaborate;
+pub use crate::meaning::Elaboration;
+pub use crate::meaning::Refused;
+use crate::reduct::Reduct;
+use crate::reduct::Reducts;
+use crate::rewrite::Chosen;
+pub use crate::rewrite::Direction;
+pub use crate::rewrite::Enabled;
+pub use crate::rewrite::MoldName;
+pub use crate::rewrite::REWRITES;
+use crate::rewrite::Respelled;
+pub use crate::rewrite::Rewrite;
+pub use crate::rewrite::RewriteName;
+pub use crate::rewrite::Selection;
+pub use crate::rewrite::Spelling;
+use crate::site::Placement;
+use crate::site::Sites;
+
+/// How a source is formatted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FormatOptions
+{
+    /// The width a line is laid out to fit.
+    pub page: PageWidth,
+    /// The width a comment line is reflowed to fit.
+    pub comment: PageWidth,
+    /// The spelling the source is laid out in, unless its head declares one.
+    pub form: Form,
+    /// The rewrites of the form's direction that run.
+    pub rewrites: Selection,
+}
+
+impl Default for FormatOptions
+{
+    /// A page of 100 columns, in the source's own spelling, every rewrite
+    /// selected.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            page: PageWidth::from(100_u32),
+            comment: PageWidth::from(80_u32),
+            form: Form::Source,
+            rewrites: Selection::Every,
+        }
+    }
+}
+
+/// The spelling a source is laid out in.
+///
+/// [`Form::Source`] keeps every token the source wrote; the other two run
+/// the rewrites of their direction (crate docs, § The form a source is
+/// spelled in). A source states its spelling with `@[ form(explicit) ]` or
+/// `@[ form(sugared) ]` in an attribute block of its first form; the
+/// declaration wins over [`FormatOptions::form`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Form
+{
+    /// The source's own spelling, every token kept.
+    #[default]
+    Source,
+    /// The explicit spelling: every former a sugar stands for written out.
+    Explicit,
+    /// The surface's sugared spelling.
+    Sugared,
+}
+
+impl fmt::Display for Form
+{
+    /// The form's name, as the option and the declaration spell it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Source => "source",
+            Self::Explicit => "explicit",
+            Self::Sugared => "sugared",
+        })
+    }
+}
+
+/// Why a source was not formatted.
+#[derive(Debug, Eq, PartialEq)]
+pub enum FormatError
+{
+    /// A form's brackets do not pair.
+    Unbalanced,
+    /// Building a form's layout document reached a ceiling.
+    Build(BuildError),
+    /// Laying a form's document out reached a ceiling.
+    Render(RenderError),
+    /// The formatted text did not parse.
+    Reparse(MeldError),
+    /// The formatted text would have changed the source.
+    Changed(Change),
+}
+
+/// What formatting would have changed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Change
+{
+    /// What the source means: its content digest under [`Form::Source`], its
+    /// lowering under a rewrite.
+    Meaning,
+    /// The tokens or comments, or their order.
+    Material,
+    /// A comment's owner or its role among the owner's children.
+    Attachment,
+    /// The output pieces cannot map to the source pieces.
+    Pieces,
+}
+
+impl From<BuildError> for FormatError
+{
+    /// A build ceiling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: BuildError) -> Self
+    {
+        Self::Build(error)
+    }
+}
+
+impl From<RenderError> for FormatError
+{
+    /// A render ceiling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: RenderError) -> Self
+    {
+        Self::Render(error)
+    }
+}
+
+impl fmt::Display for FormatError
+{
+    /// One line naming the refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Unbalanced => write!(f, "a form's brackets do not pair"),
+            Self::Build(ref error) => write!(f, "the layout could not be built: {error}"),
+            Self::Render(ref error) => write!(f, "the layout could not be rendered: {error}"),
+            Self::Reparse(ref error) => write!(f, "the formatted text does not parse: {error}"),
+            Self::Changed(Change::Meaning) => {
+                write!(f, "formatting would change what the source means")
+            },
+            Self::Changed(Change::Material) => {
+                write!(f, "formatting would change the source's tokens or comments")
+            },
+            Self::Changed(Change::Attachment) => {
+                write!(
+                    f,
+                    "formatting would move a comment off the node it belongs to"
+                )
+            },
+            Self::Changed(Change::Pieces) => {
+                write!(f, "formatting could not map output pieces to the source")
+            },
+        }
+    }
+}
+
+/// The formatted text of one source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Formatted
+{
+    /// The text.
+    text: String,
+    /// Each top-level form, in source order.
+    pieces: Vec<Piece>,
+    /// Each declaration whose rewrites were withdrawn, in the order the
+    /// checks found them.
+    withdrawn: Vec<Withdrawal>,
+}
+/// One formatter pass and its rewrite state.
+///
+/// # Specification
+///
+/// trivial.
+struct Pass
+{
+    /// The formatted source from this pass.
+    formatted: Formatted,
+    /// Whether this pass admitted a rewrite.
+    rewritten: bool,
+}
+
+impl Formatted
+{
+    /// The formatted text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn text(&self) -> SourceText<'_>
+    {
+        SourceText::from(self.text.as_str())
+    }
+
+    /// Each top-level form's source span and formatted span, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pieces(&self) -> &[Piece]
+    {
+        &self.pieces
+    }
+
+    /// Each declaration that keeps the source's spelling because a rewrite
+    /// would have changed what it lowers to: never silent, so a caller can
+    /// say which declarations kept their spelling and why.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn withdrawn(&self) -> &[Withdrawal]
+    {
+        &self.withdrawn
+    }
+
+    /// The formatted text, owned.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_text(self) -> String
+    {
+        self.text
+    }
+}
+
+/// A declaration whose rewrites were withdrawn: its top-level forms keep the
+/// source's spelling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Withdrawal
+{
+    /// The declaration's name.
+    pub declaration: String,
+    /// The span, in the source, of the form that introduced it.
+    pub span: ByteSpan,
+    /// Why its rewrites were withdrawn.
+    pub reason: Withdrawn,
+}
+
+/// Why a declaration's rewrites were withdrawn.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Withdrawn
+{
+    /// Rewritten, the text has other parser obligations.
+    Obligations,
+    /// Rewritten, the declaration is refused: the refusal, as the lowering
+    /// writes it.
+    Refused(String),
+    /// Rewritten, the declaration lowers to other core.
+    Lowered,
+    /// As written, the declaration is refused, and rewritten, it is refused
+    /// by another refusal or at another site under the map of the rewrite:
+    /// the rewritten refusal, as the lowering writes it.
+    Otherwise(String),
+    /// Rewritten, a declaration that reads it — named here — would lower
+    /// otherwise, though the declaration's own meaning holds: that reader
+    /// reads its spelling, not only its type.
+    Read(String),
+}
+
+impl fmt::Display for Withdrawn
+{
+    /// Why the declaration kept its spelling, in one clause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Obligations => f.write_str("rewritten, it has other parser obligations"),
+            Self::Refused(ref refusal) => write!(f, "rewritten, it is refused: {refusal}"),
+            Self::Lowered => f.write_str("rewritten, it would lower to other core"),
+            Self::Otherwise(ref refusal) => {
+                write!(
+                    f,
+                    "as written, it is refused, and rewritten, it is refused otherwise: {refusal}"
+                )
+            },
+            Self::Read(ref reader) => write!(
+                f,
+                "rewritten, `{reader}`, which reads it, would lower to other core"
+            ),
+        }
+    }
+}
+
+/// Where one top-level form was and where it landed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Piece
+{
+    /// Its span in the source: its first token, comment or documentation to
+    /// its last.
+    pub source: ByteSpan,
+    /// Its span in the formatted text.
+    pub formatted: ByteSpan,
+    /// Whether it was laid out or copied as written.
+    pub layout: Layout,
+}
+
+/// Whether a top-level form was laid out.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Layout
+{
+    /// It was laid out.
+    Formatted,
+    /// The parser repaired it, so it was copied as written.
+    Repaired,
+}
+
+/// Format the source `parsed` was parsed from.
+///
+/// # Errors
+/// Returns [`FormatError::Changed`] when the formatted text would mean
+/// something else or spell other tokens or comments, and
+/// [`FormatError::Reparse`] when it does not parse; either is a defect in
+/// the formatter, and no text is returned. A form whose brackets do not pair
+/// is [`FormatError::Unbalanced`]; a layout ceiling is
+/// [`FormatError::Build`] or [`FormatError::Render`].
+///
+/// # Specification
+/// - requires: `parsed` was parsed under `grammar`.
+/// - ensures: the form is the one the source's head declares, else
+///   `options.form`. Under [`Form::Source`], the text keeps every token and
+///   comment of the source, in order, each comment with the node it belongs to
+///   and in its role there, and parses under `grammar` to the source's root
+///   digest. Under either other form, each form a selected rewrite of its
+///   direction reads is respelled, every comment kept in order and in its role,
+///   outside the top-level forms of the declarations the lowering refuses in
+///   the source or would lower otherwise once respelled; the text lowers to the
+///   source's lowering, declaration by declaration, and each declaration that
+///   would have lowered otherwise is in [`Formatted::withdrawn`] with its name,
+///   span and reason, none under [`Form::Source`]. Either way, each top-level
+///   form starts on a line of its own, and the source's blank lines between
+///   them are kept, one at most; a comment the source wrote on a top-level
+///   form's last line stays there, as does a separator ending a top-level
+///   statement; the text ends in one line break unless it is empty, and uses
+///   the line ending most of the source's breaks use. A form the parser
+///   repaired, or that an obligation touches, is copied as written. Each other
+///   form is laid out at `options.page` as the crate root describes, and
+///   formatting the text again returns it unchanged. One piece per top-level
+///   form, in order, spans it in the source and in the text.
+/// - provides: the text `gandr fmt` writes and the language server's formatting
+///   edits.
+/// - fails: as `# Errors` states.
+/// - panics: none.
+/// - intension: one walk of the tree, one layout per top-level form, one parse
+///   of the result; under a rewrite, one walk per form respelled and two
+///   lowerings.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source is formatted at three widths and
+///   formatted again unchanged, the formatter checking each against the
+///   source's digest and material, and into either form, the formatter checking
+///   each against the source's lowering; goldens fix each layout rule at a
+///   narrow and a wide page and each rewrite both ways, and exact texts fix the
+///   top-level joins, the verbatim forms, a repaired form, the line ending, the
+///   pieces and the declaration's precedence over the option.
+/// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
+/// - witness: `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`
+/// - witness: `tests::format::top_level_forms_and_comments_keep_their_lines`
+/// - witness: `tests::format::a_repaired_form_is_copied_as_written`
+/// - witness: `tests::format::the_source_line_ending_is_kept`
+/// - witness: `tests::format::pieces_place_each_top_level_form`
+/// - witness: `tests::format::a_form_written_against_the_one_before_starts_its_own_line`
+/// - witness: `tests::format::a_separator_written_on_the_next_line_joins_its_statement`
+/// - witness: `tests::format::a_source_split_evenly_between_endings_keeps_line_feeds`
+/// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
+/// - witness: `tests::attach::a_layout_that_breaks_or_joins_a_group_keeps_each_comment_with_its_owner`
+/// - witness: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`
+/// - witness: `tests::rewrite::a_sugared_source_keeps_every_comment_with_its_construct`
+/// - witness: `tests::rewrite::a_declared_form_wins_over_the_option`
+/// - witness: `tests::rewrite::a_selection_runs_only_the_rewrites_it_names`
+/// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
+/// - witness: `rewrite::tests::a_rewrite_that_changes_what_a_source_means_is_withdrawn`
+/// - witness: `tests::rewrite::a_match_over_a_stated_sum_is_sugared_791`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
+#[inline]
+pub fn format(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    options: FormatOptions,
+) -> Result<Formatted, FormatError>
+{
+    format_beside(grammar, parsed, options, (Beside::Alone, None))
+}
+
+/// The form the source `parsed` was parsed from declares at its head, which
+/// [`format`] writes it in whatever its options ask.
+///
+/// # Specification
+/// - requires: `parsed` was parsed under `grammar`.
+/// - ensures: the form the first `form(explicit)` or `form(sugared)` entry of
+///   an attribute block before the source's first declaration names, after its
+///   imports and inside a leading `rec` group; none when there is none.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the declaration is read from the source's leaves, which
+///   a predicate over the answer would read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus's explicit subset is held to its declared form
+///   by the printer parity sweeps.
+/// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
+#[inline]
+#[must_use]
+pub fn declared_form(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+) -> Option<Form>
+{
+    declared(&leaf::flatten(grammar, parsed.tree(), parsed.obligations()).leaves)
+}
+
+/// Format the source `parsed` was parsed from, its rewrites checked by a
+/// lowering `beside` the sources it imports and, where two spellings lower
+/// otherwise, by the bodies `checker` elaborates.
+///
+/// # Errors
+/// As [`format`].
+///
+/// # Specification
+/// - requires: `parsed` was parsed under `grammar`; under [`Beside::Imports`],
+///   `before` is the text `unit` lays out before the source, and the source is
+///   the unit's last.
+/// - ensures: as [`format`], each lowering the meaning check reads lowered in
+///   `beside`'s unit, so a declaration that reads an imported name is rewritten
+///   as one that does not; a withdrawal's span is in the source's own text.
+///   With `checker`, the sugared form also writes away each `let` statement the
+///   lowering lists as linear and each tail's `return` of a call, and a
+///   declaration whose two lowerings differ agrees when `checker` elaborates
+///   both to one body; without it, neither is written away.
+/// - provides: the formatting `gandr fmt` runs, beside a source's imports.
+/// - fails: as [`format`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source importing the declaration its signature names is
+///   sugared beside the import and kept alone; a linear run and a tail's
+///   `return` of a call are written away where the checker elaborates both
+///   spellings alike, withdrawn where it elaborates them otherwise, and kept
+///   where it refuses the source; a signature and its thunk merge into one
+///   function form, and keep their halves where the thunk is commented, graded
+///   or no thunk.
+/// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
+/// - witness: `tests::rewrite::a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255`
+/// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
+/// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
+///
+/// # Cost
+/// - allocation: the text, the pieces and the withdrawals of each pass, growth
+///   within the source's leaves
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
+#[inline]
+pub fn format_beside(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    options: FormatOptions,
+    (beside, checker): (Beside<'_>, Option<&dyn Elaborate>),
+) -> Result<Formatted, FormatError>
+{
+    let first = format_once(grammar, parsed, options, (beside, checker))?;
+    if !first.rewritten {
+        return Ok(first.formatted);
+    }
+    let mut source = first.formatted.text;
+    let mut pieces = first.formatted.pieces;
+    loop {
+        let parsed =
+            parse(grammar, SourceText::from(source.as_str())).map_err(FormatError::Reparse)?;
+        let next = format_once(grammar, &parsed, options, (beside, checker))?;
+        let rewritten = next.rewritten;
+        let Formatted {
+            text,
+            pieces: next_pieces,
+            withdrawn,
+        } = next.formatted;
+        let composed = compose_pieces(&pieces, &next_pieces)?;
+        if !rewritten || text == source {
+            return Ok(Formatted {
+                text,
+                pieces: composed,
+                withdrawn,
+            });
+        }
+        source = text;
+        pieces = composed;
+    }
+}
+
+/// Format one candidate before a later rewrite pass.
+///
+/// # Specification
+///
+/// trivial.
+///
+/// # Cost
+/// - allocation: the leaves, the text, the pieces and the withdrawals of the
+///   pass, growth within the source's leaves
+fn format_once(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    options: FormatOptions,
+    (beside, checker): (Beside<'_>, Option<&dyn Elaborate>),
+) -> Result<Pass, FormatError>
+{
+    let tree = parsed.tree();
+    let source = tree.source();
+    let flat = leaf::flatten(grammar, tree, parsed.obligations());
+    let form = declared(&flat.leaves).unwrap_or(options.form);
+    // In the sugared form, a bare `@[ checks ]` block is stripped from the
+    // source text before the formatter reads the tree, so the meaning check
+    // compares a block-less input to a block-less output and a formatted
+    // sugared corpus never carries one. A block with any other entry is kept,
+    // as is a `checks` the source spells in its explicit form.
+    let stripped = (form == Form::Sugared)
+        .then(|| strip_bare_checks(SourceText::from(<&str>::from(source))))
+        .filter(|text| text.as_str() != source.as_ref());
+    let stripped_parse = stripped
+        .as_ref()
+        .map(|text| parse(grammar, SourceText::from(text.as_str())))
+        .transpose()
+        .map_err(FormatError::Reparse)?;
+    let parsed = stripped_parse.as_ref().unwrap_or(parsed);
+    let tree = parsed.tree();
+    let source = tree.source();
+    let flat = leaf::flatten(grammar, tree, parsed.obligations());
+    let chosen = Chosen::of(form, options.rewrites);
+    let alone = LoweringUnit::single();
+    let (before, unit) = match beside {
+        Beside::Alone => ("", &alone),
+        Beside::Imports { before, unit } => (<&str>::from(before), unit),
+    };
+    let base = ByteOffset::from(before.len());
+    let whole = (!before.is_empty()).then(|| alloc::format!("{before}{}", <&str>::from(source)));
+    let whole = whole
+        .as_deref()
+        .and_then(|text| parse(grammar, SourceText::from(text)).ok());
+    let mut arena = CoreArena::new();
+    let lowered = chosen.and_then(|_| {
+        meaning::lowered(
+            grammar,
+            whole.as_ref().map_or(tree, ParseResult::tree),
+            unit,
+            &mut arena,
+        )
+    });
+    let mut withdrawn: Vec<NodeKey> = Vec::new();
+    let mut held: BTreeSet<NodeKey> = BTreeSet::new();
+    let composites = match (chosen, lowered.as_ref()) {
+        (Some(_), Some(module)) => composite::Composites::of(module, &arena, base),
+        (Some(_) | None, _) => composite::Composites::default(),
+    };
+    // A linear run lowers otherwise than the call written at its read, a
+    // tail's `return` of a call otherwise than the call, a thunk otherwise
+    // than the computation the checker wraps in it, and a reduct's or
+    // forgetting map's call otherwise than the value the checker applies the
+    // map to, so each is written away only where a checker can compare the
+    // two. The source is elaborated at most once: here when the lowering lists
+    // a run or such a tail, each written only in a declaration the checker
+    // elaborates as written, or mints a reduct or a forgetting map, which the
+    // explicit form writes where the checker applies it; otherwise only once
+    // a rewritten source lowers otherwise — a thunk left out of a declaration
+    // the checker refuses elaborates to nothing on either side, and that
+    // declaration keeps its thunks.
+    let checker = chosen.and(lowered.as_ref()).and(checker);
+    let mut elaborations: Elaborations = match (lowered.as_ref(), checker) {
+        (Some(module), Some(checker))
+            if module
+                .elidable_exits()
+                .iter()
+                .any(|exit| exit.returned == Returned::Run)
+                || !module.reducts().is_empty()
+                || !module.forgets().is_empty() =>
+        {
+            Some(checker.elaborate(&mut arena, module))
+        },
+        (Some(_) | None, _) => None,
+    };
+    let mut unchecked = match (lowered.as_ref(), elaborations.as_ref()) {
+        (Some(module), Some(elaboration)) => forms_of(
+            tree,
+            &meaning::unelaborated(module, &elaboration.definitions),
+        ),
+        (Some(_) | None, _) => Vec::new(),
+    };
+    unchecked.sort_unstable();
+    let tails = match (chosen, lowered.as_ref()) {
+        (Some(_), Some(module)) => tail::Tails::of(
+            module,
+            base,
+            elaborations.as_ref().map(|_| unchecked.as_slice()),
+        ),
+        (Some(_) | None, _) => tail::Tails::default(),
+    };
+    let reducts = match (lowered.as_ref(), elaborations.as_ref()) {
+        (Some(module), Some(elaboration))
+            if !module.reducts().is_empty() || !module.forgets().is_empty() =>
+        {
+            Reducts::beside(
+                module,
+                elaboration,
+                (
+                    &arena,
+                    whole.as_ref().map_or(tree, ParseResult::tree).source(),
+                ),
+                (base, unchecked.clone()),
+            )
+        },
+        (Some(_) | None, _) => Reducts::default(),
+    };
+    let mut unreduced: Vec<ByteSpan> = Vec::new();
+    let mut thunks = match checker {
+        Some(_) if thunk::thunked(&flat.leaves, None) == thunk::Thunked::Written => {
+            thunk::Thunks::outside(unchecked)
+        },
+        Some(_) | None => thunk::Thunks::default(),
+    };
+    let ending = Ending::of(source);
+    let layout = LayoutOptions::try_new(
+        options.page,
+        ComputationWidth::from(u32::from(options.page).saturating_mul(2_u32)),
+        ending.physical(),
+    )?;
+    let mut reports: Vec<Withdrawal> = Vec::new();
+    // The whole source, as the span where every type application keeps its
+    // call form once no narrower span does.
+    let everywhere = ByteSpan::new(
+        ByteOffset::from(0_usize),
+        ByteOffset::from(<&str>::from(source).len()),
+    )
+    .ok();
+    let mut stuck = Vec::new();
+    let mut fresh: Vec<NodeKey> = Vec::new();
+    let mut retried: Vec<ByteSpan> = Vec::new();
+    let mut reduced: Vec<ByteSpan> = Vec::new();
+    let mut apart = merge::Apart::default();
+    let mut parted: Vec<ByteSpan> = Vec::new();
+    let mut unjoined: Vec<ByteSpan> = Vec::new();
+    // The forms whose type applications keep their call form, and those a
+    // pass moves there: a juxtaposition the type grammar reads otherwise is
+    // written back as the call before the declaration's rewrites are
+    // withdrawn.
+    let mut called: Vec<ByteSpan> = Vec::new();
+    let mut recalled: Vec<ByteSpan> = Vec::new();
+    let mut recall = Recall::Forms;
+    loop {
+        let spans = forms_of(tree, &withdrawn);
+        let rewrites = match (chosen, lowered.as_ref()) {
+            (Some(chosen), Some(_)) => Some(rewrite::Rewrites {
+                chosen,
+                withdrawn: spans.as_slice(),
+                composites: &composites,
+                tails: &tails,
+                thunks: &thunks,
+                reducts: &reducts,
+                unreduced: unreduced.as_slice(),
+                called: called.as_slice(),
+            }),
+            (Some(_) | None, _) => None,
+        };
+        // A call's parentheses that a layout block reads, `match t -> -F
+        // List(Integer) where`, are kept: every type application is written
+        // back as the call before the layout is refused.
+        let laid = match write(
+            grammar,
+            tree,
+            &flat,
+            (rewrites, &apart),
+            &layout,
+            ending,
+            options.comment,
+        ) {
+            Err(FormatError::Unbalanced)
+                if let Some(whole) = everywhere
+                    && recall == Recall::Forms =>
+            {
+                called = Vec::from([whole]);
+                recall = Recall::Everywhere;
+                continue;
+            },
+            written => written?,
+        };
+        let text = SourceText::from(laid.text.as_str());
+        let Some(ref lowered) = lowered
+        else {
+            verify(grammar, parsed, &flat.leaves, text)?;
+            return Ok(laid.formatted(reports));
+        };
+        if laid.respelled.is_empty() {
+            verify(grammar, parsed, &flat.leaves, text)?;
+            return Ok(laid.formatted(reports));
+        }
+        let agreement = verify_rewritten(
+            grammar,
+            (parsed, &laid.leaves, &laid.respelled, text),
+            (SourceText::from(before), unit),
+            (&mut arena, lowered),
+            checker.map(|checker| (checker, &mut elaborations)),
+        )?;
+        match agreement {
+            Agreement::Same => {
+                return Ok(laid.formatted(reports));
+            },
+            Agreement::ParserObligations(differing) => {
+                let before = withdrawn.len();
+                for declaration in differing {
+                    fresh.clear();
+                    fresh.extend(
+                        declaration
+                            .keys
+                            .iter()
+                            .copied()
+                            .filter(|key| !held.contains(key)),
+                    );
+                    if !fresh.is_empty() {
+                        held.extend(fresh.iter().copied());
+                        withdrawn.append(&mut fresh);
+                        reports.push(declaration.withdrawal);
+                    }
+                }
+                if withdrawn.len() == before {
+                    return Err(FormatError::Changed(Change::Meaning));
+                }
+            },
+            Agreement::Declarations(differing) => {
+                let before = withdrawn.len();
+                // A declaration elaborating otherwise with its thunks left out
+                // keeps them, unreported, and is tried again: there the checker
+                // inserts none. So does one with a reduct written or left out:
+                // there the checker applies none. One still elaborating
+                // otherwise merged into its function form or joined is laid
+                // out apart from that form again, unreported: one held from
+                // the function form may still join.
+                retried.clear();
+                reduced.clear();
+                parted.clear();
+                unjoined.clear();
+                stuck.clear();
+                recalled.clear();
+                for declaration in differing {
+                    // A declaration that is refused as written and refused
+                    // otherwise once rewritten keeps its spelling, reported.
+                    // Where no key of its own is left to hold, as for a root
+                    // expression, the top-level form that holds its span keeps
+                    // its spelling.
+                    if let Withdrawn::Otherwise(_) = declaration.withdrawal.reason {
+                        fresh.clear();
+                        fresh.extend(
+                            declaration
+                                .keys
+                                .iter()
+                                .copied()
+                                .filter(|key| !held.contains(key)),
+                        );
+                        if fresh.is_empty() {
+                            let span = declaration.withdrawal.span;
+                            fresh.extend(
+                                tree.children(tree.root())
+                                    .filter(|&form| {
+                                        tree.node(form).is_some_and(|form| {
+                                            form.span().start() <= span.start()
+                                                && span.end() <= form.span().end()
+                                        })
+                                    })
+                                    .filter_map(|form| tree.key(form))
+                                    .filter(|key| !held.contains(key)),
+                            );
+                        }
+                        if fresh.is_empty() {
+                            stuck.push(declaration);
+                        }
+                        else {
+                            held.extend(fresh.iter().copied());
+                            withdrawn.append(&mut fresh);
+                            reports.push(declaration.withdrawal);
+                        }
+                        continue;
+                    }
+                    let forms = forms_of(tree, &declaration.keys);
+                    if checker.is_some()
+                        && thunk::thunked(&flat.leaves, Some(&forms)) == thunk::Thunked::Written
+                        && thunks.kept(&forms) == thunk::Thunk::Inserted
+                    {
+                        retried.extend(forms);
+                        continue;
+                    }
+                    if reducts.held(&flat.leaves, &forms) == Reduct::Moved
+                        && !forms
+                            .iter()
+                            .all(|form| unreduced.binary_search(form).is_ok())
+                    {
+                        reduced.extend(forms);
+                        continue;
+                    }
+                    if forms
+                        .iter()
+                        .any(|form| laid.merged.binary_search(form).is_ok())
+                    {
+                        parted.extend(forms);
+                        continue;
+                    }
+                    if forms
+                        .iter()
+                        .any(|form| laid.joined.binary_search(form).is_ok())
+                    {
+                        unjoined.extend(forms);
+                        continue;
+                    }
+                    if recall == Recall::Forms
+                        && !forms.iter().all(|form| called.binary_search(form).is_ok())
+                    {
+                        recalled.extend(forms);
+                        continue;
+                    }
+                    fresh.clear();
+                    fresh.extend(
+                        declaration
+                            .keys
+                            .iter()
+                            .copied()
+                            .filter(|key| !held.contains(key)),
+                    );
+                    if fresh.is_empty() {
+                        stuck.push(declaration);
+                    }
+                    else {
+                        held.extend(fresh.iter().copied());
+                        withdrawn.append(&mut fresh);
+                        reports.push(declaration.withdrawal);
+                    }
+                }
+                if !retried.is_empty()
+                    || !reduced.is_empty()
+                    || !parted.is_empty()
+                    || !unjoined.is_empty()
+                    || !recalled.is_empty()
+                {
+                    thunks.keep(&retried);
+                    unreduced.append(&mut reduced);
+                    unreduced.sort_unstable();
+                    unreduced.dedup();
+                    apart.keep(&parted, merge::OneForm::Function);
+                    apart.keep(&unjoined, merge::OneForm::Joined);
+                    called.append(&mut recalled);
+                    called.sort_unstable();
+                    called.dedup();
+                    continue;
+                }
+                if withdrawn.len() == before {
+                    for callee in read(
+                        tree,
+                        (&flat.leaves, &laid.respelled),
+                        lowered,
+                        (&stuck, &held),
+                        base,
+                    ) {
+                        held.extend(callee.keys.iter().copied());
+                        withdrawn.extend(callee.keys);
+                        reports.push(callee.withdrawal);
+                    }
+                }
+                if withdrawn.len() == before {
+                    // A declaration no form of its own holds, a theory's
+                    // operation among them, still lowers otherwise: every
+                    // type application is written back as the call before
+                    // the text is refused.
+                    match (everywhere, recall) {
+                        (Some(whole), Recall::Forms) => {
+                            called = Vec::from([whole]);
+                            recall = Recall::Everywhere;
+                        },
+                        (Some(_), Recall::Everywhere) | (None, _) => {
+                            return Err(FormatError::Changed(Change::Meaning));
+                        },
+                    }
+                }
+            },
+            // A juxtaposed type application the type grammar reads as no form
+            // there, `Twisted (Twisted a)` as a codata observation's type, is
+            // written back as the call everywhere before the text is refused.
+            Agreement::Unpaired => match (everywhere, recall) {
+                (Some(whole), Recall::Forms) => {
+                    called = Vec::from([whole]);
+                    recall = Recall::Everywhere;
+                },
+                (Some(_), Recall::Everywhere) | (None, _) => {
+                    return Err(FormatError::Changed(Change::Meaning));
+                },
+            },
+        }
+    }
+}
+
+/// Compose pieces through one candidate source.
+///
+/// # Specification
+///
+/// trivial.
+///
+/// # Cost
+/// - allocation: the composed pieces, growth within the pieces of the passes
+fn compose_pieces(
+    previous: &[Piece],
+    next: &[Piece],
+) -> Result<Vec<Piece>, FormatError>
+{
+    let mut composed: Vec<Piece> = Vec::with_capacity(next.len());
+    for later in next {
+        let mut matching = previous.iter().filter(|earlier| {
+            earlier.formatted.start() < later.source.end()
+                && later.source.start() < earlier.formatted.end()
+        });
+        let Some(first) = matching.next()
+        else {
+            return Err(FormatError::Changed(Change::Pieces));
+        };
+        let source = matching.fold(first.source, |source, earlier| source.join(earlier.source));
+        if let Some(previous) = composed.last_mut()
+            && previous.source == source
+        {
+            previous.formatted = previous.formatted.join(later.formatted);
+            previous.layout = later.layout;
+        }
+        else {
+            composed.push(Piece {
+                source,
+                formatted: later.formatted,
+                layout: later.layout,
+            });
+        }
+    }
+    Ok(composed)
+}
+
+/// Which type applications the formatter writes back in their call form.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Recall
+{
+    /// Those in the forms it names.
+    Forms,
+    /// Every type application in the source.
+    Everywhere,
+}
+
+/// The declarations whose rewrites the declarations `stuck` read: each kept
+/// as written and still lowering otherwise, so the change is in a
+/// declaration a rewrite respelled — among the `respelled` forms and outside
+/// those `withdrawn` — whose name a stuck declaration's tokens, among
+/// `leaves`, write. Each is withdrawn for the first such reader.
+///
+/// # Specification
+/// trivial.
+fn read(
+    tree: &SyntaxTree<'_>,
+    (leaves, respelled): (&[Leaf<'_>], &[NodeIndex]),
+    lowered: &LoweredModule<'_>,
+    (stuck, withdrawn): (&[meaning::Differing], &BTreeSet<NodeKey>),
+    base: ByteOffset,
+) -> Vec<meaning::Differing>
+{
+    let respelled: BTreeSet<NodeIndex> = respelled.iter().copied().collect();
+    let readers: Vec<(&str, Vec<ByteSpan>)> = stuck
+        .iter()
+        .map(|declaration| {
+            (
+                declaration.withdrawal.declaration.as_str(),
+                forms_of(tree, &declaration.keys),
+            )
+        })
+        .collect();
+    meaning::read(
+        lowered,
+        base,
+        |keys| {
+            !keys.iter().all(|key| withdrawn.contains(key))
+                && top_forms(tree, keys)
+                    .iter()
+                    .any(|form| respelled.contains(form))
+        },
+        |name| {
+            readers.iter().find_map(|&(reader, ref spans)| {
+                leaves
+                    .iter()
+                    .any(|leaf| {
+                        leaf.material == Material::Token
+                            && <&str>::from(leaf.text) == name
+                            && spans.iter().any(|span| {
+                                span.start() <= leaf.span.start() && leaf.span.end() <= span.end()
+                            })
+                    })
+                    .then(|| String::from(reader))
+            })
+        },
+    )
+}
+
+/// What a source's rewrites are checked beside: the source alone, or the
+/// sources its imports reach, laid out before it as one unit.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum Beside<'unit>
+{
+    /// The source alone: an import resolves to nothing, so a declaration that
+    /// reads an imported name is refused and no rewrite enters it.
+    #[default]
+    Alone,
+    /// The sources the source's imports reach, laid out before it.
+    Imports
+    {
+        /// The unit's text before the source.
+        before: SourceText<'unit>,
+        /// The unit: every source it lays out, the source last.
+        unit: &'unit LoweringUnit,
+    },
+}
+
+/// The top-level forms of `tree` holding a form, at any depth, whose key is
+/// among `keys`: a declaration's rules and clauses may sit beside the form
+/// the lowering keys it by, so the top-level form is the unit a rewrite is
+/// withdrawn from.
+///
+/// # Specification
+/// trivial.
+fn top_forms(
+    tree: &SyntaxTree<'_>,
+    keys: &[NodeKey],
+) -> Vec<NodeIndex>
+{
+    let mut forms = Vec::new();
+    if keys.is_empty() {
+        return forms;
+    }
+    let keys: BTreeSet<NodeKey> = keys.iter().copied().collect();
+    for form in tree.children(tree.root()) {
+        let mut pending = Vec::from([form]);
+        while let Some(at) = pending.pop() {
+            if tree.key(at).is_some_and(|key| keys.contains(&key)) {
+                forms.push(form);
+                break;
+            }
+            pending.extend(tree.children(at));
+        }
+    }
+    forms
+}
+
+/// The spans of [`top_forms`].
+///
+/// # Specification
+/// trivial.
+fn forms_of(
+    tree: &SyntaxTree<'_>,
+    keys: &[NodeKey],
+) -> Vec<ByteSpan>
+{
+    top_forms(tree, keys)
+        .into_iter()
+        .filter_map(|form| tree.node(form).map(gandr_surface_syntax::Node::span))
+        .collect()
+}
+
+/// One writing of a source: its text, its pieces, the leaves it was laid out
+/// from, and the forms a rewrite respelled.
+struct Written<'source>
+{
+    /// The text.
+    text: String,
+    /// Where each top-level form landed.
+    pieces: Vec<Piece>,
+    /// The leaves laid out, in order.
+    leaves: Vec<Leaf<'source>>,
+    /// The top-level forms a rewrite respelled, in order.
+    respelled: Vec<NodeIndex>,
+    /// The spans of the signatures and definitions merged into one function
+    /// form, ascending.
+    merged: Vec<ByteSpan>,
+    /// The spans of the signatures and definitions joined into one form,
+    /// ascending.
+    joined: Vec<ByteSpan>,
+}
+
+impl Written<'_>
+{
+    /// The writing as the caller receives it, beside the declarations whose
+    /// rewrites were withdrawn.
+    ///
+    /// # Specification
+    /// trivial.
+    fn formatted(
+        self,
+        withdrawn: Vec<Withdrawal>,
+    ) -> Pass
+    {
+        let rewritten = !self.respelled.is_empty();
+        Pass {
+            formatted: Formatted {
+                text: self.text,
+                pieces: self.pieces,
+                withdrawn,
+            },
+            rewritten,
+        }
+    }
+}
+/// A line-comment marker.
+///
+/// # Specification
+///
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CommentMarker
+{
+    /// A module comment marker.
+    Module,
+    /// A documentation comment marker.
+    Documentation,
+    /// A line comment marker.
+    Line,
+}
+
+impl From<CommentMarker> for &'static str
+{
+    /// Return the text that writes this marker.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(marker: CommentMarker) -> Self
+    {
+        match marker {
+            CommentMarker::Module => "//!",
+            CommentMarker::Documentation => "///",
+            CommentMarker::Line => "//",
+        }
+    }
+}
+
+/// One physical line of a comment run.
+///
+/// # Specification
+///
+/// trivial.
+enum CommentLine<'text>
+{
+    /// A line that has no line-comment marker.
+    Other,
+    /// A line-comment marker and its text.
+    Line
+    {
+        /// The indentation, marker and following space.
+        prefix: SourceText<'text>,
+        /// The line-comment marker.
+        marker: CommentMarker,
+        /// The text after the prefix.
+        body: SourceText<'text>,
+    },
+}
+
+/// Split a source line at its line-comment marker.
+///
+/// # Specification
+///
+/// trivial.
+fn comment_line(line: SourceText<'_>) -> CommentLine<'_>
+{
+    let line = <&str>::from(line);
+    let indentation = line
+        .find(|character: char| !matches!(character, ' ' | '\t'))
+        .unwrap_or(line.len());
+    let (indentation, rest) = line.split_at(indentation);
+    let marker = if rest.starts_with("//!") {
+        CommentMarker::Module
+    }
+    else if rest.starts_with("///") && !rest.starts_with("////") {
+        CommentMarker::Documentation
+    }
+    else if rest.starts_with("//") {
+        CommentMarker::Line
+    }
+    else {
+        return CommentLine::Other;
+    };
+    let marker_text = <&str>::from(marker);
+    let Some(body) = rest.strip_prefix(marker_text)
+    else {
+        return CommentLine::Other;
+    };
+    let leading = body
+        .len()
+        .saturating_sub(body.trim_start_matches([' ', '\t']).len());
+    let prefix = indentation
+        .len()
+        .saturating_add(marker_text.len())
+        .saturating_add(leading);
+    let (prefix, body) = line.split_at(prefix);
+    CommentLine::Line {
+        prefix: SourceText::from(prefix),
+        marker,
+        body: SourceText::from(body),
+    }
+}
+
+/// Reflow the comment lines written after `start`.
+///
+/// # Specification
+/// trivial.
+fn reflow_comments(
+    text: &mut String,
+    start: ByteOffset,
+    width: PageWidth,
+    ending: Ending,
+)
+{
+    let Some(run) = text.get(usize::from(start) ..)
+    else {
+        return;
+    };
+    let mut fence_marker = None;
+    let mut fenced = false;
+    let reflows = run.lines().any(|line| {
+        let line = SourceText::from(line.trim_end_matches('\r'));
+        let CommentLine::Line { marker, body, .. } = comment_line(line)
+        else {
+            fence_marker = None;
+            fenced = false;
+            return false;
+        };
+        if Some(marker) != fence_marker {
+            fence_marker = Some(marker);
+            fenced = false;
+        }
+        let content = <&str>::from(body).trim_start();
+        if content.starts_with("```") {
+            fenced = !fenced;
+            return false;
+        }
+        !fenced
+            && matches!(
+                comment_line_reflows(line, body, width),
+                CommentReflow::Needed
+            )
+    });
+    if !reflows {
+        return;
+    }
+    let reflowed = reflow_comment_run(SourceText::from(run), width, ending);
+    let changed = reflowed.as_str() != run;
+    if changed {
+        text.replace_range(usize::from(start) .., reflowed.as_str());
+    }
+}
+
+/// Whether a comment line needs reflow.
+///
+/// # Specification
+///
+/// trivial.
+enum CommentReflow
+{
+    /// The line exceeds the comment width.
+    Needed,
+    /// The line stays as written.
+    Unneeded,
+}
+
+/// Decide whether one unfenced comment line needs reflow.
+///
+/// # Specification
+///
+/// trivial.
+fn comment_line_reflows(
+    line: SourceText<'_>,
+    body: SourceText<'_>,
+    width: PageWidth,
+) -> CommentReflow
+{
+    let line = <&str>::from(line);
+    let body = <&str>::from(body);
+    let content = body.trim_start();
+    let width = usize::try_from(u32::from(width)).unwrap_or(usize::MAX);
+    if line.chars().count() > width
+        && body.split_whitespace().nth(1).is_some()
+        && !content.is_empty()
+        && !content.starts_with(['#', '|'])
+        && !content.starts_with("- see:")
+        && !content.starts_with("- cites:")
+        && !(content.starts_with('[') && content.contains("]:"))
+    {
+        CommentReflow::Needed
+    }
+    else {
+        CommentReflow::Unneeded
+    }
+}
+
+/// Reflow each eligible line of one comment run.
+///
+/// # Specification
+///
+/// trivial.
+fn reflow_comment_run(
+    text: SourceText<'_>,
+    width: PageWidth,
+    ending: Ending,
+) -> String
+{
+    let text = <&str>::from(text);
+    let ending = <&str>::from(ending.spelling());
+    let mut reflowed = String::with_capacity(text.len());
+    let mut fence_marker = None;
+    let mut fenced = false;
+    for raw in text.split_inclusive('\n') {
+        let (line, break_) = raw
+            .strip_suffix(ending)
+            .map_or((raw, ""), |line| (line, ending));
+        let line_text = SourceText::from(line);
+        let CommentLine::Line {
+            prefix,
+            marker,
+            body,
+        } = comment_line(line_text)
+        else {
+            fence_marker = None;
+            fenced = false;
+            reflowed.push_str(raw);
+            continue;
+        };
+        if Some(marker) != fence_marker {
+            fence_marker = Some(marker);
+            fenced = false;
+        }
+        let content = <&str>::from(body).trim_start();
+        if content.starts_with("```") {
+            fenced = !fenced;
+            reflowed.push_str(line);
+        }
+        else if fenced
+            || !matches!(
+                comment_line_reflows(line_text, body, width),
+                CommentReflow::Needed
+            )
+        {
+            reflowed.push_str(line);
+        }
+        else {
+            wrap_comment_line(&mut reflowed, prefix, body, width);
+        }
+        reflowed.push_str(break_);
+    }
+    reflowed
+}
+
+/// Write one comment line with breaks at its word boundaries.
+///
+/// # Specification
+///
+/// trivial.
+fn wrap_comment_line(
+    text: &mut String,
+    prefix: SourceText<'_>,
+    body: SourceText<'_>,
+    width: PageWidth,
+)
+{
+    let prefix = <&str>::from(prefix);
+    let body = <&str>::from(body);
+    let width = usize::try_from(u32::from(width)).unwrap_or(usize::MAX);
+    let words: Vec<&str> = body.split_whitespace().collect();
+    let hanging = body.trim_start().starts_with("- ");
+    let mut first = true;
+    let mut at = 0_usize;
+    while at < words.len() {
+        let continuation = !first && hanging;
+        let indentation =
+            prefix
+                .chars()
+                .count()
+                .saturating_add(if continuation { 2_usize } else { 0_usize });
+        let mut used = indentation;
+        let mut end = at;
+        while let Some(word) = words.get(end) {
+            let space = usize::from(end != at);
+            let next = word.chars().count().saturating_add(space);
+            if end != at && used.saturating_add(next) > width {
+                break;
+            }
+            used = used.saturating_add(next);
+            end = end.saturating_add(1);
+        }
+        if end == at {
+            end = end.saturating_add(1);
+        }
+        let carried = end.saturating_sub(at);
+        let remaining = words.len().saturating_sub(end);
+        if remaining > 0_usize && remaining < 3_usize && carried >= 3_usize {
+            let moved = words.len().saturating_sub(3_usize);
+            if moved.saturating_sub(at) >= 3_usize {
+                end = moved;
+            }
+        }
+        if !first {
+            text.push('\n');
+        }
+        text.push_str(prefix);
+        if continuation {
+            text.push_str("  ");
+        }
+        for (index, word) in words
+            .iter()
+            .skip(at)
+            .take(end.saturating_sub(at))
+            .enumerate()
+        {
+            if index > 0_usize {
+                text.push(' ');
+            }
+            text.push_str(word);
+        }
+        at = end;
+        first = false;
+    }
+}
+
+/// The source whose leaves are `flat` written at `layout`, each clean form
+/// respelled by `rewrites` — the rewrites chosen and the spans they do not
+/// enter — when given, and each signature merged or joined with the
+/// definition after it where the rewrites do so and `apart` does not hold
+/// them from it.
+///
+/// # Specification
+/// trivial.
+fn write<'source>(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'source>,
+    flat: &leaf::Leaves<'source>,
+    (rewrites, apart): (Option<rewrite::Rewrites<'_, 'source>>, &merge::Apart),
+    layout: &LayoutOptions,
+    ending: Ending,
+    comment: PageWidth,
+) -> Result<Written<'source>, FormatError>
+{
+    let source = tree.source();
+    let breaks = <&str>::from(ending.spelling());
+    let mut text = String::with_capacity(<&str>::from(source).len());
+    let mut pieces = Vec::new();
+    let mut written: Vec<Leaf<'source>> = Vec::with_capacity(flat.leaves.len());
+    let mut respelled = Vec::new();
+    let mut merged = Vec::new();
+    let mut joined = Vec::new();
+    let units = units(&flat.leaves);
+    let mut at = 0_usize;
+    while let Some(unit) = units.get(at) {
+        at = at.saturating_add(1);
+        let Some(first) = unit.leaves.first()
+        else {
+            continue;
+        };
+        if !text.is_empty() {
+            match (unit.joins, unit.gap) {
+                (Joins::Touching, _) => {},
+                (Joins::SameLine, _) => text.push(' '),
+                (Joins::OwnLine, Gap::Blank) => {
+                    text.push_str(breaks);
+                    text.push_str(breaks);
+                },
+                (Joins::OwnLine, Gap::Adjacent | Gap::Space | Gap::Break) => {
+                    text.push_str(breaks);
+                },
+            }
+        }
+        let start = ByteOffset::from(text.len());
+        let mut span = unit.span;
+        let Owner::Form(form) = first.owner
+        else {
+            text.push_str(<&str>::from(first.text));
+            reflow_comments(&mut text, start, comment, ending);
+            written.extend_from_slice(unit.leaves);
+            continue;
+        };
+        let laid = match flat.integrity(form) {
+            Integrity::Clean => {
+                let changed = respelled_form(grammar, tree, form, unit.leaves, rewrites);
+                let own = changed.as_deref().unwrap_or(unit.leaves);
+                // A module's member pairs, written as one form or apart as a
+                // top-level pair would be; a module whose one forms elaborate
+                // otherwise is held whole.
+                let membered = rewrites.and_then(|chosen| {
+                    let whole = tree.node(form)?.span();
+                    if chosen.withdrawn.contains(&whole) {
+                        return None;
+                    }
+                    let pairing = if chosen.chosen.pairing() == merge::Pairing::Merged {
+                        apart.pairing(whole, merge::OneForm::Function)
+                    }
+                    else {
+                        merge::Pairing::Apart
+                    };
+                    let joining =
+                        if apart.pairing(whole, merge::OneForm::Joined) == merge::Pairing::Apart {
+                            merge::Joining::Keep
+                        }
+                        else {
+                            chosen.chosen.joining()
+                        };
+                    merge::members(
+                        tree,
+                        form,
+                        (unit.leaves, own),
+                        (pairing, joining, chosen.chosen.returning()),
+                    )
+                    .map(|(leaves, ones)| (leaves, ones, whole))
+                });
+                if let Some((_, ref ones, whole)) = membered {
+                    for &one in ones {
+                        match one {
+                            merge::OneForm::Function => merged.push(whole),
+                            merge::OneForm::Joined => joined.push(whole),
+                        }
+                    }
+                }
+                let own = membered
+                    .as_ref()
+                    .map_or(own, |&(ref leaves, ..)| leaves.as_slice());
+                let paired = rewrites
+                    .filter(|chosen| {
+                        chosen.chosen.pairing() == merge::Pairing::Merged
+                            || chosen.chosen.joining() == merge::Joining::Join
+                    })
+                    .and_then(|chosen| {
+                        let next = units.get(at)?;
+                        let Owner::Form(defined) = next.leaves.first()?.owner
+                        else {
+                            return None;
+                        };
+                        if flat.integrity(defined) != Integrity::Clean
+                            || next.joins != Joins::OwnLine
+                        {
+                            return None;
+                        }
+                        let spans = [tree.node(form)?.span(), tree.node(defined)?.span()];
+                        if spans.iter().any(|span| chosen.withdrawn.contains(span)) {
+                            return None;
+                        }
+                        let open = |one: merge::OneForm| {
+                            spans
+                                .iter()
+                                .all(|&span| apart.pairing(span, one) == merge::Pairing::Merged)
+                        };
+                        let merging = chosen.chosen.pairing() == merge::Pairing::Merged
+                            && open(merge::OneForm::Function)
+                            && merge::candidate(next.leaves) == merge::Pairing::Merged;
+                        let joining = chosen.chosen.joining() == merge::Joining::Join
+                            && open(merge::OneForm::Joined)
+                            && merge::defines(tree, form).is_none();
+                        if !merging && !joining {
+                            return None;
+                        }
+                        let definition =
+                            respelled_form(grammar, tree, defined, next.leaves, Some(chosen));
+                        let pair = (next.leaves, definition.as_deref().unwrap_or(next.leaves));
+                        let (leaves, one) = merging
+                            .then(|| merge::merged(own, pair, chosen.chosen.returning()))
+                            .flatten()
+                            .map(|leaves| (leaves, merge::OneForm::Function))
+                            .or_else(|| {
+                                joining
+                                    .then(|| merge::joined(own, pair))
+                                    .flatten()
+                                    .map(|leaves| (leaves, merge::OneForm::Joined))
+                            })?;
+                        Some((leaves, one, defined, spans, next.span))
+                    });
+                if let Some((leaves, one, defined, spans, end)) = paired {
+                    respelled.extend([form, defined]);
+                    match one {
+                        merge::OneForm::Function => merged.extend(spans),
+                        merge::OneForm::Joined => joined.extend(spans),
+                    }
+                    span = span.join(end);
+                    at = at.saturating_add(1);
+                    text.push_str(&layout::lay_out(&leaves, layout, ending.spelling())?);
+                    written.extend_from_slice(&leaves);
+                }
+                else if let Some((signed, defined)) = rewrites
+                    .filter(|chosen| chosen.chosen.joining() == merge::Joining::Split)
+                    .and_then(|chosen| {
+                        let whole = tree.node(form)?.span();
+                        if chosen.withdrawn.contains(&whole)
+                            || apart.pairing(whole, merge::OneForm::Joined) == merge::Pairing::Apart
+                        {
+                            return None;
+                        }
+                        merge::separated(own, merge::defines(tree, form)?)
+                            .map(|halves| (halves, whole))
+                    })
+                    .map(|(halves, whole)| {
+                        joined.push(whole);
+                        halves
+                    })
+                {
+                    respelled.push(form);
+                    text.push_str(&layout::lay_out(&signed, layout, ending.spelling())?);
+                    text.push_str(breaks);
+                    text.push_str(&layout::lay_out(&defined, layout, ending.spelling())?);
+                    written.extend_from_slice(&signed);
+                    written.extend_from_slice(&defined);
+                }
+                else {
+                    if changed.is_some() || membered.is_some() {
+                        respelled.push(form);
+                    }
+                    text.push_str(&layout::lay_out(own, layout, ending.spelling())?);
+                    written.extend_from_slice(own);
+                }
+                Layout::Formatted
+            },
+            Integrity::Repaired => {
+                if let Ok(as_written) = source.fragment(span) {
+                    text.push_str(<&str>::from(as_written));
+                }
+                written.extend_from_slice(unit.leaves);
+                Layout::Repaired
+            },
+        };
+        reflow_comments(&mut text, start, comment, ending);
+        if let Ok(formatted) = ByteSpan::new(start, ByteOffset::from(text.len())) {
+            pieces.push(Piece {
+                source: span,
+                formatted,
+                layout: laid,
+            });
+        }
+    }
+    if !text.is_empty() {
+        text.push_str(breaks);
+    }
+    merged.sort_unstable();
+    joined.sort_unstable();
+    Ok(Written {
+        text,
+        pieces,
+        leaves: written,
+        respelled,
+        merged,
+        joined,
+    })
+}
+
+/// The leaves of the clean top-level form `form` of `tree`, whose leaves
+/// are `leaves`, respelled by `rewrites` when given and some rewrite applies.
+///
+/// # Specification
+/// trivial.
+fn respelled_form<'source>(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'source>,
+    form: NodeIndex,
+    leaves: &[Leaf<'source>],
+    rewrites: Option<rewrite::Rewrites<'_, 'source>>,
+) -> Option<Vec<Leaf<'source>>>
+{
+    match rewrites.map(|rewrites| rewrite::respell(grammar, tree, form, leaves, rewrites))? {
+        Respelled::Changed(leaves) => Some(leaves),
+        Respelled::Kept => None,
+    }
+}
+
+/// One top-level unit of the source: a form, or a comment or shebang at the
+/// root, beside the layout before it.
+#[derive(Clone, Copy, Debug)]
+struct Unit<'leaves, 'source>
+{
+    /// The unit's leaves, from its first token or comment to its last.
+    leaves: &'leaves [Leaf<'source>],
+    /// The span from its first leaf to its last.
+    span: ByteSpan,
+    /// The layout the source wrote before it.
+    gap: Gap,
+    /// How it joins the unit before it.
+    joins: Joins,
+}
+
+/// How a top-level unit joins the unit before it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Joins
+{
+    /// On its own line: a form, or a comment the source wrote on its own.
+    OwnLine,
+    /// After one space: a comment the source wrote on the line before it
+    /// ended, or the form a `pub` mark exports.
+    SameLine,
+    /// Touching: a separator, against the form it ends.
+    Touching,
+}
+
+/// The top-level units of `leaves`, in order.
+///
+/// # Specification
+/// trivial.
+fn units<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> Vec<Unit<'leaves, 'source>>
+{
+    let mut units = Vec::new();
+    let mut gap = Gap::Adjacent;
+    // Whether the unit before is a `pub` mark, which stands before the form it
+    // exports on that form's line.
+    let mut marked = false;
+    let mut rest = leaves;
+    while let Some((first, after)) = rest.split_first() {
+        if first.material == Material::Whitespace {
+            gap = gap.widen(Gap::of(first.text));
+            rest = after;
+            continue;
+        }
+        let mut length = 1_usize;
+        if first.owner != Owner::Root {
+            for (offset, leaf) in after.iter().enumerate() {
+                if leaf.material == Material::Whitespace {
+                    continue;
+                }
+                if leaf.owner != first.owner {
+                    break;
+                }
+                length = offset.saturating_add(2);
+            }
+        }
+        let (unit, remaining) = rest.split_at(length.min(rest.len()));
+        let separator = matches!(unit, [only] if only.material == Material::Token
+            && layout::SEPARATORS.contains(&<&str>::from(only.text)));
+        let comment = matches!(
+            first.material,
+            Material::LineComment | Material::BlockComment
+        );
+        let joins = match gap {
+            Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank if separator => Joins::Touching,
+            Gap::Adjacent | Gap::Space if comment => Joins::SameLine,
+            Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank if marked && !comment => {
+                Joins::SameLine
+            },
+            Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank => Joins::OwnLine,
+        };
+        marked = matches!(unit, [only] if only.material == Material::Token
+            && <&str>::from(only.text) == "pub");
+        let last = unit.last().map_or(first.span, |last| last.span);
+        units.push(Unit {
+            leaves: unit,
+            span: first.span.join(last),
+            gap,
+            joins,
+        });
+        gap = Gap::Adjacent;
+        rest = remaining;
+    }
+    units
+}
+
+/// The line ending a source's line breaks mostly use.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Ending
+{
+    /// A line feed.
+    Lf,
+    /// A carriage return and a line feed.
+    CrLf,
+}
+
+impl Ending
+{
+    /// The ending of `source`: a carriage return and line feed when more of
+    /// its line breaks are spelled so than not, a line feed otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(source: SourceText<'_>) -> Self
+    {
+        let source = <&str>::from(source);
+        let breaks = source.bytes().filter(|&byte| byte == b'\n').count();
+        let crlf = source.matches("\r\n").count();
+        if crlf.saturating_mul(2) > breaks {
+            Self::CrLf
+        }
+        else {
+            Self::Lf
+        }
+    }
+
+    /// The ending's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spelling(self) -> SourceFragment<'static>
+    {
+        SourceFragment::from(match self {
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
+        })
+    }
+
+    /// The ending as the layout engine names it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn physical(self) -> PhysicalLineEnding
+    {
+        match self {
+            Self::Lf => PhysicalLineEnding::Lf,
+            Self::CrLf => PhysicalLineEnding::CrLf,
+        }
+    }
+}
+
+/// Check that `text` parses to the root digest of `parsed`, spells the tokens
+/// and block comments of `leaves`, and keeps each line comment's words with
+/// its owner in its role.
+///
+/// # Specification
+/// trivial.
+fn verify(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    leaves: &[Leaf<'_>],
+    text: SourceText<'_>,
+) -> Result<(), FormatError>
+{
+    let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
+    let digest = |result: &ParseResult<'_>| result.tree().digest();
+    if digest(&reparsed) != digest(parsed) {
+        return Err(FormatError::Changed(Change::Meaning));
+    }
+    let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
+    if material(leaves).ne(material(&again.leaves)) {
+        return Err(FormatError::Changed(Change::Material));
+    }
+    let before = comments(parsed.tree());
+    let after = comments(reparsed.tree());
+    if comment_runs(parsed.tree().source(), &before)
+        .ne(&comment_runs(reparsed.tree().source(), &after))
+    {
+        return Err(FormatError::Changed(Change::Attachment));
+    }
+    Ok(())
+}
+
+/// The checker's elaboration of a source, once made: none until a rewritten
+/// source lowers otherwise, or the lowering lists a run or mints a reduct.
+type Elaborations = Option<Elaboration>;
+
+/// Check that `text`, the source rewritten, spells the tokens and block
+/// comments of `written`, and keeps each line comment's words in its role;
+/// then compare its parser obligations with the source's, each by its class
+/// and its site through the map of the pass that `written` holds; then lower
+/// it after `before` in `unit` into `arena` beside `lowered`, and say which
+/// declarations lowered otherwise — where some did and `checked` gives a
+/// checker, those it does not elaborate alike, the source elaborated into
+/// `checked`'s slot the first time one does.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the candidate's parse and lowering, the map and the
+///   elaborations, growth within the candidate's leaves
+fn verify_rewritten(
+    grammar: &Pbg,
+    (parsed, written, respelled, text): (
+        &ParseResult<'_>,
+        &[Leaf<'_>],
+        &[NodeIndex],
+        SourceText<'_>,
+    ),
+    (before, unit): (SourceText<'_>, &LoweringUnit),
+    (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
+    checked: Option<(&dyn Elaborate, &mut Elaborations)>,
+) -> Result<Agreement, FormatError>
+{
+    let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
+    let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
+    if material(written).ne(material(&again.leaves)) {
+        return Err(FormatError::Changed(Change::Material));
+    }
+    let before_comments = comments(parsed.tree());
+    let after_comments = comments(reparsed.tree());
+    if kept_runs(parsed.tree().source(), &before_comments)
+        .ne(&kept_runs(reparsed.tree().source(), &after_comments))
+    {
+        return Err(FormatError::Changed(Change::Attachment));
+    }
+    let base = ByteOffset::from(<&str>::from(before).len());
+    let sites = Sites::new(written, &again.leaves);
+    // The parser reads the text alone, so its obligations stand in the text's
+    // own offsets. Each obligation of the text before the pass pairs with one
+    // of the candidate's at the same site. An obligation that pairs with none
+    // is lost or gained.
+    let after = reparsed.obligations();
+    let mut paired: Vec<bool> = alloc::vec![false; after.len()];
+    let mut lost: Vec<ByteSpan> = Vec::new();
+    for left in parsed.obligations() {
+        let partner = after.iter().zip(&paired).position(|(right, &taken)| {
+            !taken
+                && left.class == right.class
+                && sites.spanned(left.span, right.span) == Placement::Same
+        });
+        match partner.and_then(|at| paired.get_mut(at)) {
+            Some(taken) => *taken = true,
+            None => lost.push(left.span),
+        }
+    }
+    let gained: Vec<ByteSpan> = after
+        .iter()
+        .zip(&paired)
+        .filter(|&(_, &taken)| !taken)
+        .map(|(right, _)| right.span)
+        .collect();
+    if !lost.is_empty() || !gained.is_empty() {
+        let forms: Vec<(NodeKey, ByteSpan)> = respelled
+            .iter()
+            .filter_map(|&form| {
+                parsed.tree().key(form).zip(
+                    parsed
+                        .tree()
+                        .node(form)
+                        .map(gandr_surface_syntax::Node::span),
+                )
+            })
+            .collect();
+        // Only a form that holds a lost or a gained obligation differs. An
+        // obligation that no respelled form holds withdraws them all.
+        let touches =
+            |form: ByteSpan, at: ByteSpan| form.start() <= at.end() && at.start() <= form.end();
+        let attributed = lost
+            .iter()
+            .all(|&at| forms.iter().any(|&(_, form)| touches(form, at)))
+            && gained
+                .iter()
+                .all(|&at| sites.respelled_at(at).next().is_some());
+        let holding: Vec<(NodeKey, ByteSpan)> = forms
+            .iter()
+            .copied()
+            .filter(|&(_, form)| {
+                lost.iter().any(|&at| touches(form, at))
+                    || gained.iter().any(|&at| {
+                        sites
+                            .respelled_at(at)
+                            .any(|held| form.start() <= held.start() && held.end() <= form.end())
+                    })
+            })
+            .collect();
+        let forms = if attributed && !holding.is_empty() {
+            holding
+        }
+        else {
+            forms
+        };
+        let differing = meaning::parser_obligations(lowered, base, &forms);
+        if differing.is_empty() {
+            return Err(FormatError::Changed(Change::Meaning));
+        }
+        return Ok(Agreement::ParserObligations(differing));
+    }
+    let before = <&str>::from(before);
+    let whole = (!before.is_empty()).then(|| alloc::format!("{before}{}", <&str>::from(text)));
+    let whole = match whole {
+        Some(ref whole) => {
+            Some(parse(grammar, SourceText::from(whole.as_str())).map_err(FormatError::Reparse)?)
+        },
+        None => None,
+    };
+    let tree = whole
+        .as_ref()
+        .map_or_else(|| reparsed.tree(), ParseResult::tree);
+    // A text that lowers as no module pairs with nothing: the caller writes
+    // its type applications back as calls before it refuses it.
+    let Some(respelled) = meaning::lowered(grammar, tree, unit, arena)
+    else {
+        return Ok(Agreement::Unpaired);
+    };
+    let agreement = meaning::agree(arena, (lowered, &respelled), (base, &sites), None);
+    // Only a declaration that lowered otherwise asks the checker: a source no
+    // rewrite moved between such spellings is never checked here.
+    let (&Agreement::Declarations(_), Some((checker, source))) = (&agreement, checked)
+    else {
+        return Ok(agreement);
+    };
+    let source = source.get_or_insert_with(|| checker.elaborate(arena, lowered));
+    let elaborated = meaning::Elaborated {
+        before: source,
+        after: checker.elaborate(arena, &respelled),
+    };
+    Ok(meaning::agree(
+        arena,
+        (lowered, &respelled),
+        (base, &sites),
+        Some(&elaborated),
+    ))
+}
+
+/// The words of one comment run.
+///
+/// # Specification
+///
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug, Eq, PartialEq)]
+struct CommentWords<'source>(Vec<&'source str>);
+
+impl<'source> From<SourceText<'source>> for CommentWords<'source>
+{
+    /// Collect the words in this source text.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn from(text: SourceText<'source>) -> Self
+    {
+        Self(<&str>::from(text).split_whitespace().collect())
+    }
+}
+
+impl CommentWords<'_>
+{
+    /// Add the words from the adjacent comment line.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn extend(
+        &mut self,
+        words: Self,
+    )
+    {
+        self.0.extend(words.0);
+    }
+}
+
+/// The owner, kind, role, marker and words of one comment run.
+///
+/// # Specification
+///
+/// trivial.
+#[derive(Debug, Eq, PartialEq)]
+struct CommentRun<'source>
+{
+    /// The syntax node that owns the run.
+    key: Option<NodeKey>,
+    /// The kind of each comment in the run.
+    kind: CommentKind,
+    /// The source role of the run.
+    role: Role,
+    /// The marker of each comment in the run.
+    marker: CommentMarker,
+    /// The words in the run.
+    words: CommentWords<'source>,
+}
+
+/// The kind, role, marker and words of one kept comment run.
+///
+/// # Specification
+///
+/// trivial.
+#[derive(Debug, Eq, PartialEq)]
+struct KeptCommentRun<'source>
+{
+    /// The kind of each comment in the run.
+    kind: CommentKind,
+    /// The source role of the run.
+    role: Role,
+    /// The marker of each comment in the run.
+    marker: CommentMarker,
+    /// The words in the run.
+    words: CommentWords<'source>,
+}
+
+impl<'source> From<CommentRun<'source>> for KeptCommentRun<'source>
+{
+    /// Discard the owner from this comment run.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn from(run: CommentRun<'source>) -> Self
+    {
+        Self {
+            kind: run.kind,
+            role: run.role,
+            marker: run.marker,
+            words: run.words,
+        }
+    }
+}
+
+/// The line-comment runs, grouped by their owner and marker.
+///
+/// # Specification
+///
+/// trivial.
+fn comment_runs<'source>(
+    source: SourceText<'source>,
+    comments: &[Comment<'source>],
+) -> Vec<CommentRun<'source>>
+{
+    let source = <&str>::from(source);
+    let mut runs = Vec::new();
+    let mut previous: Option<ByteOffset> = None;
+    for comment in comments {
+        if comment.kind == CommentKind::Block {
+            previous = None;
+            continue;
+        }
+        let mut adjacent = previous
+            .and_then(|end| source.get(usize::from(end) .. usize::from(comment.span.start())))
+            .is_some_and(|between| between.trim().is_empty());
+        for line in <&str>::from(comment.text).lines() {
+            let CommentLine::Line { marker, body, .. } = comment_line(SourceText::from(line))
+            else {
+                adjacent = false;
+                continue;
+            };
+            let words = CommentWords::from(body);
+            let Some(run) = runs.last_mut()
+            else {
+                runs.push(CommentRun {
+                    key: comment.key,
+                    kind: comment.kind,
+                    role: comment.role,
+                    marker,
+                    words,
+                });
+                adjacent = true;
+                continue;
+            };
+            if adjacent
+                && run.key == comment.key
+                && run.kind == comment.kind
+                && run.marker == marker
+            {
+                run.words.extend(words);
+            }
+            else {
+                runs.push(CommentRun {
+                    key: comment.key,
+                    kind: comment.kind,
+                    role: comment.role,
+                    marker,
+                    words,
+                });
+            }
+            adjacent = true;
+        }
+        previous = Some(comment.span.end());
+    }
+    runs
+}
+
+/// The line-comment runs a rewrite keeps.
+///
+/// # Specification
+///
+/// trivial.
+fn kept_runs<'source>(
+    source: SourceText<'source>,
+    comments: &[Comment<'source>],
+) -> Vec<KeptCommentRun<'source>>
+{
+    comment_runs(source, comments)
+        .into_iter()
+        .map(KeptCommentRun::from)
+        .collect()
+}
+
+/// The tokens and block comments of `leaves`, in order. An empty tile, as the
+/// one a juxtaposition holds or a layout block's virtual separator, is no
+/// material: no source writes it, so a rewrite that writes `f a` leaves it to
+/// the parse, and the tree digest and the lowering keep the structure it marks.
+///
+/// # Specification
+/// trivial.
+fn material<'leaves, 'source>(
+    leaves: &'leaves [Leaf<'source>]
+) -> impl Iterator<Item = (Material, SourceFragment<'source>)> + 'leaves
+{
+    material_leaves(leaves).map(|leaf| (leaf.material, leaf.text))
+}
+
+/// The leaves of `leaves` that [`material`] reads, in order.
+///
+/// # Specification
+/// trivial.
+fn material_leaves<'leaves, 'source>(
+    leaves: &'leaves [Leaf<'source>]
+) -> impl Iterator<Item = &'leaves Leaf<'source>> + 'leaves
+{
+    leaves.iter().filter(|leaf| {
+        !matches!(leaf.material, Material::Whitespace | Material::LineComment)
+            && !<&str>::from(leaf.text).is_empty()
+    })
+}
+
+/// The form the source's head declares: `form(explicit)` or `form(sugared)`
+/// as an entry of an attribute block written before the source's first
+/// declaration, after its imports — the one place a block before a
+/// declaration stands, since a block before an import refuses the module.
+/// A source that opens with a `rec { … }` group declares it on the group's
+/// first declaration, since a block before `rec` refuses the module too.
+///
+/// # Specification
+/// - requires: `leaves` are a source's, in offset order.
+/// - ensures: the form named by the first `form` entry of the attribute blocks
+///   before the first token, outside an import, that no block holds, where the
+///   `rec {` that opens a leading group holds none; none when there is none, or
+///   it names neither form.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the declaration is read from the leaves' text, which a
+///   predicate over the answer would read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source declaring the explicit form keeps it under
+///   either option, after an import as at its first line and on a leading `rec`
+///   group's first declaration; a source declaring either form is written in it
+///   whatever the option asks.
+/// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
+/// - witness: `tests::rewrite::a_declared_form_wins_over_the_option`
+fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
+{
+    let tokens: Vec<&str> = leaves
+        .iter()
+        .filter(|leaf| matches!(leaf.owner, Owner::Form(_)) && leaf.material == Material::Token)
+        .map(|leaf| <&str>::from(leaf.text))
+        .collect();
+    let mut depth = 0_usize;
+    let mut importing = false;
+    let mut grouped = None;
+    for (at, &token) in tokens.iter().enumerate() {
+        match token {
+            ";" if importing => importing = false,
+            _ if importing => {},
+            "import" if depth == 0 && grouped.is_none() => importing = true,
+            "rec"
+                if depth == 0
+                    && grouped.is_none()
+                    && tokens.get(at.saturating_add(1)) == Some(&"{") =>
+            {
+                grouped = Some(at.saturating_add(1));
+            },
+            "{" if depth == 0 && grouped == Some(at) => {},
+            "@[" => depth = depth.saturating_add(1),
+            "[" if depth > 0 => depth = depth.saturating_add(1),
+            "]" if depth > 0 => depth = depth.saturating_sub(1),
+            _ if depth == 0 => return None,
+            "form" if depth == 1 => {
+                if let (Some(&"("), Some(&word), Some(&")")) = (
+                    tokens.get(at.saturating_add(1)),
+                    tokens.get(at.saturating_add(2)),
+                    tokens.get(at.saturating_add(3)),
+                ) {
+                    return match word {
+                        "explicit" => Some(Form::Explicit),
+                        "sugared" => Some(Form::Sugared),
+                        _ => None,
+                    };
+                }
+            },
+            _ => {},
+        }
+    }
+    None
+}
+
+/// The source with every bare `@[ checks ]` block at the top level removed:
+/// a claim attribute that serves nothing in the sugared form, where a source
+/// with no claim means `checks`. An indented `@[ checks ]` is a member
+/// attribute, a distinct concern (#1462), and stays. A block with any other
+/// entry — `checks` beside a `form` or a `doc`, or any other claim — is kept,
+/// as is a `checks` the source spells in its explicit form. A block that opens
+/// a line is removed with the whitespace after it, whether the declaration
+/// follows on that line or below; when nothing follows on its line, the line
+/// break goes too, so the documentation above it leads the declaration
+/// directly.
+///
+/// # Specification
+/// - requires: `source` is a source's text.
+/// - ensures: the text with every bare `@[ checks ]` block that opens a line at
+///   column zero removed, with the whitespace after it on its line, and with
+///   its line break when nothing else stands on that line; any whitespace
+///   inside the block is the block's. An indented `@[ checks ]` and every other
+///   line are unchanged.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the strip is a source-text normalization the formatter
+///   applies before it reads the tree, and the corpus sweep checks it against
+///   every source's digest; a predicate over the answer would re-read the
+///   source's lines.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sugared source with a bare `@[ checks ]` claim formats
+///   without it, the formatter checking the result against the source's digest
+///   and material, and a source whose `@[ checks ]` is a member attribute keeps
+///   it.
+/// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
+fn strip_bare_checks(source: SourceText<'_>) -> alloc::string::String
+{
+    let text = <&str>::from(source);
+    let mut out = alloc::string::String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let content = line
+            .strip_suffix('\n')
+            .unwrap_or(line)
+            .trim_end_matches('\r');
+        let rest = content
+            .strip_prefix("@[")
+            .and_then(|inner| inner.split_once(']'))
+            .filter(|&(entries, _)| {
+                entries
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .eq("checks".chars())
+            })
+            .map(|(_, after)| after.trim_start());
+        match rest {
+            Some("") => {},
+            Some(after) => {
+                out.push_str(after);
+                out.push_str(line.get(content.len() ..).unwrap_or_default());
+            },
+            None => out.push_str(line),
+        }
+    }
+    out
+}

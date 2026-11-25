@@ -1,0 +1,6 @@
+def low(r : *{low : Integer, high : Bool}) -> Integer = match r {
+  | *{.high = h, .low = l} => l
+};
+def first(r : *{low : Integer, high : Bool}) -> Integer = match r {
+  | *{p, q} => p
+};

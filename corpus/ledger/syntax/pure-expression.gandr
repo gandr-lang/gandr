@@ -1,0 +1,3 @@
+/// `pure_expression`: a pure computation returning a value.
+def answer() -> Integer =
+  pure 42

@@ -1,0 +1,42 @@
+//! A rule of a theory whose left side matches a constant under a definition.
+//!
+//! The rule `both dark x <=> dark` needs the constant `dark` as the first
+//! argument. A source names that constant often by a definition, as a model
+//! member does. The term `both unlit x` then holds no redex as written.
+//!
+//! The checker reads a leaf that is a definition by its body, where the body
+//! is a constructor of the theory. The kernel does the same. The rule then
+//! meets its constant.
+//!
+//! - see: #8283
+
+/// The theory of a lamp.
+theory Lamp where
+  /// The states of a lamp.
+  sort L : Type;
+  /// The lamp that gives no light.
+  oper dark : L;
+  /// The lamp that gives light.
+  oper lit : L;
+  /// The light that two lamps give together in a series.
+  oper both : (x : L, y : L) --> L;
+  /// A dark lamp first gives no light.
+  rule bothDark : both dark x <=> dark;
+  /// A lit lamp first gives the light of the second.
+  rule bothLit : both lit x <=> x;
+
+/// The dark lamp under a name.
+def unlit : Terms Lamp = Lamp.dark;
+
+/// The name `unlit` under a second name.
+def dim : Terms Lamp = unlit;
+
+/// The rule meets the constant under one definition.
+///
+/// - see: #8283
+def absorbUnlit(x : Terms Lamp) -> Path (Lamp.both unlit x) Lamp.dark = Path.here Lamp.dark;
+
+/// The rule meets the constant under two definitions.
+///
+/// - see: #8283
+def absorbDim(x : Terms Lamp) -> Path (Lamp.both dim x) Lamp.dark = Path.here Lamp.dark;

@@ -1,0 +1,5 @@
+theory T where {
+  sort Tm : Type;
+  oper f : ({keyword} : Tm) --> Tm;
+}
+def ok = 2 ;

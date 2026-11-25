@@ -1,0 +1,18 @@
+//! `written-while-kept` writes a value while its region retains a shared view.
+//!
+//! An address-shaped self-reference freezes.
+//! Exclusive access waits for the region to end. The checker refuses the write
+//! as `HeldKept`.
+//!
+//! The source binds a thunk at `s`. It writes `s`. It then forces the thunk.
+//!
+//! Rust refuses a write through a value borrowed from itself.
+//! - see: #1183 — `writtenWhileKept`
+
+/// `writtenWhileKept` writes its hold while a thunk retains its view.
+@[refuses("HeldKept")]
+def writtenWhileKept() -> Integer =
+  var s = 3
+  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
+  access s as v { resume v 4 };
+  force k

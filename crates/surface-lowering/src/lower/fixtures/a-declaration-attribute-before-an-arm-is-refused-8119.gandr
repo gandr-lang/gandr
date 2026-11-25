@@ -1,0 +1,4 @@
+data Flag : Type where
+  | Off : Flag
+  @[deprecated]
+  | On : Flag

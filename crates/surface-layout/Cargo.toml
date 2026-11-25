@@ -1,0 +1,34 @@
+[package]
+name = "gandr-surface-layout"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The document-layout engine: a sealed document arena, Pareto resolution under width taint, a plan arena and a first-order render machine, every step metered"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "layout", "pareto", "pretty-printing"]
+categories = ["text-processing"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# A lookup that finds nothing says why through the shape crate's named
+# absence.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+quenchant-shape.workspace = true
+
+# The algebra suite generates text leaves and bounded construction inputs.
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

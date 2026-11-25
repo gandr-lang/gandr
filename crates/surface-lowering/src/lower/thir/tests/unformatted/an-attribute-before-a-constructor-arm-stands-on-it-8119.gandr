@@ -1,0 +1,20 @@
+data Expr(f : Type) : Type where
+  | Lit : (n : Integer) --> Expr f
+  | Param : Expr f
+  | If : (c : Expr f, t : Expr f, e : Expr f) --> Expr f
+  | Return : (e : Expr f) --> Expr f
+  | Call : (g : f, e : Expr f) --> Expr f
+
+data Item : Type where
+  | Other : Item
+  /// `identity`, which answers its argument.
+  @[item("identity")]
+  | Identity : Item
+  @[item("example")]
+  /// `example`, the function under proof.
+  | Example : Item
+
+@[thir(("a.rs", "both"))]
+def staged : Expr Item;
+
+def written : Expr Item = Return (Call Identity (Call Example Param));

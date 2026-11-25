@@ -1,0 +1,73 @@
+test: width::tests::a_reserved_width_takes_no_share_7539
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher width::tests::a_reserved_width_takes_no_share_7539 --break surface_dispatcher::width::reserved$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/6d92cb34fb291c80/out/gandr_surface_dispatcher-6d92cb34fb291c80"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/6d92cb34fb291c80/out/gandr_surface_dispatcher-6d92cb34fb291c80' (x86_64).
+(lldb) settings set -- target.run-args  "width::tests::a_reserved_width_takes_no_share_7539" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex surface_dispatcher::width::reserved$
+Breakpoint 1: where = gandr_surface_dispatcher-6d92cb34fb291c80`gandr_surface_dispatcher::width::reserved + 4 at width.rs:202:21, address = 0x0000000001892564
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-6d92cb34fb291c80`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x0000000005360988
+(lldb) run
+
+running 1 test
+test width::tests::a_reserved_width_takes_no_share_7539 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 221731 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/6d92cb34fb291c80/out/gandr_surface_dispatcher-6d92cb34fb291c80' (x86_64)
+Process 221731 stopped
+* thread #2, name = 'width::tests::a', stop reason = breakpoint 1.1
+       frame #0: 0x0000555556de6564 gandr_surface_dispatcher-6d92cb34fb291c80`gandr_surface_dispatcher::width::reserved at width.rs:202:21
+   199 	/// trivial.
+   200 	fn reserved() -> Threads
+   201 	{
+-> 202 	    let available = available();
+    	                    ^
+   203 	    let (_tests, budget) = bounds(available);
+   204 	    share(host(available), (None, budget))
+   205 	}
+(lldb) bt 24
+* thread #2, name = 'width::tests::a', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555556de6564 gandr_surface_dispatcher-6d92cb34fb291c80`gandr_surface_dispatcher::width::reserved at width.rs:202:21
+     frame #1: 0x0000555556da7fdd gandr_surface_dispatcher-6d92cb34fb291c80`<gandr_surface_dispatcher::width::Width>::threads::{closure#0} at width.rs:157:31
+     frame #2: 0x0000555556dc5b17 gandr_surface_dispatcher-6d92cb34fb291c80`anodized::__::eval_once::<gandr_surface_dispatcher::width::Threads, <gandr_surface_dispatcher::width::Width>::threads::{closure#0}>(closure={_ref__self:Reserved}) at __.rs:32:5 [inlined]
+     frame #3: 0x0000555556dc5b0d gandr_surface_dispatcher-6d92cb34fb291c80`<gandr_surface_dispatcher::width::Width>::threads(self=Reserved) at width.rs:144:5
+     frame #4: 0x0000555556debf1e gandr_surface_dispatcher-6d92cb34fb291c80`gandr_surface_dispatcher::width::tests::a_reserved_width_takes_no_share_7539 at width.rs:680:40
+     frame #5: 0x0000555556dbcea7 gandr_surface_dispatcher-6d92cb34fb291c80`gandr_surface_dispatcher::width::tests::a_reserved_width_takes_no_share_7539::{closure#0}((null)={}) at width.rs:678:46
+     frame #6: 0x0000555556f76b76 gandr_surface_dispatcher-6d92cb34fb291c80`<gandr_surface_dispatcher::width::tests::a_reserved_width_takes_no_share_7539::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x00005555570d87eb gandr_surface_dispatcher-6d92cb34fb291c80`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #8: 0x00005555570d87e9 gandr_surface_dispatcher-6d92cb34fb291c80`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #9: 0x00005555570e59c5 gandr_surface_dispatcher-6d92cb34fb291c80`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #10: 0x00005555570e59c0 gandr_surface_dispatcher-6d92cb34fb291c80`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #11: 0x00005555570e59c0 gandr_surface_dispatcher-6d92cb34fb291c80`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #12: 0x00005555570e59ab gandr_surface_dispatcher-6d92cb34fb291c80`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #13: 0x00005555570e59ab gandr_surface_dispatcher-6d92cb34fb291c80`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #14: 0x00005555570e59ab gandr_surface_dispatcher-6d92cb34fb291c80`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #15: 0x00005555570e5996 gandr_surface_dispatcher-6d92cb34fb291c80`test::run_test::{closure#0} at lib.rs:645:43
+     frame #16: 0x00005555570e03b4 gandr_surface_dispatcher-6d92cb34fb291c80`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #17: 0x00005555570e0339 gandr_surface_dispatcher-6d92cb34fb291c80`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #18: 0x00005555570e8a52 gandr_surface_dispatcher-6d92cb34fb291c80`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #19: 0x00005555570e8a43 gandr_surface_dispatcher-6d92cb34fb291c80`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #20: 0x00005555570e8a43 gandr_surface_dispatcher-6d92cb34fb291c80`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #21: 0x00005555570e8a33 gandr_surface_dispatcher-6d92cb34fb291c80`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #22: 0x00005555570e8a33 gandr_surface_dispatcher-6d92cb34fb291c80`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #23: 0x00005555570e8a33 gandr_surface_dispatcher-6d92cb34fb291c80`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+(lldb) frame variable --depth 3
+(lldb) up
+frame #1: 0x0000555556da7fdd gandr_surface_dispatcher-6d92cb34fb291c80`<gandr_surface_dispatcher::width::Width>::threads::{closure#0} at width.rs:157:31
+   154 	                let available = available();
+   155 	                share(host(available), bounds(available))
+   156 	            },
+-> 157 	            Self::Reserved => reserved(),
+    	                              ^
+   158 	        }
+   159 	    }
+   160 	
+(lldb) frame variable --depth 3
+(gandr_surface_dispatcher::width::Width) self = Reserved

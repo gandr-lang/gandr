@@ -1,0 +1,43 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/fold-drops-variable.gandr:24:3
+   │
+23 │    def rec crossed(w : Width, t : Fragment w) -> Fragment w =
+   │    │               ┬          ─ checked against `Fragment w -> -F Fragment w`; while checking the body of this function; binds t : Fragment w
+   │    │               │
+   │ ┌──┘               checked against `(a : Width) -> Fragment a -> -F Fragment a`; while checking the body of this function; binds w : Width
+   │ │
+24 │ │┏   match t where
+25 │ │┃     | Low => Low
+26 │ │┃     | High => High
+27 │ │┃     | And(a, b) => And (crossed[<] Bit a) (crossed[<] Bit b)
+   ┆ ┆┇
+30 │ │┃     | Zext(b) => Zext (crossed[<] Bit b)
+31 │ │┃     | Choose(c, x, y) => Choose (crossed[<] Bit c) (crossed[<] Word y) (crossed[<] Word x)
+   │ │┃                                                                                          ╿
+   │ └┃──────────────────────────────────────────────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(w : Width, Fragment w) -> Fragment w`; while checking the body of this function; binds crossed : (a : Width, Fragment a) -> Fragment a
+   │                                                                                             a case its datatype's rules do not admit
+   │
+   ├ note: `crossed` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies
+
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/fold-drops-variable.gandr:39:3
+   │
+38 │    def rec under(t : Fragment Word, d : Fragment Word) -> Fragment Word =
+   │    │             ┬                  ─ checked against `Fragment Word -> -F Fragment Word`; while checking the body of this function; binds d : Fragment Word
+   │    │             │
+   │ ┌──┘             checked against `Fragment Word -> Fragment Word -> -F Fragment Word`; while checking the body of this function; binds t : Fragment Word
+   │ │
+39 │ │┏   match t where
+40 │ │┃     | Zero => d
+41 │ │┃     | One => One
+42 │ │┃     | Zext(b) => Zext b
+43 │ │┃     | Choose(c, x, y) => Choose c (under[<] x d) (under[<] y d)
+   │ │┃                                                               ╿
+   │ └┃───────────────────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(Fragment Word, Fragment Word) -> Fragment Word`; while checking the body of this function; binds under : (Fragment Word, Fragment Word) -> Fragment Word
+   │                                                                  a case its datatype's rules do not admit
+   │
+   ├ note: `under` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

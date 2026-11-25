@@ -1,0 +1,85 @@
+test: rotation::tests::the_nights_take_every_row_once
+package: gandr-workflow-sweep
+command: mise run debug:test gandr-workflow-sweep rotation::tests::the_nights_take_every_row_once --break holds_row
+
+(lldb) target create "target/debug-trace/debug/build/gandr-workflow-sweep/450a7a35ffc1b8e5/out/gandr_workflow_sweep-450a7a35ffc1b8e5"
+Current executable set to 'target/debug-trace/debug/build/gandr-workflow-sweep/450a7a35ffc1b8e5/out/gandr_workflow_sweep-450a7a35ffc1b8e5' (arm64).
+(lldb) settings set -- target.run-args  "rotation::tests::the_nights_take_every_row_once" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex holds_row
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_workflow_sweep-450a7a35ffc1b8e5`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001015c04a8
+(lldb) run
+
+running 1 test
+test rotation::tests::the_nights_take_every_row_once ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 71151 launched: 'target/debug-trace/debug/build/gandr-workflow-sweep/450a7a35ffc1b8e5/out/gandr_workflow_sweep-450a7a35ffc1b8e5' (arm64)
+Process 71151 stopped
+* thread #2, name = 'rotation::tests::the_nights_take_every_row_once', stop reason = breakpoint 1.4
+       frame #0: 0x000000010003b11c gandr_workflow_sweep-450a7a35ffc1b8e5`<gandr_workflow_sweep::rotation::Rotation>::holds_row(self=Night({0:0}), row={0:0}, nights={0:4}) at rotation.rs:331:5
+   328 	    ///   rows, a night that does not wrap or a night count ignored fails the
+   329 	    ///   witness.
+   330 	    /// - witness: `rotation::tests::the_nights_take_every_row_once`
+-> 331 	    #[spec(ensures: |ret| (self != Self::Whole && nights.0 != 0) || ret == Held::Tonight)]
+    	    ^
+   332 	    #[inline]
+   333 	    #[must_use]
+   334 	    pub fn holds_row(
+(lldb) bt 24
+error: gandr_workflow_sweep-450a7a35ffc1b8e5.gandr_workflow_sweep.c146e285393fc64b-cgu.15.rcgu.o 0x40000f000000ecdd: DW_TAG_member 'iter' refers to type 0x000000000000b43f which was unable to be parsed
+* thread #2, name = 'rotation::tests::the_nights_take_every_row_once', stop reason = breakpoint 1.4
+   * frame #0: 0x000000010003b11c gandr_workflow_sweep-450a7a35ffc1b8e5`<gandr_workflow_sweep::rotation::Rotation>::holds_row(self=Night({0:0}), row={0:0}, nights={0:4}) at rotation.rs:331:5
+     frame #1: 0x0000000100048284 gandr_workflow_sweep-450a7a35ffc1b8e5`gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}((null)=0x0000000170005938) at rotation.rs:717:41
+     frame #2: 0x000000010004dadc gandr_workflow_sweep-450a7a35ffc1b8e5`<&mut gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0} as core::ops::function::FnMut<(&usize,)>>::call_mut(self=0x0000000170005990, args=(0x0000000170005938)) at function.rs:298:21
+     frame #3: 0x000000010002dc78 gandr_workflow_sweep-450a7a35ffc1b8e5`core::iter::traits::iterator::Iterator::find::check::<usize, &mut gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}>::{closure#0}((null)=<unavailable>, x=0) at iterator.rs:2963:20
+     frame #4: 0x000000010006d9e8 gandr_workflow_sweep-450a7a35ffc1b8e5`<core::ops::range::Range<usize> as core::iter::traits::iterator::Iterator>::try_fold::<(self={start:1, end:40}, init=<unavailable>, f={predicate:{_ref__rotation:Night({0:0}), _ref__nights:{__0:4}}}), core::iter::traits::iterator::Iterator::find::check<usize, &mut gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<usize>> at iterator.rs:2490:21
+     frame #5: 0x000000010006d904 gandr_workflow_sweep-450a7a35ffc1b8e5`<core::ops::range::Range<usize> as core::iter::traits::iterator::Iterator>::find::<&mut gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}>(self={start:1, end:40}, predicate={_ref__rotation:Night({0:0}), _ref__nights:{__0:4}}) at iterator.rs:2967:14
+     frame #6: 0x000000010006556c gandr_workflow_sweep-450a7a35ffc1b8e5`<core::iter::adapters::filter::Filter<core::ops::range::Range<usize>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}> as core::iter::traits::iterator::Iterator>::next(self={iter:{start:1, end:40}, predicate:{_ref__rotation:Night({0:0}), _ref__nights:{__0:4}}}) at filter.rs:98:19
+     frame #7: 0x000000010001ee30 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<usize> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<usize, core::iter::adapters::filter::Filter<core::ops::range::Range<usize>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}>>>::from_iter(iterator=<unavailable>) at spec_from_iter_nested.rs:24:41
+     frame #8: 0x000000010001dcc8 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<usize> as alloc::vec::spec_from_iter::SpecFromIter<usize, core::iter::adapters::filter::Filter<core::ops::range::Range<usize>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}>>>::from_iter(iterator=<unavailable>) at spec_from_iter.rs:33:9
+     frame #9: 0x000000010001b870 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<usize> as core::iter::traits::collect::FromIterator<usize>>::from_iter::<core::iter::adapters::filter::Filter<core::ops::range::Range<usize>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}>>(iter=<unavailable>) at mod.rs:3996:9
+     frame #10: 0x0000000100062b90 gandr_workflow_sweep-450a7a35ffc1b8e5`<core::iter::adapters::filter::Filter<core::ops::range::Range<usize>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}> as core::iter::traits::iterator::Iterator>::collect::<alloc::vec::Vec<usize>>(self=<unavailable>) at iterator.rs:2086:9
+     frame #11: 0x000000010004901c gandr_workflow_sweep-450a7a35ffc1b8e5`gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}((null)={}, rotation=Night({0:0}), nights={0:4}) at rotation.rs:718:18
+     frame #12: 0x00000001000490ac gandr_workflow_sweep-450a7a35ffc1b8e5`gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}(night=0) at rotation.rs:723:30
+     frame #13: 0x000000010007facc gandr_workflow_sweep-450a7a35ffc1b8e5`core::iter::adapters::map::map_fold::<u64, alloc::vec::Vec<usize>, (), gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}, core::iter::traits::iterator::Iterator::for_each::call<alloc::vec::Vec<usize>, <alloc::vec::Vec<alloc::vec::Vec<usize>>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>::{closure#0}>::{closure#0}>::{closure#0}(acc=<unavailable>, elt=0) at map.rs:88:28
+     frame #14: 0x000000010006de18 gandr_workflow_sweep-450a7a35ffc1b8e5`<core::ops::range::Range<u64> as core::iter::traits::iterator::Iterator>::fold::<(self=<unavailable>, init=<unavailable>, f={g:{f:{ptr:size=0, local_len:{len:0x0000000170005f50, local_len:0}}}, f:{_ref__taken:{}, _ref__nights:{__0:4}}}), core::iter::adapters::map::map_fold<u64, alloc::vec::Vec<usize>, (), gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}, core::iter::traits::iterator::Iterator::for_each::call<alloc::vec::Vec<usize>, <alloc::vec::Vec<alloc::vec::Vec<usize>>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>::{closure#0}>::{closure#0}>::{closure#0}> at iterator.rs:2667:21
+     frame #15: 0x000000010007e21c gandr_workflow_sweep-450a7a35ffc1b8e5`<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}> as core::iter::traits::iterator::Iterator>::fold::<(self=<unavailable>, init=<unavailable>, g=<unavailable>), core::iter::traits::iterator::Iterator::for_each::call<alloc::vec::Vec<usize>, <alloc::vec::Vec<alloc::vec::Vec<usize>>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>::{closure#0}>::{closure#0}> at map.rs:128:19
+     frame #16: 0x000000010007e880 gandr_workflow_sweep-450a7a35ffc1b8e5`<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}> as core::iter::traits::iterator::Iterator>::for_each::<<alloc::vec::Vec<alloc::vec::Vec<usize>>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>::{closure#0}>(self=<unavailable>, f=<unavailable>) at iterator.rs:887:14
+     frame #17: 0x0000000100019008 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<alloc::vec::Vec<usize>>>::extend_trusted::<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>(self=size=0, iterator={f:{_ref__taken:{}, _ref__nights:{__0:4}}}) at mod.rs:4132:26
+     frame #18: 0x000000010001ffa0 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<alloc::vec::Vec<usize>> as alloc::vec::spec_extend::SpecExtend<alloc::vec::Vec<usize>, core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>>::spec_extend(self=size=0, iterator=<unavailable>) at spec_extend.rs:27:14
+     frame #19: 0x0000000100020da0 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<alloc::vec::Vec<usize>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<usize>, core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>>::from_iter(iterator={f:{_ref__taken:{}, _ref__nights:{__0:4}}}) at spec_from_iter_nested.rs:60:16
+     frame #20: 0x000000010001d9c0 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<alloc::vec::Vec<usize>> as alloc::vec::spec_from_iter::SpecFromIter<alloc::vec::Vec<usize>, core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>>::from_iter(iterator=<unavailable>) at spec_from_iter.rs:33:9
+     frame #21: 0x000000010001b268 gandr_workflow_sweep-450a7a35ffc1b8e5`<alloc::vec::Vec<alloc::vec::Vec<usize>> as core::iter::traits::collect::FromIterator<alloc::vec::Vec<usize>>>::from_iter::<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}>>(iter=<unavailable>) at mod.rs:3996:9
+     frame #22: 0x000000010007e850 gandr_workflow_sweep-450a7a35ffc1b8e5`<core::iter::adapters::map::Map<core::ops::range::Range<u64>, gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#1}> as core::iter::traits::iterator::Iterator>::collect::<alloc::vec::Vec<alloc::vec::Vec<usize>>>(self=<unavailable>) at iterator.rs:2086:9
+     frame #23: 0x000000010004b7a0 gandr_workflow_sweep-450a7a35ffc1b8e5`gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once at rotation.rs:724:18
+(lldb) frame variable --depth 3
+(gandr_workflow_sweep::rotation::Rotation) self = Night({0:0}) {
+  0 = {0:0}
+}
+(gandr_workflow_sweep::rotation::Row) row = {0:0}
+(gandr_workflow_sweep::rotation::Nights) nights = {0:4}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000000100048284 gandr_workflow_sweep-450a7a35ffc1b8e5`gandr_workflow_sweep::rotation::tests::the_nights_take_every_row_once::{closure#0}::{closure#0}((null)=0x0000000170005938) at rotation.rs:717:41
+   714 	    {
+   715 	        let taken = |rotation: Rotation, nights: Nights| -> Vec<usize> {
+   716 	            (0_usize .. 40_usize)
+-> 717 	                .filter(|&row| rotation.holds_row(Row(row), nights) == Held::Tonight)
+    	                                        ^
+   718 	                .collect()
+   719 	        };
+   720 	        for count in [4, 13] {
+(lldb) frame variable --depth 3
+(unsigned long *)  = 0x0000000170005938
+(gandr_workflow_sweep::rotation::Rotation) rotation = Night({0:0}) {
+  0 = {0:0}
+}
+(gandr_workflow_sweep::rotation::Nights) nights = {0:4}
+(unsigned long) row = 0

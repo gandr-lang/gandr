@@ -1,0 +1,18 @@
+/// Shapes of pasting contexts on their own, written as their diagrams.
+///
+/// A writer sometimes states a coherence over a shape with no cells in scope.
+/// Diagnostics, certificates and catalogue keys print the same diagram.
+///
+/// `Pasting.#shape{ … }` names a shape's points and its cells along one chain.
+/// No source writes the nested-list tree the checker keeps inside.
+///
+/// - see: #4560 — the cells sketch, its rulings in the issue body
+
+// The pasting module, its shape reader qualified.
+import std.math.category.Pasting;
+
+/// Two composable 1-cells.
+def chain2 : Pasting.Shape = Pasting.#shape{ x -f-> y -g-> z }
+
+/// Three composable 1-cells, the shape of the associator's coherence.
+def chain3 : Pasting.Shape = Pasting.#shape{ w -f-> x -g-> y -h-> z }

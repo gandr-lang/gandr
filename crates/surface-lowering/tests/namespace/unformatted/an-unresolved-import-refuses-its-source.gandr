@@ -1,0 +1,3 @@
+import "./nowhere.gandr" ;
+def one : Integer ;
+def one = 1 ;

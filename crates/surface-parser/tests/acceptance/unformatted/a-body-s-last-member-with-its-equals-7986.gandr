@@ -1,0 +1,5 @@
+theory S where {
+  def rec f(x : Nat) -> d =
+    match x where
+      | Zero => Zero
+}

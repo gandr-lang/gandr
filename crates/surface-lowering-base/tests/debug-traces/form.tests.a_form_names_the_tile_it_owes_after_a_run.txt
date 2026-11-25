@@ -1,0 +1,83 @@
+test: form::tests::a_form_names_the_tile_it_owes_after_a_run
+package: gandr-surface-lowering-base
+command: mise run debug:test gandr-surface-lowering-base form::tests::a_form_names_the_tile_it_owes_after_a_run --break owed_tile
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lowering-base/3c190ddca4640b99/out/gandr_surface_lowering_base-3c190ddca4640b99"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lowering-base/3c190ddca4640b99/out/gandr_surface_lowering_base-3c190ddca4640b99' (x86_64).
+(lldb) settings set -- target.run-args  "form::tests::a_form_names_the_tile_it_owes_after_a_run" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex owed_tile
+Breakpoint 1: 13 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lowering_base-3c190ddca4640b99`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000013a65c8
+(lldb) run
+
+running 1 test
+test form::tests::a_form_names_the_tile_it_owes_after_a_run ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2653557 launched: 'target/debug-trace/debug/build/gandr-surface-lowering-base/3c190ddca4640b99/out/gandr_surface_lowering_base-3c190ddca4640b99' (x86_64)
+Process 2653557 stopped
+* thread #2, name = 'form::tests::a_', stop reason = breakpoint 1.7
+       frame #0: 0x00005555560c941e gandr_surface_lowering_base-3c190ddca4640b99`gandr_surface_lowering_base::form::owed_tile(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{}}, _marker:{}}, rules:size=176, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:176, alloc:{value:{}}, _marker:{}}}, adaptations:size=78, molds:{molds:size=3147, rctxs:size=3147, bounds:size=3147, owners:size=3147, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:17, items:207}, alloc:{}, marker:{}}}, menus:size=207, mold_labels:size=3147, adjacencies:size=7498, successor_starts:size=3148, has_pred:size=3147, has_succ:size=3147, form_first:size=212, is_first:size=3147, form_last:size=290, complete_last:size=240, is_complete_last:size=3147, required_tail:size=50, is_required_tail:size=3147, closing:size=3147, twins:size=3147, fingerprint:{0:9264067548224936917}}, automaton:{kinds:size=3147, observations:size=3147, width:50, sets:size=900}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, tree={source:{0:"def same(n : Integer) -> -F Integer =\n  match n where\n    | zero @ 0 => return zero\n    | _ =>> return n\n"}, grammar:{0:9264067548224936917}, nodes:size=62, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=62, digest:Some({0:"\xc8\xe8\xf7\xf3\U00000019I\xbdK\xa2\b\xb7\x86ҥ\xc3\xee\xb3\U00000006\U0000001b\x88:Q\U0000001c[\xc20B5\U00000016T\x84W"})}}, declaration={0:0}, run={0:92}) at form.rs:4019:18
+(lldb) bt 24
+* thread #2, name = 'form::tests::a_', stop reason = breakpoint 1.7
+   * frame #0: 0x00005555560c941e gandr_surface_lowering_base-3c190ddca4640b99`gandr_surface_lowering_base::form::owed_tile(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{}}, _marker:{}}, rules:size=176, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:176, alloc:{value:{}}, _marker:{}}}, adaptations:size=78, molds:{molds:size=3147, rctxs:size=3147, bounds:size=3147, owners:size=3147, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:17, items:207}, alloc:{}, marker:{}}}, menus:size=207, mold_labels:size=3147, adjacencies:size=7498, successor_starts:size=3148, has_pred:size=3147, has_succ:size=3147, form_first:size=212, is_first:size=3147, form_last:size=290, complete_last:size=240, is_complete_last:size=3147, required_tail:size=50, is_required_tail:size=3147, closing:size=3147, twins:size=3147, fingerprint:{0:9264067548224936917}}, automaton:{kinds:size=3147, observations:size=3147, width:50, sets:size=900}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, tree={source:{0:"def same(n : Integer) -> -F Integer =\n  match n where\n    | zero @ 0 => return zero\n    | _ =>> return n\n"}, grammar:{0:9264067548224936917}, nodes:size=62, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=62, digest:Some({0:"\xc8\xe8\xf7\xf3\U00000019I\xbdK\xa2\b\xb7\x86ҥ\xc3\xee\xb3\U00000006\U0000001b\x88:Q\U0000001c[\xc20B5\U00000016T\x84W"})}}, declaration={0:0}, run={0:92}) at form.rs:4019:18
+     frame #1: 0x0000555555dd880f gandr_surface_lowering_base-3c190ddca4640b99`gandr_surface_lowering_base::form::tests::a_form_names_the_tile_it_owes_after_a_run at form.rs:7226:13
+     frame #2: 0x0000555555dc3887 gandr_surface_lowering_base-3c190ddca4640b99`gandr_surface_lowering_base::form::tests::a_form_names_the_tile_it_owes_after_a_run::{closure#0}((null)={}) at form.rs:7218:51
+     frame #3: 0x00005555562a1786 gandr_surface_lowering_base-3c190ddca4640b99`<gandr_surface_lowering_base::form::tests::a_form_names_the_tile_it_owes_after_a_run::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x00005555564b5d1b gandr_surface_lowering_base-3c190ddca4640b99`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x00005555564b5d19 gandr_surface_lowering_base-3c190ddca4640b99`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #6: 0x00005555564c2ef5 gandr_surface_lowering_base-3c190ddca4640b99`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #7: 0x00005555564c2ef0 gandr_surface_lowering_base-3c190ddca4640b99`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x00005555564c2ef0 gandr_surface_lowering_base-3c190ddca4640b99`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #9: 0x00005555564c2edb gandr_surface_lowering_base-3c190ddca4640b99`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #10: 0x00005555564c2edb gandr_surface_lowering_base-3c190ddca4640b99`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x00005555564c2edb gandr_surface_lowering_base-3c190ddca4640b99`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #12: 0x00005555564c2ec6 gandr_surface_lowering_base-3c190ddca4640b99`test::run_test::{closure#0} at lib.rs:645:43
+     frame #13: 0x00005555564bd8e4 gandr_surface_lowering_base-3c190ddca4640b99`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #14: 0x00005555564bd869 gandr_surface_lowering_base-3c190ddca4640b99`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x00005555564c5f82 gandr_surface_lowering_base-3c190ddca4640b99`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x00005555564c5f73 gandr_surface_lowering_base-3c190ddca4640b99`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x00005555564c5f73 gandr_surface_lowering_base-3c190ddca4640b99`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #18: 0x00005555564c5f63 gandr_surface_lowering_base-3c190ddca4640b99`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #19: 0x00005555564c5f63 gandr_surface_lowering_base-3c190ddca4640b99`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x00005555564c5f63 gandr_surface_lowering_base-3c190ddca4640b99`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x00005555564c5f54 gandr_surface_lowering_base-3c190ddca4640b99`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555691ceaf gandr_surface_lowering_base-3c190ddca4640b99`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+     frame #23: 0x000055555691cea8 gandr_surface_lowering_base-3c190ddca4640b99`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:127:17
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) pbg = 0x00007ffff79fdf10 {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{}}, _marker:{}}, rules:size=176, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:176, alloc:{value:{}}, _marker:{}}}, adaptations:size=78, molds:{molds:size=3147, rctxs:size=3147, bounds:size=3147, owners:size=3147, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:17, items:207}, alloc:{}, marker:{}}}, menus:size=207, mold_labels:size=3147, adjacencies:size=7498, successor_starts:size=3148, has_pred:size=3147, has_succ:size=3147, form_first:size=212, is_first:size=3147, form_last:size=290, complete_last:size=240, is_complete_last:size=3147, required_tail:size=50, is_required_tail:size=3147, closing:size=3147, twins:size=3147, fingerprint:{0:9264067548224936917}}, automaton:{kinds:size=3147, observations:size=3147, width:50, sets:size=900}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}
+(gandr_surface_syntax::tree::SyntaxTree *) tree = 0x00007ffff79fe258 {source:{0:"def same(n : Integer) -> -F Integer =\n  match n where\n    | zero @ 0 => return zero\n    | _ =>> return n\n"}, grammar:{0:9264067548224936917}, nodes:size=62, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=62, digest:Some({0:"\xc8\xe8\xf7\xf3\U00000019I\xbdK\xa2\b\xb7\x86ҥ\xc3\xee\xb3\U00000006\U0000001b\x88:Q\U0000001c[\xc20B5\U00000016T\x84W"})}}
+(gandr_surface_syntax::tree::NodeIndex) declaration = {0:0}
+(gandr_surface_syntax::span::ByteOffset) run = {0:92}
+(lldb) up
+frame #1: 0x0000555555dd880f gandr_surface_lowering_base-3c190ddca4640b99`gandr_surface_lowering_base::form::tests::a_form_names_the_tile_it_owes_after_a_run at form.rs:7226:13
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg) pbg = {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{}}, _marker:{}}, rules:size=176, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:176, alloc:{value:{}}, _marker:{}}}, adaptations:size=78, molds:{molds:size=3147, rctxs:size=3147, bounds:size=3147, owners:size=3147, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:17, items:207}, alloc:{}, marker:{}}}, menus:size=207, mold_labels:size=3147, adjacencies:size=7498, successor_starts:size=3148, has_pred:size=3147, has_succ:size=3147, form_first:size=212, is_first:size=3147, form_last:size=290, complete_last:size=240, is_complete_last:size=3147, required_tail:size=50, is_required_tail:size=3147, closing:size=3147, twins:size=3147, fingerprint:{0:9264067548224936917}}, automaton:{kinds:size=3147, observations:size=3147, width:50, sets:size=900}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}
+(&str) broken = "def same(n : Integer) -> -F Integer =\n  match n where\n    | zero @ 0 => return zero\n    | _ =>> return n\n" {
+  [0] = 'd'
+  [1] = 'e'
+  [2] = 'f'
+  [3] = ' '
+  [4] = 's'
+  [5] = 'a'
+  [6] = 'm'
+  [7] = 'e'
+  [8] = '('
+  [9] = 'n'
+  [10] = ' '
+  [11] = ':'
+  [12] = ' '
+  [13] = 'I'
+  [14] = 'n'
+  [15] = 't'
+  ...
+}
+(gandr_surface_syntax::tree::SyntaxTree) tree = {source:{0:"def same(n : Integer) -> -F Integer =\n  match n where\n    | zero @ 0 => return zero\n    | _ =>> return n\n"}, grammar:{0:9264067548224936917}, nodes:size=62, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=62, digest:Some({0:"\xc8\xe8\xf7\xf3\U00000019I\xbdK\xa2\b\xb7\x86ҥ\xc3\xee\xb3\U00000006\U0000001b\x88:Q\U0000001c[\xc20B5\U00000016T\x84W"})}}
+(gandr_surface_syntax::span::ByteOffset) run = {0:92}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.

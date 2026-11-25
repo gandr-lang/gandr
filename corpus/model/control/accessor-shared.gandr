@@ -1,0 +1,47 @@
+//! This source shows shared access.
+//!
+//! A shared access lends a held value to a read-only view.
+//! The body can read the view and the hold.
+//!
+//! The view ends with its body.
+//! It writes nothing back and takes no `resume`, `abort` or `unwind`.
+//! The checker blocks an exclusive access until shared views end.
+//! The loan follows a shared borrow of Rust [Rust-reference],
+//! § Borrow operators.
+//!
+//! - cites: [Rust-reference]
+//!
+//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
+
+/// A shared view and its hold access the same value.
+@[runs("6")]
+def read_beside() -> Integer =
+  var c = 3
+  access shared c as w { pure w + c }
+
+/// Two shared views of one held value, nested: each reads the value the other
+/// reads.
+@[runs("9")]
+def shared_nested() -> Integer =
+  var c = 3
+  access shared c as v { access shared c as w { pure v + w + c } }
+
+/// Twice a value, a call whose type synthesises where a statement binds it.
+def twice(n : Integer) -> Integer =
+  pure n + n
+
+/// A shared access ends with its body, so an exclusive access follows it and
+/// writes back what the shared view read.
+@[runs("8")]
+def in_turn() -> Integer =
+  var c = 4
+  let n = access shared c as w { twice w };
+  access c as v { resume v n };
+  pure c
+
+/// `exclusive` spells the mode an access takes when it names none.
+@[runs("2")]
+def spelled() -> Integer =
+  var c = 1
+  access exclusive c as v { resume v (v + 1) } unwind { pure *{} };
+  pure c

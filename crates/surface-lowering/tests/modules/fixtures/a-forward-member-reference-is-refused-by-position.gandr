@@ -1,0 +1,5 @@
+data Circle : Type where { | Base : Circle | loop : Base <-> Base }
+module M where {
+  def w : Path[.A = Circle](Base, Base) = loop ∷ Path.here Base;
+  def loop = 1;
+}

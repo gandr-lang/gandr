@@ -1,0 +1,6 @@
+def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {
+  match b {
+    | +{.$00 = u} => return +{.1 = u}
+    | +{.1 = u} => return +{.0 = u}
+  }
+}

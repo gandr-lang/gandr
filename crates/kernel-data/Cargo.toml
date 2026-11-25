@@ -1,0 +1,37 @@
+[package]
+name = "gandr-kernel-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The kernel's own data types: a budgeted region whose ids carry its brand, with its three crossings, a small vector over any allocator, and a shared pointer with one count, with its thin form over a header and a slice"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["arena", "gandr", "region", "shared", "vector"]
+categories = ["data-structures", "memory-management", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# A leaf of the kernel's chain: core and alloc alone, the pinned anodized
+# facade for the specification attribute, and quenchant's `Maybe` for an
+# absence that is no failure. Under `cfg(loom)` alone, the shared pointer's
+# count runs on loom's atomics for the model. Dev-dependencies are exempt:
+# test code is not shipped trust.
+[dependencies]
+anodized.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[target."cfg(loom)".dependencies]
+loom.workspace = true
+
+[lints]
+workspace = true

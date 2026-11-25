@@ -1,0 +1,32 @@
+[
+  {
+    "name": "#3783: a source text's newlines print escaped, so a summary holding it stays on one line",
+    "bytes": "64617461204e6174203a2054797065207b0a20205a65726f203a204e61743b0a7d0a",
+    "quoted": "\"data Nat : Type {\\n  Zero : Nat;\\n}\\n\""
+  },
+  {
+    "name": "#3783: a quote and a backslash print escaped",
+    "bytes": "7361792022615c6222",
+    "quoted": "\"say \\\"a\\\\b\\\"\""
+  },
+  {
+    "name": "#3783: bytes that are not UTF-8 print as replacement characters, never an error",
+    "bytes": "618beb7a",
+    "quoted": "\"a��z\""
+  },
+  {
+    "name": "#3783: a tab, a carriage return and a NUL print by name",
+    "bytes": "6109620d630064",
+    "quoted": "\"a\\tb\\rc\\0d\""
+  },
+  {
+    "name": "#3783: another control character and a line separator print by code point",
+    "bytes": "611b62e280a863",
+    "quoted": "\"a\\u{1b}b\\u{2028}c\""
+  },
+  {
+    "name": "#3783: printable text prints as it is, accents and all",
+    "bytes": "68c3a96c6c6f2077c3b6726c64",
+    "quoted": "\"héllo wörld\""
+  }
+]

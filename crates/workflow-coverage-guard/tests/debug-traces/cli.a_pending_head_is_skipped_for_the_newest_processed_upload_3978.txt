@@ -1,0 +1,66 @@
+test: cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978
+package: gandr-workflow-coverage-guard
+command: mise run debug:test gandr-workflow-coverage-guard cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978 --break a_pending_head_is_skipped
+
+(lldb) target create "target/debug-trace/debug/deps/tests-850b3fecf6358483"
+Current executable set to 'target/debug-trace/debug/deps/tests-850b3fecf6358483' (x86_64).
+(lldb) settings set -- target.run-args  "cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex a_pending_head_is_skipped
+Breakpoint 1: 3 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-850b3fecf6358483`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x00000000000acb98
+(lldb) run
+
+running 1 test
+test cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 538787 launched: 'target/debug-trace/debug/deps/tests-850b3fecf6358483' (x86_64)
+Process 538787 stopped
+* thread #2, name = 'cli::a_pending_', stop reason = breakpoint 1.1
+       frame #0: 0x000055555559f081 tests-850b3fecf6358483`<tests::cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+   247 	
+   248 	    /// Performs the call operation.
+   249 	    #[unstable(feature = "fn_traits", issue = "29625")]
+-> 250 	    extern "rust-call" fn call_once(self, args: Args) -> Self::Output;
+    	    ^
+   251 	}
+   252 	
+   253 	mod impls {
+(lldb) bt 24
+* thread #2, name = 'cli::a_pending_', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555559f081 tests-850b3fecf6358483`<tests::cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #1: 0x00005555555ab50b tests-850b3fecf6358483`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #2: 0x00005555555ab509 tests-850b3fecf6358483`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #3: 0x00005555555b8b65 tests-850b3fecf6358483`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #4: 0x00005555555b8b60 tests-850b3fecf6358483`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #5: 0x00005555555b8b60 tests-850b3fecf6358483`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #6: 0x00005555555b8b4b tests-850b3fecf6358483`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #7: 0x00005555555b8b4b tests-850b3fecf6358483`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #8: 0x00005555555b8b4b tests-850b3fecf6358483`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #9: 0x00005555555b8b36 tests-850b3fecf6358483`test::run_test::{closure#0} at lib.rs:668:43
+     frame #10: 0x00005555555b36c4 tests-850b3fecf6358483`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #11: 0x00005555555b3649 tests-850b3fecf6358483`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #12: 0x00005555555bbca2 tests-850b3fecf6358483`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #13: 0x00005555555bbc93 tests-850b3fecf6358483`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #14: 0x00005555555bbc93 tests-850b3fecf6358483`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #15: 0x00005555555bbc83 tests-850b3fecf6358483`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #16: 0x00005555555bbc83 tests-850b3fecf6358483`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #17: 0x00005555555bbc83 tests-850b3fecf6358483`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #18: 0x00005555555bbc74 tests-850b3fecf6358483`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #19: 0x000055555561ec3f tests-850b3fecf6358483`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2273:9 [inlined]
+     frame #20: 0x000055555561ec38 tests-850b3fecf6358483`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:118:17
+     frame #21: 0x00007ffff7cacef1 libc.so.6`start_thread(arg=<unavailable>) at pthread_create.c:454:8
+     frame #22: 0x00007ffff7d4c05c libc.so.6`__clone3 at clone3.S:78
+(lldb) frame variable --depth 3
+(tests::cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978::{closure_env#0})  = {}
+(void)  = <could not get size of type void>
+(lldb) up
+frame #1: 0x00005555555ab50b tests-850b3fecf6358483`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

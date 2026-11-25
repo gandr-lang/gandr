@@ -1,0 +1,5 @@
+@[inert]
+def same(n : Integer) -> Integer = n
+
+@[inert]
+def sameBack(n : Integer) -> Path[.A = Integer](same n, n) = Path.here n

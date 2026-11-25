@@ -1,0 +1,8 @@
+error[BuiltinMark.OutsideToolchain]: only a package of the toolchain writes a `builtin` mark
+  ╭▸ corpus/ledger/diagnostics/BuiltinMark.OutsideToolchain.gandr:5:3
+  │
+5 │ @[builtin("string.append")]
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━ a builtin mark outside the toolchain
+  │
+  ├ note: `append` is refused with BuiltinMark.OutsideToolchain, as its expectation states
+  ╰ help: delete the mark. Use the declaration of `std`

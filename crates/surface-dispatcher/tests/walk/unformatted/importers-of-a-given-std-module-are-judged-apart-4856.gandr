@@ -1,0 +1,5 @@
+import std.string (concat) ;
+
+@[ checks ]
+def {side} : Integer ;
+def {side} = 1 ;

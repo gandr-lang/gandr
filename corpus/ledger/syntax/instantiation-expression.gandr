@@ -1,0 +1,9 @@
+/// `instantiation_expression`: an instantiation: a callee with
+/// its instantiation arguments.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+def rec countdown(n : Nat) -> Nat =
+  match n where
+    | Zero => n
+    | Succ(p) => countdown[<] p

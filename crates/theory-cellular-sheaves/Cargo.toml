@@ -1,0 +1,48 @@
+[package]
+name = "gandr-theory-cellular-sheaves"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Cellular sheaves for gandr: stalks and restriction maps over a finite graded poset, gluing over a cover, cohomology through a tower of levels, and the reduction along a compatible matching"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["cellular-sheaf", "cohomology", "gandr", "no-std"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench that times a sheaf's
+# construction, its cochains, its cohomology and its gluing on the circle's
+# level of 32 points, with percentiles and allocations.
+[[bench]]
+harness = false
+name = "sheaf"
+path = "benches/sheaf.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. The graded poset holds the cells and their
+# order, and finite Stone duality names the cells and holds the sets of them
+# as bit rows. Discrete Morse theory gives the matching and the walk of its
+# gradient that a reduction sums along.
+[dependencies]
+anodized.workspace = true
+gandr-theory-discrete-morse.workspace = true
+gandr-theory-graded-posets.workspace = true
+gandr-theory-stone-duality.workspace = true
+
+# The measurement counts each operation's allocations. The projective line's
+# regression validates its two charts as a cover of the lattice of opens that
+# they generate.
+[dev-dependencies]
+allocation-counter.workspace = true
+gandr-theory-ordered-algebras.workspace = true
+
+[lints]
+workspace = true

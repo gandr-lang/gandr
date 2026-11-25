@@ -1,0 +1,3 @@
+@[ $0doc("first") ]
+@[ deprecated ]
+def f = 42;

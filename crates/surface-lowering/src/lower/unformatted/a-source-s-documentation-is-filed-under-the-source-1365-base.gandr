@@ -1,0 +1,3 @@
+//! The base.
+//! See [b].
+def a = 1 ;

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f6df9f3f70cce96fece3ffda8701a4f334b0f82be6e4feb5a8776ab594359e65 # shrinks to program = Program { steps: [Lambda, Variable(2), Return], heads: [Head { redex: Unpair, passed: false }, Head { redex: FoldList(2), passed: true }] }
