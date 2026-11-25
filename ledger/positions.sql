@@ -3,10 +3,9 @@ BEGIN TRANSACTION;
 CREATE TABLE position(
   -- The source that declares the struct: a source of a kernel or a storage
   -- crate, or the core term arena, whose ids a session's report holds, or a
-  -- source of the ring crate, whose arguments the kernel reads, or a source
-  -- of the dispatcher or the corpus, which compose that report; outside the
-  -- tests.
-  file   TEXT NOT NULL CONSTRAINT "file is a source of a kernel or a storage crate, of the ring crate, the core term arena, the dispatcher or the corpus" CHECK((file GLOB 'crates/kernel-*/src/*.rs' OR file GLOB 'crates/storage-*/src/*.rs' OR file GLOB 'crates/runtime-uring/src/*.rs' OR file = 'crates/core-term/src/arena.rs' OR file GLOB 'crates/surface-dispatcher/src/*.rs' OR file GLOB 'crates/surface-corpus/src/*.rs') AND file NOT GLOB '*[^A-Za-z0-9_/.-]*'),
+  -- source of the dispatcher or the corpus, which compose that report; outside
+  -- the tests.
+  file   TEXT NOT NULL CONSTRAINT "file is a source of a kernel or a storage crate, the core term arena, the dispatcher or the corpus" CHECK((file GLOB 'crates/kernel-*/src/*.rs' OR file GLOB 'crates/storage-*/src/*.rs' OR file = 'crates/core-term/src/arena.rs' OR file GLOB 'crates/surface-dispatcher/src/*.rs' OR file GLOB 'crates/surface-corpus/src/*.rs') AND file NOT GLOB '*[^A-Za-z0-9_/.-]*'),
   -- The struct's name, as `.config/positions/hits.jq` reads it.
   name   TEXT NOT NULL CONSTRAINT "name is an identifier" CHECK(name GLOB '[A-Z]*' AND name NOT GLOB '*[^A-Za-z0-9_]*'),
   -- The key, the name or the byte form that writes the struct, as the path
@@ -215,12 +214,6 @@ INSERT INTO position VALUES('crates/kernel-term/src/wire.rs','WireTag','','none'
 INSERT INTO position VALUES('crates/kernel-term/src/wire.rs','WireU32','','none',NULL,'A carrier of a word of the wire.');
 INSERT INTO position VALUES('crates/kernel-term/src/wire.rs','WireU64','','none',NULL,'A carrier of a word of the wire.');
 INSERT INTO position VALUES('crates/kernel-term/src/wire.rs','WireUsize','','none',NULL,'A carrier of a word of the wire.');
-INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','Cpu','','local',NULL,'A CPU of the host, a place that no key, name or byte form writes.');
-INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','Millis','','none',NULL,'A time in milliseconds, a budget.');
-INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','UserData','','none',NULL,'A carrier of the caller''s words, which the kernel copies to the completion.');
-INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','Value','','none',NULL,'A value that the kernel compares with a futex''s word.');
-INSERT INTO position VALUES('crates/runtime-uring/src/base/sys/linux/errno.rs','Errno','','none',NULL,'A tag: the error number that the kernel answers.');
-INSERT INTO position VALUES('crates/runtime-uring/src/base/sys/linux/syscalls/registers.rs','Word','','none',NULL,'A carrier of a machine word of a system call.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactIdentity','','none',NULL,'A digest of an artifact.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactManifestVersion','','none',NULL,'A version of the manifest.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','FieldBytes','','none',NULL,'A carrier of the bytes of a field.');

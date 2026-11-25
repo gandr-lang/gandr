@@ -778,7 +778,6 @@ INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','kerne
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','storage-store','register','anchor','484c1e84c9b09f8a7b9c2b5df2bdccffcd8234f4','2026-11-14','ac1f2d912d69ea8a448bf8d898b0103fad6bbd47');
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','theory-levitation','names','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','theory-sites','map','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','runtime-uring','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','storage-store','plane','anchor','484c1e84c9b09f8a7b9c2b5df2bdccffcd8234f4','2026-11-14','050e6297abe82c557307369b30f3a9e4023f2fdb');
 INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','storage-store','plane::index','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f','storage-store','plane','background','484c1e84c9b09f8a7b9c2b5df2bdccffcd8234f4','2026-11-14','050e6297abe82c557307369b30f3a9e4023f2fdb');

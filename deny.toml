@@ -11,7 +11,7 @@ all-features = true
 [licenses]
 # Each licence that a crate of the lock file or a manifest of ours may hold.
 # An expression holds when one side of an `OR` holds and both sides of an
-# `AND` hold, so `axboe-liburing`'s `MIT OR LGPL-2.1-only` holds as MIT.
+# `AND` hold.
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",

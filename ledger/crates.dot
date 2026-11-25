@@ -80,9 +80,7 @@ digraph crates {
     "runtime-emitter";
     "runtime-net";
     "runtime-rust-record";
-    "runtime-scope";
     "runtime-stencils";
-    "runtime-uring";
   }
   subgraph "cluster_surface" {
     label = "surface";
@@ -258,7 +256,6 @@ digraph crates {
   "runtime-net" -> "core-term";
   "runtime-net" -> "storage-values";
   "runtime-rust-record" -> "core-publish";
-  "runtime-scope" -> "runtime-uring";
   "storage-artifact" -> "kernel-term";
   "storage-artifact" -> "storage-chunker";
   "storage-artifact" -> "storage-records";
@@ -318,7 +315,6 @@ digraph crates {
   "surface-dispatcher" -> "runtime-emitter";
   "surface-dispatcher" -> "runtime-net";
   "surface-dispatcher" -> "runtime-rust-record";
-  "surface-dispatcher" -> "runtime-scope";
   "surface-dispatcher" -> "storage-artifact";
   "surface-dispatcher" -> "storage-store";
   "surface-dispatcher" -> "storage-values";

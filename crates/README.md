@@ -91,9 +91,7 @@ crates/
 ├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
 ├── runtime-rust-reader/           the reader of a Rust crate on rustc's own libraries: each requested function's symbol, convention and layouts, written as an entry of the record; no member, since it links rustc
 ├── runtime-rust-record/           the record of a Rust function: its symbol, each operand's passage and each layout under the toolchain's identity, its canonical bytes and its cache
-├── runtime-scope/                 the owner's scoped runtime on the ring: one thread drives a scope's futures, and the scope's end drains every operation it lent memory to
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
-├── runtime-uring/                 the kernel's io_uring as the owner wrote it: the ring, its queues, its registrar, a preparer for each operation, and his system-call base beside them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               the authenticated ordered-record plane

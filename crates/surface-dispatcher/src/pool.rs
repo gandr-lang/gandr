@@ -89,8 +89,6 @@ mod host;
 mod lane;
 #[cfg(feature = "instrument")]
 pub mod recording;
-#[cfg(target_os = "linux")]
-pub mod ring;
 mod spawning;
 mod workers;
 

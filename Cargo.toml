@@ -27,9 +27,7 @@ members = [
   "crates/runtime-emitter",
   "crates/runtime-net",
   "crates/runtime-rust-record",
-  "crates/runtime-scope",
   "crates/runtime-stencils",
-  "crates/runtime-uring",
   "crates/storage-artifact",
   "crates/storage-chunker",
   "crates/storage-records",
@@ -270,39 +268,6 @@ features = ["anodized"]
 version = "1.9.3"
 default-features = false
 
-# Temporary files and directories for the uring crate's tests, as the
-# owner's crate has them.
-# features:
-# - none: the tests use the default-off surface.
-# consumers:
-# - runtime-scope (dev)
-# - runtime-uring (dev)
-[workspace.dependencies.assert_fs]
-version = "1.1.3"
-default-features = false
-
-# liburing is the C library of the kernel's ring. The uring crate stands on
-# it, as the owner's crate does. Its library name is `liburing_rs`. The third
-# unit of the port puts the crate's own system calls in its place.
-# - see: #7633
-# features:
-# - none: the ring needs no optional feature.
-# consumers:
-# - runtime-uring
-[workspace.dependencies.axboe-liburing]
-version = "2.12.0"
-default-features = false
-
-# Bindings from C headers: the uring crate's build script makes the kernel's
-# io_uring declarations with it when its `bindgen` feature is on.
-# features:
-# - set by the consumer, as the owner's crate sets them.
-# consumers:
-# - runtime-uring (build)
-[workspace.dependencies.bindgen]
-version = "0.72.1"
-default-features = false
-
 # BLAKE3 gives the digest of a content or of a node identity. The kernel keys
 # its verdicts by it. `gandr-surface-build-identity` digests the kernel and
 # the sites with it. Each verdict key and each stratum key binds one of those
@@ -331,16 +296,6 @@ default-features = false
 # - workflow-sweep
 [workspace.dependencies.blake3]
 version = "1.8.7"
-default-features = false
-
-# Typed builders from a function's arguments: the uring crate's ring builder
-# and its setup flags.
-# features:
-# - set by the consumer, as the owner's crate sets them.
-# consumers:
-# - runtime-uring
-[workspace.dependencies.bon]
-version = "3.7.2"
 default-features = false
 
 # The arena of a host's chunk holder and of a store plane's records: an
@@ -680,8 +635,6 @@ path = "crates/kernel-core-base"
 
 # The region: values in buckets under a budget, whose ids carry its brand,
 # and an allocator under the same budget.
-# consumers:
-# - runtime-scope (dev)
 [workspace.dependencies.gandr-kernel-data]
 path = "crates/kernel-data"
 
@@ -786,27 +739,12 @@ path = "crates/runtime-net"
 path = "crates/runtime-rust-record"
 default-features = false
 
-# The owner's scoped runtime: one thread drives a scope's futures over the
-# kernel's ring, and the scope's end drains its operations.
-# consumers:
-# - surface-dispatcher (Linux)
-[workspace.dependencies.gandr-runtime-scope]
-path = "crates/runtime-scope"
-
 # The L machine's transitions written once: the stencils the emitter copies
 # and the portable executor that dispatches the same functions.
 # consumers:
 # - runtime-emitter (build and normal)
 [workspace.dependencies.gandr-runtime-stencils]
 path = "crates/runtime-stencils"
-
-# The kernel's ring, the one that the tree holds: the scoped runtime's
-# submissions and completions.
-# consumers:
-# - runtime-scope
-# - surface-dispatcher (dev, Linux)
-[workspace.dependencies.gandr-runtime-uring]
-path = "crates/runtime-uring"
 
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.
@@ -1697,8 +1635,6 @@ default-features = false
 # - none: the bindings alone; `std` adds nothing the emitter calls
 # consumers:
 # - runtime-emitter
-# - runtime-scope
-# - runtime-uring
 # - surface-dispatcher (unix)
 [workspace.dependencies.libc]
 version = "0.2.189"
@@ -1781,7 +1717,6 @@ features = ["fs", "resource", "term"]
 # - macos_fsevent: the FSEvents backend, macOS's recommended watcher, which
 #   needs it to build there. Linux's inotify backend has no feature.
 # consumers:
-# - runtime-uring (dev)
 # - surface-lsp
 # - surface-repl
 [workspace.dependencies.notify]
@@ -1805,15 +1740,6 @@ features = ["macos_fsevent"]
 version = "0.5.1"
 default-features = false
 features = ["std"]
-
-# The count of the host's cores in the uring crate's tests.
-# features:
-# - none: the tests use the default-off surface.
-# consumers:
-# - runtime-uring (dev)
-[workspace.dependencies.num_cpus]
-version = "1.17.0"
-default-features = false
 
 # The emitter's build script reads the stencil object with it: the sections,
 # the symbols and the relocations, in Mach-O and in ELF. The emitter's block
@@ -1885,16 +1811,6 @@ features = ["alloc"]
 # - theory-graphs
 [workspace.dependencies.petgraph]
 version = "0.8.3"
-default-features = false
-
-# Predicates on paths and files in the uring crate's tests.
-# features:
-# - none: the tests use the default-off surface.
-# consumers:
-# - runtime-scope (dev)
-# - runtime-uring (dev)
-[workspace.dependencies.predicates]
-version = "3.1.3"
 default-features = false
 
 # Token spans with line numbers outside a procedural macro: the
@@ -2124,8 +2040,6 @@ default-features = false
 #   watch borrow, and `std::io::Error` from `io::Errno`
 # - thread: `thread::futex`
 # consumers:
-# - runtime-scope: `net`, for the flags of a socket and of an accept
-# - runtime-uring: `net`, for its network tests' sockets
 # - surface-dispatcher (Linux)
 [workspace.dependencies.rustix]
 version = "1.1.6"
@@ -2226,25 +2140,6 @@ features = ["alloc"]
 # - workflow-gate
 [workspace.dependencies.sha2]
 version = "0.11.1"
-default-features = false
-
-# Sockets with their options, as the uring crate's network tests open them.
-# features:
-# - none: the crate needs no optional feature.
-# consumers:
-# - runtime-scope
-# - runtime-uring
-[workspace.dependencies.socket2]
-version = "0.6.0"
-default-features = false
-
-# Assertions at compile time on types and layouts in the uring crate's tests.
-# features:
-# - none: the tests use the default-off surface.
-# consumers:
-# - runtime-uring (dev)
-[workspace.dependencies.static_assertions_next]
-version = "1.1.2"
 default-features = false
 
 # Rust source parsed into items with their attributes: the specification-cost

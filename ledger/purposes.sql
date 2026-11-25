@@ -3150,7 +3150,6 @@ INSERT INTO purpose VALUES('surface-dispatcher','pool::host::porter::Unwatched',
 INSERT INTO purpose VALUES('surface-dispatcher','pool::host::porter::Watched','enum','Whether a watch wakes the porter at each read and each write of its FIFO, or its tick alone wakes it.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::host::runtime_directory','function','The directory of the user''s runtime files, where the hub''s socket and the host''s counter live.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::host::unhosted::Absent','enum','Why a process holds no slot of the host''s counter: no hub owns it, its segment does not open, or each slot is taken.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','pool::ring::with_ring','function','Run a work as one scope on the calling thread''s runtime of the scoped runtime, which the thread''s first IO opens at the lane''s depth.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::Presentation','struct','How a reader asks sources to be shown: the `[presentation]` table of the user''s configuration file or of a package''s manifest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::PresentationFault','enum','Why a `[presentation]` table could not be read: the file unread, not TOML, or naming a spelling there is none of.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::presented','function','Read the `[presentation]` table of a document another reader has already parsed, so one parse of a file serves each of its tables.',NULL,'fits','sound',NULL);
@@ -6933,5 +6932,4 @@ CREATE TABLE held_by(
   system   TEXT NOT NULL CONSTRAINT "system is linux or darwin" CHECK(system IN ('linux', 'darwin')),
   PRIMARY KEY(crate, path, kind, system)
 ) WITHOUT ROWID;
-INSERT INTO held_by VALUES('surface-dispatcher','pool::ring::with_ring','function','linux');
 COMMIT;
