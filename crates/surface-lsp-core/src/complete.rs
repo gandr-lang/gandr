@@ -1353,6 +1353,10 @@ mod tests
             row("thunk", "thunk { ${1:computation} \\}"),
             row("match", "match ${1:value} { \\}"),
             row(
+                "effect",
+                "effect ${1:identifier} : ${2:type} { ${3:computation} \\}",
+            ),
+            row(
                 "handle",
                 "handle ${1:identifier} : ${2:type} { ${3:computation} \\}",
             ),

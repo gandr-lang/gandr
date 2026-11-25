@@ -4550,33 +4550,43 @@ fn primary_expressions(
         AdaptationReason("folded into match_expression: the optional `-> T` answer type is an inline slot after the scrutinee and the reserved `with` view, not a standalone form; it is the constant motive `[_. T]`, and the later dependent motive replaces its contents rather than its position"),
     ));
     out.push(matching);
-    // The capability scope `handle c : I { … } with { | pure(x) => e | oper
+    // The capability scope `effect c : I { … } handle { | pure(x) => e | oper
     // op(p, k) => e … }`: a deep handler for the interface `I` whose body is
     // handed the capability `c` it introduces, the only form that brings a
     // capability into a body's scope. `I` is the path of a host interface or
     // a theory, `std.io.Console.Eff`, whose value sorts follow it as a model
-    // type's do, `State.Eff with sort S = Integer`; the manifest's `with` is
-    // followed by `sort`, the clauses' by
-    // `{` or a module's name, so the three never compete. The clauses follow
-    // the body: the return clause, spelled with the returner's own keyword
-    // `pure`, binds the body's result, and each operation clause, spelled with
-    // the keyword a signature declares an operation with, binds the
-    // operation's payload and its resumption. Each clause opens with an arm
-    // bar, as a match's arm does, or the clauses are separated by `,`; a
-    // clause is keyword-led after the `{`, the `,` or the bar this rule owns,
-    // so no expression hole competes with it, and the token after the `{`
-    // tells the two spellings apart. A
-    // theory's scope may name a model of the theory in place of the clauses,
-    // `with M`, or write no `with`, the one model of the theory in scope
-    // answering it. The tree-sitter grammar has no handler, so the kind is in
-    // `PBG_ONLY_KINDS`.
-    out.push(r(
-        RuleName("handle_expression"),
-        Provenance("handle_expression"),
-        s,
-        p,
+    // type's do, `State.Eff with sort S = Integer`. The body stands first and
+    // the clauses second, after `handle`, as the catch of `try … catch` does.
+    // The return clause, spelled with the returner's own keyword `pure`, binds
+    // the body's result, and each operation clause, spelled with the keyword a
+    // signature declares an operation with, binds the operation's payload and
+    // its resumption. Each clause opens with an arm bar, as a match's arm
+    // does; a clause is keyword-led after the bar this rule owns, so no
+    // expression hole competes with it. A theory's scope may name a model of
+    // the theory in place of the clauses, `handle M`, or write no `handle`,
+    // the one model of the theory in scope answering it. The form also reads
+    // its other spelling, `handle c : I { … } with { … }`, whose `with` follows
+    // the manifest sorts' `with`: the manifest's is followed by `sort`, the
+    // clauses' by `{` or a module's name, so the three never compete. The
+    // tree-sitter grammar has no handler, so the kind is in `PBG_ONLY_KINDS`.
+    let answered_by = |word: &'static str| {
+        opt(seq([
+            t(TileLabel(word)),
+            alt([
+                seq([
+                    t(TileLabel("{")),
+                    t(TileLabel("arm_bar")),
+                    handler_clause(),
+                    repeat(seq([t(TileLabel("arm_bar")), handler_clause()])),
+                    t(TileLabel("}")),
+                ]),
+                t(TileLabel("type_identifier")),
+            ]),
+        ]))
+    };
+    let scope = |lead: &'static str, answer: &'static str| {
         seq([
-            t(TileLabel("handle")),
+            t(TileLabel(lead)),
             t(TileLabel("identifier")),
             t(TileLabel(":")),
             effect_path(Sort::Type),
@@ -4588,20 +4598,15 @@ fn primary_expressions(
                 h(Sort::Type),
             ])),
             braced_statements(),
-            opt(seq([
-                t(TileLabel("with")),
-                alt([
-                    seq([
-                        t(TileLabel("{")),
-                        t(TileLabel("arm_bar")),
-                        handler_clause(),
-                        repeat(seq([t(TileLabel("arm_bar")), handler_clause()])),
-                        t(TileLabel("}")),
-                    ]),
-                    t(TileLabel("type_identifier")),
-                ]),
-            ])),
-        ]),
+            answered_by(answer),
+        ])
+    };
+    out.push(r(
+        RuleName("handle_expression"),
+        Provenance("handle_expression"),
+        s,
+        p,
+        alt([scope("effect", "handle"), scope("handle", "with")]),
     ));
     let mut if_expression = r(
         RuleName("if_expression"),

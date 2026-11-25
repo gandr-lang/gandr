@@ -396,7 +396,7 @@ pub const RESERVED_WORDS: &[&str] = &[
     "fork", "acquire", "release", "migrate", "at", "true", "false", "mu", "end", "data", "codata",
     "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import", "module",
     "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile", "inf",
-    "pub", "flow", "where", "do", "then",
+    "pub", "flow", "where", "do", "then", "effect",
 ];
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
