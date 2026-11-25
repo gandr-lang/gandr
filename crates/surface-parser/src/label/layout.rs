@@ -695,6 +695,24 @@ pub(super) fn lay_out(
         }
         let column = token.start.saturating_sub(line_begin);
         let spelled = text(&token);
+        // A layout word right after a `.` is a member's name: `Flow.then`.
+        let token = if token.lexeme == Lexeme::LowerWord
+            && matches!(spelled, b"do" | b"then")
+            && before_arrow == b"."
+            && token.start == plan.end
+        {
+            let member = Token {
+                lexeme: Lexeme::MemberWord,
+                ..token
+            };
+            if let Some(written) = tokens.get_mut(index) {
+                *written = member;
+            }
+            member
+        }
+        else {
+            token
+        };
         let nesting = bracket(token, bytes);
         let closer = nesting == Bracket::Close;
         let brace = token.lexeme == Lexeme::Punct && spelled == b"{";

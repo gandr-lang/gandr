@@ -1020,6 +1020,7 @@ impl<'source> FormSplit<'source>
                 Lexeme::LayoutOpen => 20,
                 Lexeme::LayoutSemi => 21,
                 Lexeme::LayoutClose => 22,
+                Lexeme::MemberWord => 23,
             });
             spelling.extend_from_slice(&token.end.saturating_sub(origin).to_le_bytes());
         }

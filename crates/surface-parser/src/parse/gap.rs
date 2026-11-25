@@ -320,6 +320,12 @@ fn class(
                 ..Class::default()
             }
         },
+        // A member's name after a `.` is an operand, whatever word it spells.
+        Lexeme::MemberWord => Class {
+            edge: Edge::Both,
+            word: true,
+            ..Class::default()
+        },
         Lexeme::Number | Lexeme::TypedNumber | Lexeme::Character => Class {
             edge: Edge::Both,
             ..Class::default()
@@ -531,6 +537,7 @@ fn gaps<'text>(
                 continue;
             },
             Lexeme::LowerWord
+            | Lexeme::MemberWord
             | Lexeme::UpperWord
             | Lexeme::Number
             | Lexeme::TypedNumber
@@ -1088,6 +1095,7 @@ fn continued<'text>(
                 continue;
             },
             Lexeme::LowerWord
+            | Lexeme::MemberWord
             | Lexeme::UpperWord
             | Lexeme::Number
             | Lexeme::TypedNumber
@@ -1608,6 +1616,7 @@ pub(super) fn strayed<'source>(
                 continue;
             },
             Lexeme::LowerWord
+            | Lexeme::MemberWord
             | Lexeme::UpperWord
             | Lexeme::Number
             | Lexeme::TypedNumber

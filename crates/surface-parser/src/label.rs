@@ -115,6 +115,9 @@ pub enum Lexeme
 {
     /// A lowercase-led word: an `identifier`, a `type_variable`, or a keyword.
     LowerWord,
+    /// A reserved word that the grammar has no tile for, right after a `.`:
+    /// a member's name, which the molder reads as an `identifier`.
+    MemberWord,
     /// An uppercase-led word: a `constructor`, a `type_identifier`, a primitive
     /// type name, or an uppercase keyword (`Type`).
     UpperWord,
@@ -658,6 +661,7 @@ pub fn bracket(
         Lexeme::LayoutClose => return Bracket::Close,
         Lexeme::Punct => {},
         Lexeme::LowerWord
+        | Lexeme::MemberWord
         | Lexeme::UpperWord
         | Lexeme::Number
         | Lexeme::TypedNumber

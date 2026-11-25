@@ -1196,7 +1196,8 @@ fn typed(tile: TileLabel) -> Spelled
     let offers = match token.lexeme {
         Lexeme::LowerWord | Lexeme::UpperWord => offered.len() == 1,
         Lexeme::Punct => offered.iter().any(|&label| <&str>::from(label) == text),
-        Lexeme::Number
+        Lexeme::MemberWord
+        | Lexeme::Number
         | Lexeme::TypedNumber
         | Lexeme::Character
         | Lexeme::Quote

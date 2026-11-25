@@ -1012,6 +1012,8 @@ pub fn candidate_labels<'text>(
                 labels.push(CandidateLabel::from(tile.0));
             }
         },
+        // A member's name after a `.` is a name, whatever word it spells.
+        Lexeme::MemberWord => labels.push(CandidateLabel::from("identifier")),
         Lexeme::UpperWord => {
             labels.push(CandidateLabel::from(text));
             // A reserved primitive/type keyword is never a constructor or a
@@ -1238,6 +1240,7 @@ fn ends_declaration(
         Lexeme::LayoutSemi => true,
         Lexeme::Punct => AsRef::<str>::as_ref(&token.text(source)) == ";",
         Lexeme::LowerWord
+        | Lexeme::MemberWord
         | Lexeme::UpperWord
         | Lexeme::Number
         | Lexeme::TypedNumber
