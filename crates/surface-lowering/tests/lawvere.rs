@@ -489,7 +489,7 @@ enum Walk<'term>
 }
 
 /// The theory a block's rules present: each operation by the order of its
-/// name, its arity from its uses.
+/// name, its arity from its uses. A symmetry gives its operation and no rule.
 ///
 /// # Specification
 /// trivial.
@@ -499,12 +499,13 @@ enum Walk<'term>
 ///   variable that its left side lacks.
 /// - [`Unpresented::Refused`]: the theory refuses the rules.
 pub fn presented(
-    rules: &[(FreeTerm, FreeTerm)]
+    rules: &[(FreeTerm, FreeTerm)],
+    symmetries: &[(FreeTerm, FreeTerm)],
 ) -> Result<(LawvereTheory, Vec<String>), Unpresented>
 {
     let mut arities: BTreeMap<String, Count> = BTreeMap::new();
     let mut pending: Vec<TermView<'_>> = Vec::new();
-    for &(ref left, ref right) in rules {
+    for &(ref left, ref right) in rules.iter().chain(symmetries) {
         pending.extend([left.view(), right.view()]);
     }
     while let Some(view) = pending.pop() {
@@ -784,8 +785,9 @@ fn the_cells_of_nat_units_to_size_three_have_boundaries_on_the_point()
     let mut theories = Vec::new();
     let _lowering = each_block(&grammar, SourceText::from(text.as_str()), |cells| {
         if certified(cells).is_some() {
-            theories
-                .push(presented(&rules_of(cells, Reading::Commands)).expect("a first-order block"));
+            theories.push(
+                presented(&rules_of(cells, Reading::Commands), &[]).expect("a first-order block"),
+            );
         }
     });
     let [(ref mut theory, ref names), ..] = *theories.as_mut_slice()
@@ -909,7 +911,7 @@ fn the_blocks_of_5258_have_a_bar_homology_that_the_small_complex_misses_in_degre
                 return;
             }
             let (mut theory, _names) =
-                presented(&rules_of(cells, Reading::Commands)).expect("a first-order block");
+                presented(&rules_of(cells, Reading::Commands), &[]).expect("a first-order block");
             assert!(
                 unclosed(&mut theory, smaller().1).is_empty(),
                 "{block} closes"

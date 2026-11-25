@@ -84,6 +84,9 @@ use gandr_theory_discrete_morse::Reduction as _;
 use gandr_theory_discrete_morse::Standing;
 use gandr_theory_discrete_morse::equivalence;
 use gandr_theory_levitation::FreeTerm;
+use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::RuleReading;
+use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_workflow_sweep::Class;
@@ -865,7 +868,10 @@ pub struct Presentation
 {
     /// The rules, each left side then right side.
     pub rules: Vec<(FreeTerm, FreeTerm)>,
-    /// The rule that each cell fires.
+    /// The symmetries of the terms reading, each left side then right side.
+    /// A symmetry forms peaks and rewrites nothing, so it is no rule.
+    pub symmetries: Vec<(FreeTerm, FreeTerm)>,
+    /// The rule that each cell fires. The cell of a symmetry fires no rule.
     pub index: BTreeMap<CellId, RuleIndex>,
     /// The frame cells. Each moves a command and keeps the term, so it fires
     /// no rule.
@@ -886,12 +892,20 @@ pub fn readings(
     if let Maybe::Present(ref presented) = cells.presented {
         let mut read = Presentation::default();
         let mut readable = true;
-        for (place, (id, cell)) in presented.store.iter().enumerate() {
+        for (id, cell) in presented.store.iter() {
             match (spelled(cell.lhs()), spelled(cell.rhs())) {
-                (Some(left), Some(right)) => read.rules.push((left, right)),
+                (Some(left), Some(right)) => {
+                    let face = RuleFace::new(left, right, [], SurfaceSpan::default());
+                    if face.reading() == RuleReading::Symmetry {
+                        read.symmetries.push((face.lhs, face.rhs));
+                    }
+                    else {
+                        let _previous = read.index.insert(id, RuleIndex(read.rules.len()));
+                        read.rules.push((face.lhs, face.rhs));
+                    }
+                },
                 _ => readable = false,
             }
-            let _previous = read.index.insert(id, RuleIndex(place));
         }
         out.push((Reading::Terms, readable.then_some(read)));
     }

@@ -55,7 +55,6 @@ use gandr_workflow_sweep::Sweep;
 use quenchant_shape::shape::Maybe;
 
 use crate::lawvere::Count;
-use crate::lawvere::FUEL;
 use crate::lawvere::Side;
 use crate::lawvere::Unpresented;
 use crate::lawvere::bound;
@@ -492,18 +491,19 @@ fn collapse(
 ) -> Result<Collapse, Undecided>
 {
     let certificates = certified(cells).ok_or(Undecided::Uncertified)?;
-    let (mut theory, names) = presented(&block.rules).map_err(|unpresented| match unpresented {
-        Unpresented::Unread => Undecided::Binding,
-        Unpresented::Refused(LawvereError::Unbalanced(_)) => Undecided::Unbalanced,
-        Unpresented::Refused(
-            LawvereError::Exhausted(_)
-            | LawvereError::Unissued(_)
-            | LawvereError::Unfilled(_)
-            | LawvereError::NoTerm
-            | LawvereError::LeadingVariable
-            | LawvereError::Overflow,
-        ) => Undecided::Bound,
-    })?;
+    let (mut theory, names) =
+        presented(&block.rules, &block.symmetries).map_err(|unpresented| match unpresented {
+            Unpresented::Unread => Undecided::Binding,
+            Unpresented::Refused(LawvereError::Unbalanced(_)) => Undecided::Unbalanced,
+            Unpresented::Refused(
+                LawvereError::Exhausted(_)
+                | LawvereError::Unissued(_)
+                | LawvereError::Unfilled(_)
+                | LawvereError::NoTerm
+                | LawvereError::LeadingVariable
+                | LawvereError::Overflow,
+            ) => Undecided::Bound,
+        })?;
     for &(left, _) in theory.rules() {
         if let TermHead::Var(_) = theory
             .table()
@@ -698,7 +698,8 @@ fn the_essential_cells_of_nat_units_are_its_operations_rules_and_pairs()
             .map(|fragment| fragment.as_ref().starts_with("data NatUnits"));
         if matches!(named, Ok(true)) {
             theories.push(
-                presented(&rules_of(cells, Reading::Commands)).expect("NatUnits is first-order"),
+                presented(&rules_of(cells, Reading::Commands), &[])
+                    .expect("NatUnits is first-order"),
             );
         }
     });
@@ -830,16 +831,16 @@ const SYMMETRY: &str = "data Flat : Type where {\n  | Low : Flat\n  | High : Fla
                         Flat, y : Flat) --> Flat\n  rule : Pair x y <=> Pair y x;\n}\n";
 
 #[test]
-fn a_block_whose_one_rule_is_a_symmetry_passes_the_fuel_of_a_normal_form()
+fn a_block_whose_one_rule_is_a_symmetry_collapses_onto_its_generator()
 {
-    // The one rule of `Flat` swaps the two fields of `Pair`. The probe reads
-    // the rule as a rewrite of the block's theory, in one direction. The
-    // rewrite takes `Pair(x₁, x₂)` to `Pair(x₂, x₁)`, and it takes that term
-    // back. So the generator of `Pair` has no normal form: its walk takes more
-    // than `FUEL` rewrites, and the probe decides nothing on the reading.
+    // The one rule of `Flat` swaps the two fields of `Pair`. A symmetry forms
+    // peaks and rewrites nothing, so the probe reads it as no rule of the
+    // block's theory. The theory holds the operation `Pair` and no rule. The
+    // generator of `Pair` is its own normal form, and it is the one essential
+    // cell of the reading.
     let grammar = built_in().expect("the built-in grammar builds");
     let source = SourceText::from(SYMMETRY);
-    let mut found: Vec<(Reading, Count, Result<Collapse, Undecided>)> = Vec::new();
+    let mut found: Vec<(Reading, [Count; 2], Decision)> = Vec::new();
     let mut walks: Vec<Result<TermPlace, LawvereError>> = Vec::new();
     let mut generators: Vec<TermPlace> = Vec::new();
     let _lowering = each_block(&grammar, source, |cells| {
@@ -848,10 +849,12 @@ fn a_block_whose_one_rule_is_a_symmetry_passes_the_fuel_of_a_normal_form()
             let rules = rules.expect("the block's rule spells free terms");
             found.push((
                 reading,
-                Count(rules.rules.len()),
-                collapse(cells, (reading, &rules)),
+                [Count(rules.rules.len()), Count(rules.symmetries.len())],
+                collapse(cells, (reading, &rules))
+                    .map(|collapsed| (collapsed.essential, collapsed.verdict())),
             ));
-            let (mut theory, names) = presented(&rules.rules).expect("the block is first-order");
+            let (mut theory, names) =
+                presented(&rules.rules, &rules.symmetries).expect("the block is first-order");
             assert_eq!(names, ["Pair"]);
             let arity = theory.arities().first().copied().unwrap_or_default();
             let generator = theory
@@ -863,17 +866,18 @@ fn a_block_whose_one_rule_is_a_symmetry_passes_the_fuel_of_a_normal_form()
             walks.push(theory.normal_form(term));
         }
     });
-    assert_eq!(found, [(Reading::Terms, Count(1), Err(Undecided::Bound))]);
+    assert_eq!(found, [(
+        Reading::Terms,
+        [Count(0), Count(1)],
+        Ok(([Count(1), Count(0), Count(0)], Verdict::Holds)),
+    )]);
     let &[generator] = generators.as_slice()
     else {
         panic!("the block has one reading: {generators:?}");
     };
     assert!(
-        matches!(
-            walks.as_slice(),
-            &[Err(LawvereError::Exhausted(place))] if place == generator
-        ),
-        "the walk from the generator of `Pair` takes more than {FUEL} rewrites: {walks:?}"
+        matches!(walks.as_slice(), &[Ok(place)] if place == generator),
+        "the generator of `Pair` is its own normal form: {walks:?}"
     );
 }
 

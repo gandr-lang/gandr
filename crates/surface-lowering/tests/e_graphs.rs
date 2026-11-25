@@ -248,7 +248,7 @@ where
                 if rules.is_empty() {
                     continue;
                 }
-                let Ok((mut theory, _names)) = presented(&rules)
+                let Ok((mut theory, _names)) = presented(&rules, &[])
                 else {
                     continue;
                 };
