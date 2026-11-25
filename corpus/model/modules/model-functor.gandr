@@ -28,7 +28,7 @@ module Squaring(S : Model(Mag)) where
   def square(x : S.M) -> S.M = S.mul x x;
 
 /// `TimesSquared` applies `Squaring` to `Times`.
-module TimesSquared = Squaring(Times);
+module TimesSquared = Squaring Times;
 
 /// `nine` squares three.
 @[runs("9")]
@@ -41,7 +41,7 @@ module Plus : *{type M, mul : (M, M) -> M} where
   def mul(a : Integer, b : Integer) -> Integer = a + b;
 
 /// `PlusSquared` applies `Squaring` to `Plus`.
-module PlusSquared = Squaring(Plus);
+module PlusSquared = Squaring Plus;
 
 /// `six` doubles three.
 @[runs("6")]
@@ -70,7 +70,7 @@ module OnePoint : Model(Semi) where
     Path.here (*{})
 
 /// `OnePointReassociated` applies `Reassociating`.
-module OnePointReassociated = Reassociating(OnePoint);
+module OnePointReassociated = Reassociating OnePoint;
 
 /// `reassociated` gives the reversed law at three units.
 def reassociated() -> Path *{} *{} =

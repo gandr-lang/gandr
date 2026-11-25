@@ -36,7 +36,7 @@ module Square(S : *{type T, z : T}) :> *{type U, w : U} where {
 }
 
 /// `Squared` applies `Square` to `Point`.
-module Squared = Square(Point);
+module Squared = Square Point;
 
 /// `squared` reads the applied functor value.
 def squared : Squared.U = Squared.w;

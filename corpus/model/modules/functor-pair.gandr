@@ -35,9 +35,9 @@ module MkCounter(S : *{
   def read = S.read;
 
 /// `A` is the first functor application.
-module A = MkCounter(Seed);
+module A = MkCounter Seed;
 /// `B` is the second functor application.
-module B = MkCounter(Seed);
+module B = MkCounter Seed;
 
 /// `a_once` steps the first abstract counter. A run answers it opaque at the
 /// seal of `A`.
