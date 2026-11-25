@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x58f12ec6eb01537e`
-- Rules: 161 — 160 committed, 1 internal
-- Molds: 3192
+- Grammar fingerprint: `0x3e6882e1c84c91c5`
+- Rules: 162 — 161 committed, 1 internal
+- Molds: 3195
 - Attributes: 24
 
 ## Reading a form
@@ -143,7 +143,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`string.expression`](../corpus/ledger/syntax/string.expression.gandr) | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ‖ ${ EXPRESSION } ⦆* "` | `expression.atom` | `string` | admitted | StringLit, Escape, Other |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 45 rules
+## `type` — 46 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -168,7 +168,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`path_type`](../corpus/ledger/syntax/path-type.gandr) | `Path ⦅ ( EXPRESSION , EXPRESSION ⦅ , EXPRESSION ⦆? ) ‖ [ . TYPE ⦅ = ⦅ ⟨universe_type⟩ ] ⦅ ( TYPE , TYPE ) ⦆? ‖ TYPE ] ⦅ ( EXPRESSION , EXPRESSION ) ⦆? ⦆ ‖ ] ⦅ ( EXPRESSION , EXPRESSION ) ⦆? ⦆ ⦆?` | `type.application` | `path_type` * | admitted | TypeBuiltin, Other, Operator, Number |
 | [`bridge_type`](../corpus/ledger/syntax/bridge-type.gandr) | `Bridge ⦅ ( EXPRESSION , EXPRESSION ⦅ , EXPRESSION ⦆? ) ‖ [ . TYPE ⦅ = ⦅ ⟨universe_type⟩ ] ⦅ ( TYPE , TYPE ) ⦆? ‖ TYPE ] ⦅ ( EXPRESSION , EXPRESSION ) ⦆? ⦆ ‖ ] ⦅ ( EXPRESSION , EXPRESSION ) ⦆? ⦆ ⦆?` | `type.application` | `bridge_type` * | admitted | TypeBuiltin, Other, Operator, Number |
 | [`flow_type`](../corpus/ledger/syntax/flow-type.gandr) | `Flow [ . TYPE ⦅ = ⦅ ⟨universe_type⟩ ] ( TYPE , TYPE ) ‖ TYPE ] ( EXPRESSION , EXPRESSION ) ⦆ ‖ ] ( EXPRESSION , EXPRESSION ) ⦆` | `type.application` | `flow_type` * | admitted | Other, TypeBuiltin, Operator, Number |
-| [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
+| [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ ⟨descent_type⟩ ⦆? ⦆ ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
 | [`type_application.juxtaposed`](../corpus/ledger/syntax/type-application.juxtaposed.gandr) | `TYPE   TYPE` | `type.juxtaposition` | `type_application` | admitted | Other |
 | [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ⦅ ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ‹type_variable› ⦅ ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦆? ⦆ ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
 | [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
@@ -185,6 +185,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`unknown_type`](../corpus/ledger/syntax/unknown-type.gandr) | `?` | `type.atom` | `unknown_type` * | unadmitted | TypeBuiltin |
 | [`type_identifier`](../corpus/ledger/syntax/type-identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | admitted | Type |
 | [`type_variable`](../corpus/ledger/syntax/type-variable.gandr) | `‹type_variable›` | `type.atom` | `type_variable` | admitted | TypeVariable |
+| [`descent_type`](../corpus/ledger/syntax/descent-type.gandr) | `[ < ]` | `type.atom` | `descent_type` * | admitted | Other, Operator |
 | [`moded_type`](../corpus/ledger/syntax/moded-type.gandr) | `‹type_variable› TYPE` | `type.arrow` | `moded_type` * | admitted | TypeVariable |
 | [`capability_type`](../corpus/ledger/syntax/capability-type.gandr) | `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` or `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` | `type.atom` | `capability_type` * | admitted | TypeBuiltin, Other, Number, Member |
 | [`number.type`](../corpus/ledger/syntax/number.type.gandr) | `‹number›` | `type.atom` | `number` | admitted | Number |
@@ -267,7 +268,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload | a declaration or an operation |
 | [`frobenius`](../corpus/ledger/attributes/frobenius.gandr) | no payload | a sort |
 
-## Decisions — 109 of 161 rules decided at every token
+## Decisions — 109 of 162 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -398,7 +399,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `product_type` | type | 1 | `*` | — | 0 |
 | `f_type.row` | type | 14 | `-F` | `f_type`, `f_type.row.labelled` | 8 |
 | `f_type` | type | 1 | `-F` | `f_type.row`, `f_type.row.labelled` | 0 |
-| `f_type.result` | type | 13 | `[` | `f_type.result.labelled` | 8 |
+| `f_type.result` | type | 13 | `[` | `descent_type`, `f_type.result.labelled` | 8 |
 | `u_type` | type | 6 | `+U` | — | 0 |
 | `universe_type` | type | 7 | `Type` | — | 0 |
 | `representable_universe_type` | type | 1 | `Type+` | — | 0 |
@@ -423,6 +424,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `unknown_type` | type | 1 | `?` | — | 0 |
 | `type_identifier` | type | 1 | `type_identifier` | `type_application` | 0 |
 | `type_variable` | type | 1 | `type_variable` | `moded_type`, `type_application` | 0 |
+| `descent_type` | type | 3 | `[` | `f_type.result`, `f_type.result.labelled` | 0 |
 | `moded_type` | type | 1 | `type_variable` | `type_application`, `type_variable` | 0 |
 | `capability_type` | type | 12 | `Cap` | — | 2 |
 | `number.type` | type | 1 | `number` | — | 0 |
@@ -433,7 +435,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `derived_rule_declaration` | item | 10 | `rule` | `circuit_declaration` | 0 |
 | `forget_model_expression` | expression | 8 | `forget` | — | 2 |
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
-| `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
+| `f_type.result.labelled` | type | 23 | `[` | `descent_type`, `f_type.result` | 12 |
 
 ## Menus — 197 labels
 
@@ -452,9 +454,9 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `.` | 98 | 44 | 3 |
 | `type_variable` | 92 | 15 | 3 |
 | `}` | 82 | 40 | 0 |
-| `]` | 79 | 40 | 0 |
+| `]` | 80 | 41 | 0 |
 | `{` | 63 | 29 | 2 |
-| `[` | 61 | 33 | 4 |
+| `[` | 62 | 34 | 5 |
 | `number` | 59 | 33 | 3 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 40 | 9 | 0 |
@@ -468,11 +470,11 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `type` | 23 | 5 | 1 |
 | `consumed` | 22 | 7 | 0 |
 | `module` | 19 | 13 | 2 |
+| `<` | 18 | 9 | 2 |
 | `import` | 18 | 12 | 1 |
 | `*=` | 17 | 11 | 0 |
 | `+=` | 17 | 11 | 0 |
 | `-=` | 17 | 11 | 0 |
-| `<` | 17 | 8 | 2 |
 | `let` | 17 | 11 | 0 |
 | `var` | 17 | 11 | 0 |
 | `ω` | 17 | 5 | 0 |

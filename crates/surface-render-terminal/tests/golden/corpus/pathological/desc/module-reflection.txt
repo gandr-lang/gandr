@@ -17,10 +17,10 @@ error[InertRead]: `manifest` reads the inert `version`; only another inert decla
    ╰ help: read an inert declaration only from a manifest step or inert declaration
 
 error[InertRead]: `leaked` reads the inert `packageEntries`; only another inert declaration reads one
-   ╭▸ corpus/pathological/desc/module-reflection.gandr:32:75
+   ╭▸ corpus/pathological/desc/module-reflection.gandr:32:74
    │
-32 │ def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) = packageEntries m;
-   │                                                                           ━━━━━━━━━━━━━━ an inert read
+32 │ def leaked(m : Model (Gandr.Package)) -> modelType packagePresentation = packageEntries m;
+   │                                                                          ━━━━━━━━━━━━━━ an inert read
    │
    ├ note: `leaked` is refused with InertRead, as its expectation states
    ╰ help: read an inert declaration only from a manifest step or inert declaration
