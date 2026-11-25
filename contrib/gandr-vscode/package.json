@@ -18,7 +18,8 @@
   "scripts": {
     "bundle": "esbuild dist/src/extension.js --bundle --minify --outfile=dist/extension.js --platform=node --format=cjs --target=node24 --external:vscode",
     "clean": "rimraf dist",
-    "compile": "aube run clean && tsc -p ./",
+    "compile": "aube run clean && aube run input-table && tsc -p ./",
+    "input-table": "node scripts/input-table.mts src/input/table.json",
     "package": "vsce package --no-dependencies --skip-license",
     "vscode:prepublish": "aube run compile && aube run bundle",
     "watch": "tsc -watch -p ./"

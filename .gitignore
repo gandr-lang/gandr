@@ -1,6 +1,8 @@
 /target
 node_modules/
 /contrib/gandr-vscode/dist
+# The build of the editor package writes the input table from its pinned sources.
+/contrib/gandr-vscode/src/input/table.json
 *.vsix
 .mise.local.toml
 mise.local.lock

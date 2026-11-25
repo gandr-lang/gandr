@@ -50,13 +50,6 @@
     ]
   },
   {
-    "name": "#6144: the base moves the input table's script under a regenerated table, so the table is due",
-    "moved": ["contrib/gandr-vscode/scripts/input-table.mts"],
-    "own": ["contrib/gandr-vscode/src/input/table.json"],
-    "crates": [],
-    "due": ["the input table"]
-  },
-  {
     "name": "#6144: the base moves a corpus source under a rewritten comment ledger, so the ledger is due",
     "moved": ["corpus/model/basics/annotations.gandr"],
     "own": ["corpus/uncommented.ledger"],

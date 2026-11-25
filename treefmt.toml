@@ -88,13 +88,10 @@ command = "tombi"
 options = ["lint", "--error-on-warnings"]
 includes = ["*.toml"]
 
-# The input method's table is generated from its pinned sources, one command
-# per line, and `check:input-table` owns its bytes.
 [formatter.oxfmt]
 command = "oxfmt"
 options = ["--config", ".oxfmtrc.json"]
 includes = ["*.json", "*.jsonc", "*.yaml", "*.yml", "*.mjs", "*.mts", "*.ts"]
-excludes = ["contrib/gandr-vscode/src/input/table.json"]
 
 # Check-only: type-aware lint, the TypeScript checker included.
 [formatter.oxlint]
