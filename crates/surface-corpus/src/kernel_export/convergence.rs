@@ -23,6 +23,15 @@
 //! A rule of a `theory` block that instantiates a variable, states a
 //! condition or fires under a row is second order. The oracle reads no such
 //! rule, and the sweep counts the pairs that it leaves out.
+//!
+//! The sweep knows the blocks whose rules part, each beside the unit that
+//! removes it ([`sweeps::PARTING`]). It fails for each other block that
+//! parts, and for each known block that joins.
+//!
+//! # References
+//!
+//! - `vault:01a213f1-00b3-765d-b3f9-135dd191549f` — background: the two
+//!   questions on a symmetry, and the units that each answer starts.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -716,7 +725,7 @@ fn systems(
 ) -> Vec<(System, Option<String>)>
 {
     let mut found = Vec::new();
-    for (position, marked) in declarations.iter().enumerate() {
+    for marked in declarations {
         let declaration = marked.declaration();
         let segments: Vec<&str> = declaration
             .name()
@@ -725,7 +734,7 @@ fn systems(
             .map(AsRef::as_ref)
             .collect();
         let name = if segments.is_empty() {
-            format!("the declaration at {position}, which has no name")
+            String::from("a declaration with no name")
         }
         else {
             segments.join(".")
@@ -914,6 +923,7 @@ where
 mod sweeps
 {
     use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
     use alloc::format;
     use alloc::string::String;
     use alloc::vec::Vec;
@@ -925,6 +935,46 @@ mod sweeps
     use super::sources;
     use super::systems;
 
+    /// The admitted blocks whose rules part, each by its source and its
+    /// declaration, beside the unit that removes it.
+    ///
+    /// - `Flat` holds `pair low mid ==> low` and `pair mid low ==> mid` beside
+    ///   the symmetry of `pair`. The check derives a rule that joins `low` and
+    ///   `mid`, and the value that crosses does not carry it, because the
+    ///   kernel compares two rules of a `theory` block as written. The unit
+    ///   `theory-pairs-each-order` makes the kernel form the pair under the
+    ///   symmetry, so the kernel refuses `Flat` and its pin leaves; the unit
+    ///   `theory-derived-rule-under-symmetry` then admits it with the derived
+    ///   rule.
+    /// - The declaration with no name is the type of terms of the theory
+    ///   `Torn`, which the source refuses: `meet (pair x y) z ==> x` beside the
+    ///   symmetry of `meet`. It crosses, and the kernel decides no convergence
+    ///   of a presented type at its declaration. The unit
+    ///   `refused-theory-terms-withheld` keeps the type of terms of a refused
+    ///   theory out of the export.
+    pub(super) const PARTING: [(&str, &str, &str); 4] = [
+        (
+            "corpus/pathological/desc/rule-symmetry-apart.gandr",
+            "a declaration with no name",
+            "refused-theory-terms-withheld",
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-between.gandr",
+            "Flat",
+            "theory-pairs-each-order",
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-first.gandr",
+            "Flat",
+            "theory-pairs-each-order",
+        ),
+        (
+            "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-last.gandr",
+            "Flat",
+            "theory-pairs-each-order",
+        ),
+    ];
+
     #[test]
     fn each_admitted_block_with_rules_joins_its_critical_pairs()
     {
@@ -935,14 +985,18 @@ mod sweeps
             texts.extend(sources(&repository.join(root)));
         }
         let mut verdicts: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        let mut faults: Vec<String> = Vec::new();
+        let mut parting: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
         let (mut symmetric, mut unread) = (0_usize, 0_usize);
         for &(ref path, ref text) in &texts {
             let Some((arena, declarations)) = admitted(&pbg, path, text)
             else {
                 continue;
             };
-            let shown = path.strip_prefix(&repository).unwrap_or(path).display();
+            let shown = path
+                .strip_prefix(&repository)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .into_owned();
             for (system, fault) in systems(&arena, &declarations) {
                 let key = format!("{} {:?} {:?}", system.name, system.symmetric, system.rules);
                 let parted = verdicts.entry(key).or_insert_with(|| {
@@ -950,26 +1004,48 @@ mod sweeps
                     unread = unread.saturating_add(system.unread);
                     fault.into_iter().chain(system.parted()).collect()
                 });
-                faults.extend(
-                    parted
-                        .iter()
-                        .map(|description| format!("{shown}: {}: {description}", system.name)),
-                );
+                if !parted.is_empty() {
+                    parting
+                        .entry((shown.clone(), system.name.clone()))
+                        .or_default()
+                        .extend(parted.iter().cloned());
+                }
             }
         }
         let blocks = verdicts.len();
-        let parting = verdicts
-            .values()
-            .filter(|parted| !parted.is_empty())
-            .count();
         assert!(
             blocks > 0 && symmetric > 0,
             "the repository admits a block with rules and one with a symmetry"
         );
+        let known: BTreeSet<(String, String)> = PARTING
+            .iter()
+            .map(|&(source, name, _)| (String::from(source), String::from(name)))
+            .collect();
+        let new: Vec<String> = parting
+            .iter()
+            .filter(|&(block, _)| !known.contains(block))
+            .flat_map(|(&(ref source, ref name), parted)| {
+                parted
+                    .iter()
+                    .map(move |description| format!("{source}: {name}: {description}"))
+            })
+            .collect();
+        let joined: Vec<String> = PARTING
+            .iter()
+            .filter(|&&(source, name, _)| {
+                !parting.contains_key(&(String::from(source), String::from(name)))
+            })
+            .map(|&(source, name, unit)| format!("{source}: {name}, whose pin {unit} removes"))
+            .collect();
         assert!(
-            faults.is_empty(),
-            "{parting} of {blocks} admitted blocks with rules ({symmetric} with a symmetry, {unread} second-order rules unread) do not join each critical pair:\n{}",
-            faults.join("\n")
+            new.is_empty(),
+            "admitted blocks with rules that do not join each critical pair, of {blocks} ({symmetric} with a symmetry, {unread} second-order rules unread):\n{}",
+            new.join("\n")
+        );
+        assert!(
+            joined.is_empty(),
+            "known parting blocks that join or are not admitted now; remove each from `PARTING`:\n{}",
+            joined.join("\n")
         );
     }
 }
