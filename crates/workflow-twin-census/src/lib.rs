@@ -21,9 +21,8 @@
 //! - [`rustdoc::read`] reads the counts of one library in the JSON that rustdoc
 //!   writes for it, and [`Workspace::set_surface`] puts them in the row of its
 //!   crate.
-//! - [`Workspace::render`] writes the text of `ledger/twin-census.md`.
-//! - [`stale`] compares a committed text with the rendered one and names each
-//!   crate whose row differs.
+//! - [`Workspace::render`] writes the text of the census, which the binary
+//!   prints. No file of the tree holds it.
 //!
 //! The graph is the one that Cargo resolves for the workspace, with the
 //! features of each member unified. So an optional dependency that a different
@@ -47,15 +46,11 @@ use rustdoc::Surface;
 /// The package of the emitter.
 pub const EMITTER: &str = "gandr-runtime-emitter";
 
-/// The path of the census below the root of the workspace.
-pub const CENSUS_PATH: &str = "ledger/twin-census.md";
-
-/// Why the census could not read the metadata, or why a committed census is
-/// not the workspace's.
+/// Why the census could not read the metadata or the JSON of rustdoc.
 ///
 /// # Specification
-/// - provides: one variant for each refusal, each with the text or the crates
-///   that it refuses, so the message names what must change.
+/// - provides: one variant for each refusal, each with the reason or the format
+///   that it refuses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CensusError
 {
@@ -67,12 +62,6 @@ pub enum CensusError
     },
     /// The workspace has no package `gandr-runtime-emitter`.
     NoEmitter,
-    /// The committed census is not the census of the workspace.
-    Stale
-    {
-        /// Each crate whose row differs, is absent, or has no crate.
-        rows: Vec<String>,
-    },
     /// The text is not the JSON that rustdoc writes for a library.
     Rustdoc
     {
@@ -110,12 +99,6 @@ impl fmt::Display for CensusError
                 )
             },
             Self::NoEmitter => write!(f, "the workspace has no package `{EMITTER}`"),
-            Self::Stale { ref rows } => write!(
-                f,
-                "`{CENSUS_PATH}` is not the census of the workspace; write it with \
-                 `twin-census --write`. The rows that differ: {}",
-                rows.join(", ")
-            ),
             Self::Rustdoc { ref reason } => {
                 write!(f, "the text is not the JSON of rustdoc: {reason}")
             },
@@ -451,7 +434,7 @@ impl Workspace
         (under, self.crates.len())
     }
 
-    /// The text of `ledger/twin-census.md`.
+    /// The text of the census, as Markdown.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -488,9 +471,8 @@ impl Workspace
              two. A fixed-width integer is `u8` to `u64`, `i8` to `i64`, `usize` or `isize`. An \
              address is a reference or a raw pointer to a sized type. The column gives the \
              count of such public functions and methods, of the count of all, and its \
-             share.\n\n`twin-census --write` writes this file from `cargo metadata` and from the \
-             JSON that rustdoc writes for each library. `twin-census --check` refuses it when \
-             it is not the census of the workspace.\n\n| Crate | Under the emitter | Generic \
+             share.\n\n`twin-census` prints this text from `cargo metadata` and from the JSON \
+             that rustdoc writes for each library.\n\n| Crate | Under the emitter | Generic \
              items | Export fragment |\n| ----- | ----------------- | ------------- | \
              --------------- |\n",
         );
@@ -559,66 +541,4 @@ fn directory(manifest_path: &str) -> String
         .strip_suffix("/Cargo.toml")
         .unwrap_or(manifest_path);
     String::from(dir.rsplit('/').next().unwrap_or(dir))
-}
-
-/// The crate that a row of a census names, and the row.
-///
-/// # Specification
-/// trivial.
-fn rows(text: &str) -> BTreeMap<&str, &str>
-{
-    text.lines()
-        .filter_map(|line| {
-            let rest = line.strip_prefix("| `")?;
-            let (name, _cell) = rest.split_once('`')?;
-            Some((name, line))
-        })
-        .collect()
-}
-
-/// Each crate whose row differs between the committed census `committed` and
-/// the rendered census `rendered`, or none when the two texts are equal.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: `Ok` exactly when the two texts are equal. Otherwise
-///   [`CensusError::Stale`] with each crate whose row is in one text and not in
-///   the other, in order; with the line of the counts when only the text
-///   outside the rows differs.
-/// - fails: as `ensures` states.
-/// - panics: none.
-///
-/// # Errors
-/// [`CensusError::Stale`].
-///
-/// # Cost
-/// - allocation: the rows of the two texts and the names that differ, error
-///   path
-///
-/// # Adequacy
-/// - hypothesis: L3 — a census with one row changed, one row missing and one
-///   row of no crate names the three crates; an equal text passes.
-/// - witness: `tests::census::a_stale_census_is_refused_with_the_rows_that_differ`
-#[spec(ensures: |ret| ret.is_ok() == (committed == rendered))]
-#[inline]
-pub fn stale(
-    committed: &str,
-    rendered: &str,
-) -> Result<(), CensusError>
-{
-    if committed == rendered {
-        return Ok(());
-    }
-    let before = rows(committed);
-    let after = rows(rendered);
-    let names: BTreeSet<&str> = before.keys().chain(after.keys()).copied().collect();
-    let mut differ: Vec<String> = names
-        .into_iter()
-        .filter(|name| before.get(name) != after.get(name))
-        .map(String::from)
-        .collect();
-    if differ.is_empty() {
-        differ.push(String::from("the text outside the rows"));
-    }
-    Err(CensusError::Stale { rows: differ })
 }
