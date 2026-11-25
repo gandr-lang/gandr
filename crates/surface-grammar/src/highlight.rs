@@ -40,6 +40,9 @@
 //!   block of fields; a label for a world; a call for the operation a circuit
 //!   node applies; a number for a grade in `+U[…]` and `thunk[…]`; an attribute
 //!   or decoration name is `Other`.
+//! - A `{` that a word spells is a `Keyword`: the layout pass reads a
+//!   line-final `do`, and the line-final `where` of a `match` head, as the open
+//!   of a block.
 //! - Every other tile — a bracket, a separator, a delimiter — is `Other`.
 //!
 //! Layout has no mold: a layout node opening with `//` or `/*` is a `Comment`,
@@ -331,6 +334,8 @@ pub struct RoleTable
     grammar: GrammarFingerprint,
     /// One role per mold, by id.
     roles: Vec<HlRole>,
+    /// Whether each mold's tile is a `{`, by id.
+    braces: Vec<bool>,
 }
 
 impl RoleTable
@@ -371,6 +376,7 @@ impl RoleTable
     {
         let occurrences = occurrences(pbg)?;
         let mut roles = Vec::with_capacity(occurrences.len());
+        let mut braces = Vec::with_capacity(occurrences.len());
         for (index, occurrence) in occurrences.iter().enumerate() {
             let id = MoldId::try_from(index).map_err(|_overflow| PbgError::MoldOverflow)?;
             let def = pbg.mold(id)?;
@@ -389,10 +395,12 @@ impl RoleTable
                 right,
                 opener,
             }));
+            braces.push(occurrence.label.0 == "{");
         }
         Ok(Self {
             grammar: pbg.fingerprint(),
             roles,
+            braces,
         })
     }
 
@@ -432,17 +440,40 @@ impl RoleTable
         }
     }
 
+    /// The role of a tile of `mold` whose bytes are `spelled`: a `{` that a
+    /// word spells is a layout word, a [`HlRole::Keyword`], and each other
+    /// tile takes the role of its mold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tile_role(
+        &self,
+        mold: MoldId,
+        spelled: Option<SourceFragment<'_>>,
+    ) -> Result<HlRole, PbgError>
+    {
+        let role = self.role_of(mold)?;
+        let brace = usize::try_from(u32::from(mold))
+            .ok()
+            .and_then(|index| self.braces.get(index))
+            .copied()
+            .unwrap_or(false);
+        let word = spelled.is_some_and(|text| !matches!(<&str>::from(text), "" | "{"));
+        Ok(if brace && word { HlRole::Keyword } else { role })
+    }
+
     /// The highlight spans of `tree`, in source order.
     ///
     /// # Specification
     /// - requires: nothing; a tree molded under another grammar is admissible
     ///   input and is refused.
     /// - ensures: one span per tile, covering exactly the tile's bytes, with
-    ///   its mold's role; one span per comment, [`HlRole::Comment`], and per
-    ///   shebang, [`HlRole::Directive`]; no span for whitespace, grout, a
-    ///   minted close, a Wald or a Meld node. The spans are sorted by range.
-    ///   Tile spans preserve their input multiplicity and overlap; disjoint
-    ///   input tiles yield a partition of exactly the bytes those tiles cover.
+    ///   its mold's role, save a `{` that a word spells, a [`HlRole::Keyword`];
+    ///   one span per comment, [`HlRole::Comment`], and per shebang,
+    ///   [`HlRole::Directive`]; no span for whitespace, grout, a minted close,
+    ///   a Wald or a Meld node. The spans are sorted by range. Tile spans
+    ///   preserve their input multiplicity and overlap; disjoint input tiles
+    ///   yield a partition of exactly the bytes those tiles cover.
     /// - provides: the spans a renderer paints, one per token: two adjacent
     ///   tiles of one role stay two spans.
     /// - fails: [`HighlightError::GrammarMismatch`] when the tree's fingerprint
@@ -485,7 +516,7 @@ impl RoleTable
             let mut expected_count = 0_usize;
             tree.grammar() == self.grammar && spans.iter().is_sorted_by(|left, right| left.range <= right.range) && tree.positions().all(|position| tree.node(position).is_none_or(|node| {
                 let role = match node.label() {
-                    NodeLabel::Tile(id) => self.role_of(id).map(Some),
+                    NodeLabel::Tile(id) => self.tile_role(id, tree.fragment(position)).map(Some),
                     NodeLabel::Space => Ok(match tree.fragment(position).map_or(Layout::Whitespace, layout_of) {
                         Layout::Comment => Some(HlRole::Comment),
                         Layout::Directive => Some(HlRole::Directive),
@@ -522,7 +553,7 @@ impl RoleTable
                 continue;
             };
             let role = match node.label() {
-                NodeLabel::Tile(mold) => match self.role_of(mold) {
+                NodeLabel::Tile(mold) => match self.tile_role(mold, tree.fragment(position)) {
                     Ok(role) => role,
                     Err(_unknown) => return Err(HighlightError::UnknownMold { id: mold }),
                 },
