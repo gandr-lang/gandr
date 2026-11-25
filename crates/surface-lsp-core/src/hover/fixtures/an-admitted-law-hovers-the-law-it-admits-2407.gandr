@@ -1,7 +1,7 @@
 theory Lawful where {
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);
+  law refl : (a : Carrier) -> Path[.A = Bool] (alike a a) true;
 }
 module Host : Model(Lawful) with sort Carrier = Integer where {
   def alike(a : Integer, b : Integer) -> Bool = int.eq a b;
