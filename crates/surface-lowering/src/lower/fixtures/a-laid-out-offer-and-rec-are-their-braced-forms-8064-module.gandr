@@ -1,0 +1,21 @@
+def offer_laid() -> Unit =
+  let d = fork (c : +{go : end, stop : end}) { select c go; close c };
+  offer d where
+    | go => close d
+    | stop => close d
+
+def offer_braced() -> Unit =
+  let d = fork (c : +{go : end, stop : end}) { select c go; close c };
+  offer d {
+    | go => close d
+    | stop => close d
+  }
+
+rec where
+  def even_laid(n : Integer) -> Bool = odd_laid n
+  def odd_laid(n : Integer) -> Bool = even_laid n
+
+rec {
+  def even_braced(n : Integer) -> Bool = odd_braced n;
+  def odd_braced(n : Integer) -> Bool = even_braced n;
+}

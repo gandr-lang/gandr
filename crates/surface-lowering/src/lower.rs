@@ -5352,6 +5352,61 @@ mod tests
     }
 
     #[test]
+    fn a_laid_out_offer_and_rec_are_their_braced_forms_8064()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(include_str!(
+                "lower/fixtures/a-laid-out-offer-and-rec-are-their-braced-forms-8064-module.gandr"
+            )),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(
+                &arena,
+                body("offer_laid"),
+                body("offer_braced")
+            ),
+            gandr_core_term::CertificateEquality::Equal,
+            "an offer whose `where` ends its line holds the arms on the lines after it"
+        );
+        // Each definition of the `rec` block by layout and of the one in
+        // braces lowers a body.
+        for name in ["even_laid", "odd_laid", "even_braced", "odd_braced"] {
+            let _body = body(name);
+        }
+    }
+
+    /// An `offer` head that ends its line with no `where` is refused by name,
+    /// at the end of its endpoint.
+    #[test]
+    fn a_bare_offer_head_is_refused_by_name_8064()
+    {
+        let pbg = grammar();
+        let source = "def f() -> Unit =\n  let d = fork (c : +{go : end}) { select c go; close c };\n  offer d\n    | go => close d\n";
+        let end = source.find("offer d").unwrap_or_default().saturating_add(7);
+        let tree = parsed(&pbg, SourceText::from(source));
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::OutOfFragment {
+                span: span(ByteOffset::from(end), ByteOffset::from(end)),
+                form: FormName::OFFER,
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::BareArms,
+            },
+            "the arms of a bare `offer` head are refused at the end of the head"
+        );
+    }
+
+    #[test]
     fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
