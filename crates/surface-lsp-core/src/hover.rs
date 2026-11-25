@@ -3244,14 +3244,14 @@ mod tests
                 theory,
                 (3, 8),
                 Ok(fenced(SourceText::from(
-                    "id : +U ((a : Ob) -> -F Hom(a, a))",
+                    "id : +U ((a : Ob) -> -F (Hom a a))",
                 ))),
             ),
             (
                 "a law's application",
                 theory,
                 (5, 20),
-                Ok(fenced(SourceText::from("Hom(a, b)"))),
+                Ok(fenced(SourceText::from("Hom a b"))),
             ),
             (
                 "a theory member's keyword",

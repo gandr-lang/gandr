@@ -1136,15 +1136,15 @@ fn gated(
         // outermost application answers for. A type's spine, `Vec A n`, lowers
         // as one application of its family, so the family's name answers
         // through it, as the head of the call form `Vec(A, n)` does (#5326).
-        // A word's spine in a type nests to the right, `c v` in `pred c v`,
-        // and lowers as the one call `pred(c, v)`, which the outermost word
-        // answers for. A path or a bridge head, `Path[.A = C]` in `Path[.A =
-        // C] a b`, is no type alone: the spine lowers as one path type, which
-        // answers (#5750).
+        // A word's spine in a type nests to the right, `c v` in `pred c v` and
+        // `Zero h` in `viaZero Zero h`, and lowers as the one call of the
+        // word, which the outermost word answers for. A path or a bridge head,
+        // `Path[.A = C]` in `Path[.A = C] a b`, is no type alone: the spine
+        // lowers as one path type, which answers (#5750).
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             (melded
                 && def.sort == Sort::Type
-                && def.label == "type_variable"
+                && matches!(def.label, "type_variable" | JUXTAPOSED)
                 && label == "type_variable")
                 || headed
                     && if melded {

@@ -741,7 +741,7 @@ fn a_mismatch_label_spells_both_types()
 
 /// A shape refusal at a type a definition computes names the type as written
 /// and the type it unfolds to, and keeps the written type's own label: a
-/// tuple at `pairOf(Integer, Bool)`, which unfolds to a record type. A tuple
+/// tuple at `pairOf Integer Bool`, which unfolds to a record type. A tuple
 /// and a projection at a product a definition computes check: `prodOf`, the
 /// recursive `tower`, and an evaluator's environment `env`.
 #[test]
@@ -759,7 +759,7 @@ fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
             refused.detail.compared.unfolded.clone()
         ),
         (
-            Maybe::Present(String::from("pairOf(Integer, Bool)")),
+            Maybe::Present(String::from("pairOf Integer Bool")),
             Maybe::Present(String::from("*{x : Integer, y : Bool}"))
         ),
         "the refusal compares the written type and the type it unfolds to"
@@ -770,7 +770,7 @@ fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
     };
     assert_eq!(
         primary.label,
-        "its type is not of the required shape: found `pairOf(Integer, Bool)`, which unfolds to \
+        "its type is not of the required shape: found `pairOf Integer Bool`, which unfolds to \
          `*{x : Integer, y : Bool}`"
     );
     assert!(
@@ -1717,8 +1717,8 @@ fn a_refusal_spells_its_binders_by_name_418()
             diagnostic.detail.compared.found.clone()
         ),
         (
-            Maybe::Present(String::from("counted_at(other)")),
-            Maybe::Present(String::from("counted_at(presented)"))
+            Maybe::Present(String::from("counted_at other")),
+            Maybe::Present(String::from("counted_at presented"))
         ),
         "the mismatch names the two binders it is over"
     );
@@ -1731,7 +1731,7 @@ fn a_refusal_spells_its_binders_by_name_418()
         [
             "presented : Theory",
             "other : Theory",
-            "n : counted_at(presented)"
+            "n : counted_at presented"
         ],
         "a hypothesis's type names the binders before it"
     );
@@ -1742,8 +1742,8 @@ fn a_refusal_spells_its_binders_by_name_418()
     assert!(
         notes.iter().any(|note| {
             note.contains(
-                "(presented : Theory) -> (other : Theory) -> counted_at(presented) -> -F \
-                     counted_at(other)",
+                "(presented : Theory) -> (other : Theory) -> (counted_at presented) -> -F \
+                     (counted_at other)",
             )
         }),
         "the declared type a frame names binds the declaration's parameters: {notes:?}"
@@ -3930,7 +3930,7 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
     let diagnostic = only(Path::new("packed.gandr"), text);
     assert_eq!(
         diagnostic.detail.compared.found,
-        Maybe::Present(String::from("counted_at(s)")),
+        Maybe::Present(String::from("counted_at s")),
         "the returned binder's type names the split's first binder as written"
     );
     let hypotheses: Vec<String> = diagnostic
@@ -3941,10 +3941,10 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
     assert_eq!(
         hypotheses,
         [
-            "p : *{s : Theory, n : counted_at(s)}",
+            "p : *{s : Theory, n : counted_at s}",
             "other : Theory",
             "s : Theory",
-            "n : counted_at(s)",
+            "n : counted_at s",
         ],
         "each binder is named as written, and the record type keeps its labels"
     );
@@ -3954,7 +3954,7 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
         .map(|(_, note)| note)
         .expect("the split is a context");
     assert!(
-        split.ends_with("binds s : Theory, n : counted_at(s)"),
+        split.ends_with("binds s : Theory, n : counted_at s"),
         "the split's binding note names its binders as the pattern writes them: {split}"
     );
 }
