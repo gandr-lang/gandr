@@ -151,8 +151,7 @@
         "Cargo.toml",
         "crates/",
         "ledger/README.md",
-        "ledger/concerns.sql",
-        "ledger/crates.dot"
+        "ledger/concerns.sql"
       ],
       "check:dead-weight": [".config/cases/", ".config/dead-weight/"],
       "check:debug": [".config/debug/"],

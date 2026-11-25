@@ -57,6 +57,7 @@ flowchart BT
   workflow -->|18| surface
 ```
 <!-- crate-map:end -->
+An arrow is one category's dependencies on another, labelled with the count of `[dependencies]` edges between their crates. The count omits dev and build dependencies. Every arrow points down the layering: `check:crate-map` refuses an edge to a category listed after its own and names its two crates. `mise run ledger:crate-map` writes the category graph, `crates.md`, and the per-crate map, `crates.dot`, into `target/ledger`.
 
 ## Members
 
