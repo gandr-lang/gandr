@@ -1,6 +1,8 @@
 //! The equivalence of a complex with its reduct on the complex's own
 //! composites: Doré's graph `two` with paths and squares, two collapses of a
-//! triangle in sequence, a square whose faces occur under a context, and the
+//! triangle in sequence, a square whose faces occur under a context, the
+//! cover of a match over two columns as a sum of reductions in sequence, the
+//! step of a unifier that solves a variable as one matched pair, and the
 //! abelianisation of the test complexes against the reduct's Morse boundary.
 
 use alloc::vec::Vec;
@@ -901,6 +903,241 @@ fn a_part_that_does_not_replay_is_refused_with_its_part()
             C
         ))))
     );
+}
+
+/// The case `Zero, Zero` of a match over two columns of naturals.
+const ZZ: Name = Name("Zero, Zero");
+/// The case `Zero, Succ`.
+const ZS: Name = Name("Zero, Succ");
+/// The case `Succ, Zero`.
+const SZ: Name = Name("Succ, Zero");
+/// The case `Succ, Succ`.
+const SS: Name = Name("Succ, Succ");
+/// The edge `ZS → ZZ`: the second column varies under the arm `Zero, n`.
+const VARIES: Name = Name("n varies");
+
+/// The cases of a match over two columns under the first constructor of the
+/// first column: `Zero` with the edge along which its second column varies,
+/// or `Succ` with two cases and no edge.
+///
+/// # Specification
+/// trivial.
+fn cases(first: Name) -> Graph
+{
+    if first == ZZ {
+        Graph {
+            vertices: [ZZ, ZS].to_vec(),
+            edges: [(VARIES, ZS, ZZ)].to_vec(),
+            search: Search::Honest,
+        }
+    }
+    else {
+        Graph {
+            vertices: [SZ, SS].to_vec(),
+            edges: Vec::new(),
+            search: Search::Honest,
+        }
+    }
+}
+
+/// The match `f Zero n`, `f (Succ m) Zero` and `f (Succ m) (Succ n)` over two
+/// columns, as the derivation of its cover: `split` on the first column is
+/// a sum with one part for each constructor, `compose` is a reduction in
+/// sequence, `split` on the second column is the identity on its two cases,
+/// and `var` on the second column is the collapse of the case `Zero, Succ`
+/// onto `Zero, Zero` along the edge on which the column varies. The cells
+/// that stay are the three arms.
+#[test]
+fn the_cover_of_a_match_over_two_columns_is_a_sum_of_reductions_in_sequence()
+{
+    let room = Budget::from(ROOM);
+    let none = Matching::<Name>::stated([]);
+    let varies = Matching::stated([(ZS, VARIES)]);
+    let (mut zero_split, mut zero_var) = (cases(ZZ), cases(ZZ));
+    let (mut succ_split, mut succ_split_again) = (cases(SZ), cases(SZ));
+    let zero_cells = zero_split.cells();
+    let succ_cells = succ_split.cells();
+    let mut zero_first = none.on(&mut zero_split);
+    let mut zero_next = varies.on(&mut zero_var);
+    let mut succ_first = none.on(&mut succ_split);
+    let mut succ_next = none.on(&mut succ_split_again);
+    let zero_split_equivalence = equivalence(&mut zero_first, &zero_cells, room).expect("no pair");
+    let zero_var_equivalence =
+        equivalence(&mut zero_next, &zero_cells, room).expect("an acyclic matching");
+    let succ_split_equivalence = equivalence(&mut succ_first, &succ_cells, room).expect("no pair");
+    let succ_again_equivalence = equivalence(&mut succ_next, &succ_cells, room).expect("no pair");
+    let zero_identity = zero_split_equivalence
+        .on(&mut zero_first, &zero_cells, room)
+        .expect("the identity reads");
+    let zero_collapse = zero_var_equivalence
+        .on(&mut zero_next, &zero_cells, room)
+        .expect("the collapse reads");
+    let succ_identity = succ_split_equivalence
+        .on(&mut succ_first, &succ_cells, room)
+        .expect("the identity reads");
+    let succ_split_on_second = succ_again_equivalence
+        .on(&mut succ_next, &succ_cells, room)
+        .expect("the identity reads");
+    let mut cover = Sum::new(Vec::from([
+        zero_identity.then(zero_collapse),
+        succ_identity.then(succ_split_on_second),
+    ]));
+    let (zero, succ) = (PartIndex::from(0_usize), PartIndex::from(1_usize));
+    assert_eq!(
+        cover.target(),
+        [
+            Summand::new(zero, ZZ),
+            Summand::new(succ, SZ),
+            Summand::new(succ, SS)
+        ],
+        "the cells that stay are the three arms, each in the part of its first constructor"
+    );
+    assert_eq!(cover.replay(), Ok(()), "the derivation replays");
+    let varied = cover
+        .generator(&Summand::new(zero, ZS))
+        .expect("a case of the first part");
+    assert_eq!(
+        cover.collapse(&varied),
+        Ok(Summand::new(zero, stay(ZZ))),
+        "`var` sends the case to the arm that covers it"
+    );
+    assert_eq!(
+        cover.section(&varied),
+        Ok(Some(Summand::new(
+            zero,
+            square(path(ZS, ZZ, &[(VARIES, Way::Forward)]))
+        ))),
+        "and its witness is the edge on which the column varies"
+    );
+    let kept = cover
+        .generator(&Summand::new(succ, SS))
+        .expect("a case of the second part");
+    assert_eq!(
+        cover.collapse(&kept),
+        Ok(Summand::new(succ, stay(SS))),
+        "`split` keeps each case of its column"
+    );
+}
+
+/// A `prune` is a part with no cell, and the sum states no conflict for it.
+/// So the trait accepts a part with no case and no witness of why, where a
+/// cover needs the clash of the pruned arm. The record of the cover needs a
+/// value that carries it.
+#[test]
+fn a_part_with_no_cell_replays_with_no_witness_of_its_conflict()
+{
+    let room = Budget::from(ROOM);
+    let none = Matching::<Name>::stated([]);
+    let mut empty = Graph {
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        search: Search::Honest,
+    };
+    let mut kept = cases(SZ);
+    let kept_cells = kept.cells();
+    let mut empty_scheme = none.on(&mut empty);
+    let mut kept_scheme = none.on(&mut kept);
+    let no_cell: Vec<Name> = Vec::new();
+    let pruned_equivalence = equivalence(&mut empty_scheme, &no_cell, room).expect("no pair");
+    let split_equivalence = equivalence(&mut kept_scheme, &kept_cells, room).expect("no pair");
+    let pruned = pruned_equivalence
+        .on(&mut empty_scheme, &no_cell, room)
+        .expect("the identity reads");
+    let split = split_equivalence
+        .on(&mut kept_scheme, &kept_cells, room)
+        .expect("the identity reads");
+    let mut cover = Sum::new(Vec::from([pruned, split]));
+    let succ = PartIndex::from(1_usize);
+    assert_eq!(cover.target(), [
+        Summand::new(succ, SZ),
+        Summand::new(succ, SS)
+    ]);
+    assert_eq!(cover.replay(), Ok(()));
+}
+
+/// The variable `x` of a telescope.
+const X: Name = Name("x");
+/// The variable `y` of a telescope.
+const Y: Name = Name("y");
+/// The term `s` that an equation gives `x`.
+const S: Name = Name("s");
+/// The equation `e : x = s`.
+const E: Name = Name("e");
+/// The equation `x = x`.
+const SAME: Name = Name("x = x");
+
+/// The telescope `x, e : x = s, y` as a graph: each variable and the term `s`
+/// a vertex, and the equation an edge from `x` to `s`.
+///
+/// # Specification
+/// trivial.
+fn solved() -> Graph
+{
+    Graph {
+        vertices: [X, S, Y].to_vec(),
+        edges: [(E, X, S)].to_vec(),
+        search: Search::Honest,
+    }
+}
+
+/// The rule "solution" of a unifier removes a variable with the equation that
+/// defines it: the pair of `x` and `e` is one matched pair. The collapse is
+/// the telescope with neither of the two. It sends `x` to `s`, its witness is
+/// the equation, and the equivalence replays.
+#[test]
+fn a_solved_variable_and_its_equation_are_one_matched_pair()
+{
+    let room = Budget::from(ROOM);
+    let solution = Matching::stated([(X, E)]);
+    let mut telescope = solved();
+    let cells = telescope.cells();
+    let mut scheme = solution.on(&mut telescope);
+    let built = equivalence(&mut scheme, &cells, room).expect("an acyclic matching");
+    assert_eq!(
+        built.critical(),
+        [S, Y],
+        "the telescope without `x` and `e`"
+    );
+    let mut bound = built
+        .on(&mut scheme, &cells, room)
+        .expect("the equivalence reads");
+    assert_eq!(collapsed(&mut bound, X), Ok(stay(S)));
+    assert_eq!(collapsed(&mut bound, E), Ok(stay(S)));
+    assert_eq!(collapsed(&mut bound, Y), Ok(stay(Y)));
+    assert_eq!(
+        bound.section(&stay(X)),
+        Ok(Some(square(path(X, S, &[(E, Way::Forward)])))),
+        "the witness from `x` to `s` is the equation"
+    );
+    assert_eq!(bound.replay(), Ok(()));
+}
+
+/// The rule "deletion" removes an equation `x = x`. That equation is a loop at
+/// `x`, so it cannot be the partner of `x`: the definition of `x` through the
+/// loop holds `x` itself, and the equivalence refuses the pair as circular.
+/// With no pair the loop stays critical.
+#[test]
+fn an_equation_of_a_variable_with_itself_has_no_partner()
+{
+    let room = Budget::from(ROOM);
+    let looped = || Graph {
+        vertices: [X, Y].to_vec(),
+        edges: [(SAME, X, X)].to_vec(),
+        search: Search::Honest,
+    };
+    let mut deleted = looped();
+    let cells = deleted.cells();
+    let deletion = Matching::stated([(X, SAME)]);
+    let mut scheme = deletion.on(&mut deleted);
+    assert_eq!(
+        equivalence(&mut scheme, &cells, room).map(|built| built.critical().to_vec()),
+        Err(Refusal::Circular(X))
+    );
+    let none = Matching::<Name>::stated([]);
+    let mut kept = looped();
+    let mut bare = none.on(&mut kept);
+    let built = equivalence(&mut bare, &cells, room).expect("no pair");
+    assert_eq!(built.critical(), [X, Y, SAME], "the loop stays critical");
 }
 
 /// A cell of a square `D` from the edge `γ : x → z` to the composite of
