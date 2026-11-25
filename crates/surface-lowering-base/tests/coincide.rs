@@ -1215,6 +1215,60 @@ fn a_rule_that_tears_under_the_symmetry_of_a_constructor_is_uncompleted()
     }
 }
 
+/// A pair of two rules that joins only by the other order of a rule joins in
+/// each place of the symmetry. The rule of `g` gives `Pair x Low`, and the
+/// rule of `Pair` that takes it to `Low` is the other order of a written rule.
+/// The check decides each pair with the symmetry before each other pair, so
+/// the block holds that order before the pair of the two rules needs it.
+#[test]
+fn a_pair_that_needs_the_other_order_of_a_rule_joins_in_each_place_of_the_symmetry()
+{
+    for (source, place) in [
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-that-needs-the-other-order-of-a-rule-joins-with-the-symmetry-written-first.gandr"
+            ),
+            "first",
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/a-pair-that-needs-the-other-order-of-a-rule-joins-with-the-symmetry-written-last.gandr"
+            ),
+            "last",
+        ),
+    ] {
+        lowered(SourceText::from(source), |module| {
+            let [ref cells] = *module.cells().declarations.as_slice()
+            else {
+                panic!("one block")
+            };
+            let Coincidence::Joined(ref certificates) = cells.coincidence
+            else {
+                panic!(
+                    "the block joins with its symmetry written {place}: {:?}",
+                    module.cells().diagnostics
+                )
+            };
+            // The one variable of the other order takes its name from its
+            // peak: `x` or `y`, with a prime where the peak renames it.
+            let derived: Vec<String> = certificates
+                .derived_terms
+                .iter()
+                .map(|derived| {
+                    format!("{} ==> {}", derived.rule.0, derived.rule.1)
+                        .replace('\'', "")
+                        .replace('y', "x")
+                })
+                .collect();
+            assert_eq!(
+                derived,
+                ["Pair(x, Low) ==> Low", "g(Low) ==> Low"],
+                "the symmetry written {place}: the other order first, then the rule of the pair"
+            );
+        });
+    }
+}
+
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
 /// failure passed for a cut is ill sorted. Over 2-cells a vertical composite

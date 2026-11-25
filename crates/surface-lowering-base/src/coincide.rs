@@ -825,8 +825,10 @@ impl fmt::Display for PairTerm
 /// - ensures: a face that is a symmetry ([`RuleReading::Symmetry`]), of an
 ///   operation or of a constructor, forms peaks and normalizes nothing in each
 ///   reading ([`PairJoining::past`]). A rule that overlaps it parts from it at
-///   the other order of the rule, and the reading derives that order as a rule,
-///   so the place of the symmetry among the rules decides nothing.
+///   the other order of the rule, and the reading derives that order as a rule.
+///   Each pair with a symmetry is decided before each other pair, so a pair of
+///   two rules is joined with each other order in the store. Thus the place of
+///   the symmetry among the rules decides nothing.
 /// - panics: none.
 ///
 /// # Errors
@@ -851,10 +853,13 @@ impl fmt::Display for PairTerm
 ///   symmetry written last or first, and a `data` block with the symmetry of a
 ///   constructor joins so with the symmetry written first, between its rules or
 ///   last; a rule that gives two results in its two orders under the symmetry
-///   of a constructor is uncompleted; reporting the earlier rule's span,
-///   deciding joinability first, reading the circle in the sequent store alone,
-///   normalizing by the symmetry, or deriving a rule between two constructor
-///   terms that are not the two orders of one rule changes one of them.
+///   of a constructor is uncompleted; a pair of two rules that joins only by
+///   the other order of a rule joins with the symmetry written first or last;
+///   reporting the earlier rule's span, deciding joinability first, reading the
+///   circle in the sequent store alone, normalizing by the symmetry, deciding a
+///   pair of two rules before the pairs of the symmetry, or deriving a rule
+///   between two constructor terms that are not the two orders of one rule
+///   changes one of them.
 /// - witness: `tests::coincide::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `tests::coincide::a_rule_that_rebuilds_its_own_call_refuses_the_block`
 /// - witness: `tests::coincide::the_circles_cancellations_join_below_the_root`
@@ -868,6 +873,7 @@ impl fmt::Display for PairTerm
 /// - witness: `tests::coincide::a_symmetry_is_no_rewrite_in_either_place`
 /// - witness: `tests::coincide::a_symmetry_of_a_constructor_is_no_rewrite_in_each_place`
 /// - witness: `tests::coincide::a_rule_that_tears_under_the_symmetry_of_a_constructor_is_uncompleted`
+/// - witness: `tests::coincide::a_pair_that_needs_the_other_order_of_a_rule_joins_in_each_place_of_the_symmetry`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),

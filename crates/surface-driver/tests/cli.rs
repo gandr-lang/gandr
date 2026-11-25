@@ -3567,13 +3567,17 @@ fn a_fold_at_two_swapped_variables_is_decided_again_by_the_kernel_8367()
 /// its rules, between them and after them. Each source settles under
 /// `--recheck`: a block that the checker admits and the kernel refuses faults
 /// the run. Two of the paths need a rule in the order that the block does not
-/// write.
+/// write. A block with a rule of an operation that needs such an order settles
+/// with the symmetry first and with the symmetry last.
 #[test]
 fn a_data_block_with_the_symmetry_of_a_constructor_settles_in_each_place_of_the_symmetry()
 {
     const SYMMETRY: &str = "  rule : Pair x y <=> Pair y x;\n";
     const ABSORBS: &str = "  rule : Pair Low x <=> Low;\n";
     const UNIT: &str = "  rule : Pair High x <=> x;\n";
+    /// The rule of `g` gives `Pair x Low`. The pair of this rule and the rule
+    /// of `Pair` joins only by the other order of the rule of `Pair`.
+    const CALLED: &str = "  rule : g (Pair Low x) ==> Pair x Low;\n";
     let scratch = Scratch::new(Path::new("symmetry-of-a-constructor"));
     for (name, [first, second, third]) in [
         ("first.gandr", [SYMMETRY, ABSORBS, UNIT]),
@@ -3601,6 +3605,32 @@ fn a_data_block_with_the_symmetry_of_a_constructor_settles_in_each_place_of_the_
         assert_eq!(code(&output), Code(0_i32), "{name}: {}", stderr(&output));
         let report = stdout(&output);
         for line in ["declarations: 6 settled, 0 unsettled", "verdict: settled"] {
+            assert!(
+                report.lines().any(|found| found == line),
+                "{name}: {report}"
+            );
+        }
+    }
+    // A rule of an operation that needs the other order of a rule of `Pair`.
+    for (name, [first, second, third]) in [
+        ("operation-first.gandr", [SYMMETRY, ABSORBS, CALLED]),
+        ("operation-last.gandr", [ABSORBS, CALLED, SYMMETRY]),
+    ] {
+        let text = [
+            "data Flat : Type where\n  | Low : Flat\n  | High : Flat\n  | Pair : (x : Flat, y : \
+             Flat) --> Flat\n  oper g : (x : Flat) --> Flat;\n",
+            first,
+            second,
+            third,
+        ]
+        .concat();
+        let source = scratch.file(Path::new(name), Text::from(text.as_str()));
+        let mut command = gandr(&["check", "--recheck"]);
+        command.arg(&source);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{name}: {}", stderr(&output));
+        let report = stdout(&output);
+        for line in ["declarations: 1 settled, 0 unsettled", "verdict: settled"] {
             assert!(
                 report.lines().any(|found| found == line),
                 "{name}: {report}"

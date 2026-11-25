@@ -1205,9 +1205,41 @@ where
     }
 }
 
+/// The place of the next pair of one sweep of a [`PairJoining`].
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Place
+{
+    /// The store position of the later cell of the next cell pair.
+    later: usize,
+    /// The store position of the earlier cell of the next cell pair.
+    earlier: usize,
+    /// How many of that cell pair's critical pairs are decided joined.
+    within: usize,
+}
+
+/// The cell pairs that one sweep of a [`PairJoining`] decides.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Sweep
+{
+    /// Each pair of an idle cell and a cell that is not idle.
+    BesideIdle,
+    /// Each pair of two cells that are not idle.
+    Others,
+}
+
 /// The confluence critical pairs of a store that grows by appended cells,
 /// decided in [`join_critical_pairs`]'s order and resumed at the pair the last
 /// decision stopped at.
+///
+/// Each pair of an idle cell and another cell is decided before each pair of
+/// two other cells. So a completion derives each rule that an idle cell gives
+/// before it joins a pair that needs that rule.
 ///
 /// A pair decided joined stays joined as the store grows: its certificate's
 /// steps are steps of every larger store. So completion, which derives a cell
@@ -1222,9 +1254,10 @@ where
 ///   keeps its cells and their order and only gains cells after them.
 /// - ensures: the certificates of the pairs decided joined since the joining
 ///   began or last answered [`Joinability::Joined`], in order; the position of
-///   the next pair to decide; the count of pairs decided; the composite pairs
-///   skipped since the joining began or last gave them, each with its witness;
-///   and the idle cells, which form peaks and normalize nothing.
+///   the next pair to decide among the pairs with an idle cell, and among the
+///   others; the count of pairs decided; the composite pairs skipped since the
+///   joining began or last gave them, each with its witness; and the idle
+///   cells, which form peaks and normalize nothing.
 /// - executable: none — a datum; [`Self::resume_with`] carries the predicate.
 ///
 /// # Adequacy
@@ -1235,12 +1268,10 @@ pub struct PairJoining<A: CellAlphabet = SequentAlphabet>
 {
     /// The certificates of the pairs decided joined, in order.
     certificates: Vec<Tracelet<A>>,
-    /// The store position of the later cell of the next cell pair.
-    later: usize,
-    /// The store position of the earlier cell of the next cell pair.
-    earlier: usize,
-    /// How many of that cell pair's critical pairs are decided joined.
-    within: usize,
+    /// The place of the next pair of an idle cell and another cell.
+    beside_idle: Place,
+    /// The place of the next pair of two cells that are not idle.
+    others: Place,
     /// How many pairs have been decided.
     decided: usize,
     /// The composite pairs skipped, each with its witness, in order.
@@ -1263,9 +1294,8 @@ where
     {
         Self {
             certificates: Vec::new(),
-            later: 0,
-            earlier: 0,
-            within: 0,
+            beside_idle: Place::default(),
+            others: Place::default(),
             decided: 0,
             composites: Vec::new(),
             idle: BTreeSet::new(),
@@ -1363,7 +1393,8 @@ where
     }
 
     /// Decide the pairs of `store` from the pair the last decision stopped at,
-    /// in [`join_critical_pairs`]'s order, each classed by `scheme` first.
+    /// in [`join_critical_pairs`]'s order, each classed by `scheme` first: the
+    /// pairs with an idle cell, then the others.
     ///
     /// # Specification
     /// - requires: as [`PairJoining`]: `store` is the store of the last resume,
@@ -1380,7 +1411,11 @@ where
     ///   [`PairClass::Unclassed`] is joined. Each pair reached adds one to
     ///   [`Self::decided`]. Each reduct is normalized by [`normalize_past`] the
     ///   idle cells of [`Self::past`], and a pair of two idle cells is not
-    ///   reached.
+    ///   reached. Each pair of an idle cell and another cell of `store` is
+    ///   decided before each pair of two other cells that the joining has not
+    ///   decided. So a completion derives each rule that an idle cell gives
+    ///   before it joins a pair that needs that rule, and the place of the idle
+    ///   cell in the store does not decide the verdict of such a pair.
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
@@ -1400,11 +1435,15 @@ where
     ///   pair is joined. A unit beside a symmetry that is idle parts from it at
     ///   the other order of the unit, where the same store with no idle cell
     ///   joins or spends its budget by the order of its two cells; a symmetry
-    ///   alone that is idle has no pair.
+    ///   alone that is idle has no pair. With a symmetry that is idle after two
+    ///   rules that part, the pair of the symmetry and the first rule is the
+    ///   first that parts, where the same store with no idle cell parts first
+    ///   at the pair of the two rules.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
     /// - witness: `completion::tests::an_idle_cell_forms_peaks_and_normalizes_nothing`
+    /// - witness: `completion::tests::a_pair_with_an_idle_cell_is_decided_before_each_other_pair`
     #[spec(
         captures: before = (self.decided, self.composites.len()),
         ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1 && match output {
@@ -1427,18 +1466,81 @@ where
         S: PairScheme<A>,
     {
         let cells: Vec<(CellId, &Cell<A>)> = store.iter().collect();
-        while let Some(&later) = cells.get(self.later) {
-            while self.earlier <= self.later {
-                let Some(&earlier) = cells.get(self.earlier)
+        // A joining with no idle cell has no pair of the first sweep.
+        if !self.idle.is_empty() {
+            let mut place = self.beside_idle;
+            let parted = self.sweep(
+                Sweep::BesideIdle,
+                &mut place,
+                (&cells, store),
+                budget,
+                scheme,
+            );
+            self.beside_idle = place;
+            if let Some(parted) = parted {
+                return parted;
+            }
+        }
+        let mut place = self.others;
+        let parted = self.sweep(Sweep::Others, &mut place, (&cells, store), budget, scheme);
+        self.others = place;
+        if let Some(parted) = parted {
+            return parted;
+        }
+        Joinability::Joined(core::mem::take(&mut self.certificates))
+    }
+
+    /// Decide the cell pairs of `sweep` from `place` on, and leave `place` at
+    /// the pair that the decision stopped at.
+    ///
+    /// # Specification
+    /// - requires: `cells` are the cells of `store` in store order, and `place`
+    ///   is the place that the last call for `sweep` left.
+    /// - ensures: the first pair of `sweep` from `place` on that does not join,
+    ///   as [`Self::resume_with`] reports it, with `place` at that pair; or
+    ///   nothing, with `place` past the last cell of `store`, when each one
+    ///   joins or is skipped. A cell pair is of [`Sweep::BesideIdle`] when one
+    ///   of its two cells is idle, and of [`Sweep::Others`] when none is. A
+    ///   pair of two idle cells is of no sweep.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::resume_with`].
+    /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
+    /// - witness: `completion::tests::a_pair_with_an_idle_cell_is_decided_before_each_other_pair`
+    #[spec(
+        captures: before = self.decided,
+        ensures: |output| self.decided >= before
+            && (output.is_some() || place.later >= cells.len()),
+    )]
+    fn sweep<S>(
+        &mut self,
+        sweep: Sweep,
+        place: &mut Place,
+        (cells, store): (&[(CellId, &Cell<A>)], &CellStore<A>),
+        budget: NormalizationBudget,
+        scheme: &mut S,
+    ) -> Option<Joinability<A>>
+    where
+        S: PairScheme<A>,
+    {
+        while let Some(&later) = cells.get(place.later) {
+            while place.earlier <= place.later {
+                let Some(&earlier) = cells.get(place.earlier)
                 else {
                     break;
                 };
-                if self.idle.contains(&earlier.0) && self.idle.contains(&later.0) {
-                    self.earlier = self.earlier.saturating_add(1);
-                    self.within = 0;
+                let idle = (self.idle.contains(&earlier.0), self.idle.contains(&later.0));
+                let taken = match sweep {
+                    Sweep::BesideIdle => idle.0 != idle.1,
+                    Sweep::Others => !idle.0 && !idle.1,
+                };
+                if !taken {
+                    place.earlier = place.earlier.saturating_add(1);
+                    place.within = 0;
                     continue;
                 }
-                let (root, mirrored) = if self.earlier < self.later {
+                let (root, mirrored) = if place.earlier < place.later {
                     (
                         root_overlaps_between(earlier, later),
                         interior_overlaps_between(later, earlier),
@@ -1451,46 +1553,46 @@ where
                     .into_iter()
                     .chain(interior_overlaps_between(earlier, later))
                     .chain(mirrored)
-                    .skip(self.within);
+                    .skip(place.within);
                 for overlap in pairs {
                     self.decided = self.decided.saturating_add(1);
                     if let PairClass::Composite(below) = scheme.class(store, &overlap) {
                         self.keep_composite(store, CompositePair { overlap, below });
-                        self.within = self.within.saturating_add(1);
+                        place.within = place.within.saturating_add(1);
                         continue;
                     }
                     let (Ok(left_reduct), Ok(right_reduct)) =
                         (overlap.left_reduct(store), overlap.right_reduct())
                     else {
-                        self.within = self.within.saturating_add(1);
+                        place.within = place.within.saturating_add(1);
                         continue;
                     };
                     let left = normalize_past(store, &left_reduct, budget, &self.idle);
                     let right = normalize_past(store, &right_reduct, budget, &self.idle);
                     if bool::from(left.exhausted) || bool::from(right.exhausted) {
-                        return Joinability::Undecided(overlap);
+                        return Some(Joinability::Undecided(overlap));
                     }
                     if left.normal != right.normal {
-                        return Joinability::Diverges {
+                        return Some(Joinability::Diverges {
                             overlap,
                             left: left.normal,
                             left_steps: left.path,
                             right: right.normal,
                             right_steps: right.path,
-                        };
+                        });
                     }
                     if let Maybe::Present(certificate) = joined(&overlap, left, right, store) {
                         self.certificates.push(certificate);
                     }
-                    self.within = self.within.saturating_add(1);
+                    place.within = place.within.saturating_add(1);
                 }
-                self.earlier = self.earlier.saturating_add(1);
-                self.within = 0;
+                place.earlier = place.earlier.saturating_add(1);
+                place.within = 0;
             }
-            self.later = self.later.saturating_add(1);
-            self.earlier = 0;
+            place.later = place.later.saturating_add(1);
+            place.earlier = 0;
         }
-        Joinability::Joined(core::mem::take(&mut self.certificates))
+        None
     }
 
     /// Keep `pair` as a composite pair that the joining skips.
@@ -1948,6 +2050,47 @@ mod tests
             PairDecisions::from(0_usize),
             joining.decided(),
             "a symmetry alone that is idle has no pair"
+        );
+    }
+
+    #[test]
+    fn a_pair_with_an_idle_cell_is_decided_before_each_other_pair()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let mut store = CellStore::<ToyAlphabet>::new();
+        // Two rules that part at `add(Zero, Zero)`, then the symmetry.
+        for (lhs, rhs) in [
+            (Toy::add(Toy::zero(), Toy::var("y")), Toy::var("y")),
+            (
+                Toy::add(Toy::var("x"), Toy::zero()),
+                Toy::succ(Toy::var("x")),
+            ),
+            (
+                Toy::add(Toy::var("x"), Toy::var("y")),
+                Toy::add(Toy::var("y"), Toy::var("x")),
+            ),
+        ] {
+            let _id = store.insert(toy_cell(lhs, rhs));
+        }
+        let symmetry = CellId::from(2_usize);
+        let Joinability::Diverges { overlap, .. } =
+            PairJoining::past(BTreeSet::from([symmetry])).resume(&store, budget)
+        else {
+            panic!("the first rule parts from the symmetry");
+        };
+        assert_eq!(
+            (overlap.left, overlap.right),
+            (CellId::from(0_usize), symmetry),
+            "the pair with the idle cell is the first that the joining decides"
+        );
+        let Joinability::Diverges { overlap, .. } = PairJoining::new().resume(&store, budget)
+        else {
+            panic!("the two rules part at `add(Zero, Zero)`");
+        };
+        assert_eq!(
+            (overlap.left, overlap.right),
+            (CellId::from(0_usize), CellId::from(1_usize)),
+            "with no idle cell, the pairs are decided in the order of the later cell"
         );
     }
 
