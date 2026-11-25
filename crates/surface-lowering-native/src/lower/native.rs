@@ -8855,16 +8855,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///
     /// # Specification
     /// - requires: the theories' descriptions and cells are read.
-    /// - ensures: per terms entry of the source, a signature without parameters
-    ///   at the fuss-free value universe whose constructors are the operations
-    ///   into the sort in the presentation's order, each taking its inputs as
-    ///   terms and named `S.op`, presented by the rules
-    ///   [`NativeRef::term_rules`] reads, its index recorded by the entry's
-    ///   position; a fault at the entry's slot in its place when the rules do
-    ///   not read. The entry of an indexed sort is indexed by the terms of each
-    ///   index sort, and each input and each constructor stands at the closed
-    ///   indices that its port states ([`indexed_terms`]). Every node is
-    ///   located at the type that asked for the terms, as an insertion.
+    /// - ensures: per terms entry of the source, the refusal of its theory as a
+    ///   fault at the entry's slot when the lowering refuses the theory, so a
+    ///   refused theory gives the kernel no type of its terms. Otherwise a
+    ///   signature without parameters at the fuss-free value universe whose
+    ///   constructors are the operations into the sort in the presentation's
+    ///   order, each taking its inputs as terms and named `S.op`, presented by
+    ///   the rules [`NativeRef::term_rules`] reads, its index recorded by the
+    ///   entry's position; a fault at the entry's slot in its place when the
+    ///   rules do not read. The entry of an indexed sort is indexed by the
+    ///   terms of each index sort, and each input and each constructor stands
+    ///   at the closed indices that its port states ([`indexed_terms`]). Every
+    ///   node is located at the type that asked for the terms, as an insertion.
     /// - provides: the `DeclarationOutcome::Data` outcome of a terms slot.
     /// - fails: never; an entry whose slot or type has no origin mints nothing,
     ///   and so does one over an index sort with no slot.
@@ -8877,9 +8879,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Adequacy
     /// - hypothesis: L3 — a unital magma mints its terms with a nullary and a
     ///   binary constructor and its two unit rules. A sort over the widths
-    ///   mints the signature that the family written by hand has.
+    ///   mints the signature that the family written by hand has. The terms of
+    ///   a theory whose rules part take the refusal of the theory.
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
     /// - witness: `gandr-surface-lowering::tests::modules::models::the_terms_of_a_sort_are_a_type_and_of_an_indexed_sort_a_family_8358`
+    /// - witness: `gandr-surface-corpus::settle::tests::a_declaration_at_the_terms_of_a_refused_theory_states_its_cause`
     #[spec(captures: before = self.cx().data.len(), ensures: self.cx().data.len() >= before && self.cx().termed.len() <= self.cx().collected.terms.len())]
     fn mint_terms(
         &mut self,
@@ -8895,6 +8899,16 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
             else {
                 continue;
             };
+            // A theory that the lowering refuses gives the kernel no type of
+            // its terms: the terms slot takes the theory's refusal.
+            let refused = match theory.refusal {
+                Maybe::Present((_, refusal)) => Some(refusal),
+                Maybe::Absent(_) => cx.faults.get(&terms.theory).copied(),
+            };
+            if let Some(refusal) = refused {
+                let _first = cx.faults.insert(terms.slot, refusal);
+                continue;
+            }
             let Maybe::Present(origin) = cx.origin_at(own.introduced_by.node)
             else {
                 continue;

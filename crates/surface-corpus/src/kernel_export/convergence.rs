@@ -946,18 +946,7 @@ mod sweeps
     ///   symmetry, so the kernel refuses `Flat` and its pin leaves; the unit
     ///   `theory-derived-rule-under-symmetry` then admits it with the derived
     ///   rule.
-    /// - The declaration with no name is the type of terms of the theory
-    ///   `Torn`, which the source refuses: `meet (pair x y) z ==> x` beside the
-    ///   symmetry of `meet`. It crosses, and the kernel decides no convergence
-    ///   of a presented type at its declaration. The unit
-    ///   `refused-block-mints-no-terms` keeps the type of terms of a refused
-    ///   theory out of the export.
-    pub(super) const PARTING: [(&str, &str, &str); 4] = [
-        (
-            "corpus/pathological/desc/rule-symmetry-apart.gandr",
-            "a declaration with no name",
-            "refused-block-mints-no-terms",
-        ),
+    pub(super) const PARTING: [(&str, &str, &str); 3] = [
         (
             "crates/surface-lowering-base/tests/coincide/fixtures/two-turned-rules-that-tear-under-a-symmetry-theory-between.gandr",
             "Flat",

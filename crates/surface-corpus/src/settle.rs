@@ -1718,12 +1718,16 @@ where
                 (ProducedOf::Judged(verdict), owed_by(verdicts, answer))
             },
         };
-        // A declaration refused at a theory's terms the checker refused is
-        // refused by the terms' cause: a refusal names its cause, never its
-        // consequence.
+        // A declaration refused at a theory's terms the checker or the
+        // lowering refused is refused by the terms' cause: a refusal names its
+        // cause, never its consequence.
         let produced = match produced {
-            ProducedOf::Judged(Verdict::Refused(refusal)) => {
-                ProducedOf::Judged(Verdict::Refused(caused(module, verdicts, refusal)))
+            ProducedOf::Judged(Verdict::Refused(refusal)) => match unlowered_terms(module, refusal)
+            {
+                Maybe::Present(cause) => ProducedOf::Unlowered(cause),
+                Maybe::Absent(_) => {
+                    ProducedOf::Judged(Verdict::Refused(caused(module, verdicts, refusal)))
+                },
             },
             ProducedOf::Unlowered(_)
             | ProducedOf::Judged(
@@ -1756,7 +1760,9 @@ where
         // theory's terms write no form of their own: refused, they state what
         // the first declaration asking for them states.
         let expectations = match produced {
-            ProducedOf::Judged(Verdict::Refused(_)) if lowered.role() == Role::Terms => {
+            ProducedOf::Judged(Verdict::Refused(_)) | ProducedOf::Unlowered(_)
+                if lowered.role() == Role::Terms =>
+            {
                 match asker(module, verdicts, lowered.constant()) {
                     Maybe::Present(asker) => {
                         expected(roots.root_at(asker.span().start()), arena, module, asker)?
@@ -2440,6 +2446,54 @@ fn caused(
             | Verdict::Suspended(_) => None,
         })
         .unwrap_or(refusal)
+}
+
+/// The lowering refusal of the theory's terms that `refusal` names, when it is
+/// `NotADataType` at terms the lowering refused.
+///
+/// # Specification
+/// - requires: `refusal` is a refusal the checker gave a declaration of
+///   `module`.
+/// - ensures: the refusal of the [`Role::Terms`] declaration a `NotADataType`
+///   refusal names, when the lowering refused it;
+///   [`produced_refusal::Absent::Unrefused`] for every other refusal.
+/// - provides: what a declaration asking for the terms of a refused theory
+///   settles against.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration asking for the terms of a theory whose
+///   rules part settles the refusal of the theory, and its terms state the
+///   same.
+/// - witness: `settle::tests::a_declaration_at_the_terms_of_a_refused_theory_states_its_cause`
+fn unlowered_terms<'source>(
+    module: &LoweredModule<'source>,
+    refusal: CheckRefusal,
+) -> Maybe<LoweringRefusal<'source>, produced_refusal::Absent>
+{
+    let CheckRefusal::NotADataType(terms) = refusal
+    else {
+        return Maybe::Absent(produced_refusal::Absent::Unrefused);
+    };
+    module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.constant() == terms && declaration.role() == Role::Terms)
+        .and_then(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Refused(cause) => Some(cause),
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World => None,
+        })
+        .map_or(
+            Maybe::Absent(produced_refusal::Absent::Unrefused),
+            Maybe::Present,
+        )
 }
 
 /// The checker refusal that [`settle`] reports for the declaration at
@@ -4689,6 +4743,68 @@ data NatUnits : Type where {{
                     ),
                 ],
                 "the terms and their asker produce the terms' cause, and stating {stated} \
+                 leaves both {settlement:?}"
+            );
+        }
+    }
+
+    /// A declaration asking for the terms of a theory whose rules part is
+    /// refused at them, and it settles the theory's refusal; the terms take
+    /// that refusal and settle with it. Stating the consequence,
+    /// `NotADataType`, settles neither.
+    #[test]
+    fn a_declaration_at_the_terms_of_a_refused_theory_states_its_cause()
+    {
+        let theory = "@[refuses(\"RulesUncompleted\")]
+theory Torn where {
+  sort T : Type;
+  oper low : T;
+  oper pair : (x : T, y : T) --> T;
+  oper meet : (x : T, y : T) --> T;
+  rule meetPair : meet (pair x y) z <=> x;
+  rule meetComm : meet x y <=> meet y x;
+}
+";
+        let rows = [
+            (RefusalName::RulesUncompleted, Settlement::Settled),
+            (RefusalName::NotADataType, Settlement::Unsettled),
+        ];
+        for (stated, settlement) in rows {
+            let source =
+                format!("{theory}\n@[refuses(\"{stated}\")]\ndef first : Terms Torn = Torn.low;\n");
+            let report = settled(CorpusRoot::Fixture, SourceText::from(source.as_str()));
+            let produced: Vec<_> = report
+                .declarations()
+                .iter()
+                .map(|declaration| {
+                    (
+                        declaration.name().to_string(),
+                        declaration
+                            .produced()
+                            .refusal()
+                            .map(|refusal| refusal.name()),
+                        declaration.settlement(),
+                    )
+                })
+                .filter(|&(ref name, ref refusal, _)| {
+                    name != "Torn" && matches!(*refusal, Maybe::Present(_))
+                })
+                .collect();
+            assert_eq!(
+                produced,
+                [
+                    (
+                        String::from("Terms Torn"),
+                        Maybe::Present(RefusalName::RulesUncompleted),
+                        settlement
+                    ),
+                    (
+                        String::from("first"),
+                        Maybe::Present(RefusalName::RulesUncompleted),
+                        settlement
+                    ),
+                ],
+                "the terms and their asker produce the theory's refusal, and stating {stated} \
                  leaves both {settlement:?}"
             );
         }
