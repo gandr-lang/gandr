@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# The recovery sweep over a change's own records (#5864), `ci:recovery-change`.
+# The recovery sweep over the sources of a change (#5864), `ci:recovery-change`.
 # The change is read against GANDR_SWEEP_BASE. Each corpus source it adds or
-# modifies, and each source whose record it edits, is named to `ci:recovery`
-# in GANDR_RECOVERY_SOURCE, one name on each line, and the sweep holds those
-# records alone. A change to the parser, the grammar or the syntax tree can
-# move every record, and a deleted or renamed source can leave its record
-# behind, so either runs the whole sweep. A change with neither sweeps
-# nothing. A source's name is its root's prefix and its path below the root,
-# as `Roots::asked` in `crates/workflow-sweep` states:
+# modifies is named to `ci:recovery` in GANDR_RECOVERY_SOURCE, one name on
+# each line, and the sweep visits those sources alone. A change to the parser,
+# the grammar or the syntax tree can move the parse of every source, so it
+# runs the whole sweep. A deleted source has nothing to sweep. A change with
+# no such path sweeps nothing. A source's name is its root's prefix and its
+# path below the root, as `Roots::asked` in `crates/workflow-sweep` states:
 # `crates/surface-corpus/strict` is `strict`, and `corpus` is `fixture` with
 # `ledger` and `sketch` held out.
 set -euo pipefail
@@ -16,22 +15,17 @@ if ! git rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
   echo "ci:recovery-change: the base $base cannot be read; fetch it, or set GANDR_SWEEP_BASE" >&2
   exit 2
 fi
-records=crates/surface-parser/tests/recovery/
 whole=
 names=()
 while IFS=$'\t' read -r status path; do
   case $path in
-    "$records"*.recovery)
-      name=${path#"$records"}
-      names+=("${name%.recovery}.gandr")
-      ;;
     crates/surface-parser/* | crates/surface-grammar/* | crates/surface-syntax/*)
-      whole="$path reaches every record"
+      whole="$path reaches every source"
       ;;
     corpus/ledger/* | corpus/sketch/*) ;;
     corpus/*.gandr | crates/surface-corpus/strict/*.gandr)
       if [[ $status == D ]]; then
-        whole="$path is deleted or renamed, which can leave its record behind"
+        :
       elif [[ $path == corpus/* ]]; then
         names+=("fixture/${path#corpus/}")
       else
@@ -45,7 +39,7 @@ if [[ -n $whole ]]; then
   exec mise run ci:recovery
 fi
 if ((${#names[@]} == 0)); then
-  echo "ci:recovery-change: the change touches no corpus source and no record; nothing to sweep"
+  echo "ci:recovery-change: the change adds or modifies no corpus source; nothing to sweep"
   exit 0
 fi
 sources=$(printf '%s\n' "${names[@]}" | sort -u)

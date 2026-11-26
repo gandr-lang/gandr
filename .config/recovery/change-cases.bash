@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The records `ci:recovery-change` sweeps for each shape of a change (#5864).
+# The sources `ci:recovery-change` sweeps for each shape of a change (#5864).
 # Each case commits a change over a scratch repository's base and runs
 # `change.bash` against that base. A stub `mise` stands for `ci:recovery` and
 # prints the sources GANDR_RECOVERY_SOURCE names, or `every source` when the
@@ -30,21 +30,17 @@ fi
 STUB
 chmod +x "$work/bin/mise"
 
-# A scratch repository at `$1` whose base holds a fixture source with its
-# record, a strict source with its record, a held-out ledger source, a parser
-# source and a README.
+# A scratch repository at `$1` whose base holds a fixture source, a strict
+# source, a held-out ledger source, a parser source and a README.
 setup() {
   git init --quiet --initial-branch=main "$1"
   cd "$1"
   identity
-  mkdir -p corpus/model/data corpus/ledger crates/surface-corpus/strict crates/surface-parser/src \
-    crates/surface-parser/tests/recovery/fixture/model/data crates/surface-parser/tests/recovery/strict
+  mkdir -p corpus/model/data corpus/ledger crates/surface-corpus/strict crates/surface-parser/src
   echo 'maybe' > corpus/model/data/data-maybe.gandr
   echo 'ledger' > corpus/ledger/rows.gandr
   echo 'values' > crates/surface-corpus/strict/values.gandr
   echo 'parser' > crates/surface-parser/src/lib.rs
-  echo 'rows' > crates/surface-parser/tests/recovery/fixture/model/data/data-maybe.recovery
-  echo 'rows' > crates/surface-parser/tests/recovery/strict/values.recovery
   echo 'readme' > README.md
   git add -A
   git commit --quiet -m base
@@ -65,16 +61,16 @@ got=$(
   echo 'maybe, edited' > corpus/model/data/data-maybe.gandr
   sweep
 )
-[[ $got == "swept: fixture/model/data/data-maybe.gandr" ]] || fail "#5864: a change to one corpus source sweeps that source's record alone" "$got"
+[[ $got == "swept: fixture/model/data/data-maybe.gandr" ]] || fail "#5864: a change to one corpus source sweeps that source alone" "$got"
 
 got=$(
   trap - EXIT
   setup "$work/new"
   echo 'new' > corpus/model/data/data-new.gandr
-  echo 'rows, edited' > crates/surface-parser/tests/recovery/strict/values.recovery
+  echo 'values, edited' > crates/surface-corpus/strict/values.gandr
   sweep
 )
-[[ $got == "swept: fixture/model/data/data-new.gandr strict/values.gandr" ]] || fail "#5864: a new source and an edited record each name their source" "$got"
+[[ $got == "swept: fixture/model/data/data-new.gandr strict/values.gandr" ]] || fail "#5864: a new source and a modified source each name themselves" "$got"
 [[ -d $work/new/.git ]] || fail "#8138: a case cleanup leaves its scratch repository until the outer cleanup" "$work/new"
 
 got=$(
@@ -100,7 +96,7 @@ got=$(
   git mv corpus/model/data/data-maybe.gandr corpus/model/data/maybe.gandr
   sweep
 )
-[[ $got == "swept: every source" ]] || fail "#5864: a renamed source runs the whole sweep, for the record it leaves" "$got"
+[[ $got == "swept: fixture/model/data/maybe.gandr" ]] || fail "#5864: a renamed source sweeps its source under the name that it has" "$got"
 
 got=$(
   trap - EXIT
@@ -112,4 +108,4 @@ got=$(
 [[ $got == *"nothing to sweep" ]] || fail "#5864: a change with no corpus source, a held-out one aside, sweeps nothing" "$got"
 
 (( failed == 0 )) || exit 1
-echo "recovery-change OK: 6 cases sweep a change's own records, the whole sweep for the parser or a removed source, and nothing for no source"
+echo "recovery-change OK: 6 cases sweep the sources of a change, the whole sweep for the parser, and nothing for no source"

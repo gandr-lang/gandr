@@ -402,11 +402,10 @@ def subsection($name):
     end;
 
 # A golden `corpus:goldens` records for the corpus: a headline source's hover
-# golden under `crates/surface-grammar/`, and its recovery record under
-# `crates/surface-parser/`. It follows the corpus, not the parser.
+# golden under `crates/surface-grammar/`. It follows the corpus, not the
+# parser.
 def golden:
-  test("^crates/surface-grammar/tests/highlight/.+\\.hover$")
-  or test("^crates/surface-parser/tests/recovery/.+\\.recovery$");
+  test("^crates/surface-grammar/tests/highlight/.+\\.hover$");
 
 # This function refuses a parser change whose body has no surface form. It
 # refuses a spelling outside the three forms too. It refuses a replaced

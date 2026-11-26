@@ -1,17 +1,5 @@
 [
   {
-    "name": "the recovery records",
-    "paths": ["crates/surface-parser/tests/recovery/"],
-    "inputs": [
-      "corpus/",
-      "crates/surface-parser/",
-      "crates/surface-grammar/",
-      "crates/surface-syntax/"
-    ],
-    "check": "GANDR_SWEEP_BASE=\"$REPLAY_BASE\" mise run ci:recovery-change",
-    "record": "UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<each source the sweep names> mise run ci:recovery"
-  },
-  {
     "name": "the frozen tables and the grammar fingerprint",
     "paths": ["crates/surface-grammar/src/surface/frozen.rs"],
     "inputs": ["corpus/", "crates/surface-grammar/", "crates/surface-syntax/"],
