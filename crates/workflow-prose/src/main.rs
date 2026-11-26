@@ -14,7 +14,9 @@
 //! request body, which admit the paragraphs of a mechanical change. `--cache
 //! DIR --model NAME` keeps each parse by its passage's digest, so a passage
 //! parses once. `prose --python PATH --body FILE` judges the one body in
-//! `FILE` under the body rules, with no ledger.
+//! `FILE` under the body rules, with no ledger. The variables `PROSE_PYTHON`,
+//! `PROSE_CACHE` and `PROSE_MODEL` give `--python`, `--cache` and `--model`
+//! when the command line does not.
 //!
 //! # Exit codes
 //!
@@ -77,7 +79,7 @@ const REFUSED: u8 = 2;
 struct Cli
 {
     /// The interpreter of the pinned spaCy venv.
-    #[arg(long)]
+    #[arg(long, env = "PROSE_PYTHON")]
     python: PathBuf,
     /// The repository root.
     #[arg(long, default_value = ".")]
@@ -98,10 +100,10 @@ struct Cli
     #[arg(long = "override", num_args = 1.., requires = "base")]
     overrides: Vec<PathBuf>,
     /// Keep each parse under this directory, by its passage's digest.
-    #[arg(long, requires = "model")]
+    #[arg(long, env = "PROSE_CACHE", requires = "model")]
     cache: Option<PathBuf>,
     /// The parser's and the model's versions, which name the cache.
-    #[arg(long, requires = "cache")]
+    #[arg(long, env = "PROSE_MODEL", requires = "cache")]
     model: Option<String>,
     /// After the run, remove each kept parse whose passage the head does not
     /// hold, and the cache's directories of another script or model.

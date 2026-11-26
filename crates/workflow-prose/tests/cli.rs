@@ -50,7 +50,9 @@ macro_rules! scratch {
 }
 
 /// Runs the binary over `$root` with `$args`, the fake in `$mode`; the fake
-/// saves the passages it is fed to `input.json`.
+/// saves the passages it is fed to `input.json`. The run takes no cache and
+/// no model from the environment, so a parse of the fake enters no cache of
+/// the host.
 macro_rules! run {
     ($root:expr, $args:expr, $mode:expr) => {{
         let root: &std::path::Path = &$root;
@@ -60,6 +62,8 @@ macro_rules! run {
             .arg("--root")
             .arg(root)
             .args($args)
+            .env_remove("PROSE_CACHE")
+            .env_remove("PROSE_MODEL")
             .env("FAKE_PYTHON_OUTPUT", root.join("parse.json"))
             .env("FAKE_PYTHON_INPUT", root.join("input.json"))
             .env("FAKE_PYTHON_MODE", $mode)
