@@ -148,6 +148,11 @@ pub fn digest(text: Text<'_>) -> String
 /// member's line is `file:block.member:digest`,
 /// the block named by its path from the top level.
 ///
+/// An inner attribute block `@![…]` decorates the source or the block that
+/// it stands in. It is no item and it owes no comment. The leading comment
+/// of a file stands after the inner attribute blocks that lead the file,
+/// where a source declares its features.
+///
 /// # Specification
 /// - requires: `file` contains no colon.
 /// - ensures: one finding per uncommented item or block member, at any depth,
@@ -181,6 +186,7 @@ pub fn digest(text: Text<'_>) -> String
 /// - witness: `tests::comments::judge::tests::every_tile_member_owes_its_own_comment`
 /// - witness: `tests::comments::judge::tests::a_comment_before_an_arms_attribute_block_comments_the_arm_8119`
 /// - witness: `tests::comments::judge::tests::every_item_member_owes_its_own_comment`
+/// - witness: `tests::comments::judge::tests::a_leading_inner_block_is_no_item_and_stands_before_the_file_comment`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|finding| finding.line.starts_with(file.0) && finding.line.contains(':'))))]
 #[inline]
 pub fn findings_of(
@@ -202,6 +208,9 @@ pub fn findings_of(
                 .split_once('\n')
                 .map_or("", |(_, after)| after)
                 .trim_start();
+        }
+        while rest.starts_with("@![") {
+            rest = past_block(rest).trim_start();
         }
         rest.starts_with("//") || rest.starts_with("/*")
     };
@@ -255,6 +264,43 @@ pub fn findings_of(
     found.sort_by(|left, right| left.line.cmp(&right.line));
     found.dedup_by(|left, right| left.line == right.line);
     Ok(found)
+}
+
+/// The text after the inner attribute block that `text` opens on.
+///
+/// # Specification
+/// - requires: `text` starts with `@![`.
+/// - ensures: the text after the bracket that closes the block, or the empty
+///   text when no bracket closes it. A bracket inside a quoted text closes
+///   nothing.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a comment after the block is the leading comment of the
+///   file, and an item after the block leaves the file with none.
+/// - witness: `tests::comments::judge::tests::a_leading_inner_block_is_no_item_and_stands_before_the_file_comment`
+fn past_block(text: &str) -> &str
+{
+    let mut depth = 0_usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (at, glyph) in text.char_indices() {
+        match glyph {
+            _ if escaped => escaped = false,
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            '[' if !quoted => depth = depth.saturating_add(1),
+            ']' if !quoted => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return text.get(at.saturating_add(1) ..).unwrap_or_default();
+                }
+            },
+            _ => {},
+        }
+    }
+    ""
 }
 
 /// One source under judgement: the grammar its molds resolve under, its
@@ -490,6 +536,11 @@ impl Walk<'_, '_>
                 .pbg
                 .named_kind(mold)
                 .map_err(|error| self.unresolved(error.to_string()))?;
+            // An inner attribute block decorates what it stands in. It is no
+            // item, and it owes no comment.
+            if kind.0 == "inner_attribute_block" {
+                continue;
+            }
             // A `pub` mark is one tile before the item it exports: the comment
             // before it comments the item, as one before an attribute block
             // does.
@@ -1146,6 +1197,29 @@ mod tests
             ],
             "a comment after the attribute block is not before it, and a source that opens on an \
              attribute block has no leading comment"
+        );
+    }
+
+    #[test]
+    fn a_leading_inner_block_is_no_item_and_stands_before_the_file_comment()
+    {
+        let declared = lines(Text(include_str!("unformatted/declared-source.gandr")));
+        assert!(
+            declared.is_empty(),
+            "the comment after the inner block is the leading comment of the file and of the \
+             item, and the block owes no comment: {declared:?}"
+        );
+        let bare = lines(Text(include_str!(
+            "unformatted/declared-with-no-comment.gandr"
+        )));
+        assert_eq!(
+            bare,
+            [
+                "sample.gandr:<file> uncommented".to_owned(),
+                key(Text("first"), Text("def first = 1;")),
+            ],
+            "a source with an item after its inner block has no leading comment, and the block \
+             is no item"
         );
     }
 

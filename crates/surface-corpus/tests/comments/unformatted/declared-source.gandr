@@ -1,0 +1,4 @@
+@![features("universes")]
+
+// keeper
+def kept = 1;

@@ -1,0 +1,3 @@
+@![features("universes")]
+
+def first = 1;
