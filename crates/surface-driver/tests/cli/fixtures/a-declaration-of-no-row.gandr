@@ -1,0 +1,3 @@
+@![features("not-a-feature")]
+
+def one() -> Integer = 1;

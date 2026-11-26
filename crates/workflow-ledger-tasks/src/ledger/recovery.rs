@@ -1129,23 +1129,25 @@ mod tests
     #[test]
     fn a_declaration_of_features_is_not_swept()
     {
-        let swept = |name: &str, head: &str| {
+        let swept = |name: &str, text: &str| {
             let scratch = std::env::temp_dir()
                 .join(format!("gandr-recovery-test-{}-{name}", std::process::id()));
             let folder = scratch.join("syntax");
             std::fs::create_dir_all(&folder).expect("the scratch folder");
-            std::fs::write(
-                folder.join("def-value.gandr"),
-                format!("{head}/// `def_value`: a definition.\n@[ checks ]\ndef answer = 42 ;\n"),
-            )
-            .expect("the exemplar is written");
+            std::fs::write(folder.join("def-value.gandr"), text).expect("the exemplar is written");
             let pbg = built_in().expect("the built-in grammar builds");
             let report = sweep(&pbg, &scratch).expect("the sweep runs");
             std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
             report
         };
-        let plain = swept("undeclared", "");
-        let declared = swept("declared", "@![features(\"modules\")]\n\n");
+        let plain = swept(
+            "undeclared",
+            include_str!("recovery/fixtures/a-checked-definition.gandr"),
+        );
+        let declared = swept(
+            "declared",
+            include_str!("recovery/fixtures/a-checked-definition-under-its-declaration.gandr"),
+        );
         assert_eq!(declared.swept, plain.swept, "{declared}");
         assert_eq!(
             declared.near_misses.keys().collect::<Vec<_>>(),

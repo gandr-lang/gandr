@@ -2383,7 +2383,8 @@ fn features_counts_a_builtin_row_that_a_name_reaches()
 
 /// `gandr check` refuses a source that declares a feature that is no row of
 /// the features ledger, by the clause `ToolchainUnmet.feature.<key>`, and it
-/// settles a source that declares a row.
+/// settles a source that declares a row. Each source is a file of
+/// `tests/cli/fixtures`.
 #[test]
 fn check_refuses_a_declared_feature_that_is_no_row()
 {
@@ -2392,12 +2393,12 @@ fn check_refuses_a_declared_feature_that_is_no_row()
     let row = scratch.0.join("row.gandr");
     std::fs::write(
         &unknown,
-        "@![features(\"not-a-feature\")]\n\ndef one() -> Integer = 1;\n",
+        include_str!("cli/fixtures/a-declaration-of-no-row.gandr"),
     )
     .expect("the scratch source is written");
     std::fs::write(
         &row,
-        "@![features(\"deprecation\")]\n\n@[deprecated]\ndef one() -> Integer = 1;\n",
+        include_str!("cli/fixtures/a-deprecated-definition-under-its-declaration.gandr"),
     )
     .expect("the scratch source is written");
     let check = Path::new("check");
@@ -2431,31 +2432,39 @@ fn check_refuses_a_declared_feature_that_is_no_row()
 fn features_writes_the_declaration_of_each_source()
 {
     let scratch = Scratch::new(Path::new("features-write"));
-    let body = "/// The value one.\n@[deprecated]\ndef one() -> Integer = 1;\n";
-    let plain = "def one() -> Integer = 1;\n";
     let sources = [
         (
             "bare.gandr",
-            body.to_owned(),
-            format!("@![features(\"deprecation\")]\n\n{body}"),
+            include_str!("cli/fixtures/a-documented-deprecated-definition.gandr"),
+            include_str!(
+                "cli/fixtures/a-documented-deprecated-definition-under-its-declaration.gandr"
+            ),
         ),
         (
             "documented.gandr",
-            format!("//! A source.\n\n{body}"),
-            format!("//! A source.\n\n@![features(\"deprecation\")]\n\n{body}"),
+            include_str!(
+                "cli/fixtures/a-documented-deprecated-definition-after-a-module-comment.gandr"
+            ),
+            include_str!(
+                "cli/fixtures/a-documented-deprecated-definition-after-a-module-comment-under-its-declaration.gandr"
+            ),
         ),
         (
             "shared.gandr",
-            format!("@![doc(\"A source.\"), features(\"modules\")]\n\n{body}"),
-            format!("@![doc(\"A source.\"), features(\"deprecation\")]\n\n{body}"),
+            include_str!(
+                "cli/fixtures/a-documented-deprecated-definition-under-modules-after-a-doc.gandr"
+            ),
+            include_str!(
+                "cli/fixtures/a-documented-deprecated-definition-under-its-declaration-after-a-doc.gandr"
+            ),
         ),
         (
             "stale.gandr",
-            format!("@![features(\"modules\")]\n\n{plain}"),
-            plain.to_owned(),
+            include_str!("cli/fixtures/a-definition-under-a-stale-declaration.gandr"),
+            include_str!("cli/fixtures/a-definition-of-tier-zero.gandr"),
         ),
     ];
-    for &(name, ref before, _) in &sources {
+    for &(name, before, _) in &sources {
         std::fs::write(scratch.0.join(name), before).expect("the scratch source is written");
     }
     let features = Path::new("features");
@@ -2475,9 +2484,9 @@ fn features_writes_the_declaration_of_each_source()
             shown("stale.gandr")
         )
     );
-    for &(name, _, ref after) in &sources {
+    for &(name, _, after) in &sources {
         assert_eq!(
-            &std::fs::read_to_string(scratch.0.join(name)).expect("the source is read back"),
+            std::fs::read_to_string(scratch.0.join(name)).expect("the source is read back"),
             after,
             "{name}"
         );
@@ -2505,20 +2514,25 @@ fn features_writes_the_declaration_of_each_source()
 fn features_checks_the_declaration_of_each_source()
 {
     let scratch = Scratch::new(Path::new("features-check"));
-    let body = "@[deprecated]\ndef one() -> Integer = 1;\n";
     let sources = [
-        ("bare.gandr", body.to_owned()),
+        (
+            "bare.gandr",
+            include_str!("cli/fixtures/a-deprecated-definition.gandr"),
+        ),
         (
             "declared.gandr",
-            format!("@![features(\"deprecation\")]\n\n{body}"),
+            include_str!("cli/fixtures/a-deprecated-definition-under-its-declaration.gandr"),
         ),
-        ("plain.gandr", "def one() -> Integer = 1;\n".to_owned()),
+        (
+            "plain.gandr",
+            include_str!("cli/fixtures/a-definition-of-tier-zero.gandr"),
+        ),
         (
             "shown.gandr",
-            format!("@![features(\"modules\")]\n\n@[refuses(\"FeatureUndeclared\")]\n{body}"),
+            include_str!("cli/fixtures/a-source-that-shows-the-refusal-of-its-declaration.gandr"),
         ),
     ];
-    for &(name, ref text) in &sources {
+    for &(name, text) in &sources {
         std::fs::write(scratch.0.join(name), text).expect("the scratch source is written");
     }
     let features = Path::new("features");
@@ -2534,9 +2548,9 @@ fn features_checks_the_declaration_of_each_source()
         ),
         "the one source whose head differs has its line"
     );
-    for &(name, ref text) in &sources {
+    for &(name, text) in &sources {
         assert_eq!(
-            &std::fs::read_to_string(scratch.0.join(name)).expect("the source is read back"),
+            std::fs::read_to_string(scratch.0.join(name)).expect("the source is read back"),
             text,
             "the check writes nothing: {name}"
         );
@@ -2559,10 +2573,16 @@ fn features_writes_a_source_of_imports()
     let scratch = Scratch::new(Path::new("features-imports"));
     let imported = scratch.0.join("one.gandr");
     let importer = scratch.0.join("importer.gandr");
-    let import = "import \"./one.gandr\" as one;\n";
-    std::fs::write(&imported, "def one() -> Integer = 1;\n")
-        .expect("the scratch source is written");
-    std::fs::write(&importer, import).expect("the scratch source is written");
+    std::fs::write(
+        &imported,
+        include_str!("cli/fixtures/a-definition-of-tier-zero.gandr"),
+    )
+    .expect("the scratch source is written");
+    std::fs::write(
+        &importer,
+        include_str!("cli/fixtures/an-import-of-a-sibling.gandr"),
+    )
+    .expect("the scratch source is written");
 
     let wrote = ran(gandr(&[
         Path::new("features"),
@@ -2572,7 +2592,7 @@ fn features_writes_a_source_of_imports()
     assert_eq!(code(&wrote), Code(0_i32), "{}", stderr(&wrote));
     assert_eq!(
         std::fs::read_to_string(&importer).expect("the source is read back"),
-        format!("@![features(\"imports\")]\n\n{import}"),
+        include_str!("cli/fixtures/an-import-of-a-sibling-under-its-declaration.gandr"),
         "the head of the source has the declaration"
     );
 
@@ -2589,7 +2609,7 @@ fn features_writes_a_source_of_imports()
 
     std::fs::write(
         &importer,
-        format!("@![features(\"deprecation\")]\n\n{import}"),
+        include_str!("cli/fixtures/an-import-of-a-sibling-under-a-different-declaration.gandr"),
     )
     .expect("the scratch source is written");
     let refused = ran(gandr(&[Path::new("check"), &importer]));
@@ -2609,8 +2629,8 @@ fn features_keeps_a_source_that_shows_the_refusal_of_its_declaration()
 {
     let scratch = Scratch::new(Path::new("features-kept"));
     let shown = scratch.0.join("shown.gandr");
-    let text = "@![features(\"modules\")]\n\n@[refuses(\"FeatureUndeclared\")]\n@[deprecated]\ndef \
-                one() -> Integer = 1;\n";
+    let text =
+        include_str!("cli/fixtures/a-source-that-shows-the-refusal-of-its-declaration.gandr");
     std::fs::write(&shown, text).expect("the scratch source is written");
 
     let wrote = ran(gandr(&[

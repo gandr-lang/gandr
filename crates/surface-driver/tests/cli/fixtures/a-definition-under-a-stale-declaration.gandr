@@ -1,0 +1,3 @@
+@![features("modules")]
+
+def one() -> Integer = 1;

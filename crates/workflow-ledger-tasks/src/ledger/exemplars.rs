@@ -1319,20 +1319,25 @@ mod tests
     #[test]
     fn the_text_of_an_exemplar_starts_after_its_declaration()
     {
-        let body = "/// `def_value`: a definition.\ndef answer = 42 ;\n";
+        let body = include_str!("exemplars/fixtures/a-definition-exemplar.gandr");
         assert_eq!(past_declaration(body), body);
         assert_eq!(
-            past_declaration(&format!("@![features(\"modules\")]\n\n{body}")),
-            body
-        );
-        assert_eq!(
-            past_declaration(&format!(
-                "@![features((\"modules\", \"records\"))]\n\n{body}"
+            past_declaration(include_str!(
+                "exemplars/fixtures/a-definition-exemplar-under-one-feature.gandr"
             )),
             body
         );
-        let open = "@![features(\"modules\")";
-        assert_eq!(past_declaration(open), open);
+        assert_eq!(
+            past_declaration(include_str!(
+                "exemplars/fixtures/a-definition-exemplar-under-two-features.gandr"
+            )),
+            body
+        );
+        let open = include_str!("exemplars/fixtures/a-declaration-of-one-feature.gandr")
+            .trim_end()
+            .strip_suffix(']')
+            .expect("the block of the declaration closes");
+        assert_eq!(past_declaration(open), open, "a block that does not close");
     }
 
     /// A declaration of features at the head of each exemplar of a rule and
@@ -1340,13 +1345,14 @@ mod tests
     #[test]
     fn an_exemplar_is_verified_after_its_declaration_of_features()
     {
+        let declaration = include_str!("exemplars/fixtures/a-declaration-of-one-feature.gandr");
         let directory = copied(Path::new("declared"));
         for folder in ["syntax", "attributes"] {
             for entry in std::fs::read_dir(directory.join(folder)).expect("the folder lists") {
                 let path = entry.expect("the entry reads").path();
                 let text = std::fs::read_to_string(&path).expect("the exemplar reads");
                 if past_declaration(&text).len() == text.len() {
-                    std::fs::write(&path, format!("@![features(\"modules\")]\n\n{text}"))
+                    std::fs::write(&path, format!("{declaration}\n{text}"))
                         .expect("the exemplar is written");
                 }
             }

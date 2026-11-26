@@ -1,0 +1,6 @@
+//! A source.
+
+@![features("modules")]
+
+/// The value one.
+def one() -> Integer = 1;

@@ -1,0 +1,5 @@
+@![features("modules")]
+
+@[refuses("FeatureUndeclared")]
+@[deprecated]
+def one() -> Integer = 1;

@@ -1,0 +1,3 @@
+@![features("deprecation")]
+
+import "./one.gandr" as one;

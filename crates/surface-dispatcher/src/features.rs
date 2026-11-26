@@ -637,7 +637,23 @@ mod tests
         let none = Declaration(Vec::new());
         let one = Declaration(Vec::from(["modules"]));
         let two = Declaration(Vec::from(["deprecation", "modules"]));
-        let body = "/// The value one.\ndef one() -> Integer = 1;\n";
+        let body = include_str!("features/fixtures/a-documented-definition.gandr");
+        let stated = include_str!("features/fixtures/a-documented-definition-under-modules.gandr");
+        let both = include_str!(
+            "features/fixtures/a-documented-definition-under-deprecation-and-modules.gandr"
+        );
+        let documented =
+            include_str!("features/fixtures/a-documented-definition-after-a-module-comment.gandr");
+        let close = include_str!(
+            "features/fixtures/a-documented-definition-close-after-a-module-comment.gandr"
+        );
+        let doc = include_str!("features/fixtures/a-documented-definition-under-a-doc.gandr");
+        let first = include_str!(
+            "features/fixtures/a-documented-definition-under-modules-before-a-doc.gandr"
+        );
+        let last = include_str!(
+            "features/fixtures/a-documented-definition-under-modules-after-a-doc.gandr"
+        );
 
         assert_eq!(
             rewritten(body, None, &none),
@@ -645,62 +661,55 @@ mod tests
             "no attribute and no feature"
         );
         assert_eq!(
-            rewritten(body, None, &one),
-            Some(format!("@![features(\"modules\")]\n\n{body}")),
+            rewritten(body, None, &one).as_deref(),
+            Some(stated),
             "a block of its own stands before a `///` comment"
         );
-        let documented = format!("//! A source.\n\n{body}");
         assert_eq!(
-            rewritten(&documented, None, &one),
-            Some(format!(
-                "//! A source.\n\n@![features(\"modules\")]\n\n{body}"
+            rewritten(documented, None, &one).as_deref(),
+            Some(include_str!(
+                "features/fixtures/a-documented-definition-after-a-module-comment-under-modules.gandr"
             )),
             "and after the `//!` lines of the head and their blank line"
         );
-        let close = format!("//! A source.\n{body}");
         assert_eq!(
-            rewritten(&close, None, &one),
-            Some(format!(
-                "//! A source.\n@![features(\"modules\")]\n\n{body}"
+            rewritten(close, None, &one).as_deref(),
+            Some(include_str!(
+                "features/fixtures/a-documented-definition-close-after-a-module-comment-under-modules.gandr"
             )),
             "with no blank line to pass"
         );
 
-        let stated = format!("@![features(\"modules\")]\n\n{body}");
         assert_eq!(
-            rewritten(&stated, Some(&site(&stated)), &one),
+            rewritten(stated, Some(&site(stated)), &one),
             None,
             "a head that states the declaration stands"
         );
         assert_eq!(
-            rewritten(&stated, Some(&site(&stated)), &two),
-            Some(format!(
-                "@![features((\"deprecation\", \"modules\"))]\n\n{body}"
-            )),
+            rewritten(stated, Some(&site(stated)), &two).as_deref(),
+            Some(both),
             "the attribute is replaced where it stands"
         );
         assert_eq!(
-            rewritten(&stated, Some(&site(&stated)), &none),
-            Some(body.to_owned()),
+            rewritten(stated, Some(&site(stated)), &none).as_deref(),
+            Some(body),
             "a block that holds the attribute alone goes with its line and one blank line"
         );
 
-        let first = format!("@![features(\"modules\"), doc(\"A source.\")]\n\n{body}");
         assert_eq!(
-            rewritten(&first, Some(&site(&first)), &none),
-            Some(format!("@![doc(\"A source.\")]\n\n{body}")),
+            rewritten(first, Some(&site(first)), &none).as_deref(),
+            Some(doc),
             "an attribute before a different one goes with the comma after it"
         );
-        let last = format!("@![doc(\"A source.\"), features(\"modules\")]\n\n{body}");
         assert_eq!(
-            rewritten(&last, Some(&site(&last)), &none),
-            Some(format!("@![doc(\"A source.\")]\n\n{body}")),
+            rewritten(last, Some(&site(last)), &none).as_deref(),
+            Some(doc),
             "an attribute after a different one goes with the comma before it"
         );
         assert_eq!(
-            rewritten(&last, Some(&site(&last)), &two),
-            Some(format!(
-                "@![doc(\"A source.\"), features((\"deprecation\", \"modules\"))]\n\n{body}"
+            rewritten(last, Some(&site(last)), &two).as_deref(),
+            Some(include_str!(
+                "features/fixtures/a-documented-definition-under-deprecation-and-modules-after-a-doc.gandr"
             )),
             "and it is replaced beside the other one"
         );

@@ -1,0 +1,3 @@
+@![features("imports")]
+
+import "./one.gandr" as one;

@@ -1,0 +1,5 @@
+@![features("modules")]
+
+/// `def_value`: a definition.
+@[checks]
+def answer = 42;

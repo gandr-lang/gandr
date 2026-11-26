@@ -1,0 +1,7 @@
+//! A source.
+
+@![features("deprecation")]
+
+/// The value one.
+@[deprecated]
+def one() -> Integer = 1;

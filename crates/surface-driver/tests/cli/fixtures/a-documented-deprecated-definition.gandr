@@ -1,0 +1,3 @@
+/// The value one.
+@[deprecated]
+def one() -> Integer = 1;
