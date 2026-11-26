@@ -1,20 +1,13 @@
 //! The mold highlighter over the built-in surface and the language corpus:
-//! every mold's role, the role goldens, the span partition, layout, and the
-//! highlighter's refusals.
+//! every mold's role, the span partition, layout, and the highlighter's
+//! refusals.
 
 use alloc::collections::BTreeSet;
-use core::fmt::Display;
-use core::fmt::Error as FmtError;
-use core::fmt::Formatter;
-use core::fmt::Result as FmtResult;
-use core::fmt::Write as _;
 use std::ffi::OsStr;
-use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
-use expect_test::expect_file;
 use gandr_surface_grammar::HighlightError;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Regex;
@@ -31,7 +24,6 @@ use gandr_surface_render_remote::HlSpan;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::MoldId;
-use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
@@ -52,15 +44,6 @@ fn corpus_root() -> PathBuf
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus")
 }
 
-/// The directory the role goldens live in, mirroring the corpus tree.
-///
-/// # Specification
-/// trivial.
-fn golden_root() -> PathBuf
-{
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/highlight")
-}
-
 /// Every file under `dir` with extension `extension`, sorted.
 ///
 /// # Specification
@@ -69,12 +52,12 @@ fn golden_root() -> PathBuf
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: For the checked-in corpus and golden trees, L3 path-correlated
-///   role observations catch wrong extension selection and unstable ordering.
+/// - hypothesis: For the checked-in corpus tree, the L2 span partition reads
+///   each source that the walk gives, and catches wrong extension selection.
 ///   The predicate observes lexical containment, extensions and ordering
 ///   without another filesystem walk; unreadable directories, concurrent
 ///   mutations and symlink cycles are outside the witnesses.
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::highlight::spans_partition_the_tile_bytes`
 #[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|path| path.starts_with(dir) && path.extension() == Some(extension)))]
 fn files_under(
     dir: &Path,
@@ -109,11 +92,11 @@ fn files_under(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: For the checked-in corpus, L3 per-source goldens observe both
-///   root families and catch omitted or misclassified sources. The predicate
-///   checks the root order and each root's lexical order; filesystem
-///   completeness under read errors or concurrent changes is not established.
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - hypothesis: For the checked-in corpus, the L2 span partition reads the
+///   sources of both root families. The predicate checks the root order and
+///   each root's lexical order; filesystem completeness under read errors or
+///   concurrent changes is not established.
+/// - witness: `tests::highlight::spans_partition_the_tile_bytes`
 #[spec(ensures: |ret| { let strict = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus/strict")); let fixture = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")); let is_fixture = |path: &Path| { if path.starts_with(strict) { Some(false) } else if path.starts_with(fixture) { Some(true) } else { None } }; ret.iter().all(|path| is_fixture(path).is_some() && path.extension() == Some(OsStr::new("gandr"))) && ret.is_sorted_by(|left, right| (is_fixture(left), left) <= (is_fixture(right), right)) })]
 fn corpus_sources() -> Vec<PathBuf>
 {
@@ -175,7 +158,6 @@ fn one_tile_grammar() -> Result<Pbg, Failure>
 ///   span-partition observations catch wrong endpoints or slices. The predicate
 ///   also observes the invalid-range fallback; invalid ranges are not exhausted
 ///   by the corpus.
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::highlight::spans_partition_the_tile_bytes`
 #[spec(ensures: |ret| <&str>::from(ret) == <&str>::from(source).get(usize::from(range.start())..usize::from(range.end())).unwrap_or_default())]
 fn text_of(
@@ -188,96 +170,6 @@ fn text_of(
         text.get(usize::from(range.start()) .. usize::from(range.end()))
             .unwrap_or_default(),
     )
-}
-
-/// A role, written by its variant's name.
-#[repr(transparent)]
-struct RoleName(HlRole);
-
-impl Display for RoleName
-{
-    /// Writes the variant's name.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: writes the role variant's name.
-    /// - fails: the formatter refuses a write.
-    /// - panics: none.
-    /// - executable: none — Formatter exposes neither written text nor sink
-    ///   capacity, so successful emission and refusal have no predicate
-    ///   observer.
-    ///
-    /// # Adequacy
-    /// - hypothesis: For roles reached by the built-in inventory, L3 role
-    ///   goldens catch changed names and wrong variant selection. Other role
-    ///   variants and formatter refusal are not exhausted.
-    /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-    fn fmt(
-        &self,
-        f: &mut Formatter<'_>,
-    ) -> FmtResult
-    {
-        f.write_str(match self.0 {
-            HlRole::Keyword => "Keyword",
-            HlRole::Operator => "Operator",
-            HlRole::FunctionDef => "FunctionDef",
-            HlRole::FunctionCall => "FunctionCall",
-            HlRole::VariableDef => "VariableDef",
-            HlRole::VariableParam => "VariableParam",
-            HlRole::Member => "Member",
-            HlRole::Variable => "Variable",
-            HlRole::Constructor => "Constructor",
-            HlRole::Type => "Type",
-            HlRole::TypeBuiltin => "TypeBuiltin",
-            HlRole::TypeVariable => "TypeVariable",
-            HlRole::Number => "Number",
-            HlRole::Boolean => "Boolean",
-            HlRole::Character => "Character",
-            HlRole::StringLit => "StringLit",
-            HlRole::Escape => "Escape",
-            HlRole::Comment => "Comment",
-            HlRole::Hole => "Hole",
-            HlRole::Label => "Label",
-            HlRole::Path => "Path",
-            HlRole::Directive => "Directive",
-            HlRole::Other => "Other",
-        })
-    }
-}
-
-/// One golden line per span: its byte range, its role and its text, quoted
-/// and escaped.
-///
-/// # Specification
-/// - ensures: `start..end Role "text"` per span, in the order given.
-/// - fails: never; writing into a string does not fail.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For corpus spans, L3 complete line goldens catch wrong ranges,
-///   roles, escaping and order. The predicate observes one ordered range per
-///   line and successful string formatting; arbitrary span sequences and
-///   control-character combinations are not exhausted.
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().is_ok_and(|rendered| { let mut lines = rendered.lines(); spans.iter().all(|span| lines.next().is_some_and(|line| line.split_once(' ').and_then(|(range, _)| range.split_once("..")).is_some_and(|(start, end)| start.parse::<usize>().ok() == Some(usize::from(span.range.start())) && end.parse::<usize>().ok() == Some(usize::from(span.range.end()))) && line.ends_with('"'))) && lines.next().is_none() }))]
-fn role_lines(
-    tree: &SyntaxTree<'_>,
-    spans: &[HlSpan],
-) -> Result<String, FmtError>
-{
-    let mut out = String::new();
-    for span in spans {
-        let text = <&str>::from(text_of(tree.source(), span.range));
-        writeln!(
-            out,
-            "{}..{} {} \"{}\"",
-            usize::from(span.range.start()),
-            usize::from(span.range.end()),
-            RoleName(span.role),
-            text.escape_debug()
-        )?;
-    }
-    Ok(out)
 }
 
 /// Every mold of the built-in surface has a role: `role_of` answers every id
@@ -297,83 +189,6 @@ fn every_mold_has_a_role() -> Result<(), Failure>
         RoleTable::build(&pbg)?,
         table,
         "the roles are a function of the grammar"
-    );
-    Ok(())
-}
-
-/// The role golden. Each corpus source, both roots and the pending set, has
-/// a golden of its spans under `tests/highlight/` at its path in the corpus.
-/// A golden whose source is gone fails the suite. `UPDATE_EXPECT=1`
-/// rewrites the goldens and deletes those whose source is gone, so a source
-/// added, moved between roots or removed is one rerun. The test writes the
-/// count of the molds that no corpus tile exercises to standard error.
-#[test]
-fn corpus_roles_match_the_golden() -> Result<(), Failure>
-{
-    let pbg = built_in()?;
-    let table = RoleTable::build(&pbg)?;
-    let corpus = corpus_root();
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("corpus");
-    let goldens = golden_root();
-    let update = std::env::var_os("UPDATE_EXPECT").is_some();
-    let mut exercised: BTreeSet<MoldId> = BTreeSet::new();
-    let mut expected: BTreeSet<PathBuf> = BTreeSet::new();
-    for path in corpus_sources() {
-        let source = std::fs::read_to_string(&path)?;
-        let parsed = parse(&pbg, SourceText::from(source.as_str()))?;
-        let tree = parsed.tree();
-        exercised.extend(
-            tree.positions()
-                .filter_map(|position| tree.node(position).map(Node::label))
-                .filter_map(|label| match label {
-                    NodeLabel::Tile(mold) => Some(mold),
-                    NodeLabel::Wald
-                    | NodeLabel::Meld(_)
-                    | NodeLabel::Grout { .. }
-                    | NodeLabel::GhostClose { .. }
-                    | NodeLabel::Space
-                    | NodeLabel::Doc => None,
-                }),
-        );
-        let spans = table.highlight(tree)?;
-        let relative = if path.starts_with(&corpus) {
-            path.strip_prefix(&corpus)?.to_path_buf()
-        }
-        else {
-            Path::new("fixture").join(path.strip_prefix(&fixture)?)
-        };
-        let golden = goldens.join(relative).with_extension("roles");
-        if update && let Some(parent) = golden.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        expect_file![golden.clone()].assert_eq(&role_lines(tree, &spans)?);
-        expected.insert(golden);
-    }
-
-    let unexercised = pbg
-        .iter_molds()
-        .filter(|&(id, _)| !exercised.contains(&id))
-        .count();
-    writeln!(
-        std::io::stderr(),
-        "{unexercised} molds that no corpus tile exercises"
-    )?;
-
-    let orphans: Vec<PathBuf> = files_under(&goldens, OsStr::new("roles"))
-        .into_iter()
-        .filter(|golden| !expected.contains(golden))
-        .collect();
-    if update {
-        for orphan in &orphans {
-            std::fs::remove_file(orphan)?;
-        }
-        return Ok(());
-    }
-    assert!(
-        orphans.is_empty(),
-        "goldens with no corpus source, to delete or rewrite with `UPDATE_EXPECT=1`: {orphans:?}"
     );
     Ok(())
 }

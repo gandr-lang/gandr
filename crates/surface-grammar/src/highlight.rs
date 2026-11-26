@@ -86,21 +86,15 @@
 //! and the terminal renderer's paint read these spans, each mapping a role to
 //! its own style.
 //!
-//! The role golden under `tests/highlight/` mirrors the corpus: one `.roles`
-//! file per source, both roots and the pending set, with a line per span —
-//! `start..end Role "text"`. The test writes the count of the molds that no
-//! corpus tile exercises to standard error. A source added to the corpus,
-//! moved between roots or removed moves its golden with it:
-//! `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-grammar` rewrites the
-//! goldens and deletes those whose source is gone, and without it a missing,
-//! stale or orphaned golden fails the suite.
-//!
-//! - Choice: `expect-test` compares and rewrites the goldens, a file compared
-//!   whole with a diff on mismatch.
-//! - Alternatives: `insta`, whose review tool and snapshot metadata this suite
-//!   does not need and whose dependency tree is several times larger; a
-//!   hand-written comparison, which reports no diff.
-//! - Reversal: a golden that needs redaction or per-snapshot metadata.
+//! The roles of the corpus are an output with no file in the tree. The tool
+//! `outputs` of `gandr-workflow-outputs` computes them into its store: one
+//! value per source, both roots and the pending set, with a line per span —
+//! `start..end Role "text"`. `outputs difference roles --base <revision>`
+//! gives the sources whose roles differ between two trees. It refuses a
+//! difference that no commit of the change names with the trailer
+//! `Changes-output: roles`. So the role of a corpus token does not change
+//! without a word of its commit, and the tree holds no record that two
+//! changes of the grammar both write.
 
 use alloc::vec::Vec;
 use core::error::Error;
@@ -367,7 +361,6 @@ impl RoleTable
     ///   constructed by `Pbg::build`.
     /// - witness: `highlight::tests::mold_provenance_alignment`
     /// - witness: `highlight::tests::role_of_pins_context_free_classes`
-    /// - witness: `tests::highlight::corpus_roles_match_the_golden`
     /// - witness: `tests::highlight::every_mold_has_a_role`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.grammar == pbg.fingerprint() && table.roles.len() == pbg.mold_count().0))]
     #[inline]
@@ -498,7 +491,6 @@ impl RoleTable
     ///   order. Arbitrary tree shapes are not exhausted; disjointness belongs
     ///   to the input, and ordered spans exclude an inverted-range refusal.
     /// - witness: `tests::highlight::spans_partition_the_tile_bytes`
-    /// - witness: `tests::highlight::corpus_roles_match_the_golden`
     /// - witness: `tests::highlight::a_tree_under_another_grammar_is_refused`
     /// - witness: `tests::highlight::a_tile_past_the_table_is_refused`
     /// - witness: `tests::highlight::layout_takes_a_role_only_as_a_comment_or_a_shebang`
@@ -778,10 +770,10 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 /// # Adequacy
 /// - hypothesis: The built-in role matrix and finite competing context fixtures
 ///   supply L3 exact class observations, catching misplaced rule overrides,
-///   omitted labels and changed context priority. Corpus goldens cover every
-///   inventoried mold; arbitrary custom combinations are not exhausted.
+///   omitted labels and changed context priority. The roles of the corpus are
+///   an output that `outputs difference roles` compares between two trees;
+///   arbitrary custom combinations are not exhausted.
 /// - witness: `highlight::tests::role_of_pins_context_free_classes`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
 #[spec(ensures: |ret| ret == match facts.label.0 {
     "identifier" => identifier_role(facts),
@@ -871,10 +863,10 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// # Adequacy
 /// - hypothesis: Built-in identifier places and explicit competing contexts
 ///   provide L3 exact role observations, catching reversed kind, neighbor and
-///   enclosure priority; every built-in mold is covered by a golden, but
-///   arbitrary custom context combinations are not exhausted.
+///   enclosure priority; the roles of the corpus are an output that
+///   `outputs difference roles` compares between two trees, but arbitrary
+///   custom context combinations are not exhausted.
 /// - witness: `highlight::tests::role_of_pins_context_free_classes`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
     "identifier" | "cons_pattern" => HlRole::Variable,

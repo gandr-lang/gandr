@@ -627,7 +627,6 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.dag().groups().count() == PREC_GROUPS.len() && pbg.dag().groups().zip(PREC_GROUPS.iter()).all(|((_, name, assoc), &(expected, expected_assoc))| name == expected && assoc == expected_assoc) && [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember, Sort::Block].iter().all(|sort| pbg.forms().keys().any(|&(present, _)| present == *sort))))]
 #[inline]

@@ -66,9 +66,9 @@
 //! relations and highlighting. Each nontrivial item's adequacy block names its
 //! input domain, observer, mutation classes and boundary, with crate-local
 //! witnesses. The enforcing test lane runs the same corpus and boundary cases
-//! through the predicates. Exact grammar identity and role goldens complement
-//! structural observations; they do not prove every possible user-defined
-//! grammar.
+//! through the predicates. Exact grammar identity and the difference of the
+//! corpus roles between two trees complement structural observations; they do
+//! not prove every possible user-defined grammar.
 //!
 //! Resolution predicates mark output positions as input keys resolve,
 //! preserving exact coverage with aliases without a quadratic reverse search.

@@ -84,7 +84,6 @@ use crate::model::Sym;
 ///   aliases and allocation failure are not exhausted.
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 44 && rules.iter().all(|rule| rule.sort() == Sort::Type) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "string.type")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
@@ -112,7 +111,6 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 ///   aliases and allocation failure are not exhausted.
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 ///
 /// # Cost
 /// - allocation: the rules of the type grammar and their adaptation records,
@@ -1087,7 +1085,6 @@ fn tile(label: TileLabel) -> Regex
 ///   corpus are not exhausted.
 /// - witness: `surface::type_shell::tests::binary_rules_remain_operators_without_repeat_seams`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| ret.name() == name && ret.sort() == sort && ret.prec() == prec && ret.provenance().0 == name.0 && matches!(ret.regex().view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == operator.0)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort))))]
 fn binary_infix_rule(
     name: RuleName,
@@ -1118,7 +1115,6 @@ fn binary_infix_rule(
 ///   predicate observes the stated shape; source programs outside the finite
 ///   corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.iter().zip(["number","identifier","ω"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn grade_shape() -> Regex
 {
@@ -1144,7 +1140,6 @@ fn grade_shape() -> Regex
 ///   corpus are not exhausted. Arbitrary nullable list elements are not
 ///   exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ","))))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(inner) if matches!(inner.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))]
 fn comma1(item: Regex) -> Regex
 {
@@ -1178,7 +1173,6 @@ fn comma1(item: Regex) -> Regex
 ///   predicate observes the stated shape; source programs outside the finite
 ///   corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")))))))]
 fn entry_shape(sort: Sort) -> Regex
 {
@@ -1220,7 +1214,6 @@ fn entry_shape(sort: Sort) -> Regex
 ///   observes the stated shape; source programs outside the finite corpus are
 ///   not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref entries) if entries.len() == 2
     && entries.first().is_some_and(|labelled| matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3
         && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))
@@ -1275,7 +1268,6 @@ pub(super) fn row_entry(ty: Sort) -> Regex
 ///   band; the parser's recovery sweep catches a placement that moves another
 ///   form's ties.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if name == "type.application" && precs.get(PrecName(name)).is_none()), |rules| rules.len() == 2 && rules.iter().zip(["f_type.row.labelled", "f_type.result.labelled"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Type && rule.provenance().0 == "f_type" && precs.get(PrecName("type.application")) == Some(rule.prec()))))]
 pub(super) fn labelled_rows(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
