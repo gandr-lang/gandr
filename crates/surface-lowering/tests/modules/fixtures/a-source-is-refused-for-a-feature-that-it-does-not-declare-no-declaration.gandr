@@ -1,0 +1,2 @@
+@[deprecated]
+def one() -> Integer = 1;

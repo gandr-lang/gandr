@@ -1998,8 +1998,8 @@ fn a_component_check_carries_its_members_expectation()
 #[test]
 fn a_source_declares_its_features_at_its_head()
 {
-    let declared = "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> \
-                    Integer = 1; module Inner where { def two() -> Integer = 2; }";
+    let declared =
+        include_str!("modules/fixtures/a-source-declares-its-features-at-its-head.gandr");
     let lowered = lower(declared);
     assert!(
         rows(&lowered).contains(&row("one", Role::Declared, Amounts::Completed)),
@@ -2037,7 +2037,8 @@ fn a_source_declares_its_features_at_its_head()
         "the keys are read in the order of the source"
     );
 
-    let misplaced = "@[features(\"attributes\")] def one() -> Integer = 1;";
+    let misplaced =
+        include_str!("modules/fixtures/a-source-declares-its-features-at-its-head-misplaced.gandr");
     let lowered = lower(misplaced);
     assert!(
         lowered
@@ -2101,23 +2102,27 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
         (used, declared)
     };
 
-    let (used, declared) = features("def add(a : u64, b : u64) -> u64 = u64.wrapping_add a b;");
+    let (used, declared) = features(include_str!(
+        "modules/fixtures/a-source-uses-the-features-of-its-forms-and-of-its-attributes-twin.gandr"
+    ));
     assert!(
         used.is_empty(),
         "a source of the forms of the first twin uses no feature: {used:?}"
     );
     assert_eq!(declared, None, "and it declares nothing");
 
-    let (used, _declared) = features("def grown() -> f64 = float64.exp 0.5f64;");
+    let (used, _declared) = features(include_str!(
+        "modules/fixtures/a-source-uses-the-features-of-its-forms-and-of-its-attributes-float.gandr"
+    ));
     assert_eq!(
         used,
         ["floating-point"],
         "a name of the builtin namespace uses the feature of its row"
     );
 
-    let (used, declared) = features(
-        "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer = 1;",
-    );
+    let (used, declared) = features(include_str!(
+        "modules/fixtures/a-source-uses-the-features-of-its-forms-and-of-its-attributes-declared.gandr"
+    ));
     assert_eq!(
         used,
         ["deprecation"],
@@ -2129,8 +2134,9 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
         "the keys of the head are the declared features"
     );
 
-    let (used, declared) =
-        features("@![features(\"modules\")] module Inner where { def one() -> Integer = 1; }");
+    let (used, declared) = features(include_str!(
+        "modules/fixtures/a-source-uses-the-features-of-its-forms-and-of-its-attributes-module.gandr"
+    ));
     assert_eq!(
         used,
         ["modules"],
@@ -2169,7 +2175,9 @@ fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
             .collect()
     };
 
-    let undeclared = "@![features(\"modules\")] @[deprecated] def one() -> Integer = 1;";
+    let undeclared = include_str!(
+        "modules/fixtures/a-source-is-refused-for-a-feature-that-it-does-not-declare-undeclared.gandr"
+    );
     assert_eq!(
         refused(undeclared),
         [("deprecation", span_of(undeclared, "deprecated", 0_usize))],
@@ -2177,8 +2185,9 @@ fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
          feature"
     );
 
-    let two = "@![features(\"records\")] @[deprecated] module Inner where { def one() -> Integer \
-               = 1; }";
+    let two = include_str!(
+        "modules/fixtures/a-source-is-refused-for-a-feature-that-it-does-not-declare-two.gandr"
+    );
     assert_eq!(
         refused(two)
             .iter()
@@ -2189,14 +2198,17 @@ fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
     );
 
     assert!(
-        refused(
-            "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer = 1;"
-        )
+        refused(include_str!(
+            "modules/fixtures/a-source-is-refused-for-a-feature-that-it-does-not-declare-each-declared.gandr"
+        ))
         .is_empty(),
         "a source that declares each feature that it uses is not refused"
     );
     assert!(
-        refused("@[deprecated] def one() -> Integer = 1;").is_empty(),
+        refused(include_str!(
+            "modules/fixtures/a-source-is-refused-for-a-feature-that-it-does-not-declare-no-declaration.gandr"
+        ))
+        .is_empty(),
         "a source with no declaration of features is not judged"
     );
 }
@@ -2227,23 +2239,33 @@ fn a_source_is_refused_for_a_feature_that_it_declares_and_does_not_use()
             .collect()
     };
 
-    let unused = "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer \
-                  = 1;";
+    let unused = include_str!(
+        "modules/fixtures/a-source-is-refused-for-a-feature-that-it-declares-and-does-not-use-unused.gandr"
+    );
     assert_eq!(
         refused(unused),
         [("modules".to_owned(), span_of(unused, "modules", 0_usize))],
         "the first declaration of the source carries the refusal, at the text of the key"
     );
     assert!(
-        refused("@![features(\"deprecation\")] @[deprecated] def one() -> Integer = 1;").is_empty(),
+        refused(include_str!(
+            "modules/fixtures/a-source-is-refused-for-a-feature-that-it-declares-and-does-not-use-each-used.gandr"
+        ))
+        .is_empty(),
         "a source that uses each feature that it declares is not refused"
     );
     assert!(
-        refused("@![features(\"modules\")] @[deprecated] def one() -> Integer = 1;").is_empty(),
+        refused(include_str!(
+            "modules/fixtures/a-source-is-refused-for-a-feature-that-it-declares-and-does-not-use-undeclared-first.gandr"
+        ))
+        .is_empty(),
         "a feature that the source uses and does not declare is named first"
     );
     assert!(
-        refused("def one() -> Integer = 1;").is_empty(),
+        refused(include_str!(
+            "modules/fixtures/a-source-is-refused-for-a-feature-that-it-declares-and-does-not-use-no-declaration.gandr"
+        ))
+        .is_empty(),
         "a source with no declaration of features is not judged"
     );
 }
@@ -2254,7 +2276,9 @@ fn a_source_is_refused_for_a_feature_that_it_declares_and_does_not_use()
 #[test]
 fn the_head_of_a_source_with_no_declaration_takes_attributes()
 {
-    let declared = "@![features(\"modules\")]";
+    let declared = include_str!(
+        "modules/fixtures/the-head-of-a-source-with-no-declaration-takes-attributes-declared.gandr"
+    );
     let lowered = lower(declared);
     let refused: Vec<_> = lowered
         .module
@@ -2284,7 +2308,9 @@ fn the_head_of_a_source_with_no_declaration_takes_attributes()
         table.entries(source)
     );
 
-    let unknown = "@![nonesuch]";
+    let unknown = include_str!(
+        "modules/fixtures/the-head-of-a-source-with-no-declaration-takes-attributes-unknown.gandr"
+    );
     let lowered = lower(unknown);
     let refused: Vec<_> = lowered
         .module

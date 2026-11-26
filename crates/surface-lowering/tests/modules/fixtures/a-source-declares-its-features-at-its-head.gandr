@@ -1,0 +1,4 @@
+@![features(("deprecation", "modules"))]
+@[deprecated]
+def one() -> Integer = 1;
+module Inner where { def two() -> Integer = 2; }

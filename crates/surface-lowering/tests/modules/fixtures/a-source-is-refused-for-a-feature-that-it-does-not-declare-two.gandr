@@ -1,0 +1,3 @@
+@![features("records")]
+@[deprecated]
+module Inner where { def one() -> Integer = 1; }

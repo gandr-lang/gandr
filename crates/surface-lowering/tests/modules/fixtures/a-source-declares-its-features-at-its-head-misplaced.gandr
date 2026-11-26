@@ -1,0 +1,2 @@
+@[features("attributes")]
+def one() -> Integer = 1;

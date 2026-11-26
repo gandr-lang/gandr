@@ -1,0 +1,1 @@
+def grown() -> f64 = float64.exp 0.5f64;

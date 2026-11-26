@@ -1,0 +1,2 @@
+@![features("modules")]
+module Inner where { def one() -> Integer = 1; }
