@@ -1,8 +1,8 @@
-def draw(width : Integer) -> Integer = width;
+def draw(width : Integer) -> Integer = width
 
-def lcg(first : Integer, second : Integer, third : Integer) -> Integer = first;
+def lcg(first : Integer, second : Integer, third : Integer) -> Integer = first
 
-def log(message : String) -> Integer = 0;
+def log(message : String) -> Integer = 0
 
 def first() -> Integer = {
   let seed = draw 8

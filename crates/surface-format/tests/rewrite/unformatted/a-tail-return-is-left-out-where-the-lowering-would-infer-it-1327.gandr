@@ -1,6 +1,6 @@
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
-def succeeded(n : Nat) -> -F Nat = return Succ n;
+def succeeded(n : Nat) -> -F Nat = return Succ n
 
 def early(k : Nat) -> -F Nat = match k {
   | Zero => return k
@@ -13,7 +13,7 @@ def early(k : Nat) -> -F Nat = match k {
   }
 };
 
-def computed(n : Nat) -> -F Nat = return succeeded n;
+def computed(n : Nat) -> -F Nat = return succeeded n
 
 def stated(n : Nat) -> -F Nat = {
   return n;
@@ -26,7 +26,7 @@ def blocked(n : Nat) -> -F Nat = match n {
   | Succ(p) => p
 };
 
-def noted(n : Nat) -> -F Nat = return /* the argument */ n;
+def noted(n : Nat) -> -F Nat = return /* the argument */ n
 
 @[explicit_exits]
 def asked(n : Nat) -> -F Nat = return n;

@@ -3,7 +3,7 @@ codata Stream(a : Type) : Type[-] where {
   tail : Stream a;
 }
 
-world seat;
+world seat
 
 module Pair :> *{type Kept, one : Kept} where {
   type Kept = Integer;
