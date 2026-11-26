@@ -165,7 +165,7 @@ def resumed_on() -> Integer =
 /// A type member can name a continuation type.
 /// Its function resumes the continuation it receives.
 module Conts where
-  type K = Stack (-F Unit) (-F Integer);
+  type K = Stack (-F Unit) (-F Integer)
 
   /// `resume_stack`, through the member.
   def aliased(j : K) -> Integer =

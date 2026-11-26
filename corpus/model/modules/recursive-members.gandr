@@ -45,9 +45,9 @@ def halved : () -> Nat = Counting.half (Succ (Succ (Succ (Succ Zero))))
 /// `Stepping` states a carrier and a step.
 theory Stepping where
   /// `M` names the carrier.
-  sort M : Type;
+  sort M : Type
   /// `step` advances the carrier.
-  oper step : (x : M) --> M;
+  oper step : (x : M) --> M
 
 /// `Iterating` steps a model value once per successor.
 module Iterating(S : Model(Stepping)) where
@@ -60,10 +60,10 @@ module Iterating(S : Model(Stepping)) where
 /// `Up` steps integers by one.
 module Up : Model(Stepping) where
   /// `M` names `Integer`.
-  type M = Integer;
+  type M = Integer
 
   /// `step` adds one.
-  def step(x : Integer) -> Integer = x + 1;
+  def step(x : Integer) -> Integer = x + 1
 
 /// `UpIterated` applies `Iterating` to `Up`.
 module UpIterated = Iterating Up

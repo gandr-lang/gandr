@@ -19,18 +19,18 @@ import "../desc/rule-keeps-count.gandr"
 @[form(explicit)]
 pub module SignalInWire : Model(Signal) where
   /// The carrier, a term of one wire.
-  type L = Terms Wire;
+  type L = Terms Wire
   /// Red is the high level.
-  def red : Terms Wire;
-  def red = Wire.high;
+  def red : Terms Wire
+  def red = Wire.high
   /// Amber is the low level.
-  def amber : Terms Wire;
-  def amber = Wire.low;
+  def amber : Terms Wire
+  def amber = Wire.low
   /// Green is the low level.
-  def green : Terms Wire;
-  def green = Wire.low;
+  def green : Terms Wire
+  def green = Wire.low
   /// The rule holds: the two joined lamps have one level.
-  def calm() -> Path amber green = Path.here Wire.low;
+  def calm() -> Path amber green = Path.here Wire.low
 
 /// The encoder: the case on the lamps into the layout. It rests on the law
 /// of the layout.

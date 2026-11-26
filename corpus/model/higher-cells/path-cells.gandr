@@ -38,17 +38,17 @@ def associator(
 /// an associator cell between two composites.
 theory Glob where
   /// `Ob` sorts the objects.
-  sort Ob : Type;
+  sort Ob : Type
   /// `Hom` sorts cells between two objects.
-  sort Hom(dom : Ob, cod : Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type
 
   /// `id` is the identity cell at one object.
-  oper id : (a : Ob) --> Hom a a;
+  oper id : (a : Ob) --> Hom a a
   /// `comp` joins two cells end to end.
-  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c
 
   /// `unitR` states that `id` is a right unit.
-  rule unitR : comp f (id b) <=> f;
+  rule unitR : comp f (id b) <=> f
   /// `assoc` is a cell between two composites of three cells.
   law assoc : (
     a : Ob,
@@ -58,17 +58,17 @@ theory Glob where
     f : Hom a b,
     g : Hom b c,
     h : Hom c d
-  ) -> Path[.A = Hom a d] (comp (comp f g) h) (comp f (comp g h));
+  ) -> Path[.A = Hom a d] (comp (comp f g) h) (comp f (comp g h))
 
 /// `PathCells` models `Glob` with circle points and paths.
 module PathCells : Model(Glob) where
   /// `Ob` is `Circle`.
-  type Ob = Circle;
+  type Ob = Circle
   /// `Hom` is the path type between two circle points.
-  type Hom(a : Ob, b : Ob) = Path[.A = Circle] a b;
+  type Hom(a : Ob, b : Ob) = Path[.A = Circle] a b
 
   /// `id` returns path reflexivity.
-  def id(a : Circle) -> Path a a = Path.here a;
+  def id(a : Circle) -> Path a a = Path.here a
 
   /// `comp` joins paths.
   def comp(
@@ -103,12 +103,12 @@ module PathCells : Model(Glob) where
 /// `Discharged` omits the associator because `Path.here` fills it.
 module Discharged : Model(Glob) where
   /// `Ob` is `Circle`.
-  type Ob = Circle;
+  type Ob = Circle
   /// `Hom` is the path type between two circle points.
-  type Hom(a : Ob, b : Ob) = Path a b;
+  type Hom(a : Ob, b : Ob) = Path a b
 
   /// `id` returns path reflexivity.
-  def id(a : Circle) -> Path a a = Path.here a;
+  def id(a : Circle) -> Path a a = Path.here a
 
   /// `comp` joins paths.
   def comp(

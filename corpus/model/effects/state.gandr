@@ -22,49 +22,49 @@
 
 /// `State.Eff` declares state reads and stores.
 pub theory State.Eff where
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S). C) --> C;
-  oper put : (s : S, k : C) --> C;
+  sort S : Type+
+  sort C : Type
+  oper get : (k : pi+ (s : S). C) --> C
+  oper put : (s : S, k : C) --> C
 
 /// `StatePutGet` stores a value before it reads that value.
 pub theory StatePutGet where
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S). C) --> C;
-  oper put : (s : S, k : C) --> C;
-  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  sort S : Type+
+  sort C : Type
+  oper get : (k : pi+ (s : S). C) --> C
+  oper put : (s : S, k : C) --> C
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
 
 /// `StatePutPut` keeps the second stored value.
 pub theory StatePutPut where
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S). C) --> C;
-  oper put : (s : S, k : C) --> C;
-  rule putPut : put s (put u k) <=> put u k;
+  sort S : Type+
+  sort C : Type
+  oper get : (k : pi+ (s : S). C) --> C
+  oper put : (s : S, k : C) --> C
+  rule putPut : put s (put u k) <=> put u k
 
 /// `StatePutLaws` combines the put-get and put-put rules.
 pub theory StatePutLaws where
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S). C) --> C;
-  oper put : (s : S, k : C) --> C;
-  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
-  rule putPut : put s (put u k) <=> put u k;
+  sort S : Type+
+  sort C : Type
+  oper get : (k : pi+ (s : S). C) --> C
+  oper put : (s : S, k : C) --> C
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
+  rule putPut : put s (put u k) <=> put u k
 
 /// `StateGetGet` turns two reads into one shared read.
 pub theory StateGetGet where
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S). C) --> C;
-  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
+  sort S : Type+
+  sort C : Type
+  oper get : (k : pi+ (s : S). C) --> C
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s))
 
 /// `StateLaws` combines three global-state rules.
 pub theory StateLaws where
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S). C) --> C;
-  oper put : (s : S, k : C) --> C;
-  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
-  rule putPut : put s (put u k) <=> put u k;
-  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
+  sort S : Type+
+  sort C : Type
+  oper get : (k : pi+ (s : S). C) --> C
+  oper put : (s : S, k : C) --> C
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
+  rule putPut : put s (put u k) <=> put u k
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s))

@@ -15,14 +15,14 @@ import "./circle-base.gandr"
 
 /// The `CircleShape` theory gives the circle point and its loop operations.
 theory CircleShape where
-  sort Pt : Type;
+  sort Pt : Type
 
-  oper base : Pt;
-  oper turn : (x : Pt) --> Pt;
-  oper unturn : (x : Pt) --> Pt;
+  oper base : Pt
+  oper turn : (x : Pt) --> Pt
+  oper unturn : (x : Pt) --> Pt
 
-  rule turnUnturn : turn (unturn x) <=> x;
-  rule unturnTurn : unturn (turn x) <=> x;
+  rule turnUnturn : turn (unturn x) <=> x
+  rule unturnTurn : unturn (turn x) <=> x
 
 /// The `laws` function counts rules in a theory chain.
 def rec laws(chain : Theory) -> Integer =
@@ -42,13 +42,13 @@ def shape_laws() -> Integer = law_count CircleShape
 
 /// The `Winding` model interprets the circle shape with presented integers.
 pub module Winding : Model(CircleShape) where {
-  type Pt = Int;
+  type Pt = Int
 
-  def base = Z;
+  def base = Z
 
-  def turn(n : Int) -> Int = S n;
+  def turn(n : Int) -> Int = S n
 
-  def unturn(n : Int) -> Int = P n;
+  def unturn(n : Int) -> Int = P n
 
   def turnUnturn(n : Int) -> Path[.A = Int] (turn (unturn n)) n =
     Path.here n
@@ -63,19 +63,19 @@ pub module Winding : Model(CircleShape) where {
 
 /// The `NativeWinding` model interprets the circle shape with native integers.
 pub module NativeWinding : Model(CircleShape) where {
-  type Pt = Integer;
+  type Pt = Integer
 
-  def base = 0;
+  def base = 0
 
-  def turn(n : Integer) -> Integer = n + 1;
+  def turn(n : Integer) -> Integer = n + 1
 
-  def unturn(n : Integer) -> Integer = n - 1;
-
-  @[owes(1)]
-  def turnUnturn : (n : Integer) -> Path[.A = Integer] (turn (unturn n)) n;
+  def unturn(n : Integer) -> Integer = n - 1
 
   @[owes(1)]
-  def unturnTurn : (n : Integer) -> Path[.A = Integer] (unturn (turn n)) n;
+  def turnUnturn : (n : Integer) -> Path[.A = Integer] (turn (unturn n)) n
+
+  @[owes(1)]
+  def unturnTurn : (n : Integer) -> Path[.A = Integer] (unturn (turn n)) n
 
   @[runs("2")]
   def wound() -> Integer =

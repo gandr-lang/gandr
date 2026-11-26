@@ -12,14 +12,14 @@
 /// The older version's signature, which importers still read.
 pub theory Older where
   /// The answer.
-  oper answer : Integer;
+  oper answer : Integer
 
 /// The newer version's signature.
 pub theory Newer where
   /// The answer, renamed.
-  oper reply : Integer;
+  oper reply : Integer
   /// A count the older version did not keep.
-  oper count : Integer;
+  oper count : Integer
 
 /// The newer version's reply.
 pub def reply : Integer = 42
@@ -29,4 +29,4 @@ pub def count : Integer = 3
 
 /// The newer version read at the older signature: the answer is the reply.
 pub flow downgrade : Newer ~~> Older where
-  def answer = reply;
+  def answer = reply

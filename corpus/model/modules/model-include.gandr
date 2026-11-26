@@ -8,14 +8,14 @@
 // - see: #739
 /// `Graded` adds an order operation to `Eq`.
 theory Graded where
-  include Eq;
-  oper below : (a : Carrier, b : Carrier) --> Bool;
+  include Eq
+  oper below : (a : Carrier, b : Carrier) --> Bool
 
 /// `GradeInteger` includes integer equality and order.
 module GradeInteger : Model(Graded) with sort Carrier = Integer where
-  include EqInteger;
+  include EqInteger
   /// `below` compares two integer grades.
-  def below(a : Integer, b : Integer) -> Bool = a < b;
+  def below(a : Integer, b : Integer) -> Bool = a < b
 
 /// `atMost` compares values through an implicit model.
 def atMost[g : Model Graded](a : g.Carrier, b : g.Carrier) -> Bool =

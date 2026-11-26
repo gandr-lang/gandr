@@ -18,233 +18,233 @@ import std.build (modelType, Entry, Ended)
 /// A theory of 64 names.
 theory Named where {
   /// Constant 0.
-  oper n0 : String;
+  oper n0 : String
   /// Constant 1.
-  oper n1 : String;
+  oper n1 : String
   /// Constant 2.
-  oper n2 : String;
+  oper n2 : String
   /// Constant 3.
-  oper n3 : String;
+  oper n3 : String
   /// Constant 4.
-  oper n4 : String;
+  oper n4 : String
   /// Constant 5.
-  oper n5 : String;
+  oper n5 : String
   /// Constant 6.
-  oper n6 : String;
+  oper n6 : String
   /// Constant 7.
-  oper n7 : String;
+  oper n7 : String
   /// Constant 8.
-  oper n8 : String;
+  oper n8 : String
   /// Constant 9.
-  oper n9 : String;
+  oper n9 : String
   /// Constant 10.
-  oper n10 : String;
+  oper n10 : String
   /// Constant 11.
-  oper n11 : String;
+  oper n11 : String
   /// Constant 12.
-  oper n12 : String;
+  oper n12 : String
   /// Constant 13.
-  oper n13 : String;
+  oper n13 : String
   /// Constant 14.
-  oper n14 : String;
+  oper n14 : String
   /// Constant 15.
-  oper n15 : String;
+  oper n15 : String
   /// Constant 16.
-  oper n16 : String;
+  oper n16 : String
   /// Constant 17.
-  oper n17 : String;
+  oper n17 : String
   /// Constant 18.
-  oper n18 : String;
+  oper n18 : String
   /// Constant 19.
-  oper n19 : String;
+  oper n19 : String
   /// Constant 20.
-  oper n20 : String;
+  oper n20 : String
   /// Constant 21.
-  oper n21 : String;
+  oper n21 : String
   /// Constant 22.
-  oper n22 : String;
+  oper n22 : String
   /// Constant 23.
-  oper n23 : String;
+  oper n23 : String
   /// Constant 24.
-  oper n24 : String;
+  oper n24 : String
   /// Constant 25.
-  oper n25 : String;
+  oper n25 : String
   /// Constant 26.
-  oper n26 : String;
+  oper n26 : String
   /// Constant 27.
-  oper n27 : String;
+  oper n27 : String
   /// Constant 28.
-  oper n28 : String;
+  oper n28 : String
   /// Constant 29.
-  oper n29 : String;
+  oper n29 : String
   /// Constant 30.
-  oper n30 : String;
+  oper n30 : String
   /// Constant 31.
-  oper n31 : String;
+  oper n31 : String
   /// Constant 32.
-  oper n32 : String;
+  oper n32 : String
   /// Constant 33.
-  oper n33 : String;
+  oper n33 : String
   /// Constant 34.
-  oper n34 : String;
+  oper n34 : String
   /// Constant 35.
-  oper n35 : String;
+  oper n35 : String
   /// Constant 36.
-  oper n36 : String;
+  oper n36 : String
   /// Constant 37.
-  oper n37 : String;
+  oper n37 : String
   /// Constant 38.
-  oper n38 : String;
+  oper n38 : String
   /// Constant 39.
-  oper n39 : String;
+  oper n39 : String
   /// Constant 40.
-  oper n40 : String;
+  oper n40 : String
   /// Constant 41.
-  oper n41 : String;
+  oper n41 : String
   /// Constant 42.
-  oper n42 : String;
+  oper n42 : String
   /// Constant 43.
-  oper n43 : String;
+  oper n43 : String
   /// Constant 44.
-  oper n44 : String;
+  oper n44 : String
   /// Constant 45.
-  oper n45 : String;
+  oper n45 : String
   /// Constant 46.
-  oper n46 : String;
+  oper n46 : String
   /// Constant 47.
-  oper n47 : String;
+  oper n47 : String
   /// Constant 48.
-  oper n48 : String;
+  oper n48 : String
   /// Constant 49.
-  oper n49 : String;
+  oper n49 : String
   /// Constant 50.
-  oper n50 : String;
+  oper n50 : String
   /// Constant 51.
-  oper n51 : String;
+  oper n51 : String
   /// Constant 52.
-  oper n52 : String;
+  oper n52 : String
   /// Constant 53.
-  oper n53 : String;
+  oper n53 : String
   /// Constant 54.
-  oper n54 : String;
+  oper n54 : String
   /// Constant 55.
-  oper n55 : String;
+  oper n55 : String
   /// Constant 56.
-  oper n56 : String;
+  oper n56 : String
   /// Constant 57.
-  oper n57 : String;
+  oper n57 : String
   /// Constant 58.
-  oper n58 : String;
+  oper n58 : String
   /// Constant 59.
-  oper n59 : String;
+  oper n59 : String
   /// Constant 60.
-  oper n60 : String;
+  oper n60 : String
   /// Constant 61.
-  oper n61 : String;
+  oper n61 : String
   /// Constant 62.
-  oper n62 : String;
+  oper n62 : String
   /// Constant 63.
-  oper n63 : String;
+  oper n63 : String
 }
 
 /// A theory of 48 flags.
 theory Flags where {
   /// Constant 0.
-  oper f0 : Bool;
+  oper f0 : Bool
   /// Constant 1.
-  oper f1 : Bool;
+  oper f1 : Bool
   /// Constant 2.
-  oper f2 : Bool;
+  oper f2 : Bool
   /// Constant 3.
-  oper f3 : Bool;
+  oper f3 : Bool
   /// Constant 4.
-  oper f4 : Bool;
+  oper f4 : Bool
   /// Constant 5.
-  oper f5 : Bool;
+  oper f5 : Bool
   /// Constant 6.
-  oper f6 : Bool;
+  oper f6 : Bool
   /// Constant 7.
-  oper f7 : Bool;
+  oper f7 : Bool
   /// Constant 8.
-  oper f8 : Bool;
+  oper f8 : Bool
   /// Constant 9.
-  oper f9 : Bool;
+  oper f9 : Bool
   /// Constant 10.
-  oper f10 : Bool;
+  oper f10 : Bool
   /// Constant 11.
-  oper f11 : Bool;
+  oper f11 : Bool
   /// Constant 12.
-  oper f12 : Bool;
+  oper f12 : Bool
   /// Constant 13.
-  oper f13 : Bool;
+  oper f13 : Bool
   /// Constant 14.
-  oper f14 : Bool;
+  oper f14 : Bool
   /// Constant 15.
-  oper f15 : Bool;
+  oper f15 : Bool
   /// Constant 16.
-  oper f16 : Bool;
+  oper f16 : Bool
   /// Constant 17.
-  oper f17 : Bool;
+  oper f17 : Bool
   /// Constant 18.
-  oper f18 : Bool;
+  oper f18 : Bool
   /// Constant 19.
-  oper f19 : Bool;
+  oper f19 : Bool
   /// Constant 20.
-  oper f20 : Bool;
+  oper f20 : Bool
   /// Constant 21.
-  oper f21 : Bool;
+  oper f21 : Bool
   /// Constant 22.
-  oper f22 : Bool;
+  oper f22 : Bool
   /// Constant 23.
-  oper f23 : Bool;
+  oper f23 : Bool
   /// Constant 24.
-  oper f24 : Bool;
+  oper f24 : Bool
   /// Constant 25.
-  oper f25 : Bool;
+  oper f25 : Bool
   /// Constant 26.
-  oper f26 : Bool;
+  oper f26 : Bool
   /// Constant 27.
-  oper f27 : Bool;
+  oper f27 : Bool
   /// Constant 28.
-  oper f28 : Bool;
+  oper f28 : Bool
   /// Constant 29.
-  oper f29 : Bool;
+  oper f29 : Bool
   /// Constant 30.
-  oper f30 : Bool;
+  oper f30 : Bool
   /// Constant 31.
-  oper f31 : Bool;
+  oper f31 : Bool
   /// Constant 32.
-  oper f32 : Bool;
+  oper f32 : Bool
   /// Constant 33.
-  oper f33 : Bool;
+  oper f33 : Bool
   /// Constant 34.
-  oper f34 : Bool;
+  oper f34 : Bool
   /// Constant 35.
-  oper f35 : Bool;
+  oper f35 : Bool
   /// Constant 36.
-  oper f36 : Bool;
+  oper f36 : Bool
   /// Constant 37.
-  oper f37 : Bool;
+  oper f37 : Bool
   /// Constant 38.
-  oper f38 : Bool;
+  oper f38 : Bool
   /// Constant 39.
-  oper f39 : Bool;
+  oper f39 : Bool
   /// Constant 40.
-  oper f40 : Bool;
+  oper f40 : Bool
   /// Constant 41.
-  oper f41 : Bool;
+  oper f41 : Bool
   /// Constant 42.
-  oper f42 : Bool;
+  oper f42 : Bool
   /// Constant 43.
-  oper f43 : Bool;
+  oper f43 : Bool
   /// Constant 44.
-  oper f44 : Bool;
+  oper f44 : Bool
   /// Constant 45.
-  oper f45 : Bool;
+  oper f45 : Bool
   /// Constant 46.
-  oper f46 : Bool;
+  oper f46 : Bool
   /// Constant 47.
-  oper f47 : Bool;
+  oper f47 : Bool
 }
 
 /// The entries of a model of `Named`.

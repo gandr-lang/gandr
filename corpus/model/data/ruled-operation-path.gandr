@@ -15,11 +15,11 @@ data NatUnits : Type where {
   /// The successor of `n`.
   | Succ : (n : NatUnits) --> NatUnits
   /// The sum of `m` and `n`, which the two rules compute by recursion on `m`.
-  oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
+  oper add : (m : NatUnits, n : NatUnits) --> NatUnits
   /// Zero plus `n` is `n`.
-  rule : add Zero n <=> n;
+  rule : add Zero n <=> n
   /// The successor of `m`, plus `n`, is the successor of `m` plus `n`.
-  rule : add (Succ m) n <=> Succ (add m n);
+  rule : add (Succ m) n <=> Succ (add m n)
 }
 
 /// The first rule makes zero plus zero zero.

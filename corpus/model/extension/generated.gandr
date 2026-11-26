@@ -16,13 +16,13 @@
 theory Generated where
   boundary Two {p, q};
   face left = {p};
-  sort Val : Type;
+  sort Val : Type
 
-  oper zero : Val;
-  oper one : Val;
-  ext Cell = Val on left is zero;
-  oper c : Cell;
-  oper cells : (b : Val, v : Val, e : Cell) --> Val;
+  oper zero : Val
+  oper one : Val
+  ext Cell = Val on left is zero
+  oper c : Cell
+  oper cells : (b : Val, v : Val, e : Cell) --> Val
 
 /// `Wider` states how `left` fixes `Val` cells to `zero` over `Three`.
 /// `Wider` uses its boundary, β and η laws for `d` and values from `inWide`.
@@ -30,10 +30,10 @@ theory Generated where
 theory Wider where
   boundary Three {p, q, r};
   face left = {p};
-  sort Val : Type;
+  sort Val : Type
 
-  oper zero : Val;
-  oper one : Val;
-  ext Wide = Val on left is zero;
-  oper d : Wide;
-  oper cells : (b : Val, v : Val, e : Wide) --> Val;
+  oper zero : Val
+  oper one : Val
+  ext Wide = Val on left is zero
+  oper d : Wide
+  oper cells : (b : Val, v : Val, e : Wide) --> Val

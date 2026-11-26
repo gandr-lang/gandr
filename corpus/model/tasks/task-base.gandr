@@ -19,4 +19,4 @@ pub module Task :> *{
   notes : String
 } where
   /// The path a task reads.
-  def notes = "notes";
+  def notes = "notes"

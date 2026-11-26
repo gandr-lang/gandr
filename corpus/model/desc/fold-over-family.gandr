@@ -32,9 +32,9 @@ pub data Gate : Width -> Type where {
   /// The word behind a bit.
   | Hold : (c : Gate Bit, x : Gate Word) --> Gate Word
   /// Two swaps of a word are that word.
-  rule : Swap (Swap x) <=> x;
+  rule : Swap (Swap x) <=> x
   /// A word behind the lit bit is that word.
-  rule : Hold Lit x <=> x;
+  rule : Hold Lit x <=> x
 }
 
 /// The fold of the gates into themselves, at each width.

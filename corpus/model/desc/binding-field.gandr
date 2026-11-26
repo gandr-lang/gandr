@@ -16,22 +16,22 @@
 /// the restricted receive never fires. The checker orients the law, and the
 /// kernel replays its verdict.
 theory Deaf where
-  sort Name : Atom;
-  sort Val : Type+;
-  sort Proc : Type;
-  oper nil : Proc;
-  oper out : (v : Val, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name). Proc) --> Proc;
-  oper listen : (c : Name, k : pi+ (x : Val). Proc) --> Proc;
-  rule deaf : nu (bind c. (listen c (bind x. (out x nil)))) ==> nil;
+  sort Name : Atom
+  sort Val : Type+
+  sort Proc : Type
+  oper nil : Proc
+  oper out : (v : Val, p : Proc) --> Proc
+  oper nu : (p : bind (a : Name). Proc) --> Proc
+  oper listen : (c : Name, k : pi+ (x : Val). Proc) --> Proc
+  rule deaf : nu (bind c. (listen c (bind x. (out x nil)))) ==> nil
 
 /// The field variable `x` does not occur in `q`, so this law needs no atom
 /// freshness condition.
 theory Vacuous where
-  sort Val : Type+;
-  sort Proc : Type;
-  oper new : (body : pi+ (x : Val). Proc) --> Proc;
-  rule gc : new (bind x. q) <=> q;
+  sort Val : Type+
+  sort Proc : Type
+  oper new : (body : pi+ (x : Val). Proc) --> Proc
+  rule gc : new (bind x. q) <=> q
 
 /// This recursion counts `Bind` nodes in a rule term. It ignores `Abs` nodes.
 def rec fieldsOf(term : Theory) -> Integer =

@@ -31,12 +31,12 @@ pub module Seat :> *{
   progress : Report,
   notes : Handoff
 } where
-  type Dispatch = String;
-  type Report = String;
-  type Handoff = String;
+  type Dispatch = String
+  type Report = String
+  type Handoff = String
   /// The dispatch a seat receives.
-  def task = "task";
+  def task = "task"
   /// A report it sends.
-  def progress = "progress";
+  def progress = "progress"
   /// The seat sends these handoff notes.
-  def notes = "notes";
+  def notes = "notes"

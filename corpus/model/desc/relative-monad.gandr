@@ -21,30 +21,30 @@ import "../data/data-maybe.gandr"
 
 /// The left-unit rule passes a returned value to its continuation.
 theory MonadLeftUnit where
-  sort V : Type+;
-  sort C : Type;
-  oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V). C) --> C;
-  rule unitL : ext (ret a) k <=> k a;
+  sort V : Type+
+  sort C : Type
+  oper ret : (a : V) --> C
+  oper ext : (m : C, k : pi+ (x : V). C) --> C
+  rule unitL : ext (ret a) k <=> k a
 
 /// The right-unit rule removes an extension by `ret`.
 theory MonadRightUnit where
-  sort V : Type+;
-  sort C : Type;
-  oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V). C) --> C;
-  rule unitR : ext m (bind x. (ret x)) <=> m;
+  sort V : Type+
+  sort C : Type
+  oper ret : (a : V) --> C
+  oper ext : (m : C, k : pi+ (x : V). C) --> C
+  rule unitR : ext m (bind x. (ret x)) <=> m
 
 /// The associativity and unit laws form `RelativeMonad`, and each
 /// critical pair joins.
 pub theory RelativeMonad where
-  sort V : Type+;
-  sort C : Type;
-  oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V). C) --> C;
-  rule unitL : ext (ret a) k <=> k a;
-  rule unitR : ext m (bind x. (ret x)) <=> m;
-  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
+  sort V : Type+
+  sort C : Type
+  oper ret : (a : V) --> C
+  oper ext : (m : C, k : pi+ (x : V). C) --> C
+  rule unitL : ext (ret a) k <=> k a
+  rule unitR : ext m (bind x. (ret x)) <=> m
+  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l))
 
 /// `ret` returns a present option value.
 def ret(A : Type, a : A) -> Maybe A = Some a

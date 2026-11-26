@@ -20,9 +20,9 @@ data Maybe(a : Type) : Type where
 /// A module of families.
 module Shapes where
   /// A family of option types.
-  type Opt(a : Type) = Maybe a;
+  type Opt(a : Type) = Maybe a
   /// A family of pairs over two types.
-  type Pair(a : Type, b : Type) = a * b;
+  type Pair(a : Type, b : Type) = a * b
   /// A box of one value.
   data Box(a : Type) : Type where
     /// The box.

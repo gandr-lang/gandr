@@ -16,15 +16,15 @@
 
 /// This theory declares one atom sort.
 theory AtomOnly where
-  sort Name : Atom;
+  sort Name : Atom
 
 /// This theory declares names and terms, and each variable names an atom.
 /// A renaming takes two atoms and one term.
 theory Renaming where
-  sort Name : Atom;
-  sort Tm : Type;
-  oper var : (a : Name) --> Tm;
-  oper rename : (a : Name, b : Name, t : Tm) --> Tm;
+  sort Name : Atom
+  sort Tm : Type
+  oper var : (a : Name) --> Tm
+  oper rename : (a : Name, b : Name, t : Tm) --> Tm
 
 /// This recursion counts the `Atom` links in a sort chain. It ignores ordinary
 /// `Sort` links.

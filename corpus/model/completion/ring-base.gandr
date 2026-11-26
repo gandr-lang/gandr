@@ -32,9 +32,9 @@ pub module Ring :> *{
   read : Sqe,
   done : Cqe
 } where
-  type Sqe = String;
-  type Cqe = Integer;
+  type Sqe = String
+  type Cqe = Integer
   /// The entry a read submits.
-  def read = "read";
+  def read = "read"
   /// The result its completion posts.
-  def done = 0;
+  def done = 0

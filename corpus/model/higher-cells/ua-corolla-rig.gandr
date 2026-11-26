@@ -15,14 +15,14 @@
 
 /// `Rig` defines two binary operations with one corolla shape.
 theory Rig where
-  sort R : Type;
-  oper plus : (x : R, y : R) --> (z : R);
-  oper times : (x : R, y : R) --> (z : R);
+  sort R : Type
+  oper plus : (x : R, y : R) --> (z : R)
+  oper times : (x : R, y : R) --> (z : R)
 
 /// `Semi` defines one binary operation.
 theory Semi where
-  sort S : Type;
-  oper mul : (x : S, y : S) --> (z : S);
+  sort S : Type
+  oper mul : (x : S, y : S) --> (z : S)
 
 /// `rename` relabels four corolla elements. It is natural along their
 /// automorphisms.

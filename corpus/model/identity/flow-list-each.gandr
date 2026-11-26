@@ -17,8 +17,8 @@ import std.list (List)
 
 /// The `Cells` module migrates each record in a list.
 module Cells where {
-  type Old = String * Integer;
-  type New = Integer * String;
+  type Old = String * Integer
+  type New = Integer * String
   /// The translator swaps record fields.
   @[checks]
   def swap(old : Old) -> New =
@@ -26,19 +26,19 @@ module Cells where {
       | *{name, age} => *{age, name}
   /// The translator defines the record flow.
   @[checks]
-  def renamed : Flow[.A = Type](Old, New) = Flow.into swap;
+  def renamed : Flow[.A = Type](Old, New) = Flow.into swap
   /// The `each` function rides a list through the record flow.
   @[checks]
   def each(olds : List Old) -> List New =
     Flow.ride (fun (X) { List X }) renamed olds
   /// Each list cell uses a swapped head and the translated tail.
   @[checks]
-  def everyone : Flow[.A = Type](List Old, List New) = Flow.into each;
+  def everyone : Flow[.A = Type](List Old, List New) = Flow.into each
   /// The `moved` function rides a list through the list flow.
   @[checks]
   def moved(olds : List Old) -> List New =
     Flow.ride (fun (X) { X }) everyone olds
   /// The run migrates two records.
   @[runs("cons *{36, \"ada\"} (cons *{41, \"alan\"} nil)")]
-  def two : () -> List New = moved (cons (*{"ada", 36}) (cons (*{"alan", 41}) nil));
+  def two : () -> List New = moved (cons (*{"ada", 36}) (cons (*{"alan", 41}) nil))
 }

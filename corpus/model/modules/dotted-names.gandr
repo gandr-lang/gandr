@@ -10,17 +10,17 @@
 /// `Kit.Labelled` declares a label.
 theory Kit.Labelled where
   /// The label.
-  oper label : String;
+  oper label : String
 
 /// `Kit.Tools` defines breadth.
 module Kit.Tools where
   /// A breadth.
-  def breadth = 4;
+  def breadth = 4
 
 /// `Tag` models `Kit.Labelled`.
 module Tag : Model(Kit.Labelled) where
   /// Its label.
-  def label : String = "tag";
+  def label : String = "tag"
 
 /// `breadth` reads `Kit.Tools.breadth`.
 def breadth = Kit.Tools.breadth

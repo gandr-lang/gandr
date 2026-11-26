@@ -15,8 +15,8 @@ import std.list (List)
 
 /// The `Schema` module gives two record layouts and their translator.
 pub module Schema where {
-  type Old = String * Integer;
-  type New = Integer * String * (Unit + Unit);
+  type Old = String * Integer
+  type New = Integer * String * (Unit + Unit)
   /// The translator swaps fields and adds a flag.
   @[checks]
   def toNew(old : Old) -> New =
@@ -24,7 +24,7 @@ pub module Schema where {
       | *{name, age} => *{age, name, +{.0 = *{}}}
   /// The translator defines the schema flow.
   @[checks]
-  def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew
   /// The `moved` function rides one record through the schema flow.
   @[checks]
   def moved(old : Old) -> New =
@@ -35,8 +35,8 @@ pub module Schema where {
     Flow.ride (fun (X) { List X }) upgrade olds
   /// The run migrates one old record.
   @[runs("*{30, \"ada\", +{.0 = *{}}}")]
-  def one : () -> New = moved (*{"ada", 30});
+  def one : () -> New = moved (*{"ada", 30})
   /// The run migrates two old records.
   @[runs("cons *{30, \"ada\", +{.0 = *{}}} (cons *{41, \"grace\", +{.0 = *{}}} nil)")]
-  def many : () -> List New = everyone (cons (*{"ada", 30}) (cons (*{"grace", 41}) nil));
+  def many : () -> List New = everyone (cons (*{"ada", 30}) (cons (*{"grace", 41}) nil))
 }

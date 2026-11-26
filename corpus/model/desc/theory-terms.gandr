@@ -18,15 +18,15 @@
 /// A unital magma's signature.
 theory Mag where
   /// The carrier.
-  sort M : Type;
+  sort M : Type
   /// The unit.
-  oper one : M;
+  oper one : M
   /// The product.
-  oper mul : (x : M, y : M) --> M;
+  oper mul : (x : M, y : M) --> M
   /// The unit on the left.
-  rule unitL : mul one x <=> x;
+  rule unitL : mul one x <=> x
   /// The unit on the right.
-  rule unitR : mul x one <=> x;
+  rule unitR : mul x one <=> x
 
 /// The unit as a term.
 def neutral : Terms Mag = Mag.one
@@ -65,15 +65,15 @@ def rec noTickRight(n : Ticks) -> Path (joinLeft n NoTick) n =
 /// The counts as a model: the left unit by conversion, the right by induction.
 module Counts : Model(Mag) where
   /// The carrier, the counts.
-  type M = Ticks;
+  type M = Ticks
   /// The unit, no tick.
-  def one : Ticks = NoTick;
+  def one : Ticks = NoTick
   /// The product joins the counts.
-  def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y;
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y
   /// The left unit holds by conversion.
-  def unitL(x : Ticks) -> Path (mul one x) x = Path.here x;
+  def unitL(x : Ticks) -> Path (mul one x) x = Path.here x
   /// The right unit holds by induction.
-  def unitR(x : Ticks) -> Path (mul x one) x = noTickRight x;
+  def unitR(x : Ticks) -> Path (mul x one) x = noTickRight x
 
 /// The fold into the counts, which respects the counts' laws.
 @[respects(*{Counts.unitL, Counts.unitR})]

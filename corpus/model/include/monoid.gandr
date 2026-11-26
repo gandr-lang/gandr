@@ -10,31 +10,31 @@
 //! - see: #738
 /// `Semigroup` defines a carrier and an associative multiplication.
 pub theory Semigroup where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> M;
-  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+  sort M : Type
+  oper mul : (x : M, y : M) --> M
+  rule assoc : mul (mul x y) z ==> mul x (mul y z)
 
 /// `Monoid` adds a two-sided unit to `Semigroup`.
 pub theory Monoid where
-  include Semigroup;
-  oper one : M;
-  rule unitL : mul one x ==> x;
-  rule unitR : mul x one ==> x;
+  include Semigroup
+  oper one : M
+  rule unitL : mul one x ==> x
+  rule unitR : mul x one ==> x
 
 /// `LeftZero` adds a multiplication that absorbs on the left.
 pub theory LeftZero where
-  include Semigroup;
-  oper zero : M;
-  rule absorb : mul zero x ==> zero;
+  include Semigroup
+  oper zero : M
+  rule absorb : mul zero x ==> zero
 
 /// `UnitAndZero` joins the unit and zero extensions.
 pub theory UnitAndZero where
-  include Monoid;
-  include LeftZero;
+  include Monoid
+  include LeftZero
 
 /// `Endo` models `Monoid` with integer endofunctions.
 pub module Endo : Model(Monoid) where
-  type M = Integer -> Integer;
+  type M = Integer -> Integer
 
   /// `andThen` composes `f` then `g`.
   def andThen(
@@ -45,7 +45,7 @@ pub module Endo : Model(Monoid) where
     g (f x)
 
   /// `ident` returns its input.
-  def ident(x : Integer) -> Integer = x;
+  def ident(x : Integer) -> Integer = x
 
   def mul(
     f : Integer -> Integer,
@@ -53,7 +53,7 @@ pub module Endo : Model(Monoid) where
   ) -> Integer -> Integer =
     thunk { andThen f g }
 
-  def one = ident;
+  def one = ident
 
   /// `assoc` verifies the included associativity law.
   def assoc(

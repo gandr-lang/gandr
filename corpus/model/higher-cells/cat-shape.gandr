@@ -17,24 +17,24 @@
 /// law at the composite's objects, so the unit laws agree
 /// at `comp(id(a), id(a))`.
 theory CatShape where
-  sort Ob : Type;
-  sort Hom(dom : Ob, cod : Ob) : Type;
+  sort Ob : Type
+  sort Hom(dom : Ob, cod : Ob) : Type
 
-  oper id : (a : Ob) --> Hom a a;
-  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
+  oper id : (a : Ob) --> Hom a a
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c
 
-  rule unitL : comp (id a) f <=> f;
-  rule unitR : comp f (id b) <=> f;
-  rule assoc : comp (comp f g) h <=> comp f (comp g h);
+  rule unitL : comp (id a) f <=> f
+  rule unitR : comp f (id b) <=> f
+  rule assoc : comp (comp f g) h <=> comp f (comp g h)
 
 /// `SetoidCat` models the category shape with types and functions.
 module SetoidCat : Model(CatShape) where {
-  type Ob = Type;
-  type Hom(a : Ob, b : Ob) = a -> b;
+  type Ob = Type
+  type Hom(a : Ob, b : Ob) = a -> b
 
   /// `ident` is the identity function at one type.
   @[runs("fun (a) { fun (b) { b } }")]
-  def ident(t : Type, x : t) -> t = x;
+  def ident(t : Type, x : t) -> t = x
 
   /// `compose` applies two functions in sequence.
   @[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
@@ -89,7 +89,7 @@ module SetoidCat : Model(CatShape) where {
     p : Type,
     q : Type,
     f : p -> q
-  ) -> Path[.A = p -> q] (comp p p q (id p) f) f = unitR;
+  ) -> Path[.A = p -> q] (comp p p q (id p) f) f = unitR
 
   /// `unitLEither` selects either unit proof with a boolean.
   def unitLEither(p : Type, q : Type, f : p -> q, b : Bool) -> Path (comp p p q (id p) f) f =

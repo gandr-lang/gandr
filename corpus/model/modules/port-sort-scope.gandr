@@ -16,6 +16,6 @@ type Integer = String
 /// `Shout` says a word of this source's `Integer`.
 pub theory Shout where
   /// The carrier.
-  sort C : Type;
+  sort C : Type
   /// `say` gives the word of a carrier.
-  oper say : (c : C) --> Integer;
+  oper say : (c : C) --> Integer

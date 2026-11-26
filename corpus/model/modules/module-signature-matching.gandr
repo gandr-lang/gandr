@@ -10,15 +10,15 @@
 /// `Metrics` exposes a type and three values.
 module Metrics : *{type Ratio = Integer, base : Integer, double : Integer, scale : Ratio} where {
   /// `scratch` stays outside the signature.
-  def scratch = 2;
+  def scratch = 2
   /// `double` tests an unsynthesised operator result. The call of the operator
   /// is pure, so the value stands as what the call returns.
   @[checks]
-  def double = scratch * 3;
+  def double = scratch * 3
   /// `base` gives seven.
-  def base = 7;
+  def base = 7
   /// `scale` gives one.
-  def scale = 1;
+  def scale = 1
 }
 
 /// `visible` tests an unsynthesised exported sum.

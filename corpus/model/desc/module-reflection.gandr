@@ -74,27 +74,27 @@ def packageMembers() -> String = declared Gandr.Package
 /// A package's model, with the values of `std`'s.
 pub module Package : Model(Gandr.Package) where {
   /// The package's name.
-  def name = "std";
+  def name = "std"
   /// The package's version.
-  def version = "0.1.0";
+  def version = "0.1.0"
   /// The authors of the package.
-  def authors = "The gandr authors";
+  def authors = "The gandr authors"
   /// The licence the package is under.
-  def licence = "MIT OR Apache-2.0";
+  def licence = "MIT OR Apache-2.0"
   /// Where the package's documentation is.
-  def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std";
+  def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std"
   /// Where the package's source repository is.
-  def endpoint = "https://github.com/gandr-lang/gandr";
+  def endpoint = "https://github.com/gandr-lang/gandr"
   /// The versions of gandr that build the package.
-  def gandr = ">= 0.0";
+  def gandr = ">= 0.0"
   /// The features of the package, none here.
-  def features = "";
+  def features = ""
   /// The systems the package builds on, all here.
-  def systems = "";
+  def systems = ""
   /// The spelling of the package's identifiers, the default here.
-  def spelling = "";
+  def spelling = ""
   /// The directory of the package's sources.
-  def sources = "src";
+  def sources = "src"
 }
 
 /// The toolchain lines of a model. The function names each field it reads.
@@ -198,9 +198,9 @@ def packageEquivalence : Model Gandr.Package ≃ modelType packagePresentation =
 /// A theory of a label and a flag.
 theory Flagged where {
   /// The label.
-  oper label : String;
+  oper label : String
   /// The flag.
-  oper shown : Bool;
+  oper shown : Bool
 }
 
 /// The entries of a model of `Flagged`.
@@ -234,9 +234,9 @@ def flaggedEquivalence : Model Flagged ≃ modelType Flagged = *{
 /// A model of `Flagged`.
 module Shown : Model(Flagged) where {
   /// The label.
-  def label = "here";
+  def label = "here"
   /// The flag.
-  def shown = true;
+  def shown = true
 }
 
 /// The lines of `Shown`: a string and a boolean.

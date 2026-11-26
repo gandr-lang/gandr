@@ -10,16 +10,16 @@
 
 /// `Seed` exposes a sealed counter signature.
 pub module Seed :> *{type T, zero : T, next : T -> T, read : T -> Integer} where {
-  type T = Integer;
+  type T = Integer
   /// `zero` gives the counter start.
   @[runs("0")]
-  def zero = 0;
+  def zero = 0
   /// `next` increments the counter.
   @[runs("fun (a) { a + 1 }")]
-  def next(n : T) -> T = n + 1;
+  def next(n : T) -> T = n + 1
   /// `read` converts a counter value to an integer.
   @[runs("fun (a) { a }")]
-  def read(n : T) -> Integer = n;
+  def read(n : T) -> Integer = n
 }
 
 /// `MkCounter` creates a sealed counter from a counter argument.
@@ -29,10 +29,10 @@ module MkCounter(S : *{
   next : T -> T,
   read : T -> Integer
 }) :> *{type T, seed : T, step : T -> T, read : T -> Integer} where
-  type T = S.T;
-  def seed = S.zero;
-  def step = S.next;
-  def read = S.read;
+  type T = S.T
+  def seed = S.zero
+  def step = S.next
+  def read = S.read
 
 /// `A` is the first functor application.
 module A = MkCounter Seed

@@ -13,6 +13,6 @@
 /// A wrapper and an unwrapping operation. The rule cancels the pair.
 data Wrap : Type where {
   | MkWrap : (n : Wrap) --> Wrap
-  oper unwrap : (w : Wrap) --> Wrap;
-  rule : unwrap (MkWrap x) <=> x;
+  oper unwrap : (w : Wrap) --> Wrap
+  rule : unwrap (MkWrap x) <=> x
 }

@@ -11,28 +11,28 @@
 /// `cutLeft` chooses a cut-grade left branch over a failure.
 @[normalizes("orBot(cut, fail) ~> cut")]
 theory GradedCut where
-  sort Grade : Type;
-  sort M(g : Grade) : Type;
+  sort Grade : Type
+  sort M(g : Grade) : Type
 
-  oper bot : Grade;
-  oper top : Grade;
-  oper cut : M bot;
-  oper fail : M top;
-  oper orBot : (x : M bot, y : M e) --> M bot;
+  oper bot : Grade
+  oper top : Grade
+  oper cut : M bot
+  oper fail : M top
+  oper orBot : (x : M bot, y : M e) --> M bot
 
-  rule cutLeft : orBot x y ==> x;
+  rule cutLeft : orBot x y ==> x
 
 /// The outer `cutLeft` law chooses the nested inner cut. The inner choice has
 /// the cut grade, so it stands as the left branch of the outer choice.
 @[normalizes("orBot(orBot(cut, fail), fail) ~> cut")]
 theory NestedCut where
-  sort Grade : Type;
-  sort M(g : Grade) : Type;
+  sort Grade : Type
+  sort M(g : Grade) : Type
 
-  oper bot : Grade;
-  oper top : Grade;
-  oper cut : M bot;
-  oper fail : M top;
-  oper orBot : (x : M bot, y : M e) --> M bot;
+  oper bot : Grade
+  oper top : Grade
+  oper cut : M bot
+  oper fail : M top
+  oper orBot : (x : M bot, y : M e) --> M bot
 
-  rule cutLeft : orBot x y ==> x;
+  rule cutLeft : orBot x y ==> x

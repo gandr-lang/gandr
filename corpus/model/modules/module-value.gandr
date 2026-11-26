@@ -13,23 +13,23 @@
 /// `Ticker` states a carrier, a start and a step.
 theory Ticker where
   /// `C` names the carrier.
-  sort C : Type;
+  sort C : Type
 
   /// `start` gives the initial value.
-  oper start : C;
+  oper start : C
   /// `step` advances the carrier.
-  oper step : (c : C) --> C;
+  oper step : (c : C) --> C
 
 /// `Up` models an integer ticker.
 module Up : Model(Ticker) where
   /// `C` names `Integer`.
-  type C = Integer;
+  type C = Integer
 
   /// `start` gives zero.
-  def start : Integer = 0;
+  def start : Integer = 0
 
   /// `step` adds one.
-  def step(n : Integer) -> Integer = n + 1;
+  def step(n : Integer) -> Integer = n + 1
 
 /// `packed` writes `Up` with `pack`.
 def packed : Model Ticker = pack Up at Model Ticker

@@ -16,35 +16,35 @@
 /// The theory of a truth value: two constants and no rule.
 pub theory Truth where
   /// The sort of truth values.
-  sort T : Type;
+  sort T : Type
   /// The false value.
-  oper no : T;
+  oper no : T
   /// The true value.
-  oper yes : T;
+  oper yes : T
 
 /// The fragment of the `llvm` dialect at one bit.
 pub theory Bit where
   /// A word of one bit.
-  sort I1 : Type;
+  sort I1 : Type
   /// The constant zero.
-  oper zero : I1;
+  oper zero : I1
   /// The constant one.
-  oper one : I1;
+  oper one : I1
   /// The conjunction of two bits, which the dialect names `and`.
-  oper band : (x : I1, y : I1) --> I1;
+  oper band : (x : I1, y : I1) --> I1
   /// Zero on the left absorbs.
-  rule bandZero : band zero x <=> zero;
+  rule bandZero : band zero x <=> zero
   /// One on the left is the unit.
-  rule bandOne : band one x <=> x;
+  rule bandOne : band one x <=> x
 
 /// The layout of a truth value in one bit. Its carrier is the terms of `Bit`.
 pub module TruthInBit : Model(Truth) where
   /// The carrier, a term of one bit.
-  type T = Terms Bit;
+  type T = Terms Bit
   /// False is the constant zero.
-  def no : Terms Bit = Bit.zero;
+  def no : Terms Bit = Bit.zero
   /// True is the constant one.
-  def yes : Terms Bit = Bit.one;
+  def yes : Terms Bit = Bit.one
 
 /// The encoder: the fold of a truth value into its layout.
 pub def encode(t : Terms Truth) -> Terms Bit =
@@ -61,17 +61,17 @@ pub def conj(a : Terms Truth, b : Terms Truth) -> Terms Truth =
 /// The meaning of each operation of `Bit`. Its carrier is the truth values.
 pub module BitInTruth : Model(Bit) where
   /// The carrier, a truth value.
-  type I1 = Terms Truth;
+  type I1 = Terms Truth
   /// Zero means false.
-  def zero : Terms Truth = Truth.no;
+  def zero : Terms Truth = Truth.no
   /// One means true.
-  def one : Terms Truth = Truth.yes;
+  def one : Terms Truth = Truth.yes
   /// The operation `band` means the conjunction.
-  def band(x : Terms Truth, y : Terms Truth) -> Terms Truth = conj x y;
+  def band(x : Terms Truth, y : Terms Truth) -> Terms Truth = conj x y
   /// The absorption law holds by computation.
-  def bandZero(x : Terms Truth) -> Path (band zero x) zero = Path.here Truth.no;
+  def bandZero(x : Terms Truth) -> Path (band zero x) zero = Path.here Truth.no
   /// The unit law holds by computation.
-  def bandOne(x : Terms Truth) -> Path (band one x) x = Path.here x;
+  def bandOne(x : Terms Truth) -> Path (band one x) x = Path.here x
 
 /// The decoder: the fold of a bit term into the truth values. It respects
 /// the two rules of `Bit`.

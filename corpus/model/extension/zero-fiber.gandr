@@ -14,17 +14,17 @@
 theory ZeroFiber where
   boundary Two {p, q};
   face left = {p};
-  sort Val : Type;
-  sort Ext : Type;
+  sort Val : Type
+  sort Ext : Type
 
-  oper zero : Val;
-  oper one : Val;
-  oper c : Ext;
-  oper cells : (b : Val, v : Val, e : Ext) --> Val;
-  oper ins : (y : Val) --> Ext;
-  oper outp : (e : Ext) --> Val;
-  oper outq : (e : Ext) --> Val;
+  oper zero : Val
+  oper one : Val
+  oper c : Ext
+  oper cells : (b : Val, v : Val, e : Ext) --> Val
+  oper ins : (y : Val) --> Ext
+  oper outp : (e : Ext) --> Val
+  oper outq : (e : Ext) --> Val
 
-  rule boundary : outp e ==> zero;
-  rule beta : outq (ins y) ==> y;
-  rule eta : ins (outq e) ==> e;
+  rule boundary : outp e ==> zero
+  rule beta : outq (ins y) ==> y
+  rule eta : ins (outq e) ==> e

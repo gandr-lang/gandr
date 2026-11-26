@@ -13,15 +13,15 @@
 /// The theory of the beacons, with two beacons side by side in no order.
 pub theory Beacon where
   /// The sort of beacons.
-  sort B : Type;
+  sort B : Type
   /// The dull beacon.
-  oper dull : B;
+  oper dull : B
   /// The bright beacon.
-  oper bright : B;
+  oper bright : B
   /// Two beacons side by side.
-  oper twin : (x : B, y : B) --> B;
+  oper twin : (x : B, y : B) --> B
   /// Two beacons side by side have no order. This rule is a symmetry.
-  rule twinComm : twin x y <=> twin y x;
+  rule twinComm : twin x y <=> twin y x
 
 /// The two beacons in the other order.
 ///

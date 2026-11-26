@@ -18,8 +18,8 @@ data Nat : Type where
 /// `NatSum` binds `cong1`, which routes the rewrite of `x` through
 /// `add` with `y`.
 theory NatSum where
-  sort Nat : Type;
-  oper add : (Nat, Nat) --> Nat;
+  sort Nat : Type
+  oper add : (Nat, Nat) --> Nat
 
   rule cong1 : (
     rule p : Nat ==> Nat,

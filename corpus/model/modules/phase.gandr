@@ -20,16 +20,16 @@ data Sign : Type where
 
 /// `Point` seals a type and its point.
 module Point :> *{type T, z : T} where {
-  type T = Integer;
+  type T = Integer
   /// `z` gives the point.
   @[runs("0")]
-  def z = 0;
+  def z = 0
 }
 
 /// `Square` reads only its argument type in its static member. So the static
 /// part of its result is a function of the static part of its argument.
 module Square(S : *{type T, z : T}) :> *{type U, w : U} where {
-  type U = S.T * S.T;
+  type U = S.T * S.T
   /// `w` pairs the argument point with itself.
   @[checks]
   def w = *{S.z, S.z};
@@ -44,13 +44,13 @@ def squared : Squared.U = Squared.w
 /// `Fixed` reads static literals and constructors in type members.
 module Fixed where {
   /// `Three` names a constant path.
-  type Three = Path 3 3;
+  type Three = Path 3 3
   /// `Positive` names a plus-sign path.
-  type Positive = Path Plus Plus;
+  type Positive = Path Plus Plus
   /// `three` gives the constant path.
   @[checks]
-  def three : Three = Path.here 3;
+  def three : Three = Path.here 3
   /// `positive` gives the plus-sign path.
   @[checks]
-  def positive : Positive = Path.here Plus;
+  def positive : Positive = Path.here Plus
 }

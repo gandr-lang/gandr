@@ -17,8 +17,8 @@ pub data Words : Type where {
   | Nil : Words
   | Loop : (x : Words) --> Words
   | Unloop : (x : Words) --> Words
-  rule : Loop (Unloop x) <=> x;
-  rule : Unloop (Loop x) <=> x;
+  rule : Loop (Unloop x) <=> x
+  rule : Unloop (Loop x) <=> x
 }
 
 /// The `around` function adds one loop letter.

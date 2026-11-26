@@ -12,8 +12,8 @@
 //! - see: #1499 — `ones`
 /// A stream exposes its head and its successor stream.
 codata Stream(a : Type) : Type[-] where
-  head : a;
-  tail : Stream a;
+  head : a
+  tail : Stream a
 
 /// The function produces integers from n upward, one observation at a time.
 def rec upward(n : Integer) -> Stream Integer =

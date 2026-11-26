@@ -16,9 +16,9 @@ data Bruijn : Type where
 
 /// This monoid source already declares `App`.
 theory Mon where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
+  sort M : Type
+  oper mul : (x : M, y : M) --> (z : M)
+  oper one : () --> (z : M)
 
 /// `Kind` has a constructor named `Sort`.
 data Kind : Type where

@@ -45,12 +45,12 @@ def observedCarried() -> Integer = observe negatedManifest
 
 /// The `ReadCounter` theory gives counter readings their own sort.
 pub theory ReadCounter where
-  sort C : Type;
-  sort R : Type;
-  oper zero : C;
-  oper incr : (c : C) --> C;
-  oper read : (c : C) --> R;
-  oper shown : (r : R) --> Integer;
+  sort C : Type
+  sort R : Type
+  oper zero : C
+  oper incr : (c : C) --> C
+  oper read : (c : C) --> R
+  oper shown : (r : R) --> Integer
 
 /// The `observeShown` consumer reads and shows one stepped counter value.
 pub def observeShown(m : Model ReadCounter) -> Integer =
@@ -157,10 +157,10 @@ def countOfAny(x : Type, a : Model Counter with sort C = x, n : Integer, c : a.C
 
 /// The `Pairing` theory has two carriers and a value at each carrier.
 pub theory Pairing where
-  sort A : Type;
-  sort B : Type;
-  oper left : A;
-  oper right : B;
+  sort A : Type
+  sort B : Type
+  oper left : A
+  oper right : B
 
 /// The `firstManifest` record fixes the first carrier and leaves the second
 /// as a field.

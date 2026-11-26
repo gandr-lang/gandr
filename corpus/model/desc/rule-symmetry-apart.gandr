@@ -16,15 +16,15 @@ pub data Hollow : Type where {}
 /// The theory of two picks and a commutative meet, with no rule for the picks.
 pub theory Pick where
   /// The picks.
-  sort P : Type;
+  sort P : Type
   /// The first pick.
-  oper first : P;
+  oper first : P
   /// The second pick.
-  oper second : P;
+  oper second : P
   /// The meet of two picks.
-  oper meet : (x : P, y : P) --> P;
+  oper meet : (x : P, y : P) --> P
   /// The meet is commutative.
-  rule meetComm : meet x y <=> meet y x;
+  rule meetComm : meet x y <=> meet y x
 
 /// The two picks are apart.
 def picksApart(e : Path[.A = Terms Pick] Pick.first Pick.second) -> Hollow =

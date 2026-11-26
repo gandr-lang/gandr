@@ -14,18 +14,18 @@
 
 /// `Mag` states a carrier and a binary operation.
 theory Mag where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> M;
+  sort M : Type
+  oper mul : (x : M, y : M) --> M
 
 /// `Times` models multiplication on integers.
 pub module Times : Model(Mag) where
-  type M = Integer;
+  type M = Integer
 
-  def mul(a : Integer, b : Integer) -> Integer = a * b;
+  def mul(a : Integer, b : Integer) -> Integer = a * b
 
 /// `Squaring` multiplies an element by itself.
 module Squaring(S : Model(Mag)) where
-  def square(x : S.M) -> S.M = S.mul x x;
+  def square(x : S.M) -> S.M = S.mul x x
 
 /// `TimesSquared` applies `Squaring` to `Times`.
 module TimesSquared = Squaring Times
@@ -36,9 +36,9 @@ def nine() -> Integer = TimesSquared.square 3
 
 /// `Plus` provides the magma signature over integer addition.
 module Plus : *{type M, mul : (M, M) -> M} where
-  type M = Integer;
+  type M = Integer
 
-  def mul(a : Integer, b : Integer) -> Integer = a + b;
+  def mul(a : Integer, b : Integer) -> Integer = a + b
 
 /// `PlusSquared` applies `Squaring` to `Plus`.
 module PlusSquared = Squaring Plus
@@ -49,9 +49,9 @@ def six() -> Integer = PlusSquared.square 3
 
 /// `Semi` adds associativity to `Mag`.
 theory Semi where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> M;
-  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+  sort M : Type
+  oper mul : (x : M, y : M) --> M
+  rule assoc : mul (mul x y) z ==> mul x (mul y z)
 
 /// `Reassociating` reverses a semigroup associativity path.
 module Reassociating(S : Model(Semi)) where
@@ -61,7 +61,7 @@ module Reassociating(S : Model(Semi)) where
 
 /// `OnePoint` models a semigroup with one value.
 module OnePoint : Model(Semi) where
-  type M = Unit;
+  type M = Unit
 
   def mul(a : Unit, b : Unit) -> Unit = *{};
 

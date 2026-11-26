@@ -13,17 +13,17 @@
 /// The theory of a lamp.
 theory Lamp where
   /// The states of a lamp.
-  sort L : Type;
+  sort L : Type
   /// The lamp that gives no light.
-  oper dark : L;
+  oper dark : L
   /// The lamp that gives light.
-  oper lit : L;
+  oper lit : L
   /// The light that two lamps give together in a series.
-  oper both : (x : L, y : L) --> L;
+  oper both : (x : L, y : L) --> L
   /// A dark lamp first gives no light.
-  rule bothDark : both dark x <=> dark;
+  rule bothDark : both dark x <=> dark
   /// A lit lamp first gives the light of the second.
-  rule bothLit : both lit x <=> x;
+  rule bothLit : both lit x <=> x
 
 /// The dark lamp under a name.
 def unlit : Terms Lamp = Lamp.dark

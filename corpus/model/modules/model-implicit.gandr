@@ -10,37 +10,37 @@
 
 /// `Tally` states a carrier, a zero, a step and a reading.
 theory Tally where
-  sort C : Type;
-  oper zero : C;
-  oper incr : (c : C) --> C;
-  oper read : (c : C) --> Integer;
+  sort C : Type
+  oper zero : C
+  oper incr : (c : C) --> C
+  oper read : (c : C) --> Integer
 
 /// `ResetTally` adds a reset operation.
 theory ResetTally where
-  include Tally;
-  oper reset : (c : C) --> C;
+  include Tally
+  oper reset : (c : C) --> C
 
 /// `Up` counts integers by one.
 module Up : Model(Tally) where
-  type C = Integer;
+  type C = Integer
   /// `zero` gives zero.
-  def zero = 0;
+  def zero = 0
   /// `incr` adds one.
-  def incr(c : Integer) -> Integer = c + 1;
+  def incr(c : Integer) -> Integer = c + 1
   /// `read` returns the count.
-  def read(c : Integer) -> Integer = c;
+  def read(c : Integer) -> Integer = c
 
 /// `Tens` counts integers by ten and resets them.
 module Tens : Model(ResetTally) where
-  type C = Integer;
+  type C = Integer
   /// `zero` gives zero.
-  def zero = 0;
+  def zero = 0
   /// `incr` adds ten.
-  def incr(c : Integer) -> Integer = c + 10;
+  def incr(c : Integer) -> Integer = c + 10
   /// `read` returns the count.
-  def read(c : Integer) -> Integer = c;
+  def read(c : Integer) -> Integer = c
   /// `reset` returns zero.
-  def reset(c : Integer) -> Integer = 0;
+  def reset(c : Integer) -> Integer = 0
 
 /// `stepped` reads one tally step.
 def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c)

@@ -16,17 +16,17 @@
 
 /// `Lawful` states an equivalence decision.
 theory Lawful where
-  sort Carrier : Type;
-  oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) -> Path[.A = Bool] (alike a a) true;
-  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool] (alike a b) (alike b a);
+  sort Carrier : Type
+  oper alike : (a : Carrier, b : Carrier) --> Bool
+  law refl : (a : Carrier) -> Path[.A = Bool] (alike a a) true
+  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool] (alike a b) (alike b a)
   law trans : (
     a : Carrier,
     b : Carrier,
     c : Carrier,
     p : Path[.A = Bool] (alike a b) true,
     q : Path[.A = Bool] (alike b c) true
-  ) -> Path[.A = Bool] (alike a c) true;
+  ) -> Path[.A = Bool] (alike a c) true
 
 /// `Single` has one value.
 data Single : Type where
@@ -34,9 +34,9 @@ data Single : Type where
 
 /// `LawfulSingle` proves every law by conversion.
 module LawfulSingle : Model(Lawful) with sort Carrier = Single where
-  def alike(a : Single, b : Single) -> Bool = true;
-  def refl(a : Single) -> Path (alike a a) true = Path.here true;
-  def sym(a : Single, b : Single) -> Path (alike a b) (alike b a) = Path.here true;
+  def alike(a : Single, b : Single) -> Bool = true
+  def refl(a : Single) -> Path (alike a a) true = Path.here true
+  def sym(a : Single, b : Single) -> Path (alike a b) (alike b a) = Path.here true
   def trans(
     a : Single,
     b : Single,
@@ -49,14 +49,14 @@ module LawfulSingle : Model(Lawful) with sort Carrier = Single where
 /// `LawfulOmitted` lets the checker fill each law.
 module LawfulOmitted : Model(Lawful) with sort Carrier = Single where
   /// `alike` returns true for every pair.
-  def alike(a : Single, b : Single) -> Bool = true;
+  def alike(a : Single, b : Single) -> Bool = true
 
 /// `LawfulInteger` admits the laws that the host provides for integers.
 module LawfulInteger : Model(Lawful) with sort Carrier = Integer where
-  def alike(a : Integer, b : Integer) -> Bool = a == b;
-  law refl = ~admitted;
-  law sym = ~admitted;
-  law trans = ~admitted;
+  def alike(a : Integer, b : Integer) -> Bool = a == b
+  law refl = ~admitted
+  law sym = ~admitted
+  law trans = ~admitted
 
 /// `threeIsThree` uses the admitted integer model.
 @[runs("+{.0 = *{}}")]
@@ -64,13 +64,13 @@ def threeIsThree() -> Bool = LawfulInteger.alike 3 3
 
 /// `LawfulOrder` adds order to `Lawful`.
 theory LawfulOrder where
-  include Lawful;
-  oper below : (a : Carrier, b : Carrier) --> Bool;
+  include Lawful
+  oper below : (a : Carrier, b : Carrier) --> Bool
 
 /// `LawfulOrderInteger` includes `LawfulInteger`.
 module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer where
-  include LawfulInteger;
-  def below(a : Integer, b : Integer) -> Bool = a < b;
+  include LawfulInteger
+  def below(a : Integer, b : Integer) -> Bool = a < b
 
 /// `decide` uses any lawful model.
 def decide[l : Model Lawful](a : l.Carrier, b : l.Carrier) -> Bool = l.alike a b

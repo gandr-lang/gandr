@@ -90,13 +90,13 @@ def inlineLeft() -> (Unit + Unit) + Unit =
 /// `Thirds` models a right-nested three-state counter.
 module Thirds : Model(Counter) where
   /// `C` names the right-nested carrier.
-  type C = Unit + (Unit + Unit);
+  type C = Unit + (Unit + Unit)
 
   /// `start` is the first state.
-  def start : Unit + (Unit + Unit) = first;
+  def start : Unit + (Unit + Unit) = first
 
   /// `step` advances the state.
-  def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) = onward c;
+  def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) = onward c
 
 /// `secondThirds` passes `Thirds` at its manifest carrier. `Thirds` omits the
 /// carrier that the parameter fixes.

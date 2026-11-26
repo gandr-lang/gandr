@@ -41,14 +41,14 @@ module Rename where {
       | Mk(n) => Make n
   /// The translator defines the flow from `Old` to `Other`.
   @[checks]
-  def renamed : Flow[.A = Type](Old, Other) = Flow.into toOther;
+  def renamed : Flow[.A = Type](Old, Other) = Flow.into toOther
   /// The flow rides one source value to the target type.
   @[checks]
   def moved(old : Old) -> Other =
     Flow.ride (fun (X) { X }) renamed old
   /// The run migrates one value.
   @[runs("Make 3")]
-  def one : () -> Other = moved (Mk 3);
+  def one : () -> Other = moved (Mk 3)
 }
 
 /// The `Shapes` module moves each shape to its figure.
@@ -61,12 +61,12 @@ pub module Shapes where {
       | Rect(w, h) => Box h w
   /// The translator defines the flow from shapes to figures.
   @[checks]
-  def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure;
+  def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure
   /// The flow rides a shape list through the list family.
   @[checks]
   def all(shapes : List Shape) -> List Figure =
     Flow.ride (fun (X) { List X }) redrawn shapes
   /// The run migrates two shapes.
   @[runs("cons (Round 1) (cons (Box 3 2) nil)")]
-  def two : () -> List Figure = all (cons (Circle 1) (cons (Rect 2 3) nil));
+  def two : () -> List Figure = all (cons (Circle 1) (cons (Rect 2 3) nil))
 }

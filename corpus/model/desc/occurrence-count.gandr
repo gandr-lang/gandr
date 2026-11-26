@@ -20,16 +20,16 @@
 data Shrub : Type where {
   | Leaf : Shrub
   | Node : (l : Shrub, r : Shrub) --> Shrub
-  oper mirror : (t : Shrub) --> Shrub;
-  oper left : (t : Shrub) --> Shrub;
-  oper twice : (t : Shrub) --> Shrub;
-  oper thrice : (t : Shrub) --> Shrub;
-  rule : mirror Leaf ==> Leaf;
-  rule : mirror (Node l r) ==> Node r l;
-  rule : left Leaf ==> Leaf;
-  rule : left (Node l r) ==> l;
-  rule : twice t ==> Node t t;
-  rule : thrice t ==> Node t (Node t t);
+  oper mirror : (t : Shrub) --> Shrub
+  oper left : (t : Shrub) --> Shrub
+  oper twice : (t : Shrub) --> Shrub
+  oper thrice : (t : Shrub) --> Shrub
+  rule : mirror Leaf ==> Leaf
+  rule : mirror (Node l r) ==> Node r l
+  rule : left Leaf ==> Leaf
+  rule : left (Node l r) ==> l
+  rule : twice t ==> Node t t
+  rule : thrice t ==> Node t (Node t t)
 }
 
 /// A leaf written twice.

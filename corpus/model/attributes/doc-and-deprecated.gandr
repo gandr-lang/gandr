@@ -33,7 +33,7 @@ module Shapes where {
   // The side, marked with a note alone.
   @[checks]
   @[deprecated(*{.note = "use area"})]
-  def side = 2;
+  def side = 2
 }
 
 // A use of the member through its dotted path: it checks, and the use is

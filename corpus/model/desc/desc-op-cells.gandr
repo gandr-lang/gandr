@@ -15,9 +15,9 @@
 data NatAdd : Type where {
   | Zero : NatAdd
   | Succ : (n : NatAdd) --> NatAdd
-  oper add : (m : NatAdd, n : NatAdd) --> NatAdd;
-  rule : add Zero n <=> n;
-  rule : add (Succ m) n <=> Succ (add m n);
+  oper add : (m : NatAdd, n : NatAdd) --> NatAdd
+  rule : add Zero n <=> n
+  rule : add (Succ m) n <=> Succ (add m n)
 }
 
 /// Two plus one runs to three.

@@ -13,9 +13,9 @@
 
 /// The `Monoid` block stores its sort and two operations in a `Theory` value.
 pub theory Monoid where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
+  sort M : Type
+  oper mul : (x : M, y : M) --> (z : M)
+  oper one : () --> (z : M)
 
 /// This recursion counts `Oper` links in a presentation.
 def rec operations(chain : Theory) -> Integer =

@@ -40,8 +40,8 @@ pub data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S (P x) <=> x;
-  rule : P (S x) <=> x;
+  rule : S (P x) <=> x
+  rule : P (S x) <=> x
 }
 
 /// Three colours: an enumeration, a data type whose constructors take no

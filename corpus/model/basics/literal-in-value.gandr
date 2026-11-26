@@ -20,7 +20,7 @@ data Expr : Type where
 /// `ExprFromNat` reads a literal as `Lit`.
 module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
   /// The leaf.
-  def fromNat(n : Integer) -> Expr = Lit n;
+  def fromNat(n : Integer) -> Expr = Lit n
 
 /// The literal read in a body, which runs the reader's call.
 @[runs("Lit 5")]

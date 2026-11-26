@@ -19,7 +19,7 @@ pub data Program : Type where {
   | Done : (x : Integer) --> Program
   | Get : (k : Integer -> Program) --> Program
   | Put : (s : Integer, k : Program) --> Program
-  rule : Put s (Put u k) <=> Put u k;
+  rule : Put s (Put u k) <=> Put u k
 }
 
 /// This handler runs a read continuation at the current state, and a store

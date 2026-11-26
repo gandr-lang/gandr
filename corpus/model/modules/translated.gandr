@@ -20,27 +20,27 @@
 /// `Legacy` states the older answer.
 theory Legacy where
   /// The answer.
-  oper answer : Integer;
+  oper answer : Integer
 
 /// `Scaling` adds a scaled answer.
 theory Scaling where
   /// `answer` names the older reply.
-  oper answer : Integer;
+  oper answer : Integer
   /// `scaled` multiplies by the count.
-  oper scaled : (n : Integer) --> Integer;
+  oper scaled : (n : Integer) --> Integer
 
 /// `Current` states a reply and a count.
 theory Current where
   /// `reply` names the current answer.
-  oper reply : Integer;
+  oper reply : Integer
   /// `count` names the current count.
-  oper count : Integer;
+  oper count : Integer
 
 /// `scaling` presents `Current` as `Scaling`.
 flow scaling : Current ~~> Scaling where
-  def answer = reply;
+  def answer = reply
 
-  def scaled(n : Integer) -> Integer = n * count;
+  def scaled(n : Integer) -> Integer = n * count
 
 // The import reads the published flow at `Legacy`.
 import "./translated-newer.gandr" as published : Legacy via downgrade
@@ -70,7 +70,7 @@ def renamedAnswer() -> Integer = renamed.answer
 /// `Replied` states the answer as a reply.
 theory Replied where
   /// `reply` names the older answer.
-  oper reply : Integer;
+  oper reply : Integer
 
 /// `versions` reads a `Legacy` model as a `Replied` model and back.
 path versions : Legacy <~> Replied where
@@ -82,7 +82,7 @@ path versions : Legacy <~> Replied where
 /// `Base` answers 42 at `Legacy`.
 module Base : Model(Legacy) where
   /// The answer, 42.
-  def answer = 42;
+  def answer = 42
 
 /// `replyOf` reads the reply of a `Replied` model.
 def replyOf(s : Model Replied) -> Integer = s.reply
@@ -94,16 +94,16 @@ def forward() -> Integer = replyOf (versions.into (pack Base at Model Legacy))
 /// `Magma` states a carrier and an operation.
 theory Magma where
   /// The carrier.
-  sort M : Type;
+  sort M : Type
   /// The operation.
-  oper mul : (x : M, y : M) --> M;
+  oper mul : (x : M, y : M) --> M
 
 /// `Times` states the same structure under other names.
 theory Times where
   /// The carrier.
-  sort C : Type;
+  sort C : Type
   /// The operation.
-  oper times : (x : C, y : C) --> C;
+  oper times : (x : C, y : C) --> C
 
 /// `carried` moves the carrier and the operation in both directions.
 path carried : Magma <~> Times where

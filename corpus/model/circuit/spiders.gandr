@@ -17,11 +17,11 @@
 theory Qubit where
   /// A wire that merges and splits.
   @[frobenius]
-  sort Q : Type;
+  sort Q : Type
   /// A node with one input and one output.
-  oper f : (a : Q) --> (b : Q);
+  oper f : (a : Q) --> (b : Q)
   /// A second node of the same shape.
-  oper g : (a : Q) --> (b : Q);
+  oper g : (a : Q) --> (b : Q)
 
   /// `f` and `g` both write `z`: one spider merges their outputs.
   rule merge : (data x : Q, data y : Q) <=> (z : Q) {

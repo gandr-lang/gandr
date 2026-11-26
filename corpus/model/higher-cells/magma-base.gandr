@@ -12,9 +12,9 @@
 
 /// `Magma` defines one sort, one binary operation and one constant.
 pub theory Magma where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
+  sort M : Type
+  oper mul : (x : M, y : M) --> (z : M)
+  oper one : () --> (z : M)
 
 /// `exchange` swaps booleans. It translates the binary corolla.
 pub def exchange(b : Bool) -> Bool =

@@ -13,6 +13,6 @@
 /// Zero and an identity operation. A rule gives the operation's value at zero.
 data NatTheory : Type where {
   | Zero : NatTheory
-  oper id : (x : NatTheory) --> NatTheory;
-  rule : id Zero <=> Zero;
+  oper id : (x : NatTheory) --> NatTheory
+  rule : id Zero <=> Zero
 }

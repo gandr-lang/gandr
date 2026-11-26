@@ -24,10 +24,10 @@ data IntOp : Type where {
   | Z : IntOp
   | S : (x : IntOp) --> IntOp
   | P : (x : IntOp) --> IntOp
-  oper pred : (x : IntOp) --> IntOp;
-  rule : P (S x) ==> x;
-  rule : x <=> S (P x);
-  rule : pred x <=> P x;
+  oper pred : (x : IntOp) --> IntOp
+  rule : P (S x) ==> x
+  rule : x <=> S (P x)
+  rule : pred x <=> P x
 }
 
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves

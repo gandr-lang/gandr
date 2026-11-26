@@ -10,7 +10,7 @@
 /// Scaled exposes an integer observation named doubled.
 @[refuses("CodataKindNotUniverse")]
 codata Scaled : Type where
-  doubled : Integer;
+  doubled : Integer
 
 /// The rejected definition doubles its integer argument with a bare copattern.
 @[refuses("MalformedForm")]

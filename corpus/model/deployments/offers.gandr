@@ -25,13 +25,13 @@ import std.io
 /// hands what it reads to what runs after, so a model answers it.
 pub theory Store where
   /// The store holds values of this sort.
-  sort V : Type+;
+  sort V : Type+
   /// What a computation over the store answers.
-  sort C : Type;
+  sort C : Type
   /// Reads the value at `key`.
-  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  oper get : (key : V, k : pi+ (v : V). C) --> C
   /// Holds `value` at `key`.
-  oper put : (key : V, value : V, k : C) --> C;
+  oper put : (key : V, value : V, k : C) --> C
 
 /// The world the entry runs at.
 pub world near

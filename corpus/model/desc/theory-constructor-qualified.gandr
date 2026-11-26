@@ -16,8 +16,8 @@ data Tree : Type where
 
 /// This presentation reads `Theory`.
 theory Pointed where
-  sort P : Type;
-  oper point : () --> (p : P);
+  sort P : Type
+  oper point : () --> (p : P)
 
 /// This match selects the `Theory.App` link.
 def isApplication(link : Theory) -> Integer =

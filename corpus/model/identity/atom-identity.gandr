@@ -31,7 +31,7 @@ pub module Point :> *{type T, origin : T, other : T} where {
   /// The sealed points use `related` as their identity relation.
   @[identity(*{related, reflexivity, contraction})]
   @[checks]
-  type T = Unit;
+  type T = Unit
 
   /// One point.
   @[checks]
@@ -105,7 +105,7 @@ module PathPoint :> *{type T, origin : T, other : T} where {
   /// The module gives its points the `pathRelated` identity relation.
   @[identity(*{pathRelated, pathReflexivity, pathContraction})]
   @[checks]
-  type T = Unit;
+  type T = Unit
 
   /// One point.
   @[checks]

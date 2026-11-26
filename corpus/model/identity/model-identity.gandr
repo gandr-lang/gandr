@@ -18,10 +18,10 @@ import "./structure-operations.gandr"
 
 /// The `Toggle` theory has a carrier, a start, a step and a reading.
 theory Toggle where
-  sort T : Type;
-  oper start : T;
-  oper step : (t : T) --> T;
-  oper read : (t : T) --> Bool;
+  sort T : Type
+  oper start : T
+  oper step : (t : T) --> T
+  oper read : (t : T) --> Bool
 
 /// The plain model starts false and reads its state.
 def plainModel : Model Toggle = plainToggle

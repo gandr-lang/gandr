@@ -18,9 +18,9 @@
 /// A sort whose loops are one.
 theory Collapsed where
   /// The loops.
-  sort Loop : Type;
+  sort Loop : Type
   /// Any two loops are one path.
-  law one : (p : Loop, q : Loop) -> Path[.A = Loop] p q;
+  law one : (p : Loop, q : Loop) -> Path[.A = Loop] p q
 
 /// One value.
 data Dot : Type where

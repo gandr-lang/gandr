@@ -23,7 +23,7 @@ import std.list (List)
 /// The program this manifold deploys.
 pub module Manifold : Model(Manifold) where
   /// The role-bearing program, beside this file.
-  def artifact = "offers.gandr";
+  def artifact = "offers.gandr"
 
 /// `far` at the offering site, as one process.
 pub def placements : List Placement = #[

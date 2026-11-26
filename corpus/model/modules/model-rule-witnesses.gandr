@@ -22,13 +22,13 @@ data Ticks : Type where
 /// `LeftUnit` states a unit and a product.
 theory LeftUnit where
   /// `M` names the carrier.
-  sort M : Type;
+  sort M : Type
   /// `e` gives the unit.
-  oper e : M;
+  oper e : M
   /// `mul` gives the product.
-  oper mul : (x : M, y : M) --> M;
+  oper mul : (x : M, y : M) --> M
   /// `unitL` states the left unit rule.
-  rule unitL : mul e x <=> x;
+  rule unitL : mul e x <=> x
 
 /// `tick` adds one natural number.
 def tick(n : Ticks) -> Ticks = Tick n
@@ -54,27 +54,27 @@ def rec noTickJoinsRight(n : Ticks) -> Path (joinRight NoTick n) n =
 /// `ByLeft` proves the rule by conversion.
 module ByLeft : Model(LeftUnit) where
   /// `M` names `Ticks`.
-  type M = Ticks;
+  type M = Ticks
 
   /// `e` gives `NoTick`.
-  def e : Ticks = NoTick;
+  def e : Ticks = NoTick
 
   /// `mul` uses `joinLeft`.
-  def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y;
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y
 
   /// `unitL` uses `Path.here`.
-  def unitL(x : Ticks) -> Path (mul e x) x = Path.here x;
+  def unitL(x : Ticks) -> Path (mul e x) x = Path.here x
 
 /// `ByRight` proves the rule by induction.
 module ByRight : Model(LeftUnit) where
   /// `M` names `Ticks`.
-  type M = Ticks;
+  type M = Ticks
 
   /// `e` gives `NoTick`.
-  def e : Ticks = NoTick;
+  def e : Ticks = NoTick
 
   /// `mul` uses `joinRight`.
-  def mul(x : Ticks, y : Ticks) -> Ticks = joinRight x y;
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinRight x y
 
   /// `unitL` uses `noTickJoinsRight`.
-  def unitL(x : Ticks) -> Path (mul e x) x = noTickJoinsRight x;
+  def unitL(x : Ticks) -> Path (mul e x) x = noTickJoinsRight x

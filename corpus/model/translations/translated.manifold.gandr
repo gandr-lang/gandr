@@ -21,7 +21,7 @@ import std.list (List)
 /// The program this manifold deploys.
 pub module Manifold : Model(Manifold) where
   /// The older role, beside this file.
-  def artifact = "translated.gandr";
+  def artifact = "translated.gandr"
 
 /// The manifold admits only translations that rename.
 pub def translation : Translation = Path

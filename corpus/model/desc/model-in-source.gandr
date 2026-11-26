@@ -25,9 +25,9 @@ pub data N : Type where
 /// The syntax model as a `Model(Nat)` module: the carrier is the data and
 /// each operation its constructor.
 module SyntaxNat : Model(Nat) where
-  type Nat = N;
-  def zero : N = Z;
-  def succ(n : N) -> N = S n;
+  type Nat = N
+  def zero : N = Z
+  def succ(n : N) -> N = S n
 
 /// The module packed into the record type of `Nat`'s models: its carrier and
 /// its two operations, in the order `Model(Nat)` mints them.

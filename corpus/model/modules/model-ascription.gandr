@@ -16,25 +16,25 @@
 /// `Counter` states a carrier, a start and a step. It has no laws, so it is an
 /// ML signature.
 pub theory Counter where
-  sort C : Type;
-  oper start : C;
-  oper step : (c : C) --> C;
+  sort C : Type
+  oper start : C
+  oper step : (c : C) --> C
 
 /// `Open` exposes `Integer` as its carrier.
 module Open : Model(Counter) where
-  type C = Integer;
+  type C = Integer
 
-  def start : Integer = 0;
+  def start : Integer = 0
 
-  def step(n : Integer) -> Integer = n + 1;
+  def step(n : Integer) -> Integer = n + 1
 
 /// `Sealed` hides its integer carrier.
 module Sealed :> Model(Counter) where
-  type C = Integer;
+  type C = Integer
 
-  def start : Integer = 0;
+  def start : Integer = 0
 
-  def step(n : Integer) -> Integer = n + 1;
+  def step(n : Integer) -> Integer = n + 1
 
 /// `openTwice` reads two transparent steps.
 @[runs("2")]
@@ -45,9 +45,9 @@ def sealedTwice() -> Sealed.C = { let s = Sealed.start; Sealed.step (Sealed.step
 
 /// `Toggle` states an involutive step law.
 theory Toggle where
-  sort T : Type;
-  oper flip : (t : T) --> T;
-  rule twice : flip (flip t) <=> t;
+  sort T : Type
+  oper flip : (t : T) --> T
+  rule twice : flip (flip t) <=> t
 
 /// `Bit` has two states.
 data Bit : Type where
@@ -56,7 +56,7 @@ data Bit : Type where
 
 /// `Bits` proves the toggle law by conversion.
 module Bits : Model(Toggle) where {
-  type T = Bit;
+  type T = Bit
 
   def flip(b : Bit) -> Bit =
     match b where

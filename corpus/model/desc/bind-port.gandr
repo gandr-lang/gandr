@@ -16,19 +16,19 @@
 
 /// `nu` restricts a channel name over a process. The port abstracts that name.
 pub theory Restriction where
-  sort Name : Atom;
-  sort Proc : Type;
-  oper nil : Proc;
-  oper par : (p : Proc, q : Proc) --> Proc;
-  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  sort Name : Atom
+  sort Proc : Type
+  oper nil : Proc
+  oper par : (p : Proc, q : Proc) --> Proc
+  oper nu : (p : bind (a : Name). Proc) --> Proc
 
 /// This port has both binders. The atom abstraction is outside the variable
 /// binder.
 theory Receive where
-  sort Name : Atom;
-  sort Val : Type+;
-  sort Proc : Type;
-  oper new : (body : bind (c : Name). pi+ (x : Val). Proc) --> Proc;
+  sort Name : Atom
+  sort Val : Type+
+  sort Proc : Type
+  oper new : (body : bind (c : Name). pi+ (x : Val). Proc) --> Proc
 
 /// This recursion counts `Abstracted` links in a port chain. It ignores `Port`
 /// and `Bound` links.

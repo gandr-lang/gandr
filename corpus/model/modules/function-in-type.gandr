@@ -16,10 +16,10 @@
 /// The types of a small theory, each a function to `Type`.
 module Standard where
   /// The type with one point.
-  def unit() -> Type = return Unit;
+  def unit() -> Type = return Unit
 
   /// The type its argument names.
-  def same(a : Type) -> Type = a;
+  def same(a : Type) -> Type = a
 
   /// A family that ignores its index.
   def after(a : Type) -> Integer -> Type = fun (x) { a };

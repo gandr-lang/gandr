@@ -23,31 +23,31 @@
 /// The fragment at two widths.
 pub theory Frag where
   /// The widths.
-  sort Width : Type;
+  sort Width : Type
   /// The terms at a width.
-  sort Term(w : Width) : Type;
+  sort Term(w : Width) : Type
 
   /// One bit.
-  oper bit : Width;
+  oper bit : Width
   /// One word.
-  oper word : Width;
+  oper word : Width
   /// The low bit.
-  oper low : Term bit;
+  oper low : Term bit
   /// The high bit.
-  oper high : Term bit;
+  oper high : Term bit
   /// The word zero.
-  oper zero : Term word;
+  oper zero : Term word
   /// The word one.
-  oper one : Term word;
+  oper one : Term word
   /// The word of a bit.
-  oper zext : (b : Term bit) --> Term word;
+  oper zext : (b : Term bit) --> Term word
   /// The first word under the high bit, and the second under the low bit.
-  oper choose : (c : Term bit, x : Term word, y : Term word) --> Term word;
+  oper choose : (c : Term bit, x : Term word, y : Term word) --> Term word
 
   /// The high bit chooses the first word.
-  rule chooseHigh : choose high x y <=> x;
+  rule chooseHigh : choose high x y <=> x
   /// The low bit chooses the second word.
-  rule chooseLow : choose low x y <=> y;
+  rule chooseLow : choose low x y <=> y
 
 /// A case on the widths: a word is wide.
 def isWord(w : Terms Frag Width) -> Bool =

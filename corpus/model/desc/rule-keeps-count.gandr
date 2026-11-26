@@ -18,24 +18,24 @@ import "rule-symmetry-apart.gandr"
 /// A signal of three lamps, where the amber lamp and the green lamp are one.
 pub theory Signal where
   /// The lamps.
-  sort L : Type;
+  sort L : Type
   /// The red lamp.
-  oper red : L;
+  oper red : L
   /// The amber lamp.
-  oper amber : L;
+  oper amber : L
   /// The green lamp.
-  oper green : L;
+  oper green : L
   /// The amber lamp is the green lamp.
-  rule calm : amber <=> green;
+  rule calm : amber <=> green
 
 /// One wire with two levels and no rule.
 pub theory Wire where
   /// The levels.
-  sort W : Type;
+  sort W : Type
   /// The low level.
-  oper low : W;
+  oper low : W
   /// The high level.
-  oper high : W;
+  oper high : W
 
 /// The two joined lamps are one term.
 ///

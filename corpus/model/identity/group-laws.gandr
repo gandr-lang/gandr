@@ -16,17 +16,17 @@
 /// The `Group` theory states laws for units, association and inverses.
 @[normalizes("inv(mul(a, b)) ~> mul(inv(b), inv(a))")]
 pub theory Group where
-  sort G : Type;
+  sort G : Type
 
-  oper e : G;
-  oper a : G;
-  oper b : G;
-  oper inv : (x : G) --> G;
-  oper mul : (x : G, y : G) --> G;
+  oper e : G
+  oper a : G
+  oper b : G
+  oper inv : (x : G) --> G
+  oper mul : (x : G, y : G) --> G
 
-  rule unitL : mul e x <=> x;
-  rule unitR : mul x e <=> x;
-  rule assoc : mul (mul x y) z <=> mul x (mul y z);
-  rule invInv : inv (inv x) <=> x;
-  rule invE : inv e <=> e;
-  rule invL : mul (inv x) x <=> e;
+  rule unitL : mul e x <=> x
+  rule unitR : mul x e <=> x
+  rule assoc : mul (mul x y) z <=> mul x (mul y z)
+  rule invInv : inv (inv x) <=> x
+  rule invE : inv e <=> e
+  rule invL : mul (inv x) x <=> e

@@ -16,7 +16,7 @@ module M where
     | B : (x : Integer) --> Box
 
   /// `one` uses bare constructor `B`.
-  def one : Box = B 1;
+  def one : Box = B 1
 
 /// `two` uses `M.B`.
 def two : M.Box = M.B 2

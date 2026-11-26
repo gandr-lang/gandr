@@ -24,7 +24,7 @@ import "../identity/model-counter.gandr"
 /// `Passing` uses the current integer as its state.
 module Passing : Model(State.Eff) with sort S = Integer where
   /// `C` maps the current state to an integer.
-  type C = Integer -> Integer;
+  type C = Integer -> Integer
   /// `get` gives the current state to its continuation.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
     fun (s) { let after = k s; after s }
@@ -43,7 +43,7 @@ def putThenGet() -> Integer =
 /// Put-put relates no term at the port of `get`.
 module Overwriting : Model(StatePutPut) with sort S = Integer where
   /// `C` maps the current state to an integer.
-  type C = Integer -> Integer;
+  type C = Integer -> Integer
   /// `get` gives the current state to its continuation.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
     fun (s) { let after = k s; after s }

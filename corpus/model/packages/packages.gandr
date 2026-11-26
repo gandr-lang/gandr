@@ -12,29 +12,29 @@
 /// `Seeded` declares a counter seed and reader.
 theory Seeded where
   /// `T` gives the counter value type.
-  sort T : Type;
+  sort T : Type
   /// The reading of a count.
-  oper read : (t : T) --> Integer;
+  oper read : (t : T) --> Integer
   /// The first count.
-  oper seed : T;
+  oper seed : T
 
 /// `Ints` reads its integer seed as itself.
 module Ints : Model(Seeded) where
   /// Counts are integers.
-  type T = Integer;
+  type T = Integer
   /// A count reads as itself.
-  def read(n : Integer) -> Integer = n;
+  def read(n : Integer) -> Integer = n
   /// Seven.
-  def seed = 7;
+  def seed = 7
 
 /// `Texts` reads its string seed as a constant.
 module Texts : Model(Seeded) where
   /// Counts are strings.
-  type T = String;
+  type T = String
   /// Every count reads as 42.
-  def read(s : String) -> Integer = 42;
+  def read(s : String) -> Integer = 42
   /// The word seven.
-  def seed = "seven";
+  def seed = "seven"
 
 /// `consume` opens a counter and reads its seed with its reader.
 def consume(p : Model Seeded) -> Integer =

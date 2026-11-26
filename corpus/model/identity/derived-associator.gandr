@@ -16,19 +16,19 @@
 /// The `Monoid` theory has unit and associativity rules.
 pub theory Monoid where
   /// The carrier.
-  sort M : Type;
+  sort M : Type
 
   /// The unit.
-  oper e : M;
+  oper e : M
   /// The product.
-  oper mul : (x : M, y : M) --> M;
+  oper mul : (x : M, y : M) --> M
 
   /// The left unit rule.
-  rule unitL : mul e x <=> x;
+  rule unitL : mul e x <=> x
   /// The right unit rule.
-  rule unitR : mul x e <=> x;
+  rule unitR : mul x e <=> x
   /// Binary associativity.
-  rule assoc : mul (mul x y) z <=> mul x (mul y z);
+  rule assoc : mul (mul x y) z <=> mul x (mul y z)
 
 /// The derived four-term associator holds in every monoid.
 rule Monoid.assoc4 : mul (mul (mul a b) c) d <=> mul a (mul b (mul c d))
@@ -51,14 +51,14 @@ pub def times(a : Sign, b : Sign) -> Sign =
 /// The `Signs` model gives witnesses for the three declared rules.
 module Signs : Model(Monoid) where {
   /// The carrier is `Sign`.
-  type M = Sign;
+  type M = Sign
   /// `Plus` is the unit.
-  def e = Plus;
+  def e = Plus
   /// The product uses `times`.
-  def mul(x : Sign, y : Sign) -> Sign = times x y;
+  def mul(x : Sign, y : Sign) -> Sign = times x y
   /// The left unit law follows by conversion.
   @[checks]
-  def unitL(x : Sign) -> Path (mul e x) x = Path.here x;
+  def unitL(x : Sign) -> Path (mul e x) x = Path.here x
   /// The right unit law follows by cases.
   @[checks]
   def unitR(x : Sign) -> Path (mul x e) x =

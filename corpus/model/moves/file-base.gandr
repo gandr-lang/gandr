@@ -21,6 +21,6 @@ module File :> *{
   type Line,
   line : Line
 } where
-  type Line = String;
+  type Line = String
   /// `line` is the string that a writer sends.
-  def line = "line";
+  def line = "line"

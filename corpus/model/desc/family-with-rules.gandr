@@ -37,11 +37,11 @@ pub data Fragment : Width -> Type where {
   /// The first word under the high bit, and the second under the low bit.
   | Choose : (c : Fragment Bit, x : Fragment Word, y : Fragment Word) --> Fragment Word
   /// The high bit chooses the first word.
-  rule : Choose High x y <=> x;
+  rule : Choose High x y <=> x
   /// The low bit chooses the second word.
-  rule : Choose Low x y <=> y;
+  rule : Choose Low x y <=> y
   /// The meet of the high bit and a bit is that bit.
-  rule : And High b <=> b;
+  rule : And High b <=> b
 }
 
 /// A choice under the high bit.

@@ -13,12 +13,12 @@ import "./monoid.gandr"
 
 /// `PointedMonoid` adds a chosen element to `Monoid`.
 theory PointedMonoid where
-  include Monoid;
-  oper point : M;
+  include Monoid
+  oper point : M
 
 /// `Successor` models `PointedMonoid` with the integer successor.
 module Successor : Model(PointedMonoid) where
-  type M = Integer -> Integer;
+  type M = Integer -> Integer
 
   /// `andThen` composes `f` then `g`.
   def andThen(
@@ -29,10 +29,10 @@ module Successor : Model(PointedMonoid) where
     g (f x)
 
   /// `ident` returns its input.
-  def ident(x : Integer) -> Integer = x;
+  def ident(x : Integer) -> Integer = x
 
   /// `succ` adds one.
-  def succ(x : Integer) -> Integer = x + 1;
+  def succ(x : Integer) -> Integer = x + 1
 
   def mul(
     f : Integer -> Integer,
@@ -40,9 +40,9 @@ module Successor : Model(PointedMonoid) where
   ) -> Integer -> Integer =
     thunk { andThen f g }
 
-  def one : Integer -> Integer = ident;
+  def one : Integer -> Integer = ident
 
-  def point : Integer -> Integer = succ;
+  def point : Integer -> Integer = succ
 
   /// `assoc` verifies the included associativity law.
   def assoc(

@@ -15,32 +15,32 @@
 /// The STLC signature: terms indexed by a context and a type.
 pub theory STLC where
   /// Types.
-  sort Ty : Type;
+  sort Ty : Type
   /// Contexts.
-  sort Con : Type;
+  sort Con : Type
   /// Variables of a type in a context.
-  sort Var(g : Con, a : Ty) : Type;
+  sort Var(g : Con, a : Ty) : Type
   /// Terms of a type in a context.
-  sort Tm(g : Con, a : Ty) : Type;
+  sort Tm(g : Con, a : Ty) : Type
 
   /// The base type.
-  oper base : Ty;
+  oper base : Ty
   /// The function type.
-  oper arr : (a : Ty, b : Ty) --> Ty;
+  oper arr : (a : Ty, b : Ty) --> Ty
   /// The empty context.
-  oper empty : Con;
+  oper empty : Con
   /// A context extended by a type.
-  oper ext : (g : Con, a : Ty) --> Con;
+  oper ext : (g : Con, a : Ty) --> Con
   /// The newest variable.
-  oper vz : (g : Con, a : Ty) --> Var (ext g a) a;
+  oper vz : (g : Con, a : Ty) --> Var (ext g a) a
   /// An older variable.
-  oper vs : (x : Var g a, b : Ty) --> Var (ext g b) a;
+  oper vs : (x : Var g a, b : Ty) --> Var (ext g b) a
   /// A variable as a term.
-  oper var : (x : Var g a) --> Tm g a;
+  oper var : (x : Var g a) --> Tm g a
   /// Abstraction.
-  oper lam : (t : Tm (ext g a) b) --> Tm g (arr a b);
+  oper lam : (t : Tm (ext g a) b) --> Tm g (arr a b)
   /// Application.
-  oper app : (t : Tm g (arr a b), u : Tm g a) --> Tm g b;
+  oper app : (t : Tm g (arr a b), u : Tm g a) --> Tm g b
 
 /// The object types.
 pub data ObjTy : Type where
@@ -104,28 +104,28 @@ rec {
 /// The syntax as a model: each operation is the constructor of its sort.
 pub module Syntax : Model(STLC) where
   /// A type is an object type.
-  type Ty = ObjTy;
+  type Ty = ObjTy
   /// A context is an object context.
-  type Con = Ctx;
+  type Con = Ctx
   /// A variable is a variable of the object language.
-  type Var(g : Con, a : Ty) = Var g a;
+  type Var(g : Con, a : Ty) = Var g a
   /// A term is a term of the object language.
-  type Tm(g : Con, a : Ty) = Tm g a;
+  type Tm(g : Con, a : Ty) = Tm g a
 
   /// The base type.
-  def base : ObjTy = Base;
+  def base : ObjTy = Base
   /// The function type.
-  def arr(a : ObjTy, b : ObjTy) -> ObjTy = Arr a b;
+  def arr(a : ObjTy, b : ObjTy) -> ObjTy = Arr a b
   /// The empty context.
-  def empty : Ctx = Empty;
+  def empty : Ctx = Empty
   /// One more entry.
-  def ext(g : Ctx, a : ObjTy) -> Ctx = Extend g a;
+  def ext(g : Ctx, a : ObjTy) -> Ctx = Extend g a
   /// The variable of the last entry.
-  def vz(g : Ctx, a : ObjTy) -> Var (Extend g a) a = Here g a;
+  def vz(g : Ctx, a : ObjTy) -> Var (Extend g a) a = Here g a
   /// A variable past one more entry.
-  def vs(g : Ctx, a : ObjTy, x : Var g a, b : ObjTy) -> Var (Extend g b) a = There g a b x;
+  def vs(g : Ctx, a : ObjTy, x : Var g a, b : ObjTy) -> Var (Extend g b) a = There g a b x
   /// A variable as a term.
-  def var(g : Ctx, a : ObjTy, x : Var g a) -> Tm g a = V g a x;
+  def var(g : Ctx, a : ObjTy, x : Var g a) -> Tm g a = V g a x
   /// An abstraction.
   def lam(g : Ctx, a : ObjTy, b : ObjTy, t : Tm (Extend g a) b) -> Tm g (Arr a b) =
     Lam g a b t

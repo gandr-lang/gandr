@@ -10,8 +10,8 @@
 /// Point is refused because its kind is a value universe.
 @[refuses("CodataKindNotUniverse")]
 codata Point : Type where
-  x : Integer;
-  y : Integer;
+  x : Integer
+  y : Integer
 
 /// `origin` supplies three and four with bare copatterns.
 /// The checker refuses it without a copattern block.
