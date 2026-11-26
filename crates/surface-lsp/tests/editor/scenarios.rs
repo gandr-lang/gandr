@@ -229,7 +229,6 @@ const COUNTED: &[&str] = &[
     "type manifest_sort",
     "type manifest_sort name",
     "type manifest_type",
-    "type moded_type name",
     "type mu_session_type",
     "type mu_session_type name",
     "type number",

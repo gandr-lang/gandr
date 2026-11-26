@@ -1899,8 +1899,8 @@ enum Surface
     /// As an expression a type encloses: the head and the arguments of a call
     /// that stands where a type is read. They are read as expressions, so a
     /// type argument there is quoted (#1102), but the grammar reads the call
-    /// in the type's sort: `f a b` is the call `f(a, b)`, and it runs to the
-    /// arrow, as a word before a type does.
+    /// in the type's sort: `f a b` is the call `f(a, b)`, and the printer
+    /// binds it at the arrow, so a tighter place writes it in parentheses.
     Enclosed,
 }
 
@@ -5604,9 +5604,7 @@ impl Parts
 
     /// Appends a family's or a constructor's `count` operands as `surface`
     /// reads them: juxtaposed, as the type grammar reads `Maybe A` (#5326)
-    /// and an expression a type encloses reads `Tag Zero b`. The type
-    /// grammar reads a capitalised head juxtaposed, though it reads a glued
-    /// `f x` as the moded type `m T`.
+    /// and an expression a type encloses reads `Tag Zero b`.
     ///
     /// # Specification
     /// trivial.
@@ -14842,8 +14840,9 @@ impl Walk<'_, '_>
                 let arguments = self.take(Arity(count))?;
                 let operator = self.pop()?;
                 // Where a type's sort reads the application, `f a b` is the
-                // call `f(a, b)`: its head is an atom, and the application
-                // runs to the arrow, as a word before a type does.
+                // call `f(a, b)`: its head is an atom, and the printer binds
+                // the application at the arrow, so a tighter place writes it
+                // in parentheses, as the formatter writes a lowercase head.
                 if self.surface == Surface::Expression {
                     let operator = self.bare_up_to(operator, Binding::Application)?;
                     (self.juxtaposed(operator, arguments)?, Binding::Application)

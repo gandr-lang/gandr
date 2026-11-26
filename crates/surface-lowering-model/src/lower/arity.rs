@@ -220,7 +220,6 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Run;
 use crate::form::TileName;
-use crate::form::own_pieces;
 use crate::form::read_pieces;
 use crate::origin::Origin;
 use crate::resolve::Bound;
@@ -432,50 +431,61 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             let first = site.one(cursor.operands())?;
             if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
                 let held = Held::Operand(site.one(cursor.operands())?);
-                // Words that share a type, `m n`, mold as a moded type: each
-                // word before the last is a mode tile over the rest.
-                let mut key = first;
-                loop {
-                    match self.cx().form_at(key)? {
-                        // A builtin type's lowercase name, `f32`, is a word
-                        // here, as it is where a parameter or a value's label
-                        // is read.
-                        Some((name, _))
-                            if name == FormName::TYPE_VARIABLE
-                                || name == FormName::TYPE_IDENTIFIER
-                                || (name == FormName::PRIMITIVE_TYPE
-                                    && self
-                                        .cx()
-                                        .text_at(key)
-                                        .as_ref()
-                                        .starts_with(|first: char| first.is_ascii_lowercase())) =>
-                        {
-                            entries.push(Entry {
-                                key: Key::Label(self.cx().name_at(key), key),
-                                held,
-                            });
-                            break;
-                        },
-                        Some((FormName::MODED_TYPE, _)) => {
-                            let mut moded = Pieces::new();
-                            own_pieces(self.cx().pbg, self.cx().tree, key.node, &mut moded)?;
-                            let (
-                                Maybe::Absent(_),
-                                &[Piece::Tile { at: word, .. }, Piece::Operand(rest)],
-                            ) = (moded.repair, moded.pieces.as_slice())
-                            else {
-                                return Err(site.fault(key.span, FormFault::MisplacedTile));
-                            };
-                            entries.push(Entry {
-                                key: Key::Label(self.cx().name_at(word), word),
-                                held,
-                            });
-                            key = rest;
-                        },
-                        Some(_) | None => {
-                            return Err(site.fault(key.span, FormFault::MisplacedTile));
-                        },
+                // Words that share a type, `m n`, mold as the application of
+                // the first word to the others: each word is a key.
+                let mut words = Pieces::new();
+                let keys: Vec<Placed> = match self.cx().form_at(first)? {
+                    Some((_, Former::TypeApplication)) => {
+                        read_pieces(self.cx().pbg, self.cx().tree, first.node, &mut words)?;
+                        let (
+                            Maybe::Absent(_),
+                            &[
+                                Piece::Tile {
+                                    label: TileName::TYPE_VARIABLE,
+                                    at: head,
+                                },
+                                Piece::Tile {
+                                    label: TileName::PAREN_OPEN,
+                                    ..
+                                },
+                                ref rest @ ..,
+                                Piece::Tile {
+                                    label: TileName::PAREN_CLOSE,
+                                    ..
+                                },
+                            ],
+                        ) = (words.repair, words.pieces.as_slice())
+                        else {
+                            return Err(site.fault(first.span, FormFault::MisplacedTile));
+                        };
+                        core::iter::once(head)
+                            .chain(rest.iter().filter_map(|piece| match *piece {
+                                Piece::Operand(word) => Some(word),
+                                Piece::Tile { .. } => None,
+                            }))
+                            .collect()
+                    },
+                    Some(_) | None => Vec::from([first]),
+                };
+                for key in keys {
+                    // A builtin type's lowercase name, `f32`, is a word here,
+                    // as it is where a parameter or a value's label is read.
+                    let word = matches!(self.cx().form_at(key)?, Some((name, _))
+                        if name == FormName::TYPE_VARIABLE
+                            || name == FormName::TYPE_IDENTIFIER
+                            || (name == FormName::PRIMITIVE_TYPE
+                                && self
+                                    .cx()
+                                    .text_at(key)
+                                    .as_ref()
+                                    .starts_with(|first: char| first.is_ascii_lowercase())));
+                    if !word {
+                        return Err(site.fault(key.span, FormFault::MisplacedTile));
                     }
+                    entries.push(Entry {
+                        key: Key::Label(self.cx().name_at(key), key),
+                        held,
+                    });
                 }
             }
             else {

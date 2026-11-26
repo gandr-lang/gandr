@@ -256,7 +256,8 @@ fn juxtaposition_applies_between_operands_4853() -> Result<(), Failure>
 /// argument as it stands. The returner `-F` is a prefix of a looser band, so
 /// it is an argument only in parentheses. A lowercase argument before a
 /// spaced group is an argument as a type name is, `Vec a (Succ n)`, and a
-/// lowercase word that heads its type keeps the moded type, `m (T)`.
+/// lowercase word that heads its type applies it as a type name does, `m (T)`
+/// and `m n` alike.
 #[test]
 fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
 {
@@ -273,17 +274,17 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
         ("def x : Sub d (g);", 2),
         ("def x : Sub D (g);", 2),
         ("def x : Vec a(n);", 1),
-        ("def x : m (T);", 0),
+        ("def x : m (T);", 1),
         ("def x : Vec Integer plus(m, Zero);", 2),
         ("def x : Vec a plus(m, Zero);", 2),
         (
             include_str!("grammar/unformatted/a-call-operand-reads-after-a-line-break-5752.gandr"),
             2,
         ),
-        ("def x : m plus(m, k);", 0),
+        ("def x : m plus(m, k);", 1),
         ("def x : el[<](a);", 0),
-        ("def x : m T;", 0),
-        ("def x : (m n : Integer) -> Integer;", 0),
+        ("def x : m T;", 1),
+        ("def x : (m n : Integer) -> Integer;", 1),
         ("def x : Vec +U Integer;", 1),
         ("def x : Vec (-F Integer);", 1),
     ];

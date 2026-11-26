@@ -95,14 +95,15 @@ use crate::failure::Failure;
 /// pipeline field `e |>.m a`, then by the descent `[<]` as an operand of its
 /// own, `el [<] a`, then by the wildcard as a type atom, `Path[.A = A] a _`,
 /// then by a functor application whose argument is juxtaposed, `module A = F
-/// B ;`.
-const BUILT_IN_FINGERPRINT: u64 = 0xe3aa_5bda_fddd_ec73;
+/// B ;`, then by a lowercase word that heads a type applying as each head
+/// does.
+const BUILT_IN_FINGERPRINT: u64 = 0x7a94_25b4_7e4a_3745;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3195);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3194);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -277,7 +278,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("type", 23),
     ("type(", 1),
     ("type_identifier", 227),
-    ("type_variable", 92),
+    ("type_variable", 91),
     ("typed_number", 2),
     ("u16", 1),
     ("u32", 1),

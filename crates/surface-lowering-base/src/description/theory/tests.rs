@@ -2941,12 +2941,12 @@ fn a_seam_refusal_stands_at_its_rule_5763()
     }
 }
 
-/// A lowercase word before a type molds as the moded type `m T`. At a sort's
-/// index its words spell the application that the call form writes, in either
-/// order of the indices. A spaced group after a lowercase index is an index of
-/// its own, as it is after a type name.
+/// A lowercase word applied by juxtaposition at a sort's index is the
+/// application that the call form writes, in either order of the indices. A
+/// spaced group after a lowercase index is an index of its own, as it is after
+/// a type name.
 #[test]
-fn a_moded_type_at_a_sort_index_is_the_application_it_spells_6459()
+fn a_lowercase_application_at_a_sort_index_is_the_application_it_spells_6459()
 {
     let ext = FreeTerm::op("ext", [FreeTerm::var("g"), FreeTerm::var("a")]);
     let (d, g) = (FreeTerm::var("d"), FreeTerm::var("g"));

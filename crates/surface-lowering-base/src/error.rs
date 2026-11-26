@@ -1668,9 +1668,7 @@ pub enum LoweringRefusal<'source>
     /// `self`, takes one.
     StrayReceiverMode
     {
-        /// The bytes of the mode word, or of the whole moded type a mode
-        /// variable heads: a type variable alone is no mode, so the pair is
-        /// what is wrong.
+        /// The bytes of the mode word.
         span: ByteSpan,
         /// The mode word as written.
         mode: SurfaceName<'source>,
@@ -1708,7 +1706,8 @@ pub enum LoweringRefusal<'source>
         more: CandidateCount,
     },
 
-    /// A method whose receiver is at a mode its telescope binds, `self : m T`,
+    /// A method whose receiver is at a mode its telescope binds, `self :
+    /// View[m] T`,
     /// whose result is no `-F View[m](a)` over that mode, or whose body is no
     /// place of its receiver, `{ self.#[i] }`; or a view type `View[m](a)`
     /// anywhere but such a method's result.

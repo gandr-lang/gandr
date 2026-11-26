@@ -45,8 +45,8 @@
 //! # A deduced mode lends the place the method answers
 //!
 //! A method whose receiver is written at a mode its telescope binds, `def
-//! f[m : Mode] (self : m T, …) -> -F View[m](a) { self.#[e] }`, answers the
-//! place `self.#[e]` of its receiver: never a value, and never a lens. It
+//! f[m : Mode] (self : View[m] T, …) -> -F View[m](a) { self.#[e] }`, answers
+//! the place `self.#[e]` of its receiver: never a value, and never a lens. It
 //! lowers to the function answering the place's index, which lends its
 //! receiver's place shared to judge the element there at `a`: `var p = self ;
 //! access shared p.#[e] as v { let _ : a = v ; pure e }`, declared `-F
@@ -140,7 +140,6 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Run;
 use crate::form::TileName;
-use crate::form::own_pieces;
 use crate::form::read_pieces;
 use crate::form::view_type;
 use crate::import::ImportResolution;
@@ -346,19 +345,15 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     }
 
     /// Refuse a mode word written on a parameter of the function at
-    /// `function` that is no receiver, and a mode variable on a receiver
-    /// whose method deduces no mode.
+    /// `function` that is no receiver.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the parameter list's `(`;
     ///   `receiver` is the function's receiver mode.
     /// - ensures: `Ok` when every mode word stands on the first parameter of a
-    ///   method, named `self`, and every moded type on that parameter, `m T`,
-    ///   on a method whose mode is deduced. A moded type on any other parameter
-    ///   is an application, `f a`, which the type's lowering reads.
+    ///   method, named `self`, whose mode the word gives.
     /// - fails: [`LoweringRefusal::StrayReceiverMode`] at the first mode word
-    ///   or receiver's mode variable that does not;
-    ///   [`LoweringRefusal::UnknownMold`] reading a parameter's type.
+    ///   that does not.
     /// - panics: none.
     ///
     /// # Errors
@@ -371,7 +366,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// - hypothesis: L3 — a mode word on a top-level function's parameter and
     ///   on a method's second parameter, each refused at the word.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_mode_word_off_a_receiver_is_refused`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::UnknownMold { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::StrayReceiverMode { .. })))]
     #[inline]
     pub fn stray_modes(
         &self,
@@ -403,17 +398,6 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                         receiving && receiver.is_some_and(|mode| mode != ReceiverMode::Deduced);
                     (!receives).then_some(at)
                 },
-                // Off a receiver a moded type is an application, `f a`, which
-                // the type's lowering reads; on a receiver it is a mode only
-                // where the method deduces one.
-                Piece::Operand(declared) if after_colon && receiving => {
-                    match self.moded(declared)? {
-                        Some((written, _)) => {
-                            (receiver != Some(ReceiverMode::Deduced)).then_some(written)
-                        },
-                        None => None,
-                    }
-                },
                 Piece::Tile { label, .. } if label == TileName::COMMA => {
                     position = position.saturating_add(1_usize);
                     after_colon = false;
@@ -432,13 +416,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         Ok(())
     }
 
-    /// The mode variable and the type a receiver at a deduced mode writes at
-    /// `declared`: `View[m] T`, or the moded type `m T`.
+    /// The mode variable and the element a receiver at a deduced mode writes
+    /// at `declared`: `View[m] T`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the variable's tile and the type after it for a view type or
-    ///   a moded type; nothing for any other form.
+    /// - ensures: the variable's tile and the element for a view type; nothing
+    ///   for any other form.
     /// - fails: [`LoweringRefusal::UnknownMold`] reading the form.
     /// - panics: none.
     ///
@@ -446,14 +430,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// As `fails`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a receiver at a mode variable, written as a view and
-    ///   as a moded type, and a parameter whose type is a type variable alone,
-    ///   `x : t`.
+    /// - hypothesis: L3 — a receiver at a mode variable, and a parameter whose
+    ///   type is a type variable alone, `x : t`.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
-    /// - witness: `gandr-surface-lowering::lower::method::tests::a_mode_word_off_a_receiver_is_refused`
     ///
     /// # Cost
-    /// - allocation: the pieces of the view or the moded type, setup
+    /// - allocation: the pieces of the view, setup
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     #[inline]
     pub fn moded(
@@ -462,70 +444,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
     {
         let mut pieces = Pieces::new();
-        let Some((FormName::MODED_TYPE, _)) = self.cx().form_at(declared)?
-        else {
-            return Ok(
-                match view_type(self.cx().pbg, self.cx().tree, declared, &mut pieces)? {
-                    Maybe::Present(view) => Some((view.mode, view.element)),
-                    Maybe::Absent(_) => None,
-                },
-            );
-        };
-        own_pieces(self.cx().pbg, self.cx().tree, declared.node, &mut pieces)?;
 
-        Ok(match *pieces.pieces.as_slice() {
-            [
-                Piece::Tile {
-                    label: TileName::TYPE_VARIABLE,
-                    at: written,
-                },
-                Piece::Operand(typed),
-            ] => Some((written, typed)),
-            _ => None,
-        })
-    }
-
-    /// Refuse a moded type `m T` read as a type: a mode variable stands only
-    /// on a method's receiver, whose parameter reads it before its type.
-    ///
-    /// The refusal marks the whole moded type. A type variable alone is a
-    /// type, so the variable becomes a mode only beside the type after it,
-    /// and either word may be the mistake: `x wit` for `x with` misspells the
-    /// second.
-    ///
-    /// # Specification
-    /// - requires: `cursor` stands at the form's first piece.
-    /// - ensures: never `Ok`.
-    /// - fails: [`LoweringRefusal::StrayReceiverMode`] over the moded type; a
-    ///   misplaced tile when the form opens on none.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As `fails`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a moded type inside a parameter's type and one a
-    ///   misspelt `with` leaves in a type, each refused over the whole moded
-    ///   type; marking the variable alone misses the second word.
-    /// - witness: `gandr-surface-lowering::lower::method::tests::a_mode_word_off_a_receiver_is_refused`
-    /// - witness: `gandr-surface-lowering::lower::method::tests::a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813`
-    #[spec(ensures: |ret| ret.is_err())]
-    #[inline]
-    pub fn moded_type(
-        &self,
-        site: Site,
-        mut cursor: Cursor<'_>,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        let Maybe::Present(written) = cursor.tile(TileName::TYPE_VARIABLE)
-        else {
-            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-        };
-
-        Err(LoweringRefusal::StrayReceiverMode {
-            span: site.at.span,
-            mode: self.cx().name_at(written),
-        })
+        Ok(
+            match view_type(self.cx().pbg, self.cx().tree, declared, &mut pieces)? {
+                Maybe::Present(view) => Some((view.mode, view.element)),
+                Maybe::Absent(_) => None,
+            },
+        )
     }
 }
 
@@ -1144,8 +1069,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// at `site`, when the method's telescope binds it as a mode.
     ///
     /// # Specification
-    /// - requires: `written` is the variable of the receiver's moded type,
-    ///   `self : m T`.
+    /// - requires: `written` is the mode variable of the receiver's view, `self
+    ///   : View[m] T`.
     /// - ensures: the name `written` spells.
     /// - fails: [`LoweringRefusal::UnresolvedName`] at `written` when the
     ///   method's telescope binds no mode of that name.

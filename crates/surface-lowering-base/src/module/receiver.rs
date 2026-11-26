@@ -2,13 +2,12 @@
 //! and written with its type, whose mode word says what a call `s.f(…)` does
 //! with the receiver `s`. `self : shared T` reads it through a shared view,
 //! `self : T` writes it through an exclusive one and `self : consumed T`
-//! takes it. `self : View[m] T` and `self : m T`, `m` a mode the method's
-//! telescope binds, lend a place of it at the mode each call's block asks.
+//! takes it. `self : View[m] T`, `m` a mode the method's telescope binds,
+//! lends a place of it at the mode each call's block asks.
 
 use quenchant_shape::shape::Maybe;
 
 use crate::form::Cursor;
-use crate::form::FormName;
 use crate::form::Piece;
 use crate::form::Placed;
 use crate::form::TileName;
@@ -38,9 +37,9 @@ pub enum ReceiverMode
     Exclusive,
     /// `self : consumed T`: the call takes the receiver, ending its hold.
     Consumed,
-    /// `self : View[m] T` or `self : m T`: the method answers a place of the
-    /// receiver, `View[m] a`, and each call lends that place at the mode its
-    /// block asks.
+    /// `self : View[m] T`: the method answers a place of the receiver,
+    /// `View[m] a`, and each call lends that place at the mode its block
+    /// asks.
     Deduced,
 }
 
@@ -50,12 +49,11 @@ pub enum ReceiverMode
 ///
 /// # Specification
 /// - requires: `header` stands just past the declaration's name; `name_of`
-///   reads a tile's name, `form_of` an operand's form name, and `viewed`
-///   whether an operand is a view type `View[m] T`.
+///   reads a tile's name, and `viewed` whether an operand is a view type
+///   `View[m] T`.
 /// - ensures: past an implicit telescope `@[…]`, a parameter list whose first
-///   parameter is `self : shared T`, `self : T`, `self : consumed T`, `self :
-///   View[m] T` or `self : m T`, its type a moded type, answers that
-///   parameter's mode; anything else answers nothing.
+///   parameter is `self : shared T`, `self : T`, `self : consumed T` or `self :
+///   View[m] T` answers that parameter's mode; anything else answers nothing.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the mode is read off the header's tiles, which a
@@ -63,13 +61,12 @@ pub enum ReceiverMode
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a receiver at each mode, one behind an implicit
-///   telescope, a mode variable written as a view and as a moded type, an
-///   untyped `self` and a first parameter of another name.
+///   telescope, a mode variable, an untyped `self` and a first parameter of
+///   another name.
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_is_a_typed_first_self`
 pub(super) fn receiver_of<'source>(
     header: &Cursor<'_>,
     name_of: impl Fn(Placed) -> SurfaceName<'source>,
-    form_of: impl Fn(Placed) -> Option<FormName>,
     viewed: impl Fn(Placed) -> bool,
 ) -> Option<ReceiverMode>
 {
@@ -108,7 +105,7 @@ pub(super) fn receiver_of<'source>(
         ReceiverMode::Consumed
     }
     else if let Maybe::Present(Piece::Operand(declared)) = cursor.peek()
-        && (form_of(declared) == Some(FormName::MODED_TYPE) || viewed(declared))
+        && viewed(declared)
     {
         ReceiverMode::Deduced
     }

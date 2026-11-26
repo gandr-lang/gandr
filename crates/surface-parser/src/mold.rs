@@ -273,7 +273,6 @@ use crate::meld::CloserReach;
 use crate::meld::DeclarationBound;
 use crate::meld::DeclarationStart;
 use crate::meld::FormUnit;
-use crate::meld::HeadOperandPresence;
 use crate::meld::LayoutOpener;
 use crate::meld::Mark;
 use crate::meld::MoldAdmissibility;
@@ -4256,7 +4255,7 @@ impl<'pbg> Molder<'pbg>
         } = ahead
         {
             let mut tied = core::mem::take(&mut self.tied);
-            self.drop_refuted(&mut tied, tokens, index, source, frontier.head_operand);
+            self.drop_refuted(&mut tied, tokens, index, source);
             self.tied = tied;
             if let [sole] = *self.tied.as_slice() {
                 return Some(sole);
@@ -4910,7 +4909,7 @@ impl<'pbg> Molder<'pbg>
         // A tied opener the next significant token cannot follow is refuted
         // before any window runs; a lone survivor needs no window.
         let mut openers = core::mem::take(&mut self.openers);
-        self.drop_refuted(&mut openers, tokens, index, source, frontier.head_operand);
+        self.drop_refuted(&mut openers, tokens, index, source);
         self.openers = openers;
         // Interchangeable openers mold every later token alike, so their
         // windows tie exactly and the least would win: only it remains.
@@ -5301,8 +5300,7 @@ impl<'pbg> Molder<'pbg>
     }
 
     /// Drop from `molds` the ones the significant token after `index` cannot
-    /// follow, keeping them all when it refutes every one. `head` tells
-    /// whether an operand stands before the token the molds read.
+    /// follow, keeping them all when it refutes every one.
     ///
     /// The token's labels are its whole candidate menu, the reserved
     /// uppercase words' generic fallback labels included, so a refutation
@@ -5311,9 +5309,9 @@ impl<'pbg> Molder<'pbg>
     /// # Specification
     /// - requires: `index` indexes `tokens`, which `source` spells.
     /// - ensures: the molds that remain are the ones [`Molder::follow`] admits
-    ///   for the next significant token, or [`Molder::follow_spaced`] with
-    ///   `head` after a space, in their order, unless it admits none or the
-    ///   stream ends, when every mold remains.
+    ///   for the next significant token, or [`Molder::follow_spaced`] after a
+    ///   space, in their order, unless it admits none or the stream ends, when
+    ///   every mold remains.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5339,7 +5337,6 @@ impl<'pbg> Molder<'pbg>
         tokens: &[Token],
         index: TokenIndex,
         source: &'src SourceFragment<'src>,
-        head: HeadOperandPresence,
     )
     {
         let Some(labels) =
@@ -5348,7 +5345,7 @@ impl<'pbg> Molder<'pbg>
             return;
         };
         let verdict = |mold: MoldId| match spacing(tokens, index) {
-            Spacing::Spaced => self.follow_spaced(mold, &labels, head),
+            Spacing::Spaced => self.follow_spaced(mold, &labels),
             Spacing::Glued => self.follow(mold, &labels),
         };
         if molds.iter().all(|&mold| verdict(mold) == Follow::Refuted) {
@@ -5364,9 +5361,8 @@ impl<'pbg> Molder<'pbg>
     /// continues the call form, so the call form's own `(` does not follow
     /// the mold here. The endpoint list of a path or bridge type is a call
     /// list alike: `Path (g(a)) (g(a))` applies `Path` to two groups. A type
-    /// variable is an argument like a type name when an operand stands before
-    /// it, as `head` tells; a type variable that heads its type keeps the
-    /// moded type `m T`.
+    /// variable takes an argument as a type name does: `fam d c` applies
+    /// `fam` to two arguments.
     ///
     /// # Specification
     /// - requires: `labels` are the labels of a token written after a space.
@@ -5376,9 +5372,8 @@ impl<'pbg> Molder<'pbg>
     ///   [`GLUED_CALLS`] names, is labelled with one of `labels`, or `mold`'s
     ///   right bound is the root, it can end its form, and
     ///   [`Molder::after_form`] admits `labels` or a label in `labels` names a
-    ///   tile that begins a type and `mold` is no type variable that heads its
-    ///   type, or `mold`'s right bound is not the root and a label in `labels`
-    ///   names a tile that begins a form. For any other mold,
+    ///   tile that begins a type, or `mold`'s right bound is not the root and a
+    ///   label in `labels` names a tile that begins a form. For any other mold,
     ///   [`Molder::follow`].
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the mold's
@@ -5387,9 +5382,9 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — `Vec Integer (Succ Zero)` applies `Vec` to two
     ///   arguments, `Var (Extend g n) n` to two, `Vec a (Succ n)` to two, `-F
-    ///   Maybe A` returns `Maybe A`, `m T` stays a moded type, `Vec(A, n)`
-    ///   keeps the call form, and `Path (g(a)) (g(a))` applies `Path` to two
-    ///   groups: keeping the call form's `(` reads the group as a call of
+    ///   Maybe A` returns `Maybe A`, `fam d c` applies `fam` to two, `Vec(A,
+    ///   n)` keeps the call form, and `Path (g(a)) (g(a))` applies `Path` to
+    ///   two groups: keeping the call form's `(` reads the group as a call of
     ///   `Integer` or `a`, keeping the endpoint list's `(` reads the groups as
     ///   the endpoints, and refuting a whole type before a type reads `Maybe`
     ///   as the call form's head.
@@ -5406,7 +5401,6 @@ impl<'pbg> Molder<'pbg>
         &self,
         mold: MoldId,
         labels: &LabelIds,
-        head: HeadOperandPresence,
     ) -> Follow
     {
         let pbg = self.pbg;
@@ -5426,17 +5420,6 @@ impl<'pbg> Molder<'pbg>
                         .rule_of(right)
                         .is_ok_and(|rule| GLUED_CALLS.contains(&rule.name().0)))
         });
-        // A type variable still opens a moded type, `m T`, until #5330 settles
-        // the two readings, so it takes no argument here. After an operand a
-        // spaced `(` opens a group that it takes, as `a` does in
-        // `Vec a (Succ n)`; a type variable that heads its type keeps `m (T)`.
-        let variable = pbg.mold(mold).is_ok_and(|own| own.label == "type_variable");
-        let grouped = || {
-            bool::from(head)
-                && pbg
-                    .label_id(LabelText("("))
-                    .is_some_and(|open| ids.contains(&open))
-        };
         let starts_type = || {
             ids.iter().any(|&label| {
                 pbg.label_fresh_candidates(label)
@@ -5447,8 +5430,7 @@ impl<'pbg> Molder<'pbg>
         let continued = succeeded
             || if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
                 bool::from(pbg.mold_is_form_last(mold))
-                    && (self.after_form(mold, labels) == Follow::Possible
-                        || ((!variable || grouped()) && starts_type()))
+                    && (self.after_form(mold, labels) == Follow::Possible || starts_type())
             }
             else {
                 ids.iter()
@@ -5704,7 +5686,6 @@ mod tests
     #[cfg(feature = "census")]
     use super::DecisionCount;
     use super::Follow;
-    use super::HeadOperandPresence;
     #[cfg(feature = "census")]
     use super::MoldVerdicts;
     use super::Molder;
@@ -6562,7 +6543,6 @@ mod tests
                 &tokens,
                 TokenIndex::from(0),
                 &SourceFragment::from(source),
-                HeadOperandPresence::from(false),
             );
             assert_eq!(molds, kept, "{source:?}");
         }

@@ -546,7 +546,6 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "loop_expression",
     "manifest_sort",
     "manifest_type",
-    "moded_type",
     "recv_expression",
     "release_expression",
     "offers_declaration",

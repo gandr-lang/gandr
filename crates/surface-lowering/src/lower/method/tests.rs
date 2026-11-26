@@ -167,12 +167,7 @@ fn a_mode_word_off_a_receiver_is_refused()
     let mut arena = CoreArena::new();
     let source = listing(source);
     let module = listed(&source, &mut arena);
-    for (name, mode) in [
-        ("top", "shared"),
-        ("second", "consumed"),
-        ("deduced", "m"),
-        ("nested", "m"),
-    ] {
+    for (name, mode) in [("top", "shared"), ("second", "consumed")] {
         assert!(
             matches!(
                 refusal_of(&module, SurfaceName::from(name)),
@@ -183,18 +178,32 @@ fn a_mode_word_off_a_receiver_is_refused()
             refusal_of(&module, SurfaceName::from(name))
         );
     }
+    // A mode variable at the head of a type is no function of types, bound
+    // by `[m : Mode]` or not.
+    for name in ["deduced", "nested"] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::UnresolvedTypeHead { name: written, .. }
+                    if written == SurfaceName::from("m")
+            ),
+            "`{name}` applies the mode `m` as a type: {:?}",
+            refusal_of(&module, SurfaceName::from(name))
+        );
+    }
     // A type variable alone is a parameter's type, never its mode.
     let _picked = body_named(&module, SurfaceName::from("pick"));
 }
 
 #[test]
-fn a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813()
+fn a_mode_variable_at_a_type_head_is_refused_over_its_application_3813()
 {
-    // A word that names nothing before a type is refused over the pair. A
-    // word that names a binder is the head of an application, `x wit`, so
-    // the misspelt `with` is refused as the type it names.
+    // A word that names no function of types at the head of a type is
+    // refused over the application, at the word. A word that names a binder
+    // is the head of an application, `x wit`, so the misspelt `with` is
+    // refused as the type it names.
     let source = include_str!(
-        "tests/fixtures/a-mode-variable-off-a-receiver-is-refused-over-its-moded-type-3813.gandr"
+        "tests/fixtures/a-mode-variable-at-a-type-head-is-refused-over-its-application-3813.gandr"
     );
     let mut arena = CoreArena::new();
     let source = listing(source);
@@ -208,8 +217,11 @@ fn a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813()
     assert!(
         matches!(
             refused,
-            LoweringRefusal::StrayReceiverMode { span, .. }
-                if usize::from(span.start()) == start && usize::from(span.end()) == end
+            LoweringRefusal::UnresolvedTypeHead { span, head, .. }
+                if usize::from(span.start()) == start
+                    && usize::from(span.end()) == end
+                    && usize::from(head.start()) == start
+                    && usize::from(head.end()) == start.saturating_add(1)
         ),
         "`nested` is refused over `m Integer`, at {start}..{end}: {refused:?}"
     );

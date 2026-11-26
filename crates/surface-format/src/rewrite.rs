@@ -151,10 +151,6 @@ pub enum RewriteName
     /// `handle`; both forms write `effect … handle`, the one spelling of a
     /// handler.
     HandlerWords,
-    /// A receiver at a deduced mode: `self : m T` and `self : View[m] T`,
-    /// the mode a static argument of `View`; both forms write the view, its
-    /// type in parentheses when it is no atom.
-    ModedReceiver,
 }
 
 impl RewriteName
@@ -180,7 +176,6 @@ impl RewriteName
         Self::TypeApplication,
         Self::BodyAfterEquals,
         Self::HandlerWords,
-        Self::ModedReceiver,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -211,7 +206,6 @@ impl RewriteName
             Self::TypeApplication => "type-application",
             Self::BodyAfterEquals => "body-after-equals",
             Self::HandlerWords => "handler-words",
-            Self::ModedReceiver => "moded-receiver",
         }
     }
 
@@ -298,7 +292,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 50] = [
+pub const REWRITES: [Rewrite; 48] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -687,22 +681,6 @@ pub const REWRITES: [Rewrite; 50] = [
         to: Spelling("effect c : I { M } handle { … }"),
         enabled: Enabled::On,
     },
-    Rewrite {
-        name: RewriteName::ModedReceiver,
-        direction: Direction::Sugar,
-        mold: MoldName("moded_type"),
-        from: Spelling("self : m T"),
-        to: Spelling("self : View[m] T"),
-        enabled: Enabled::On,
-    },
-    Rewrite {
-        name: RewriteName::ModedReceiver,
-        direction: Direction::Desugar,
-        mold: MoldName("moded_type"),
-        from: Spelling("self : m T"),
-        to: Spelling("self : View[m] T"),
-        enabled: Enabled::On,
-    },
 ];
 
 /// Which rewrites a form runs.
@@ -952,10 +930,7 @@ impl Band
             // A thunk is a keyword form, which binds loose: an argument of a
             // type's juxtaposition keeps its parentheses, `args d (thunk { f
             // })`.
-            | "thunk_expression"
-            // A word before a type is a moded type, whose type runs to the
-            // arrow's band: `f a` applies `f` by juxtaposition.
-            | "moded_type" => Self::Loose,
+            | "thunk_expression" => Self::Loose,
             _ => Self::Atom,
         }
     }
@@ -1211,42 +1186,6 @@ enum Descent
     No,
     /// It carries it.
     Yes,
-}
-
-/// Before which arguments of a juxtaposition the empty tile of a type's
-/// juxtaposition stands.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Glued
-{
-    /// Before each: the head is a type name, a qualified name, a staged type
-    /// or the descent.
-    Always,
-    /// Before each argument after the first that is no word: the head is a
-    /// word, which the grammar reads as a moded type over the rest.
-    AfterForm,
-}
-
-/// The lowercase builtin type names: tiles of their own, never a word a
-/// moded type leads with.
-const BUILTIN_WORDS: [&str; 12] = [
-    "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "usize", "isize", "f32", "f64",
-];
-
-/// Whether the operand `child` is one word the type grammar reads as a type
-/// variable, so that a word before it leads a moded type over it.
-///
-/// # Specification
-/// trivial.
-fn word(child: Child<'_>) -> bool
-{
-    match child {
-        Child::Leaf(leaf) => {
-            let text = <&str>::from(leaf.text);
-            text.starts_with(|first: char| first.is_ascii_lowercase())
-                && !BUILTIN_WORDS.contains(&text)
-        },
-        Child::Node(_) => false,
-    }
 }
 
 impl Operand<'_>
@@ -2631,12 +2570,6 @@ impl<'source> Respelling<'_, 'source>
             },
             (RewriteName::HandlerWords, Direction::Sugar | Direction::Desugar) => {
                 return self.handler_words(parts, extent);
-            },
-            (RewriteName::ModedReceiver, Direction::Sugar | Direction::Desugar) => {
-                if !self.receiving(at) {
-                    return None;
-                }
-                self.viewed_receiver(&mut out, parts)?
             },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
@@ -4025,78 +3958,6 @@ impl<'source> Respelling<'_, 'source>
         (!opened && !carrier).then_some(juxtaposition(Band::Atom, led))
     }
 
-    /// Whether the form at `at` is the type of a definition's receiver: the
-    /// operand of its parent right after the tiles `(`, `self` and `:`, its
-    /// first parameter named `self`, where the lowering reads a mode.
-    ///
-    /// # Specification
-    /// trivial.
-    fn receiving(
-        &self,
-        at: NodeIndex,
-    ) -> bool
-    {
-        let Some(&parent) = self.parents.get(&at)
-        else {
-            return false;
-        };
-        let mut last: [Option<SourceFragment<'source>>; 3] = [None, None, None];
-        for child in self.tree.children(parent) {
-            if child == at {
-                break;
-            }
-            match self
-                .tree
-                .node(child)
-                .map(|node| (node.label(), node.span()))
-            {
-                Some((NodeLabel::Tile(_), span)) => {
-                    let [_, second, third] = last;
-                    last = [second, third, self.leaf(span, None).map(|leaf| leaf.text)];
-                },
-                Some((NodeLabel::Meld(_) | NodeLabel::Wald, _)) => last = [None, None, None],
-                Some(_) | None => {},
-            }
-        }
-        last.into_iter()
-            .map(|text| text.map(<&str>::from))
-            .eq([Some("("), Some("self"), Some(":")])
-    }
-
-    /// Write the receiver's moded type `m T` whose parts are `parts` as the
-    /// view `View[m] T`, `T` in its parentheses when it is no atom.
-    /// Do not write a type that holds a comment.
-    ///
-    /// # Specification
-    /// trivial.
-    fn viewed_receiver(
-        &self,
-        out: &mut Builder<'source>,
-        parts: &[Part<'source>],
-    ) -> Option<Band>
-    {
-        let [
-            Part {
-                role: Role::Own(mode),
-                ..
-            },
-            Part {
-                role: Role::Operand(typed),
-                ..
-            },
-        ] = *parts
-        else {
-            return None;
-        };
-        out.token(Spelling("View"));
-        out.token(Spelling("["));
-        out.fragment(mode);
-        out.token(Spelling("]"));
-        out.gap(Spelling(" "));
-        out.place(&self.operand(typed), Band::Atom);
-        Some(Band::Application)
-    }
-
     /// Write the type application whose parts are `parts` as juxtaposition:
     /// `F(a, b)` as `F a b`, `f(a, b)` as `f a b`, `el[<](a)` as `el [<] a`,
     /// `M.F(a)` as `M.F a` and `View[m](a)` as `View[m] a`. A second list,
@@ -4108,8 +3969,9 @@ impl<'source> Respelling<'_, 'source>
     /// states: a returner encloses a juxtaposition whose first argument takes
     /// parentheses, because the type grammar reads `-F Var (Extend a b) c` as
     /// the call `Var(Extend a b)` applied to `c`. A lowercase head binds
-    /// loose, because the type grammar reads a word before a type as a moded
-    /// type, whose type runs to the arrow's band.
+    /// loose, as the printer binds it, so each tighter place writes it in
+    /// parentheses. The descent after a lowercase head is the first argument
+    /// of its juxtaposition, `(el [<]) a`.
     ///
     /// # Specification
     /// trivial.
@@ -4247,21 +4109,17 @@ impl<'source> Respelling<'_, 'source>
         let mut band = match head {
             Head::Capital(name) => {
                 out.fragment(name);
-                self.arguments(out, &first, Glued::Always)
+                self.arguments(out, &first)
             },
             Head::Word(name, descent) => {
                 out.fragment(name);
-                out.gap(Spelling(" "));
-                let glued = if descent == Descent::Yes {
+                if descent == Descent::Yes {
+                    out.glue();
                     out.token(Spelling("["));
                     out.token(Spelling("<"));
                     out.token(Spelling("]"));
-                    Glued::Always
                 }
-                else {
-                    Glued::AfterForm
-                };
-                let _led = self.arguments(out, &first, glued);
+                let _led = self.arguments(out, &first);
                 Band::Loose
             },
             Head::Written => {
@@ -4271,7 +4129,7 @@ impl<'source> Respelling<'_, 'source>
                     }
                     out.leaves.extend(part.leaves.iter().copied());
                 }
-                self.arguments(out, &first, Glued::Always)
+                self.arguments(out, &first)
             },
         };
         for again in lists {
@@ -4281,16 +4139,15 @@ impl<'source> Respelling<'_, 'source>
                 inner: None,
             };
             out.place(&called, Band::Atom);
-            band = self.arguments(out, &again, Glued::Always);
+            band = self.arguments(out, &again);
         }
         Some(band)
     }
 
     /// Write `arguments` after a head into `out`, each an atom or in its
-    /// parentheses, and answer the band of the juxtaposition they make as
-    /// [`juxtaposition`] reads an atom head. `glued` says before which
-    /// argument the empty tile of a type's juxtaposition stands, as the
-    /// parser reads it.
+    /// parentheses after the empty tile of a type's juxtaposition, and answer
+    /// the band of the juxtaposition they make as [`juxtaposition`] reads an
+    /// atom head.
     ///
     /// # Specification
     /// trivial.
@@ -4301,26 +4158,16 @@ impl<'source> Respelling<'_, 'source>
         &self,
         out: &mut Builder<'source>,
         arguments: &[Child<'source>],
-        glued: Glued,
     ) -> Band
     {
         let mut led = None;
-        let mut joined = glued == Glued::Always;
-        for (index, &child) in arguments.iter().enumerate() {
+        for &child in arguments {
             let operand = self.argument(child);
             if led.is_none() {
                 led = Some(operand.enclosed());
             }
-            if joined {
-                out.glue();
-            }
-            else if index > 0 {
-                out.gap(Spelling(" "));
-            }
+            out.glue();
             out.place(&operand, Band::Atom);
-            // Past a moded type's words, the rest of its type is a type's
-            // juxtaposition: `f a B c` is `f` over `a` over `B c`.
-            joined = joined || !word(child);
         }
         juxtaposition(Band::Atom, led.unwrap_or(Enclosed::No))
     }
@@ -4329,7 +4176,8 @@ impl<'source> Respelling<'_, 'source>
     /// own band, but [`juxtaposition`]'s for a type juxtaposition, `Var
     /// (Extend a b) c`, as [`Self::juxtaposed_type`] writes it. The
     /// juxtaposition nests to the left, so its head is the first operand and
-    /// its first argument the second.
+    /// its first argument the second. A lowercase head, `f` in `f a b`, binds
+    /// loose through each application of its spine, as the printer binds it.
     ///
     /// # Specification
     /// trivial.
@@ -4348,7 +4196,12 @@ impl<'source> Respelling<'_, 'source>
         });
         match (operands.next(), operands.next()) {
             (Some(head), Some(first)) => {
+                let lowercase = matches!(head, Child::Leaf(leaf)
+                    if <&str>::from(leaf.text).starts_with(|letter: char| letter.is_ascii_lowercase()));
                 let (head, _) = self.bands(head);
+                if lowercase || head == Band::Loose {
+                    return Band::Loose;
+                }
                 let (band, inner) = self.bands(first);
                 juxtaposition(head, enclosure(band, inner))
             },
@@ -4484,7 +4337,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 45] = [
+const RULES: [MoldName; 44] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4518,7 +4371,6 @@ const RULES: [MoldName; 45] = [
     MoldName("type_path"),
     MoldName("staged_type"),
     MoldName("extension_type"),
-    MoldName("moded_type"),
     MoldName("type_quote_expression"),
     MoldName("send_session_type"),
     MoldName("receive_session_type"),

@@ -6849,15 +6849,6 @@ impl<'source> Collector<'_, 'source>
                 && let Some(mode) = receiver_of(
                     &header,
                     |tile| self.name_of(tile),
-                    |operand| match self
-                        .tree
-                        .node(operand.node)
-                        .map(|node| shape_of(self.pbg, node))
-                    {
-                        Some(Ok(Shape::Form { name, .. })) => Some(name),
-                        Some(Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_))
-                        | None => None,
-                    },
                     |operand| {
                         let mut pieces = Pieces::new();
                         matches!(
@@ -9960,10 +9951,11 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: `member` is a child of `self.tree`.
-    /// - ensures: the span of `member`'s first tile and its second tile, when
-    ///   [`misspelt_keyword`] reads the first as `def` misspelt before the
+    /// - ensures: the span of `member`'s first written tile and its second,
+    ///   when [`misspelt_keyword`] reads the first as `def` misspelt before the
     ///   second and the second is a word the grammar spells as no tile; `None`
-    ///   otherwise.
+    ///   otherwise. The empty tile of a juxtaposition, `de zero`, is no written
+    ///   tile.
     /// - provides: what holds a misspelt member definition under its name.
     /// - fails: never.
     /// - panics: none.
@@ -9986,6 +9978,7 @@ impl<'source> Collector<'_, 'source>
                 let node = self.tree.node(position)?;
                 let span = node.span();
                 (matches!(node.label(), NodeLabel::Tile(_))
+                    && span.start() < span.end()
                     && member.span.start() <= span.start()
                     && span.end() <= member.span.end())
                 .then_some(Placed {

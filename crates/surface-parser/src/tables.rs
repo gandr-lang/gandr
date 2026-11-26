@@ -173,9 +173,6 @@ pub struct Admission<'pbg>
     /// Whether an item-sort `(` is refused: an operand head at an
     /// expression slot.
     refuses_item_paren: bool,
-    /// Whether a moded type is refused: a type operand head that a type
-    /// application would take it as an argument of (#5326).
-    refuses_moded: bool,
     /// The last word composed, with its index.
     cached: Option<(MoldWordIndex, MoldWord)>,
 }
@@ -191,9 +188,8 @@ impl<'pbg> Admission<'pbg>
     ///   that extend it and the absorbing starts of its sort and of items, and
     ///   from the fills of its sort when the grammar applies that sort by
     ///   juxtaposition; with no open form, also from the first mids; refuses an
-    ///   item `(` after an operand head at an expression slot, a moded type
-    ///   after a type operand head, and after an operand head a mid or an end
-    ///   that [`continues_past_operand`] refuses.
+    ///   item `(` after an operand head at an expression slot, and after an
+    ///   operand head a mid or an end that [`continues_past_operand`] refuses.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -242,7 +238,6 @@ impl<'pbg> Admission<'pbg>
             continuations: pbg.tile_set(TileSet::Continuations),
             after_operand: frontier.head_sort.filter(|_| head_operand),
             refuses_item_paren: head_operand && frontier.expected == Sort::Expression,
-            refuses_moded: applied == Some(Sort::Type),
             cached: None,
         }
     }
@@ -289,11 +284,7 @@ impl<'pbg> Admission<'pbg>
         if admitted {
             let refused = self.pbg.mold(mold).is_ok_and(|def| {
                 self.refuses_item_paren && def.sort == Sort::Item && def.label == "("
-            }) || (self.refuses_moded
-                && self
-                    .pbg
-                    .rule_of(mold)
-                    .is_ok_and(|rule| rule.name().0 == crate::meld::MODED_TYPE));
+            });
             return MoldAdmissibility::from(!refused);
         }
         // An id past the table is in no set; push routes it to the unmolded

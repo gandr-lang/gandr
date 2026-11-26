@@ -86,7 +86,7 @@ def bareIndex() -> Integer =
 def stray(v : View[m] Integer) -> Integer =
   pure 0
 
-/// A mode variable on a parameter that is no receiver.
-@[refuses("StrayReceiverMode")]
+/// A mode variable at the head of a type: a mode is no function of types.
+@[refuses("UnresolvedTypeHead")]
 def lent[m : Mode](ys : m List Integer) -> Integer =
   pure 0

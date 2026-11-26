@@ -435,9 +435,6 @@ impl FormName
     /// The descent `[<]`, an operand of its own: the first argument of a
     /// lowercase head, `el [<] a`, that claims the head's own recursion.
     pub const DESCENT_TYPE: Self = Self("descent_type");
-    /// A word before a type, `f a` or `m T`: the application of `f`, or a
-    /// method's receiver at the mode variable `m`.
-    pub const MODED_TYPE: Self = Self("moded_type");
     /// A boolean literal standing as its own pattern.
     pub const BOOLEAN: Self = Self("boolean");
     /// A number standing as its own pattern.
@@ -1252,7 +1249,7 @@ impl Former
 ///   grammar gains breaks the table rather than silently declining the form.
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 125_usize] = [
+pub const FORMERS: [(&str, Former); 124_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1318,9 +1315,6 @@ pub const FORMERS: [(&str, Former); 125_usize] = [
     ("at_type", Former::AtType),
     ("staged_type", Former::StagedType),
     ("extension_type", Former::ExtensionType),
-    // A word before a type applies the word, `f a b`; a method's receiver
-    // reads its mode variable through [`own_pieces`].
-    ("moded_type", Former::TypeApplication),
     ("handle_expression", Former::Scope),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),
@@ -1671,9 +1665,8 @@ pub enum Shape
 /// # Specification
 /// - requires: nothing; the supplied grammar interprets the node's mold.
 /// - ensures: the root reads as [`Shape::Root`], a form or tile as the form its
-///   mold's named kind names, a word of a word before a type as a type variable
-///   ([`standing`]), grout and a minted close as the repair they stand for, and
-///   layout and documentation as [`Shape::Layout`].
+///   mold's named kind names, grout and a minted close as the repair they stand
+///   for, and layout and documentation as [`Shape::Layout`].
 /// - provides: the one total reading of a node label every pass dispatches on.
 /// - fails: [`LoweringRefusal::UnknownMold`] when the mold is absent from the
 ///   supplied table, including malformed hand-built labels, or names a kind the
@@ -1705,7 +1698,7 @@ pub enum Shape
         | NodeLabel::GhostClose { class, .. } => {
             ret == Ok(Shape::Repair(Repair::GhostClose(class)))
         },
-        | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => pbg.named_kind(mold).map(|kind| standing(node, kind)).map_or_else(
+        | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => pbg.named_kind(mold).map_or_else(
             |_| {
                 ret == Err(LoweringRefusal::UnknownMold {
                     span: node.span(),
@@ -1732,7 +1725,7 @@ pub fn shape_of<'source>(
     match node.label() {
         NodeLabel::Wald => Ok(Shape::Root),
         NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
-            let kind = standing(node, named_kind(pbg, node, mold)?);
+            let kind = named_kind(pbg, node, mold)?;
             let Maybe::Present(former) = former_of(kind)
             else {
                 return Err(LoweringRefusal::UnknownMold {
@@ -1749,26 +1742,6 @@ pub fn shape_of<'source>(
         NodeLabel::Grout { shape, .. } => Ok(Shape::Repair(Repair::Grout(shape))),
         NodeLabel::GhostClose { class, .. } => Ok(Shape::Repair(Repair::GhostClose(class))),
         NodeLabel::Space | NodeLabel::Doc => Ok(Shape::Layout),
-    }
-}
-
-/// The kind the node `node` of the named kind `kind` stands as: a word of a
-/// word before a type, `f` or `a` in `f a`, stands alone as a type variable,
-/// which the call its form spells reads as its head or an argument; any
-/// other node stands as its kind.
-///
-/// # Specification
-/// trivial.
-fn standing(
-    node: &Node,
-    kind: NamedKind<'static>,
-) -> NamedKind<'static>
-{
-    if matches!(node.label(), NodeLabel::Tile(_)) && kind.0 == FormName::MODED_TYPE.0 {
-        NamedKind(FormName::TYPE_VARIABLE.0)
-    }
-    else {
-        kind
     }
 }
 
@@ -2431,9 +2404,10 @@ pub fn written_children<'tree>(
 ///   itself leaves both fields empty. An application spine `f x y` reads as the
 ///   pieces of the call `f(x, y)` it spells, as [`application_spine`] reads it,
 ///   and a type's call in parentheses at its head as that call's pieces, as
-///   [`called_head`] reads it. A word before a type, `f a b`, reads as the call
-///   `f(a, b)` it spells, as [`moded_call`] reads it; [`own_pieces`] reads its
-///   own children.
+///   [`called_head`] reads it. A type's application whose head is a type
+///   variable and whose first argument is the descent `[<]`, `el [<] a`, reads
+///   as the call `el[<](a)`, as [`descended`] reads it; [`own_pieces`] reads
+///   its own children.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -2497,12 +2471,6 @@ pub fn written_children<'tree>(
                 | NodeLabel::Meld(mold)
                     if (Some(mold) == pbg.application() || Some(mold) == pbg.application_in(Sort::Type))
                         && matches!(read.pieces.first(), Some(Piece::Operand(_) | Piece::Tile { .. }))
-                        && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE) =>
-                {
-                    read.repair == Maybe::Absent(repair::Absent::Unrepaired)
-                },
-                | NodeLabel::Meld(mold)
-                    if pbg.named_kind(mold).is_ok_and(|kind| kind.0 == FormName::MODED_TYPE.0)
                         && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE) =>
                 {
                     read.repair == Maybe::Absent(repair::Absent::Unrepaired)
@@ -2593,35 +2561,18 @@ pub fn read_pieces<'source>(
     if application_spine(pbg, tree, position, read).is_some() {
         if matches!(node.label(), NodeLabel::Meld(mold) if Some(mold) == pbg.application_in(Sort::Type))
         {
+            descended(pbg, tree, read);
             return called_head(pbg, tree, read);
         }
-        return Ok(());
-    }
-    if moded(pbg, node) && moded_call(pbg, tree, position, read)? {
         return Ok(());
     }
     own_pieces(pbg, tree, position, read)
 }
 
-/// Whether `node` is a word before a type, `f a` or `m T`.
-///
-/// # Specification
-/// trivial.
-fn moded(
-    pbg: &Pbg,
-    node: &Node,
-) -> bool
-{
-    matches!(node.label(), NodeLabel::Meld(mold)
-        if pbg.named_kind(mold).is_ok_and(|kind| kind.0 == FormName::MODED_TYPE.0))
-}
-
 /// Read the children of the node at `position` against its own rule, into
 /// `read`.
 ///
-/// It reads as [`read_pieces`] reads a form that is no application spine and
-/// no word before a type. A method's receiver at a mode variable, `self : m
-/// T`, reads its word and its type so.
+/// It reads as [`read_pieces`] reads a form that is no application spine.
 ///
 /// # Specification
 /// - requires: `position` names a node of `tree`; `pbg` interprets its molds.
@@ -2640,10 +2591,8 @@ fn moded(
 /// - allocation: the worklist of an inner repair, error path
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`read_pieces`], and a receiver's moded type read as
-///   its word and its type.
+/// - hypothesis: L3 — as [`read_pieces`].
 /// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
-/// - witness: `gandr-surface-lowering::lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
 #[inline]
 pub fn own_pieces<'source>(
     pbg: &Pbg,
@@ -2899,9 +2848,9 @@ pub mod view_type
 /// # Specification
 /// - requires: `read` holds the pieces of an application spine.
 /// - ensures: when the first piece is an operand whose written children are
-///   `(`, one form and `)`, and that form is a type's application or a word
-///   before a type, which [`read_pieces`] reads as a call, the first piece is
-///   replaced by that call's pieces. `read` is unchanged otherwise.
+///   `(`, one form and `)`, and that form is a type's application, which
+///   [`read_pieces`] reads as a call, the first piece is replaced by that
+///   call's pieces. `read` is unchanged otherwise.
 /// - fails: [`LoweringRefusal::UnknownMold`] reading the held form.
 /// - panics: none.
 ///
@@ -2946,8 +2895,7 @@ fn called_head<'source>(
         return Ok(());
     }
     let called = tree.node(held).is_some_and(|node| {
-        moded(pbg, node)
-            || matches!(node.label(), NodeLabel::Meld(mold) if Some(mold) == pbg.application_in(Sort::Type))
+        matches!(node.label(), NodeLabel::Meld(mold) if Some(mold) == pbg.application_in(Sort::Type))
     });
     if !called {
         return Ok(());
@@ -3230,133 +3178,79 @@ fn qualified_head(
     }
 }
 
-/// The pieces of the call that the word before a type at `position` spells:
-/// `f a b` reads as `f(a, b)`, and `el [<] a` as the descent `el[<](a)`.
-///
-/// The grammar molds a lowercase word before a type as the moded type `m T`,
-/// whose type runs to the arrow's band: `f a b` is `f` over the moded type `a
-/// b`, and `f A b` is `f` over the juxtaposition `A b`. So each word down the
-/// moded type's right spine is an argument, and so is each operand of a
-/// juxtaposition that ends it. A descent `[<]` that stands first among the
-/// arguments is the bracket the call form writes after its head.
+/// Write a descent `[<]` that stands first among the arguments of a type's
+/// application whose head is a type variable as the bracket the call form
+/// writes after its head: `el [<] a` reads as `el[<](a)`.
 ///
 /// # Specification
-/// - requires: `read` holds no pieces it keeps.
-/// - ensures: when `position` is a moded type whose pieces are a word and an
-///   operand, `read` holds the word as a type variable, the descent's `[`, `<`
-///   and `]` when the first argument is one, `(`, the other arguments separated
-///   by `,`, and `)`, and the answer is `true`. `false` otherwise, with `read`
-///   empty.
-/// - fails: [`LoweringRefusal::UnknownMold`] reading a node of the spine.
+/// - requires: `read` holds the pieces of a type's application spine.
+/// - ensures: when the head is a type variable and the first argument is a
+///   descent, that argument is replaced by `[`, `<` and `]` at the descent, and
+///   the list of the other arguments opens after them. `read` is unchanged
+///   otherwise.
 /// - panics: none.
 ///
-/// # Errors
-/// As `fails`.
-///
 /// # Cost
-/// - allocation: the call form's pieces, growth within `read`'s buffer, and a
-///   scratch buffer per call
+/// - allocation: growth of `read`'s buffer by two pieces, for a descent.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `twice Integer`, `apply twice Integer`, `both Integer
-///   (twice Integer)` and `el [<] a` lower as their call forms.
+/// - hypothesis: L3 — `el [<] a` lowers as the descent `el[<](a)`.
 /// - witness: `gandr-surface-lowering::lower::tests::a_lowercase_head_applies_by_juxtaposition`
-fn moded_call<'source>(
+fn descended(
     pbg: &Pbg,
-    tree: &SyntaxTree<'source>,
-    position: NodeIndex,
+    tree: &SyntaxTree<'_>,
     read: &mut Pieces,
-) -> Result<bool, LoweringRefusal<'source>>
+)
 {
-    let worded = |at: NodeIndex| tree.node(at).is_some_and(|node| moded(pbg, node));
-    let mut scratch = Pieces::new();
-    own_pieces(pbg, tree, position, &mut scratch)?;
-    read.pieces.clear();
-    // A repair among the form's own children is reported by its own pieces.
-    let (Maybe::Absent(_), &[Piece::Tile { at: head, .. }, Piece::Operand(mut rest)]) =
-        (scratch.repair, scratch.pieces.as_slice())
-    else {
-        return Ok(false);
-    };
-    if !worded(position) {
-        return Ok(false);
-    }
-    let mut arguments: Vec<Placed> = Vec::new();
-    while worded(rest.node) {
-        own_pieces(pbg, tree, rest.node, &mut scratch)?;
-        let (Maybe::Absent(_), &[Piece::Tile { at: word, .. }, Piece::Operand(next)]) =
-            (scratch.repair, scratch.pieces.as_slice())
-        else {
-            break;
-        };
-        arguments.push(word);
-        rest = next;
-    }
-    // A juxtaposition that ends the spine gives its head and each of its
-    // arguments, `f A b` as `f(A, b)`.
-    let juxtaposed = tree.node(rest.node).is_some_and(|node| {
-        matches!(node.label(), NodeLabel::Meld(mold) if Some(mold) == pbg.application_in(Sort::Type))
-    });
-    scratch.pieces.clear();
-    if juxtaposed {
-        // Its head is an argument, so a call in parentheses there stays one
-        // argument: `both (twice A) B` is `both(twice(A), B)`.
-        let _spine = application_spine(pbg, tree, rest.node, &mut scratch);
-    }
-    match *scratch.pieces.as_slice() {
-        [
-            ref first,
-            Piece::Tile { label: open, .. },
-            ref spine @ ..,
-            Piece::Tile { label: close, .. },
-        ] if open == TileName::PAREN_OPEN && close == TileName::PAREN_CLOSE => {
-            arguments.push(first.placed());
-            arguments.extend(spine.iter().filter_map(|piece| match *piece {
-                Piece::Operand(operand) => Some(operand),
-                Piece::Tile { .. } => None,
-            }));
+    let &[
+        Piece::Tile {
+            label: TileName::TYPE_VARIABLE,
+            ..
         },
-        _ => arguments.push(rest),
+        Piece::Tile {
+            label: TileName::PAREN_OPEN,
+            at: open,
+        },
+        Piece::Operand(first),
+        Piece::Tile {
+            label: after,
+            at: next,
+        },
+        ..,
+    ] = read.pieces.as_slice()
+    else {
+        return;
+    };
+    let descent = tree
+        .node(first.node)
+        .and_then(|node| shape_of(pbg, node).ok())
+        .is_some_and(
+            |shape| matches!(shape, Shape::Form { name, .. } if name == FormName::DESCENT_TYPE),
+        );
+    if !descent {
+        return;
     }
-    let descent = arguments.first().is_some_and(|first| {
-        tree.node(first.node)
-            .and_then(|node| shape_of(pbg, node).ok())
-            .is_some_and(
-                |shape| matches!(shape, Shape::Form { name, .. } if name == FormName::DESCENT_TYPE),
-            )
-    });
-    read.pieces.push(Piece::Tile {
-        label: TileName::TYPE_VARIABLE,
-        at: head,
-    });
-    let mut written = arguments.iter().copied();
-    if descent && let Some(mark) = written.next() {
-        for label in [
-            TileName::BRACKET_OPEN,
-            TileName::LESS_THAN,
-            TileName::BRACKET_CLOSE,
-        ] {
-            read.pieces.push(Piece::Tile { label, at: mark });
-        }
+    let bracket = [
+        TileName::BRACKET_OPEN,
+        TileName::LESS_THAN,
+        TileName::BRACKET_CLOSE,
+    ]
+    .map(|label| Piece::Tile { label, at: first });
+    // The `,` after the descent opens the other arguments; with none, the
+    // list opens and closes at once.
+    let (end, opened) = if after == TileName::COMMA {
+        (4_usize, next)
     }
-    read.pieces.push(Piece::Tile {
-        label: TileName::PAREN_OPEN,
-        at: head,
-    });
-    for (index, argument) in written.enumerate() {
-        if index > 0 {
-            read.pieces.push(Piece::Tile {
-                label: TileName::COMMA,
-                at: argument,
-            });
-        }
-        read.pieces.push(Piece::Operand(argument));
-    }
-    read.pieces.push(Piece::Tile {
-        label: TileName::PAREN_CLOSE,
-        at: rest,
-    });
-    Ok(true)
+    else {
+        (3_usize, open)
+    };
+    read.pieces.splice(
+        1_usize .. end,
+        bracket.into_iter().chain([Piece::Tile {
+            label: TileName::PAREN_OPEN,
+            at: opened,
+        }]),
+    );
 }
 
 /// Where the form at `position` itself stopped, when the parser closed it,
@@ -4192,11 +4086,12 @@ pub fn applied_word(
 ///
 /// # Specification
 /// - requires: `within` holds `extra`, both spans of `tree`.
-/// - ensures: the last tile of `tree` inside `within` ending at or before
-///   `extra`'s start, with the first keyword one edit from its bytes in the
-///   order above, when those bytes are two or more lowercase ASCII letters and
-///   underscores that `pbg` spells as no tile and the keyword is such a word
-///   `pbg` spells as a tile; `None` otherwise.
+/// - ensures: the last written tile of `tree` inside `within` ending at or
+///   before `extra`'s start, the empty tile of a juxtaposition skipped, with
+///   the first keyword one edit from its bytes in the order above, when those
+///   bytes are two or more lowercase ASCII letters and underscores that `pbg`
+///   spells as no tile and the keyword is such a word `pbg` spells as a tile;
+///   `None` otherwise.
 /// - provides: what moves an extra-operand refusal onto the misspelt keyword
 ///   before it.
 /// - fails: never.
@@ -4224,6 +4119,7 @@ pub fn misspelt_keyword(
         .filter(|&position| {
             tree.node(position).is_some_and(|node| {
                 matches!(node.label(), NodeLabel::Tile(_))
+                    && node.span().start() < node.span().end()
                     && within.start() <= node.span().start()
                     && node.span().end() <= extra.start()
             })

@@ -5059,11 +5059,11 @@ mod tests
         );
     }
 
-    /// A lowercase head applies by juxtaposition off a method's receiver:
-    /// `twice Integer`, `apply twice Integer` and `both Integer (twice
-    /// Integer)` lower as their call forms, in a result, a parameter and an
-    /// arrow's domain. A head that names nothing is refused over the whole
-    /// form as a mode off a receiver.
+    /// A lowercase head applies by juxtaposition: `twice Integer`, `apply
+    /// twice Integer` and `both Integer (twice Integer)` lower as their call
+    /// forms, in a result, a parameter and an arrow's domain. A head that
+    /// names nothing is refused over the whole form, at its head, as a type
+    /// head no declaration names.
     #[test]
     fn a_lowercase_head_applies_by_juxtaposition()
     {
@@ -5088,9 +5088,11 @@ mod tests
         assert!(
             matches!(
                 outcome("unknown"),
-                Some(DeclarationOutcome::Refused(LoweringRefusal::StrayReceiverMode { span, .. }))
+                Some(DeclarationOutcome::Refused(LoweringRefusal::UnresolvedTypeHead { span, head, .. }))
                     if usize::from(span.start()) == start
                         && usize::from(span.end()) == start.saturating_add("nothing Integer".len())
+                        && usize::from(head.start()) == start
+                        && usize::from(head.end()) == start.saturating_add("nothing".len())
             ),
             "a head that names nothing is refused over the form: {:?}",
             outcome("unknown")

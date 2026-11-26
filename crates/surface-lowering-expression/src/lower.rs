@@ -3416,11 +3416,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             Former::TypeHead => self.type_head(site, cursor),
             Former::TypePath => self.type_path(site, pieces),
             Former::Universe => self.universe(site, cursor),
-            // A word before a type, `f a`, applies the word as its call
-            // spells it; a word alone is a type head.
-            Former::TypeApplication if site.name == FormName::MODED_TYPE => {
-                self.moded_application(site, pieces)
-            },
             // A juxtaposed application of a qualified type, `M.T a`, reads
             // as the path's call form `M.T(a)` its spine spells (#5753).
             Former::TypeApplication
@@ -7639,7 +7634,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let receiver = CapabilityRef::new(self.host_ref()).receiver_mode(site);
         CapabilityRef::new(self.host_ref()).stray_modes(&cursor, receiver)?;
         let start = self.cx().parameters.mark();
-        // The mode variable a deduced receiver is written at, `self : m T`.
+        // The mode variable a deduced receiver is written at, `self : View[m]
+        // T`.
         let mut deduced: Option<SurfaceName<'source>> = None;
         // A recursive tail stages the parameter its body's matches take
         // apart, read off the syntax ahead before anything binds: the written
@@ -7753,9 +7749,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         let _consumed = cursor.tile(TileName::CONSUMED);
                     }
                     let mut declared = function.one(cursor.operands())?;
-                    // A receiver at a mode variable, `self : m T`: the variable
-                    // names a mode binder, and `T` is the receiver's type. Off
-                    // that receiver, `f a` is an application the type reads.
+                    // A receiver at a mode variable, `self : View[m] T`: the
+                    // variable names a mode binder, and `T` is the receiver's
+                    // type.
                     let receiving = self.cx().name_at(first).as_ref() == "self"
                         && CapabilityRef::new(self.host_ref()).receiver_mode(site)
                             == Some(ReceiverMode::Deduced);
@@ -12449,59 +12445,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             return Err(refusal);
         }
         self.applied_head(site, head, name, applied, &manifests)
-    }
-
-    /// Classify a lowercase word before a type operand off a method's
-    /// receiver as the head of an application: `f a b` reads as the call
-    /// `f(a, b)` and `el [<] a` as the descent `el[<](a)`, as [`read_pieces`]
-    /// spells them.
-    ///
-    /// # Specification
-    /// - requires: `site` is a word before a type, read as a type or a value;
-    ///   `pieces` are its pieces.
-    /// - ensures: the application [`Self::type_application`] plans over the
-    ///   call form the spine spells.
-    /// - fails: [`LoweringRefusal::StrayReceiverMode`] over the whole form when
-    ///   its head names nothing; the application's own refusal otherwise.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As `fails`.
-    fn moded_application(
-        &mut self,
-        site: Site,
-        pieces: &Pieces,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        let head = match *pieces.pieces.as_slice() {
-            [
-                Piece::Tile { at: head, .. },
-                _,
-                ..,
-                Piece::Tile { label, .. },
-            ] if label == TileName::PAREN_CLOSE => head,
-            _ => {
-                return CapabilityRef::new(self.host_ref())
-                    .moded_type(site, Cursor::new(&pieces.pieces, site.at.span));
-            },
-        };
-        let mode = self.cx().name_at(head);
-        self.type_application(site, Cursor::new(&pieces.pieces, site.at.span))
-            .map_err(|refusal| {
-                let unnamed = matches!(refusal,
-                    LoweringRefusal::UnresolvedName { span, .. }
-                    | LoweringRefusal::UnresolvedTypeHead { head: span, .. }
-                        if span == head.span);
-                if unnamed {
-                    LoweringRefusal::StrayReceiverMode {
-                        span: site.at.span,
-                        mode,
-                    }
-                }
-                else {
-                    refusal
-                }
-            })
     }
 
     /// Classify the type former `name`, written at `head` and applied to the

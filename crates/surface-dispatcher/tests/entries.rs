@@ -1138,34 +1138,28 @@ fn gated(
         // application around it: the spine lowers as one call, which the
         // outermost application answers for. A type's spine, `Vec A n`, lowers
         // as one application of its family, so the family's name answers
-        // through it, as the head of the call form `Vec(A, n)` does (#5326).
-        // A word's spine in a type nests to the right, `c v` in `pred c v` and
-        // `Zero h` in `viaZero Zero h`, and lowers as the one call of the
-        // word, which the outermost word answers for. A path or a bridge head,
-        // `Path[.A = C]` in `Path[.A = C] a b`, is no type alone: the spine
-        // lowers as one path type, which answers (#5750). The descent of a
-        // word's spine, `[<]` in `el [<] a`, is a part of the head of the call
-        // `el[<](a)`, which answers.
+        // through it, as the head of the call form `Vec(A, n)` does (#5326),
+        // and a word's spine alike, `pred` in `pred c v`. A path or a bridge
+        // head, `Path[.A = C]` in `Path[.A = C] a b`, is no type alone: the
+        // spine lowers as one path type, which answers (#5750). The descent of
+        // a word's spine, `[<]` in `el [<] a`, is a part of the head of the
+        // call `el[<](a)`, which answers.
         let head = parent.is_some_and(|(_, label, headed, ..)| {
-            (melded
-                && def.sort == Sort::Type
-                && matches!(def.label, "type_variable" | JUXTAPOSED)
-                && label == "type_variable")
-                || headed
-                    && if melded {
-                        (matches!(label, "(" | JUXTAPOSED)
-                            && (qualified || def.label == JUXTAPOSED))
-                            || (label == JUXTAPOSED
-                                && def.sort == Sort::Type
-                                && matches!(def.label, "Path" | "Bridge"))
-                    }
-                    else {
-                        label == "["
-                            || label == ".#{"
-                            || def.label == "constructor"
-                            || FORMERS.contains(&text)
-                            || (label == JUXTAPOSED && def.label == "type_identifier")
-                    }
+            headed
+                && if melded {
+                    (matches!(label, "(" | JUXTAPOSED) && (qualified || def.label == JUXTAPOSED))
+                        || (label == JUXTAPOSED
+                            && def.sort == Sort::Type
+                            && matches!(def.label, "Path" | "Bridge"))
+                }
+                else {
+                    label == "["
+                        || label == ".#{"
+                        || def.label == "constructor"
+                        || FORMERS.contains(&text)
+                        || (label == JUXTAPOSED
+                            && matches!(def.label, "type_identifier" | "type_variable"))
+                }
         }) || (melded
             && def.sort == Sort::Type
             && grammar

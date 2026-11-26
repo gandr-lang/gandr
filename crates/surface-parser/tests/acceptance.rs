@@ -1579,7 +1579,8 @@ fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Failure>
 /// after a result that is a type variable, owes its `=` alone, as at the top
 /// level.
 ///
-/// The result `d` opens a moded type, so the body reads as its operand. The
+/// The result `d` is a type variable, which takes an argument, so the body
+/// reads as its operand. The
 /// layout writes a `;` after the member, before the block's `}`. Read as it
 /// stands, that `;` is a shell list operator, and the `}` closes a record
 /// type of fixed fields. The block then owed its `{` and its `}` and an
