@@ -1094,6 +1094,7 @@ mod sweeps
     use alloc::vec::Vec;
     use core::fmt::Write as _;
     use std::path::Path;
+    use std::path::PathBuf;
 
     use gandr_kernel_term::Convergence;
     use gandr_surface_grammar::built_in;
@@ -1116,15 +1117,60 @@ mod sweeps
     /// No admitted block parts, so the list is empty.
     pub(super) const PARTING: [(&str, &str, &str); 0] = [];
 
+    /// The sample of the sources that write a rule: thirty-two of the 380
+    /// sources below `corpus`, `library` and `crates`, ranked by the BLAKE3
+    /// digest of their text under this name, beside [`SYMMETRY`]. Each source
+    /// runs the whole pipeline, and the whole set took 12 s plain and 25 s
+    /// enforcing on a hosted runner, for each of the two sweeps that read it.
+    /// The `sweeps` and `nightly` profiles visit each source.
+    const RULE_SOURCES: Sample = Sample {
+        name: SampleName("rule_sources"),
+        size: SampleSize(32),
+    };
+
+    /// The source that each run visits: its theory `Tally` has rules and a
+    /// symmetry, so a sampled run reads a presented type and a symmetry.
+    const SYMMETRY: &str = "corpus/model/desc/rule-symmetry.gandr";
+
+    /// The sources that write a rule below `corpus`, `library` and `crates` of
+    /// `repository`, each beside its path, that the run's sweep visits, and
+    /// [`SYMMETRY`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn rule_sources(repository: &Path) -> Vec<(PathBuf, String)>
+    {
+        let mut texts = Vec::new();
+        for root in ["corpus", "library", "crates"] {
+            texts.extend(sources(&repository.join(root)));
+        }
+        let rows: Vec<Text<'_>> = texts.iter().map(|&(_, ref text)| Text(text)).collect();
+        let mut visited: BTreeSet<usize> = Sweep::asked()
+            .expect("the run's sweep resolves")
+            .visit_rows(RULE_SOURCES, &rows)
+            .into_iter()
+            .map(|row| row.0)
+            .collect();
+        let _symmetry = visited.insert(
+            texts
+                .iter()
+                .position(|&(ref path, _)| path.ends_with(SYMMETRY))
+                .expect("the source of the symmetry writes a rule"),
+        );
+        texts
+            .into_iter()
+            .enumerate()
+            .filter(|&(at, _)| visited.contains(&at))
+            .map(|(_, source)| source)
+            .collect()
+    }
+
     #[test]
     fn each_admitted_block_with_rules_joins_its_critical_pairs()
     {
         let pbg = built_in().expect("the built-in grammar builds");
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let mut texts = Vec::new();
-        for root in ["corpus", "library", "crates"] {
-            texts.extend(sources(&repository.join(root)));
-        }
+        let texts = rule_sources(&repository);
         let mut verdicts: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut parting: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
         let (mut symmetric, mut unread) = (0_usize, 0_usize);
@@ -1198,10 +1244,7 @@ mod sweeps
     {
         let pbg = built_in().expect("the built-in grammar builds");
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let mut texts = Vec::new();
-        for root in ["corpus", "library", "crates"] {
-            texts.extend(sources(&repository.join(root)));
-        }
+        let texts = rule_sources(&repository);
         let mut verdicts: BTreeMap<String, String> = BTreeMap::new();
         let mut disagreeing: BTreeSet<String> = BTreeSet::new();
         for &(ref path, ref text) in &texts {
