@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits"))]
+
 // This source writes explicit paired definitions.
 //
 // An explicit pair contains a signature and its following definition.

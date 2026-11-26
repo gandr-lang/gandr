@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "records", "universes"))]
+
 // This source shows type-named parameters.
 //
 // A function can name a type parameter as `A`.

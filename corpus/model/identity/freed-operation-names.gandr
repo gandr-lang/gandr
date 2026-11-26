@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "native-primitives"))]
+
 /// This source binds old operation names as ordinary source names.
 ///
 /// The operation formers still contain `Path.here` and `Path.ap`.

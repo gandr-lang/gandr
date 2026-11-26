@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "pattern-matching", "records", "universes", "visibility"))]
+
 /// This source states quasi-inverses and bi-invertible equivalences.
 ///
 /// A quasi-inverse has one forward map, one backward map, and two round trips.

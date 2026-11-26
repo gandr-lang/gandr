@@ -10,6 +10,8 @@
 //!
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
+@![features(("nominal-data", "universes"))]
+
 /// Natural numbers with addition as an operation.
 @[normalizes("add(Succ(Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))")]
 data NatAdd : Type where {

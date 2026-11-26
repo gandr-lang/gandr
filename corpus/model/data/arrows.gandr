@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "nominal-data", "universes"))]
+
 // Data arrows state constructors, operations, rules and cells.
 // `IntOp` carries an operation that the integers of `data-base.gandr` lack,
 // so it takes another name.

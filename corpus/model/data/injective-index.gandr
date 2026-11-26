@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "nominal-data", "pattern-matching", "products-and-sums", "records", "structural-recursion", "universes", "visibility"))]
+
 // A case arm learns its fields from the injectivity of a constructor.
 //
 // The arm binds a path between two applications of one constructor. Its goal

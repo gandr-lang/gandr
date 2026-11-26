@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "native-lists"))]
+
 // A program decides `sqrt 2 < 3/2` through `std.reals.Eff`, the host
 // interface of exact reals.
 //

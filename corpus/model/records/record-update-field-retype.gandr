@@ -1,3 +1,5 @@
+@![features("records")]
+
 // This source tests record updates that change a field type.
 //
 // The update gives `count` a string value. The pathological twin refuses the

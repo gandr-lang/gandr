@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "type-codes", "universes"))]
+
 // `Path.walk` computes on every filler that resolves, and stays stuck on
 // a carried cell.
 //

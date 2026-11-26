@@ -13,6 +13,8 @@
 //! - see: #5489
 //! - see: `circle-elim.gandr` — the transports along the loop that both sides admit
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching", "type-codes"))]
+
 // The circle, its loop and the flip.
 import "./circle-base.gandr"
 

@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "native-primitives", "pattern-matching"))]
+
 // A binary sum has two injections.
 //
 // A case selects an arm by injection.

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "records", "universes", "visibility"))]
+
 /// `absurdArm` answers an empty case on a lambda's binder whose type an
 /// enclosing case refined to `Void`.
 ///

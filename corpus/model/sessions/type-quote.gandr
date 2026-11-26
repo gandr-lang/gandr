@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "lazy-records", "let-statements", "modules", "products-and-sums", "run-prefixes", "session-types", "type-codes"))]
+
 // This source quotes types for expression arguments.
 //
 // An expression reads a receive's `?` as a hole.

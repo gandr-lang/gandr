@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "native-lists"))]
+
 // This source creates native finite lists.
 //
 // `xs` has three integers at its stated element type.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "conditionals", "lazy-records", "let-statements", "loops", "native-primitives", "pattern-matching", "products-and-sums", "session-types"))]
+
 // A case runs one of its arms, so each arm acts on an endpoint from where the
 // case found it.
 //

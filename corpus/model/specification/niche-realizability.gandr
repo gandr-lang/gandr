@@ -20,6 +20,8 @@
 //! - cites: [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]
 //! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "explicit-exits", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes", "visibility"))]
+
 // The import gives Nat.
 import "../data/data-base.gandr"
 

@@ -1,3 +1,5 @@
+@![features("records")]
+
 // This source tests a record update at one field.
 //
 // The update creates a new record and keeps its other fields.

@@ -8,6 +8,8 @@
 //!
 //! - see: HoTT Book §2.9
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "products-and-sums", "records"))]
+
 /// A function at truth.
 def at_truth(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
   f (+{.0 = *{}})

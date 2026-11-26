@@ -15,6 +15,8 @@
 //!
 //! [Cockx-2016-unifiers_as_equivalences]: https://doi.org/10.1145/2951913.2951917 "Cockx, Devriese and Piessens, Unifiers as equivalences"
 
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching"))]
+
 // The naturals the lengths count in.
 import "./data-base.gandr"
 

@@ -8,6 +8,8 @@
 //!
 //! - see: #640
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "type-codes", "visibility"))]
+
 // This source imports naturals and syntax.
 import "../model-in-source.gandr"
 import "./syntax.gandr"

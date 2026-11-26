@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "records", "universes", "visibility", "wildcards"))]
+
 /// This source states univalence for the user universe.
 /// It follows the HoTT book's § 2.10 and
 /// cubical Agda's `Cubical/Foundations/Univalence.agda`.

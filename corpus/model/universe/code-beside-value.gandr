@@ -10,6 +10,8 @@
 //!
 //! [McBride-2002-elimination_motive]: https://doi.org/10.1007/3-540-45842-5_13 "McBride, Elimination with a Motive"
 
+@![features(("data-parameters", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "universes"))]
+
 /// The naturals.
 data Nat : Type where
   /// Zero.

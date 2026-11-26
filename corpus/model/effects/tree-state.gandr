@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 // This source writes state handlers as explicit trees and folds.
 //
 // The source models a state row and the free model of `State.Eff`.

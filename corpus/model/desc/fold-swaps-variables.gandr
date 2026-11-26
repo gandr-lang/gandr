@@ -20,6 +20,8 @@
 //! - see: `model/desc/fold-drops-variable.gandr` — a fold over a rule that
 //!   drops a variable
 
+@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 /// The theory of a purse of coins, with two purses in one purse in no order.
 pub theory Purse where
   /// The sort of purses.

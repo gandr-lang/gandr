@@ -8,6 +8,8 @@
 //!
 //! - see: #3834 — a reflexivity first in a composite
 
+@![features(("data-parameters", "identity-types", "let-statements", "universes"))]
+
 /// A reflexivity begins the composite in its type.
 /// Its left unit needs a path on both composite sides.
 def hereFirst(A : Type, x : A, y : A, f : Path x y) -> Path[.A = Path[.A = A] x y] (

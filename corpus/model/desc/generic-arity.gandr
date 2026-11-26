@@ -11,6 +11,8 @@
 //!
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
+@![features(("data-parameters", "explicit-exits", "let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 /// The `Monoid` block stores its sort and two operations in a `Theory` value.
 pub theory Monoid where
   sort M : Type

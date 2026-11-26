@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "thunks-and-force", "universes"))]
+
 /// This source states action through a suspended function.
 ///
 /// The suspended function holds nodes that the checker judges.

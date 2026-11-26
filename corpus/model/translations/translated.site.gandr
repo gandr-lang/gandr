@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "deployment-offers", "imports", "modules", "signature-models", "visibility"))]
+
 // A site that reads its newer module as the older store, through a renaming
 // and via a flow.
 //

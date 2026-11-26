@@ -17,6 +17,8 @@
 //!
 //! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "imports", "let-statements", "mutual-recursion", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes", "visibility"))]
+
 // `Nat`.
 import "../../data/data-base.gandr"
 

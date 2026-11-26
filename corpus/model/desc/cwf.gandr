@@ -24,6 +24,8 @@
 //!
 //! [Huang-2026-fat_cell_structures_generalized_algebraic_theories]: https://doi.org/10.4230/LIPIcs.LICS.2026.58 "Huang and Angiuli, Fat Cell Structures and Generalized Algebraic Theories"
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "modules", "native-primitives", "pattern-matching", "records", "signatures-as-values", "structural-recursion", "type-codes", "universes", "visibility"))]
+
 /// The CwF signature: four sorts, each over the sorts before it, and the
 /// operations of a category with families.
 pub theory CwF where

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives", "records"))]
+
 // This source tests deep handlers for exit and console effects.
 //
 // The bridge represents a handled body as a free-model tree. The handler

@@ -11,6 +11,8 @@
 //!
 //! - see: #7564
 
+@![features(("call-by-push-value", "let-statements", "nominal-data", "pattern-matching", "records", "universes"))]
+
 /// A flag that selects a type.
 data Flag : Type where
   /// This flag selects `Integer`.

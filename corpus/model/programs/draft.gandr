@@ -7,6 +7,8 @@
 //!
 //! - see: entry.gandr — the program entry definition
 
+@![features(("imports", "let-statements", "native-lists", "typed-holes"))]
+
 import "./entry.gandr"
 
 /// `draft` counts no arguments, then reaches the `rest` hole.

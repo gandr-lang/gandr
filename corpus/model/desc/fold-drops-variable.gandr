@@ -14,6 +14,8 @@
 //!   rule refuses
 //! - see: `model/desc/family-with-rules.gandr` — the fragment and its rules
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+
 // `Width` and `Fragment`.
 import "./family-with-rules.gandr"
 

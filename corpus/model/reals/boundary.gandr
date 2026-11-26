@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "native-lists", "records", "visibility"))]
+
 // Two comparisons that no budget decides, through `std.reals.Eff`. A stop of
 // the machine never reads as false.
 //

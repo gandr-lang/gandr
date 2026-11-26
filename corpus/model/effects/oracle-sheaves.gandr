@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "tarski-universes", "thunks-and-force", "type-codes", "universes"))]
+
 // This source ports the parts of Ahman and Bauer's oracle sheaves that gandr
 // checks.
 //

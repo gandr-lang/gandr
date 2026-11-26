@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "nominal-data", "universes"))]
+
 // Family arguments classify constructors.
 //
 // A data family gives each argument its type.

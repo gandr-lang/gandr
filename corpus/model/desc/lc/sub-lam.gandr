@@ -7,6 +7,8 @@
 //!
 //! - see: #640
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "visibility"))]
+
 // The syntax and its substitution.
 import "./syntax.gandr"
 

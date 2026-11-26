@@ -12,6 +12,8 @@
 //!
 //! - see: #8338
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "nominal-data", "universes", "visibility"))]
+
 /// The two widths of the fragment.
 pub data Width : Type where
   /// One bit.

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "universes"))]
+
 /// This source states how derived path operations find an operand path type.
 /// The operations are the HoTT book's inverse and composite (Lemmas 2.1.1 and
 /// 2.1.2) and `ap` (Lemma 2.2.1).

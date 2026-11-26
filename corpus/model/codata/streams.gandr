@@ -10,6 +10,8 @@
 //!
 //! - see: #644
 //! - see: #1499 — `ones`
+@![features(("codata", "corecursion", "data-parameters", "dependent-functions", "lazy-records", "let-statements", "native-primitives", "thunks-and-force", "universes"))]
+
 /// A stream exposes its head and its successor stream.
 codata Stream(a : Type) : Type[-] where
   head : a

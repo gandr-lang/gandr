@@ -1,3 +1,5 @@
+@![features(("imports", "modules"))]
+
 // This source shows a functor argument from an imported module.
 //
 // `model-functor.gandr` provides `Squaring` and `Times`.

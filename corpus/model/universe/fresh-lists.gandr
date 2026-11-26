@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes", "visibility"))]
+
 // The lists of pairwise distinct naturals are an inductive-recursive family.
 // The family is no universe.
 //

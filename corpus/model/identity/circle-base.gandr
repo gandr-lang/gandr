@@ -10,6 +10,8 @@
 //!
 //! - see: corpus/model/identity/circle.gandr
 
+@![features(("data-parameters", "identity-types", "let-statements", "list-case", "native-lists", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 /// The type with no element.
 pub data Empty : Type where {}
 

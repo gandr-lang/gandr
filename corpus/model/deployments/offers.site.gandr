@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "deployment-offers", "imports", "modules", "signature-models", "signatures-as-values", "universes", "visibility"))]
+
 // A site answering its role's row: the console from its authority, and
 // `store` by a module of its own.
 //

@@ -1,3 +1,5 @@
+@![features("native-primitives")]
+
 // This source shows joined definitions.
 //
 // A joined item contains a signature and its definition.

@@ -9,6 +9,8 @@
 //!
 //! - see: https://doc.rust-lang.org/rustdoc/
 
+@![features("let-statements")]
+
 /// Returns its argument; [echo] does the same.
 def identity(x : Integer) -> Integer =
   x

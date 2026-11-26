@@ -8,6 +8,8 @@
 //!
 //! - see: #2713
 
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 /// A paint.
 pub data Paint : Type where
   /// The red paint.

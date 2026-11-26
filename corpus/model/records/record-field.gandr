@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "records"))]
+
 // This source tests native record field selection.
 //
 // Field selection reads fields from inferred and stated records. The

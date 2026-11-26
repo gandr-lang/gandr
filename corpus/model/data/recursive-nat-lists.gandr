@@ -12,6 +12,8 @@
 //!
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "nested-runs", "pattern-matching", "structural-recursion"))]
+
 // The naturals, the numerals two and three, and the lists.
 import "./data-base.gandr"
 

@@ -5,6 +5,8 @@
 //!
 //! - see: #2030
 
+@![features(("call-by-push-value", "explicit-exits", "imports", "let-statements"))]
+
 // The source imports the included theories.
 import "./monoid.gandr"
 // The source imports the endomorphism model and semigroup reader.

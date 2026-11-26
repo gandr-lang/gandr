@@ -1,3 +1,5 @@
+@![features(("modules", "records", "visibility"))]
+
 /// A record whose last field is a record sharing a label with it prints, and
 /// reprints, as a record.
 ///

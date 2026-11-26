@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "pattern-matching"))]
+
 // The circuit `H T H` runs on `|0⟩` to its exact amplitudes. No amplitude is
 // rounded.
 //

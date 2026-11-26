@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 /// This source states dependent cases over the 2-sphere into a path family.
 /// The family stands in a sort with a loop and a 2-cell at one point.
 ///

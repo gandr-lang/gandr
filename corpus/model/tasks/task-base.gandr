@@ -10,6 +10,8 @@
 //! - cites: [Mellies-2020-concurrent_separation_logic_meets_template_games]
 //! [Mellies-2020-concurrent_separation_logic_meets_template_games]: https://doi.org/10.1145/3373718.3394762 "Melliès and Stefanesco, Concurrent Separation Logic Meets Template Games"
 
+@![features(("modules", "session-types", "visibility"))]
+
 /// A task: the protocols its end carries back to the parent, and the path it
 /// reads.
 pub module Task :> *{

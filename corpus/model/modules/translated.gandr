@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "native-primitives", "signature-models", "signature-translation", "signatures-as-values", "universes"))]
+
 // This source shows an importer through a flow and two paths.
 //
 // A package moves on while its importers stay. A flow presents a newer package

@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "visibility"))]
+
 // A package is its `package.gandr` and its `sources`. That file declares the
 // model of the package. `gandr check` writes `package.gandr.toml` beside it.
 // The modules of the package are under `src`. Its version is the version that

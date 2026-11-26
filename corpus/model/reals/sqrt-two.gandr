@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "native-lists", "visibility"))]
+
 // A program encloses the square root of two through `std.reals.Eff`, the host
 // interface of exact reals.
 //

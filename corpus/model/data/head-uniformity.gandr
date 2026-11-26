@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "native-primitives", "nominal-data", "universes"))]
+
 // A parameter that varies by generator stands as an index of its family.
 //
 // Head uniformity binds each parameter once, for the whole family. Each

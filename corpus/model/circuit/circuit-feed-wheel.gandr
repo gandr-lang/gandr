@@ -14,6 +14,8 @@
 //! [Katis-2002-feedback_trace_fixedpoint_semantics]: https://doi.org/10.1051/ita:2002009 "Katis, Sabadini and Walters, Feedback, Trace and Fixed-Point Semantics"
 //! [DiLavore-2022-monoidal_streams_for_dataflow_programming]: https://doi.org/10.1145/3531130.3533365 "Di Lavore, de Felice and Román, Monoidal Streams for Dataflow Programming"
 
+@![features(("signatures-as-values", "universes", "visibility"))]
+
 /// `Wheel` declares its `Nat` sort and observed `emit` operation.
 pub theory Wheel where
   sort Nat : Type

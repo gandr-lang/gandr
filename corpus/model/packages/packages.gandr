@@ -9,6 +9,8 @@
 //!
 //! - see: #1108 — `hidden`
 //!
+@![features(("data-parameters", "let-statements", "modules", "native-primitives", "signatures-as-values", "universes"))]
+
 /// `Seeded` declares a counter seed and reader.
 theory Seeded where
   /// `T` gives the counter value type.

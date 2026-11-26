@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "type-codes", "universes"))]
+
 /// This source compares one lambda with a composite of two lambdas.
 ///
 /// The two lambda bodies return the same path for each argument.

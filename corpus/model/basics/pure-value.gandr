@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "products-and-sums", "records", "universes"))]
+
 // This source shows pure calls in definition values.
 //
 // A definition value has no computation around a call.

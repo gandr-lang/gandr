@@ -14,6 +14,8 @@
 //!
 //! [Bocchi-2017-monitoring_networks_through_multiparty_session_types]: https://doi.org/10.1016/j.tcs.2017.02.009 "Bocchi, Chen, Demangeon, Honda and Yoshida, Monitoring Networks through Multiparty Session Types"
 
+@![features(("data-parameters", "imports", "modules", "run-prefixes", "session-types", "visibility"))]
+
 // The native session formers.
 import std.session (Prefix)
 

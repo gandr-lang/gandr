@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes", "visibility"))]
+
 // The tone a greeting takes, in a module three names deep, `text.tone.kind`.
 //
 // A package names its modules by path, and the package source reads this

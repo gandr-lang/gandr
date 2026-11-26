@@ -1,3 +1,5 @@
+@![features(("modules", "signatures-as-values", "universes"))]
+
 // This source shows a manifest sort in a model type.
 //
 // `Metrics` and `Sealed` fix `Ratio` as `Integer`.

@@ -16,6 +16,8 @@
 //! [Bird-1987-an_introduction_to_the_theory_of_lists]: https://doi.org/10.1007/978-3-642-87374-4_1 "Bird, An Introduction to the Theory of Lists"
 //! [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]: https://doi.org/10.1145/800194.805852 "Reynolds, Definitional Interpreters for Higher-Order Programming Languages"
 
+@![features(("signatures-as-values", "universes"))]
+
 /// `ListMap` defines `map` and its branches.
 /// It defines composition and fuses two maps.
 @[normalizes("map(inc, map(dbl, cons(one, nil))) ~> cons(app(inc, app(dbl, one)), nil)")]

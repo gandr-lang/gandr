@@ -1,3 +1,5 @@
+@![features("imports")]
+
 // A generic program can read a presentation from another source.
 //
 // `magma-base.gandr` starts this closure. `generic-arity.gandr` does not import

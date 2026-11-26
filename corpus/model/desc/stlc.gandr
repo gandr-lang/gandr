@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "modules", "mutual-recursion", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "tarski-universes", "type-codes", "universes", "visibility"))]
+
 // The simply typed lambda calculus is a theory. This source is the first rung
 // of normalisation by evaluation as a model.
 //

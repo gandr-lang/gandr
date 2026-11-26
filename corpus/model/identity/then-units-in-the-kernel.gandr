@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "type-codes", "universes"))]
+
 // Reflexivity is a unit of `Path.step` beside a stuck transport and beside an
 // action on reflexivity.
 //

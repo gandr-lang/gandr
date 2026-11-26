@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "native-primitives", "records"))]
+
 // This source tests handlers over the state theory.
 //
 // A scope fixes `S`. Clauses or a state model answer each operation.

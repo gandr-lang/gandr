@@ -1,3 +1,5 @@
+@![features("native-primitives")]
+
 // This source tests string namespace operations.
 //
 // The native `string` namespace has `append`, `eq` and `lt`. It has no

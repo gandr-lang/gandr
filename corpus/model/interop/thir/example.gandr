@@ -11,6 +11,8 @@
 //!
 //! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "indexed-data", "let-statements", "nominal-data", "pattern-matching", "rust-semantics-thir", "universes", "visibility"))]
+
 // The values, the expressions over the crate's items, and the transformers.
 import std.thir (Value, Int, True, False, Expr, Lit, Param, If, Return, Call, wpFn)
 

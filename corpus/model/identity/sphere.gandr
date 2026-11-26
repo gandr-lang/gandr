@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "native-lists", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 /// This source states the 2-sphere and the 3-sphere as presentations with one
 /// cell each.
 ///

@@ -11,6 +11,8 @@
 //!
 //! - see: #640
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "imports", "let-statements", "records", "universes"))]
+
 // This source imports naturals, syntax and the syntax model.
 import "../model-in-source.gandr"
 import "./syntax.gandr"

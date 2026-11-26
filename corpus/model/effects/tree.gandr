@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "nominal-data", "universes", "visibility"))]
+
 // This source defines effect rows as free-model trees.
 //
 // A program holds a result or a row operation with its continuation.

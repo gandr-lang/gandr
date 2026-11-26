@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "modules", "nominal-data", "pattern-matching", "records", "run-prefixes", "session-types", "type-codes", "universes", "visibility"))]
+
 // This source transports a recorded run across payload paths.
 //
 // The forward map transports each payload at its path.

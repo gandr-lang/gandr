@@ -12,6 +12,8 @@
 //! - see: #5521
 //! - see: `omitted-carrier-in-body.gandr` — a composite whose carrier the signature solves
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "type-codes", "universes"))]
+
 /// A composite of two paths, its carrier and its points implicit.
 def stepImplicit[t : Type, a : t, b : t, c : t](
   p : Path[.A = t] a b,

@@ -9,6 +9,8 @@
 //!
 //! - see: HoTT Book §1.12.1
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements"))]
+
 // The free naturals.
 import "./circle-base.gandr"
 

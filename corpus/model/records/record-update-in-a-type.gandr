@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "records"))]
+
 // This source tests record updates inside path types.
 // A record update in a type denotes the record that it builds.
 //

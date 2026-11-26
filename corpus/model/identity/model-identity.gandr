@@ -11,6 +11,8 @@
 //! - see: corpus/model/identity/transport-list.gandr
 //! - see: corpus/model/identity/funext.gandr
 
+@![features(("data-parameters", "identity-types", "imports", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// The imports give negation, the path along negation and the two toggles.
 import "./funext.gandr"
 import "./transport-list.gandr"

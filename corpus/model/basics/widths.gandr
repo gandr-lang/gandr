@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 // This source shows width-specific integers.
 //
 // `u32`, `u64`, `i32` and `i64` are distinct integer atoms.

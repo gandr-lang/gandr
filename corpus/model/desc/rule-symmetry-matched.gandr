@@ -11,6 +11,8 @@
 //!
 //! - see: #8299
 
+@![features(("data-parameters", "identity-types", "imports"))]
+
 // `Tally`, its two rules that rewrite, and its symmetry.
 import "./rule-symmetry.gandr"
 

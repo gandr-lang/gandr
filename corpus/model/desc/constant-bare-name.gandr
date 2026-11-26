@@ -10,6 +10,8 @@
 //!
 //! - see: #7913
 
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// Choice with cut over a grade-indexed sort, its grades and commands
 /// constants. `cutLeft` commits to the left branch at any grade of the right.
 @[normalizes("orBot(cut, fail) ~> cut")]

@@ -13,6 +13,8 @@
 //!
 //! - see: Aczel's hierarchy
 
+@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+
 // The type with no element.
 import "../data/empty.gandr"
 

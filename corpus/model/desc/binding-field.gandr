@@ -12,6 +12,8 @@
 //!
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
+@![features(("dependent-functions", "let-statements", "native-primitives", "pattern-matching", "second-order-rules", "signatures-as-values", "structural-recursion", "universes"))]
+
 /// No process outside the restriction can use the channel `c` of `listen`, so
 /// the restricted receive never fires. The checker orients the law, and the
 /// kernel replays its verdict.

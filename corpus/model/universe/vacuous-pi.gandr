@@ -11,6 +11,8 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "thunks-and-force", "universes"))]
+
 // The naturals.
 import "../data/data-base.gandr"
 

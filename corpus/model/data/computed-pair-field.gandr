@@ -14,6 +14,8 @@
 //! - see: #5373
 //! - see: #6113
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 /// The counts.
 data Count : Type where
   /// Zero.

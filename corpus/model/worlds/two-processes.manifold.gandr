@@ -12,6 +12,8 @@
 //! manifold resolves `far` against the worlds of the program.
 //!
 //! - see: `two-processes.gandr`
+@![features(("data-parameters", "imports", "modules", "native-lists", "visibility"))]
+
 import std.manifold (Site, Manifold, Placement, At)
 import "./two-processes.site.gandr" as far
 import std.list (List)

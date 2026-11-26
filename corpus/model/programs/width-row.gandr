@@ -9,6 +9,8 @@
 //!
 //! - see: `.config/wasm/cases.txt` — the wasm driver runs this program
 
+@![features(("data-parameters", "imports", "let-statements", "native-lists"))]
+
 // - see: #8300 — the wasm driver runs a width row
 
 // The native finite lists.

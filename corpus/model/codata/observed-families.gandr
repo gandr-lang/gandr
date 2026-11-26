@@ -10,6 +10,8 @@
 //! The test makes a green light and reads its colour.
 //!
 //! - see: #2665
+@![features(("codata", "data-parameters", "imports", "lazy-records", "let-statements", "native-lists", "nominal-data", "thunks-and-force", "universes"))]
+
 import std.list (List)
 
 /// A colour is red or green.

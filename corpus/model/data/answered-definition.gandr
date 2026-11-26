@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "let-statements", "universes"))]
+
 // A body-ending constructor takes its body's answer type.
 //
 // The result can name a definition application.

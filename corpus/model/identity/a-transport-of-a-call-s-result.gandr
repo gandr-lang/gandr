@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "type-codes", "universes"))]
+
 /// This source compares two transports when one value comes from a call.
 ///
 /// The lowering binds the call result before it transports the value.

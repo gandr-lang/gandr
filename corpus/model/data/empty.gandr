@@ -14,6 +14,8 @@
 //!
 //! [Coquand-1992-pattern_matching_with_dependent_types]: https://wonks.github.io/type-theory-reading-group/papers/proc92-coquand.pdf "Coquand, Pattern matching with dependent types"
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 // The presented integers.
 import "./data-base.gandr"
 

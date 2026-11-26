@@ -8,6 +8,8 @@
 //! exit operation resumes the continuation before a receive.
 //!
 //! - see: #1334 — `resumed`
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 // The import gives the task protocol.
 import "./cancel-base.gandr"
 // The import gives the early-exit host interface.

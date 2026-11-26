@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-primitives"))]
+
 /// This source states congruence for reflexivity under conversion.
 ///
 /// Two reflexivity terms agree when their points convert at every path level.

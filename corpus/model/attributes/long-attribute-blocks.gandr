@@ -8,6 +8,8 @@
 //!
 //! - see: corpus/pathological/attributes/unknown-attribute.gandr
 
+@![features(("attributes", "explicit-exits", "let-statements", "modules", "nominal-data", "signatures-as-values", "universes"))]
+
 // A colour, its block's second entry unknown.
 @[refuses("UnknownAttribute"), note("a colour, named by its constructors")]
 data Color : Type where

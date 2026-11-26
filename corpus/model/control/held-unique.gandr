@@ -13,6 +13,8 @@
 //!
 //! [Orchard-2019-quantitative_program_reasoning_graded_modal_types]: https://doi.org/10.1145/3341714 "Orchard, Liepelt and Eades, Quantitative Program Reasoning with Graded Modal Types"
 
+@![features(("call-by-push-value", "imports", "let-statements", "native-primitives", "records", "temporary-access"))]
+
 // The successor, a call whose type synthesises where a statement binds it.
 import "./accessor-counter.gandr"
 

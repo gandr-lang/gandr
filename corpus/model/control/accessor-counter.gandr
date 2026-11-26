@@ -12,6 +12,8 @@
 //!
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "native-primitives", "records", "temporary-access", "visibility"))]
+
 /// The successor, a call whose type synthesises where a statement binds it.
 pub def succ(n : Integer) -> Integer =
   pure n + 1

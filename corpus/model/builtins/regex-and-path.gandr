@@ -1,3 +1,5 @@
+@![features("records")]
+
 // This source tests regular-expression and path projections.
 //
 // The examples extract named captures and join a path with its base name and

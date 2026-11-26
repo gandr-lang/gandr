@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 /// The default build stage: a package's `package.gandr.toml` body, rendered by
 /// a gandr function from its model's fields and modules.
 ///

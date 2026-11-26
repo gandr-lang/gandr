@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "equivalence-record", "imports", "let-statements", "pattern-matching", "records", "universes"))]
+
 /// This source reads selected fields of quasi-inverse and equivalence records.
 ///
 /// A pattern may name every field or select one label.

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "list-case", "pattern-matching", "records", "structural-recursion", "type-codes", "visibility"))]
+
 /// This source states the degree `ξ` of a pointed map of the 3-sphere.
 ///
 /// The degree is the winding of the image of the 3-cell. Each later rung

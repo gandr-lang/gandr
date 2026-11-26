@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "native-primitives", "pattern-matching"))]
+
 // A case can scrutinise a computation directly.
 //
 // No thunk stands between the case and its answer.

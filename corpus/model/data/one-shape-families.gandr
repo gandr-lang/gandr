@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "nominal-data", "pattern-matching", "products-and-sums", "records", "universes"))]
+
 // Equal-shape data families remain distinct types.
 //
 // An equivalence path relates `Celsius` and `Fahrenheit`.

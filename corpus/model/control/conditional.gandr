@@ -13,6 +13,8 @@
 //!
 //! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
 
+@![features(("call-by-push-value", "conditionals", "explicit-exits", "let-statements", "native-primitives", "records"))]
+
 /// A conditional over a boolean value: the true branch runs.
 @[runs("1")]
 def pick() -> Integer =

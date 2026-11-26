@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "modules", "native-primitives", "signatures-as-values", "universes"))]
+
 // This source shows constants in a theory.
 //
 // A model gives each constant with a value definition.

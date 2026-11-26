@@ -11,6 +11,8 @@
 //!
 //! [Dybjer-1996-internal_type_theory]: https://doi.org/10.1007/3-540-61780-9_66 "Dybjer, Internal Type Theory"
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "records", "thunks-and-force", "universes"))]
+
 /// The `useAtExtension` function applies a family to the result of an
 /// operation. The term `q(g)` stands at `tm(extend(g))`, the second domain of
 /// `use` at `extend(g)`.

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "pattern-matching", "records"))]
+
 // Record patterns bind unread fields.
 //
 // The binder keeps its label's type.

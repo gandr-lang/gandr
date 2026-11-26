@@ -9,6 +9,8 @@
 //!
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
+@![features(("nominal-data", "universes"))]
+
 /// One bit has off and on values.
 data Bit : Type where
   | Off : Bit

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "visibility"))]
+
 /// This source states maps out of the spheres by cases, and `Path.ap` of them
 /// on the spheres' cells.
 ///

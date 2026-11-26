@@ -16,6 +16,8 @@
 //! - see: `model/desc/fold-drops-variable.gandr` — a fold over a rule that
 //!   drops a variable
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 // `Width`.
 import "./family-with-rules.gandr"
 

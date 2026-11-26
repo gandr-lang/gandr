@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // A complete binary tree built two ways agrees at depth twelve.
 //
 // One definition builds each level once and holds it in both halves of the

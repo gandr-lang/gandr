@@ -1,3 +1,5 @@
+@![features(("effect-rows", "exact-distributions", "imports", "let-statements", "modules", "native-primitives", "pattern-matching"))]
+
 // Two distinct keys collide under the multiply-shift family of `std.hash`
 // with an exact probability, over a uniform odd multiplier.
 //

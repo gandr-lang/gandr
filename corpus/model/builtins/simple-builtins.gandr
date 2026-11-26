@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-lists", "native-primitives", "text-primitives"))]
+
 // This source tests basic builtin namespaces.
 //
 // It tests boolean negation, integer division and remainder, list access and

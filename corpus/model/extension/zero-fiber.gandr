@@ -8,6 +8,8 @@
 //!
 //! [Zhang-2024-three_noncubical_applications_extension_types]: https://arxiv.org/abs/2311.05658 "Zhang, Three non-cubical applications of extension types"
 //!
+@![features(("signatures-as-values", "universes"))]
+
 /// `ZeroFiber` states how `left` fixes `Val` cells to `zero` over `Two`.
 /// `ZeroFiber` uses its boundary, β and η laws for `c` and cells from `ins`.
 @[normalizes("cells(outp(c), outq(ins(one)), ins(outq(c))) ~> cells(zero, one, c)")]

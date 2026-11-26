@@ -7,6 +7,8 @@
 //! end stays open.
 //!
 //! - see: #1334 — `reader`
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "session-types"))]
+
 import "./task-base.gandr"
 // The import gives the filesystem host interface.
 import std.fs

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+
 /// This source states integer addition and its path laws.
 /// It follows cubical Agda's `Cubical/Data/Int`.
 ///

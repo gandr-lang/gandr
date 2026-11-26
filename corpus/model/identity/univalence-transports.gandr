@@ -12,6 +12,8 @@
 //!
 //! - owes: #520 — `univalence`'s two laws
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "records", "universes"))]
+
 // Univalence over the user universe: `fwdAlong`, `bwdAlong`, `idtoequiv`.
 import "./univalence.gandr"
 

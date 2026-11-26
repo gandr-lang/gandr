@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits", "let-statements", "native-primitives", "pattern-matching", "records"))]
+
 // This source shows blocks with trailing statements.
 //
 // A trailing semicolon runs the final statement.

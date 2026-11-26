@@ -7,6 +7,8 @@
 //!
 //! - see: #1106 — `exit_by_environment`
 
+@![features(("conditionals", "let-statements", "native-primitives"))]
+
 /// The rejected form reads an unset variable and selects exit code `3`.
 @[refuses("OutOfFragment.projection_expression")]
 def exit_by_environment() -> Integer =

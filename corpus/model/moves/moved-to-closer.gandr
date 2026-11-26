@@ -12,6 +12,8 @@
 //! Rust moves a non-`Copy` value at `let b = a;`.
 //! - see: `lib.types.movedfrom` in ISO/IEC 14882:2020
 //! - see: file-base.gandr — the file protocol
+@![features(("imports", "let-statements", "modules", "session-types", "traces"))]
+
 import "./file-base.gandr"
 
 /// `movedToCloser` sends a handle to a closer that closes it.

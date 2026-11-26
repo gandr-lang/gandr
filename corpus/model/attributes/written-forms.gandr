@@ -10,6 +10,8 @@
 //!
 //! - see: https://doc.rust-lang.org/reference/
 
+@![features(("explicit-exits", "let-statements"))]
+
 /// An answer whose exit is written, as `explicit_exits` asks.
 @[checks, explicit_exits]
 def exitWritten() -> Integer =

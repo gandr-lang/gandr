@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "native-primitives", "pattern-matching", "products-and-sums"))]
+
 // Indexed patterns infer a case's sum.
 //
 // `run` binds a comparison before the case scrutinises it.

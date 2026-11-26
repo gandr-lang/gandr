@@ -11,6 +11,8 @@
 //!
 //! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "session-types"))]
+
 // The import provides the ring protocol and its entries.
 import "../completion/ring-base.gandr"
 // The import provides the early-exit host interface.

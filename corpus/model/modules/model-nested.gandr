@@ -1,3 +1,5 @@
+@![features(("data-parameters", "module-nesting", "modules", "signatures-as-values", "universes", "visibility"))]
+
 // This source shows a nested model.
 //
 // An outer model holds an inner model as one operation.

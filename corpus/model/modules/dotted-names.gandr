@@ -1,3 +1,5 @@
+@![features(("modules", "records", "signatures-as-values"))]
+
 // This source shows a dotted declaration name.
 //
 // `Kit` contains a theory and a module through the same prefix.

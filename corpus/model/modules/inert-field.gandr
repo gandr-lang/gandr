@@ -1,3 +1,5 @@
+@![features(("data-parameters", "inert-fields", "modules", "signatures-as-values"))]
+
 // This source shows inert operations.
 //
 // An inert operation identifies a package. It does not define the package

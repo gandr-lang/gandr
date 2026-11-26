@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "native-lists", "nominal-data", "universes", "visibility"))]
+
 /// This source states the words of two spherical cells at one point, at
 /// dimension two and at dimension three.
 ///

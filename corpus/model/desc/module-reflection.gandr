@@ -1,3 +1,5 @@
+@![features(("data-parameters", "equivalence-record", "identity-types", "imports", "inert-fields", "let-statements", "modules", "native-primitives", "pattern-matching", "records", "signatures-as-values", "structural-recursion", "visibility"))]
+
 // A function reads a module's signature as a value, and a model as its
 // entries at a type that the signature's value computes.
 //

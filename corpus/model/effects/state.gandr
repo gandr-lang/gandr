@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "second-order-rules", "signatures-as-values", "universes", "visibility"))]
+
 // This source defines theories and rules of global state.
 //
 // `get` passes state to its continuation. `put` replaces state before its

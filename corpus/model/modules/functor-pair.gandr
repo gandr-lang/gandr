@@ -8,6 +8,8 @@
 //!
 //! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
+@![features(("dependent-functions", "let-statements", "modules", "native-primitives", "visibility"))]
+
 /// `Seed` exposes a sealed counter signature.
 pub module Seed :> *{type T, zero : T, next : T -> T, read : T -> Integer} where {
   type T = Integer

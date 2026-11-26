@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "native-lists", "visibility"))]
+
 // This manifold places the older role at the newer site under `Path`.
 //
 // A translation is code at a site's boundary, so the manifold states the

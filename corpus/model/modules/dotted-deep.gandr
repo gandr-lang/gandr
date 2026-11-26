@@ -1,3 +1,5 @@
+@![features(("modules", "records", "signatures-as-values"))]
+
 // This source shows dotted names at nested modules.
 //
 // A prefix declares the modules before it declares a member.

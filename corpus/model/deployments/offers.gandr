@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "modules", "native-primitives", "records", "signature-models", "signatures-as-values", "universes", "visibility"))]
+
 // A role states what it needs of the site that hosts it, as a row.
 //
 // The requirement travels with the program, and the offer stays with the

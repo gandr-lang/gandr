@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "universes"))]
+
 /// This source states action on a path through a constructor.
 ///
 /// The action carries an integer path between its wrapped values.

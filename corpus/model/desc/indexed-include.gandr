@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes", "visibility"))]
+
 // A theory whose operation lands at a sort that two calls index. The sort of
 // the second call has the first call as its index. Another theory includes
 // it, and a function takes a model of it and returns one.

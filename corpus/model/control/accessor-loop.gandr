@@ -11,6 +11,8 @@
 //!
 //! [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]: https://doi.org/10.1017/S0956796899003500 "Hutton, A tutorial on the universality and expressiveness of fold"
 
+@![features(("call-by-push-value", "effect-rows", "let-statements", "loops", "native-primitives", "pattern-matching", "temporary-access"))]
+
 /// `countdown` decrements its held count.
 /// Each condition reads the preceding write-back.
 @[runs("0")]

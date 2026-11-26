@@ -12,6 +12,8 @@
 //!
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
+@![features(("native-primitives", "nominal-data", "universes"))]
+
 /// `Nat` gives unary naturals as a unit and a recursive occurrence.
 data Nat : Type where
   | Zero : Nat

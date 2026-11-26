@@ -12,6 +12,8 @@
 //!
 //! - see: `two-processes.manifold.gandr`
 
+@![features(("data-parameters", "imports", "modules", "signature-models", "visibility"))]
+
 import std.manifold (Site)
 
 /// The far site, on a loopback socket.

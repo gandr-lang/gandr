@@ -11,6 +11,8 @@
 //!
 //! - see: #8291
 
+@![features(("data-parameters", "identity-types", "let-statements", "modules", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 /// The theory of a vote: two constants and no rule.
 pub theory Vote where
   /// The sort of votes.

@@ -8,6 +8,8 @@
 //!
 //! - see: #2713
 
+@![features(("imports", "let-statements", "pattern-matching"))]
+
 // The paints and the lamps, which share `Red`.
 import "./constructor-shared-name.gandr"
 // The signals, whose `Red` the lamps share too.

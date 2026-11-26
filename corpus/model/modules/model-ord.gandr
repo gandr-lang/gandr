@@ -1,3 +1,5 @@
+@![features(("conditionals", "data-parameters", "let-statements", "modules", "native-primitives"))]
+
 // This source shows the prelude `Ord` model.
 //
 // The integer and string models order values of their carrier. `OrdInteger`

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "let-statements", "modules", "native-primitives", "pattern-matching", "products-and-sums", "records", "universes", "visibility"))]
+
 // This source shows top-level type members.
 //
 // This source declares `Band`, `Twice` and returner types.

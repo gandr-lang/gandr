@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "let-statements", "modules", "native-lists", "pattern-matching", "products-and-sums", "records"))]
+
 /// This source states a list flow whose translator visits each cell.
 ///
 /// The translator swaps one record and rides the record flow through a list.

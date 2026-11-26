@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values", "universes", "visibility"))]
+
 // This source tests rewrite rules under theory rows.
 //
 // Open rows permit extra theories. Closed rows require the exact theory set.

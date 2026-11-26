@@ -13,6 +13,8 @@
 //!
 //! - see: #8288
 
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "modules", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "type-codes", "universes", "visibility"))]
+
 /// The theory of a truth value: two constants and no rule.
 pub theory Truth where
   /// The sort of truth values.

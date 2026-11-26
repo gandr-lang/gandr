@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "visibility"))]
+
 // Rust's default layout, as `std.layout` computes it, checked against rustc on
 // eleven types.
 //

@@ -1,3 +1,5 @@
+@![features(("floating-point", "native-primitives", "records"))]
+
 // This source shows arithmetic literals and operations.
 //
 // Integers and widths use literals.

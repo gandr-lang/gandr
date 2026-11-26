@@ -13,6 +13,8 @@
 //!
 //! [Dennis-1966-programming_semantics_for_multiprogrammed_computations]: https://doi.org/10.1145/365230.365252 "Dennis and Van Horn, Programming Semantics for Multiprogrammed Computations"
 
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
+
 // The filesystem's host interface.
 import std.fs
 

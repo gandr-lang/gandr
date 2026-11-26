@@ -11,6 +11,8 @@
 //!
 //! [Dunfield-2019-bidirectional_typing]: https://doi.org/10.1145/3450952 "Dunfield and Krishnaswami, Bidirectional Typing"
 
+@![features(("call-by-push-value", "conditionals", "let-statements", "native-primitives", "pattern-matching"))]
+
 /// A conditional a `run` binds: its written answer types the bound value.
 @[runs("2")]
 def boundIf() -> Integer =

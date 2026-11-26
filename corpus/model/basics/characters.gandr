@@ -1,3 +1,5 @@
+@![features("text-primitives")]
+
 // This source shows `Char` literals.
 //
 // A `Char` contains one Unicode scalar.

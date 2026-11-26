@@ -7,6 +7,8 @@
 //! exit operation abandons the continuation before a receive.
 //!
 //! - see: #1334 — `cancelled`
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "session-types"))]
+
 // The import gives the task protocol.
 import "./cancel-base.gandr"
 // The import gives the early-exit host interface.

@@ -1,3 +1,5 @@
+@![features(("let-statements", "products-and-sums", "session-types", "traces"))]
+
 // This source drops endpoints at `end`.
 //
 // `drop c` executes `close c`.

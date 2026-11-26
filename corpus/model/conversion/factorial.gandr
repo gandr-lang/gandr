@@ -13,6 +13,8 @@
 //!
 //! [Gregoire-2002-a_compiled_implementation_of_strong_reduction]: https://doi.org/10.1145/581478.581501 "Grégoire and Leroy, A compiled implementation of strong reduction"
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion"))]
+
 // The free naturals.
 import "../data/data-base.gandr"
 

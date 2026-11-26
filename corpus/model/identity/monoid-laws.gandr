@@ -8,6 +8,8 @@
 //!
 //! - see: HoTT Book §1.12
 
+@![features(("data-parameters", "identity-types", "let-statements", "native-primitives"))]
+
 /// The unit of the sum.
 @[runs("0")]
 def neutral = 0

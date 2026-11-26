@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // A result can follow its argument.
 //
 // A recursive result has its parameter's type.

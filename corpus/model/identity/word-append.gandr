@@ -11,6 +11,8 @@
 //! - see: #422 — `leftUnit`, `letterFirst`
 //! - see: #440 — `sameComposite`, `sameAfterLetter`
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-lists"))]
+
 // The circle.
 import "./circle-base.gandr"
 

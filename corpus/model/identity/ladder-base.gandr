@@ -11,6 +11,8 @@
 //! letter at a time.
 //!
 //! - see: #6309
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-lists", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 import "./circle-base.gandr"
 
 /// The type with one element is cctt's `Top`.

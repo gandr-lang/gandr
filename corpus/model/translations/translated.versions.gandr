@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "modules", "signature-translation", "signatures-as-values", "universes", "visibility"))]
+
 // Two versions of a store's signature, and the flow from the newer to the
 // older.
 //

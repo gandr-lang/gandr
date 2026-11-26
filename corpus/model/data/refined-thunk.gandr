@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `leftOf` and `mkApplied` force a witness whose type decodes a call that
 /// returns a function type.
 ///

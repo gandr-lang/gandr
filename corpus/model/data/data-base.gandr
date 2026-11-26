@@ -13,6 +13,8 @@
 //! [Altenkirch-2018-quotient_inductive_inductive_types]: https://doi.org/10.1007/978-3-319-89366-2_16 "Altenkirch et al., Quotient inductive-inductive types"
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
+@![features(("data-parameters", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 /// Natural numbers, free: every constructor term is its own value.
 pub data Nat : Type where
   | Zero : Nat

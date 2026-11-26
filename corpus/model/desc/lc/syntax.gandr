@@ -16,6 +16,8 @@
 //!
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
+@![features(("data-parameters", "imports", "let-statements", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 // The naturals, the de Bruijn indices.
 import "../model-in-source.gandr"
 

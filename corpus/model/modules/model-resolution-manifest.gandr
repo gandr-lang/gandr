@@ -1,3 +1,5 @@
+@![features(("conditionals", "data-parameters", "let-statements", "modules", "native-primitives", "signatures-as-values", "universes"))]
+
 // This source shows an omitted model implicit at a manifest type.
 //
 // `SameInteger` and `SameBool` state different carrier sorts.

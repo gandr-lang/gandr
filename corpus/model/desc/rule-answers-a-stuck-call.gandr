@@ -11,6 +11,8 @@
 //!
 //! - see: #8278
 
+@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "signatures-as-values", "universes"))]
+
 /// The theory of a truth value.
 theory Truth where
   /// The sort of truth values.

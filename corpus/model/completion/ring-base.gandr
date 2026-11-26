@@ -15,6 +15,8 @@
 //!
 //! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
+@![features(("modules", "session-types", "visibility"))]
+
 /// A ring: its entries sealed behind the interface, the protocol of one
 /// submission as the kernel serves it, the buffer and the pending completion
 /// on the submitter's side, the protocols that take a buffer, a pending

@@ -10,6 +10,8 @@
 //!
 //! - see: #8283
 
+@![features(("data-parameters", "identity-types", "signatures-as-values", "universes"))]
+
 /// The theory of a lamp.
 theory Lamp where
   /// The states of a lamp.

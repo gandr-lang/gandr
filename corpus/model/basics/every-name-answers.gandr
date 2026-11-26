@@ -13,6 +13,8 @@
 //!
 //! - see: crates/surface-lsp-core/coverage.ledger
 
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// A colour that the functions below match on.
 data Colour : Type where
   /// The first colour.

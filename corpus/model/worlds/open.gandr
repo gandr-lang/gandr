@@ -14,6 +14,8 @@
 //!
 //! [Vii-2007-typesafe_distributed_programming_ml5]: https://doi.org/10.1007/978-3-540-78663-4_9 "Murphy, Crary and Harper, Type-Safe Distributed Programming with ML5"
 
+@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "nested-runs", "nominal-data", "records", "temporary-access", "thunks-and-force", "universes"))]
+
 // The operator and seat worlds define each entry.
 import "./seat-and-operator.gandr"
 

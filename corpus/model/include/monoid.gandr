@@ -8,6 +8,8 @@
 //! `Endo` models `Monoid` with integer endofunctions. `composed` returns `8`.
 //!
 //! - see: #738
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "modules", "native-primitives", "signatures-as-values", "thunks-and-force", "universes", "visibility"))]
+
 /// `Semigroup` defines a carrier and an associative multiplication.
 pub theory Semigroup where
   sort M : Type

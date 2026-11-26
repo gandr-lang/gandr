@@ -12,6 +12,8 @@
 //! - see: #5272
 //! - see: `carrier-by-name.gandr` — a carrier supplied by name, and one omitted at a type
 
+@![features(("data-parameters", "identity-types", "let-statements", "universes"))]
+
 /// A composite whose first path omits its carrier, at its own reflexivity.
 def stepOmittedAtHere(
   A : Type,

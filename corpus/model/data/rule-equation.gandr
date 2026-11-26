@@ -9,6 +9,8 @@
 //!
 //! [Huet-1980-confluent_reductions]: https://doi.org/10.1145/322217.322230 "Huet, Confluent reductions"
 
+@![features(("nominal-data", "universes"))]
+
 /// The first `IntEq` rule lists its smaller side first.
 @[normalizes("S(P(Z)) ~> Z")]
 data IntEq : Type where {

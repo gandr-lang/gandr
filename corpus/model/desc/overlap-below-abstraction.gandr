@@ -1,3 +1,5 @@
+@![features(("second-order-rules", "signatures-as-values", "universes"))]
+
 // Two nominal rules can overlap below an abstraction.
 //
 // A rule abstraction has one head at each depth.

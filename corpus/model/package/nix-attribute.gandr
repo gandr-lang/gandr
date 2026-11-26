@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "native-lists", "native-primitives", "records", "visibility"))]
+
 /// The `nixpkgs` attribute `hello`, as `nix eval --json` prints its `meta` and
 /// `outputs`, read into a record type and a value.
 ///

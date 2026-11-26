@@ -1,3 +1,5 @@
+@![features(("floating-point", "let-statements"))]
+
 // This source shows `f64` literals and operations.
 //
 // An `f64` suffix or annotation types fractions as IEEE 754 binary64.

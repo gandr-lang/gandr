@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 /// This source presents the circle loop words as a rewrite type.
 ///
 /// `Loop` and `Unloop` are inverse letters.

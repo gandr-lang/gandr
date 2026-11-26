@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "explicit-exits", "let-statements", "native-lists", "native-primitives", "thunks-and-force"))]
+
 // This source tests list namespace combinators.
 //
 // The namespace has mapping, filtering, folding, quantifiers, flattening,

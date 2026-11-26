@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "modules", "native-primitives", "signature-models", "signatures-as-values", "universes"))]
+
 /// This source shows a module as a model value.
 ///
 /// `Up` has the model type that `Ticker` defines.

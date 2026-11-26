@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes"))]
+
 /// This source states reflexivity in a field with a computed path type.
 ///
 /// The `Held` family computes a path endpoint through `twofold`.

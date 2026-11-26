@@ -10,6 +10,8 @@
 //!
 //! - see: #1229
 
+@![features(("imports", "let-statements", "modules", "session-types"))]
+
 // The ring's protocol and its entries.
 import "./ring-base.gandr"
 

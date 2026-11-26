@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "pattern-matching", "products-and-sums", "records", "type-codes", "universes"))]
+
 /// This source compares two allocation orders for one linked arena.
 ///
 /// A relabelling connects the id types of the two orders.

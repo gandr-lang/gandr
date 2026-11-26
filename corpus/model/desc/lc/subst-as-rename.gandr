@@ -6,6 +6,8 @@
 //!
 //! - see: #640
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "type-codes", "visibility"))]
+
 // This source imports naturals, syntax, congruences and lookup lemmas.
 import "../model-in-source.gandr"
 import "./syntax.gandr"

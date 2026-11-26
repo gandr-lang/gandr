@@ -14,6 +14,8 @@
 //! - see: `model/identity/transport-list.gandr` — a walk along a path at its
 //!   written type
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "pattern-matching", "type-codes", "universes"))]
+
 /// A value of the first type with a value of the type it picks.
 data Picked(a : Type, b : a -> Type) : Type where
   /// The two values.

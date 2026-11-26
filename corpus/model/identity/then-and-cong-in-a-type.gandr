@@ -8,6 +8,8 @@
 //!
 //! - see: #3772 — `Path.step` and `Path.ap` in a type
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "universes"))]
+
 /// The function action uses a path of paths in its own type.
 def congInAType(
   A : Type,

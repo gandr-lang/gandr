@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion", "universes"))]
+
 // A parameter classifies a constructor argument.
 //
 // The called declaration states the parameter's type.

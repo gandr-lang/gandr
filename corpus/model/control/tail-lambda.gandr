@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 // A body whose result is a function value may end in a bare lambda.
 //
 // The `return` before such a lambda states nothing that the written type

@@ -11,6 +11,8 @@
 //!
 //! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "products-and-sums", "records"))]
+
 // This import supplies the magma and its translators.
 import "./magma-base.gandr"
 

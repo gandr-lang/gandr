@@ -1,3 +1,5 @@
+@![features(("module-nesting", "modules", "native-primitives", "records"))]
+
 // This source shows module members and nested members.
 //
 // `Facts` exports its stated members and hides the others.

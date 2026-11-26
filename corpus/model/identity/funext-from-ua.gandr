@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "pattern-matching", "records", "thunks-and-force", "type-codes", "universes"))]
+
 /// This source derives function extensionality from univalence.
 ///
 /// The diagonal makes each point into a reflexive path.

@@ -8,6 +8,8 @@
 //!
 //! - see: #4179 — the checker refused transports with reducible endpoints
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "type-codes", "universes"))]
+
 /// The identity on a type, a definition a motive may call.
 def itself(A : Type, a : A) -> A =
   a

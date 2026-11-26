@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "native-primitives"))]
+
 // Grade algebras as models of `std.grade`'s `Grade`, each order decided by
 // conversion.
 //

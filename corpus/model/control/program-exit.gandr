@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
+
 // This source shows early program exit.
 //
 // `std.process.Exit.exit` ends the program before its entry returns.

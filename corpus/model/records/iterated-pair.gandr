@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "modules", "records", "visibility"))]
+
 // The iterated pair, twenty levels deep, in two spellings. Each level is a
 // record of two fields, and both fields hold the level below.
 //

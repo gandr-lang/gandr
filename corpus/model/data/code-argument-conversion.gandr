@@ -13,6 +13,8 @@
 //! - see: #5381
 //! - see: #5161 — the indexed family whose tail arguments hold such a type
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "records", "universes"))]
+
 /// The naturals.
 data Rung : Type where
   /// Zero.

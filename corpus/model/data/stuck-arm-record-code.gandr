@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "records", "structural-recursion", "type-codes", "universes"))]
+
 /// This source checks pairs against dependent record definitions.
 ///
 /// It specifies how the kernel replays the unfolding.

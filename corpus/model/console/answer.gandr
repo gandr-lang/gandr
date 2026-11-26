@@ -1,3 +1,5 @@
+@![features(("conditionals", "effect-rows", "imports", "let-statements", "modules", "native-primitives"))]
+
 // A program reading a line through `std` and answering on one of two streams.
 //
 // `main` is handed the ambient authority and opens the console from it, so

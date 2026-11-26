@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "imports", "let-statements", "located-judgements", "native-primitives", "records", "signature-models", "visibility"))]
+
 // A role that requires the older version of a store's signature, twice.
 //
 // A program and its sites change on their own schedules. A deployment states

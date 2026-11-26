@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "signatures-as-values", "universes"))]
+
 // A qualified constructor has the form `Family.Constructor`.
 //
 // A pattern can use a qualified constructor.

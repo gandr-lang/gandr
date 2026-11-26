@@ -9,6 +9,8 @@
 //!
 //! A polled Rust future cannot make this move.
 //! - see: #1183 — `relocated`
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives", "records", "temporary-access"))]
+
 import std.process
 
 /// `relocated` resumes a captured access from a higher stack frame.

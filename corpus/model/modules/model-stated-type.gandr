@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "identity-types", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "universes"))]
+
 // This source shows a comparison in a stated type that the checker decodes.
 // The comparison's call omits its model of `Eq`.
 //

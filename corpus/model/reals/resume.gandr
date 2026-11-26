@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+
 // A machine resumes from its checkpoint and reaches the verdict of an
 // uninterrupted run, through `std.reals.Eff`.
 //

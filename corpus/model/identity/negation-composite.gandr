@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+
 /// This source transports a Boolean along a composite of negation paths.
 /// It follows cctt's `tests/bench/negPath.cctt`, a rung of the Brunerie
 /// ladder that cctt and gandr both state.

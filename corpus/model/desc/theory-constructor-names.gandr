@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+
 // A source constructor can have the name of a `Theory` constructor.
 //
 // A `theory` block still mints its code.

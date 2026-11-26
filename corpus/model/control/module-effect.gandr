@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "let-statements", "modules", "named-instances", "signatures-as-values", "universes"))]
+
 // This source shows theory effects with qualified paths.
 //
 // `Counter.Eff` lives under `Counter`.

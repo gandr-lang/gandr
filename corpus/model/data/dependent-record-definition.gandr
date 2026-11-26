@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "records", "type-codes", "universes"))]
+
 /// This source checks a pair against a definition that returns a
 /// dependent record type.
 ///

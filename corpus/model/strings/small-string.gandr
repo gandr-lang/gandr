@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "effect-rows", "imports", "let-statements", "loops", "native-primitives", "nominal-data", "pattern-matching", "temporary-access", "universes", "visibility"))]
+
 // This source models short string storage.
 //
 // A short string stores its bytes inline. It uses no allocation through the

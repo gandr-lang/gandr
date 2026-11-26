@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "products-and-sums", "records", "universes"))]
+
 // This source shows applied families inside a module.
 //
 // `Shapes` declares option, pair and box families. A model of a theory with an

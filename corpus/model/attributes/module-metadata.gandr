@@ -9,6 +9,8 @@
 //!
 //! - see: https://doc.rust-lang.org/cargo/
 
+@![features("records")]
+
 // A unit value carrying a package's metadata.
 @[refuses("UnknownAttribute")]
 @[package(*{.name = "acme/parser", .version = "1.4.0"})]

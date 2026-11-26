@@ -8,6 +8,8 @@
 //!
 //! - see: HoTT Book Lemma 2.1.2
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching"))]
+
 // Reflexivity at seven.
 import "./back.gandr"
 

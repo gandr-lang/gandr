@@ -8,6 +8,8 @@
 //!
 //! - see: #649 — `along_returned`
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "records", "type-codes", "universes"))]
+
 /// A reflexive transport at a path-type motive returns a path.
 def moved_end : Path[.A = Path[.A = Integer] 2 2] (Path.walk
   (fun (x) { type(Path[.A = Integer] x x) })

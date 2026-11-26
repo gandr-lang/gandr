@@ -20,6 +20,8 @@
 //! - owes: #4150 — an operation or a rule across two plain sorts, and an index
 //!   with a variable
 
+@![features(("data-parameters", "identity-types", "let-statements", "modules", "native-primitives", "pattern-matching", "signatures-as-values", "universes", "visibility"))]
+
 /// The fragment at two widths.
 pub theory Frag where
   /// The widths.

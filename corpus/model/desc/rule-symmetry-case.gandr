@@ -10,6 +10,8 @@
 //!
 //! - see: #8385
 
+@![features(("data-parameters", "let-statements", "pattern-matching", "signatures-as-values", "universes", "visibility"))]
+
 /// The theory of the beacons, with two beacons side by side in no order.
 pub theory Beacon where
   /// The sort of beacons.

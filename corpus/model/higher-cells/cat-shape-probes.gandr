@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "indexed-data", "let-statements", "native-primitives", "nominal-data", "universes"))]
+
 // This source probes reflexivity forms for category laws.
 //
 // The probes cover variables, functions, applications and integer-indexed

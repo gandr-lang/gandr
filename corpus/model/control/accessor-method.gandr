@@ -14,6 +14,8 @@
 //!
 //! [Azman-2021-deducing_this]: https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r7.html "Ažman, Brand, Deane and Revzin, Deducing this"
 
+@![features(("call-by-push-value", "data-parameters", "deduced-receivers", "imports", "let-statements", "modules", "native-lists", "native-primitives", "places", "sized-types", "temporary-access", "visibility"))]
+
 // The list each call below holds.
 import "./accessor-place.gandr"
 // The native finite lists.

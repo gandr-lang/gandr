@@ -12,6 +12,8 @@
 //!
 //! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 // The naturals that select the arm.
 import "./data-base.gandr"
 

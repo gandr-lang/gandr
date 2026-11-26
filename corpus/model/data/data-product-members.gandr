@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "native-lists", "products-and-sums", "records"))]
+
 // Products can contain optional values.
 //
 // Each tuple member receives a product component type.

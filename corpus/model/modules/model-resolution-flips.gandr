@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "native-primitives", "pattern-matching"))]
+
 // This source supplies a flag model of `ResetCount`.
 //
 // `Flips` increments and resets a Boolean carrier.

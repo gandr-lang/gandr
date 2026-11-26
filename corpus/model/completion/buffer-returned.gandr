@@ -14,6 +14,8 @@
 //!
 //! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
+@![features(("buffer-tokens", "call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "pattern-matching", "records", "session-types"))]
+
 // The native buffer a receive places live.
 import std.buffer (Buf)
 

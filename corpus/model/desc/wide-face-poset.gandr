@@ -1,3 +1,5 @@
+@![features(("extension-types", "modules", "native-primitives", "records"))]
+
 // This record type has a face poset wider than one machine word. Its twelve
 // faces lie over nine labels. Their 66 pairwise meets differ from each other
 // and from each face. So the poset holds 78 cells. A system over two of the

@@ -10,6 +10,8 @@
 //! - see: #7968 — an operation with no continuation
 //! - see: `unwound.gandr` — the cleanup after `abandon k`
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "modules", "named-instances", "native-lists", "records", "signature-models", "signatures-as-values", "temporary-access", "universes"))]
+
 // The import provides native finite lists.
 import std.list (List)
 // The import provides the early-exit host interface.

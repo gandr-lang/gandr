@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "records"))]
+
 // This source tests host modules inside a block.
 //
 // `fs`, `path` and `env` access the file system, paths and environment.

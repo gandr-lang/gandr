@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "derived-rules", "identity-types", "imports", "let-statements", "modules", "nominal-data", "pattern-matching", "signature-models", "universes"))]
+
 /// This source states a rule that completion derives for each group model.
 ///
 /// Completion reduces both rule sides to one normal form.

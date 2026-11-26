@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+
 /// This source shows recursive module members.
 ///
 /// `Counting` and `Iterating` each contain a recursive definition. A module

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "implicit-arguments", "let-statements", "model-include", "modules", "native-primitives", "nominal-data", "signatures-as-values", "stated-laws", "tactics-over-goals", "universes"))]
+
 // This source shows laws in a theory model.
 //
 // Each model proves every stated law at its carrier. A law is an equation that

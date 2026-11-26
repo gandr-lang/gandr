@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // This source defines `Lift` as a function.
 //
 // `subst-subst` contains `substTwiceUnderLam`.

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "type-codes", "universes"))]
+
 // This source writes a map's action on a path as a transport, after the HoTT
 // book's Lemma 2.2.1.
 //

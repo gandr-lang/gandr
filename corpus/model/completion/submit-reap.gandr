@@ -10,6 +10,8 @@
 //! - see: corpus/pathological/completion/pending-dropped.gandr
 //! - see: https://man7.org/linux/man-pages/man7/io_uring.7.html
 
+@![features(("imports", "let-statements", "modules", "session-types"))]
+
 // The ring's protocol and its entries.
 import "./ring-base.gandr"
 

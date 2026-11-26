@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching"))]
+
 /// This source states dependent maps from the circle.
 ///
 /// Each case at the point owes transport around the loop.

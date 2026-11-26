@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 // This source writes exit handlers as explicit folds.
 //
 // The tree is the free model of `std.process.Exit.Eff`.

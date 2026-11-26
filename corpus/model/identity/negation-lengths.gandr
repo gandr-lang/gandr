@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// This source transports `true` along the negation composite at three
 /// lengths of cctt's `tests/bench/negPath.cctt`.
 ///

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "visibility"))]
+
 // A shift renaming adds its amount to an index.
 //
 // Two shifts compose.

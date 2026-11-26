@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "native-lists", "visibility"))]
+
 // A program decides two bounds on `cos (π/4)` and on `sin (π/4)`, and
 // encloses an angle of a gate. It works through `std.reals.Eff`, the host
 // interface of exact reals. Each value lies between `0.7071` and `0.7072`.

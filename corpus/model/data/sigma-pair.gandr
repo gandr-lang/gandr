@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "explicit-exits", "identity-types", "indexed-data", "let-statements", "nominal-data", "pattern-matching", "products-and-sums", "records", "universes"))]
+
 // Dependent pairs let later fields read earlier fields.
 //
 // A match, label or position reads a pair field.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "modules", "native-primitives", "signatures-as-values", "thunks-and-force", "universes"))]
+
 // This source shows operations in a theory model.
 //
 // An operation has the domain and result that its theory states.

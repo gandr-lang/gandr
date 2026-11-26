@@ -13,6 +13,8 @@
 //!
 //! [Dunfield-2019-bidirectional_typing]: https://doi.org/10.1145/3450952 "Dunfield and Krishnaswami, Bidirectional Typing"
 
+@![features(("call-by-push-value", "let-statements"))]
+
 /// A held value returned to a statement that binds it: the binder states no
 /// type, and the read synthesises the slot's.
 @[runs("3")]

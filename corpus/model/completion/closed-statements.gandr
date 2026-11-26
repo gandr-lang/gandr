@@ -9,6 +9,8 @@
 //! - see: corpus/pathological/completion/half-unclosed.gandr
 //! - see: #1205
 
+@![features(("imports", "let-statements", "modules", "session-types"))]
+
 // The ring's protocol and its entries.
 import "./ring-base.gandr"
 

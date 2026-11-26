@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "modules", "native-primitives", "nominal-data", "universes"))]
+
 // Generic equality follows a data type's constructors.
 //
 // `Eq.generic(T)` compares values structurally.

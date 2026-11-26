@@ -17,6 +17,8 @@
 //!
 //! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
 
+@![features(("lazy-records", "modules", "products-and-sums", "session-types", "visibility"))]
+
 /// `Seat` seals its message types behind an interface.
 /// `Seat` defines its protocol, its messages, and a mobile report.
 pub module Seat :> *{

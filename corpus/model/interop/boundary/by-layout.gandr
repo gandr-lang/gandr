@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "effect-rows", "imports", "interop-boundary", "let-statements", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+
 // Values Rust holds cross into gandr as words, read by their layouts.
 //
 // A Rust caller lends its memory and passes a word: a list's root, or an

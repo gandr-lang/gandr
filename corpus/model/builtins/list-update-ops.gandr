@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "native-lists", "native-primitives", "thunks-and-force"))]
+
 // This source tests list operations that create new lists.
 //
 // The operations set, update, insert, remove, push, append and concatenate

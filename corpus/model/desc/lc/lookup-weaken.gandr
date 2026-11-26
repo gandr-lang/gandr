@@ -7,6 +7,8 @@
 //!
 //! - see: #640
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+
 // This source imports naturals, syntax, shift lookup and fusion lemmas.
 import "../model-in-source.gandr"
 import "./syntax.gandr"

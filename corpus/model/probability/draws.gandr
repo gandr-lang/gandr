@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "effect-rows", "exact-distributions", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "pattern-matching", "visibility"))]
+
 // A program sums two draws of two fair bits through `std.rand.Eff`, the host
 // interface of randomness.
 //

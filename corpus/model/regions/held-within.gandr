@@ -8,6 +8,8 @@
 //! the early exit host interface.
 //!
 //! - see: corpus/pathological/regions/held-within.gandr — a view after its hold
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+
 import std.process
 /// `keptAtHold` forces a view before its hold ends.
 @[runs("42")]

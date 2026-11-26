@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching", "type-codes"))]
+
 /// This source gives circle elimination and transport along its loop.
 ///
 /// A dependent case carries its point result around the loop.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "universes", "visibility"))]
+
 /// `refinedPred` and `occupied` case on a lambda's binder whose type an
 /// enclosing case refined to a data type.
 ///

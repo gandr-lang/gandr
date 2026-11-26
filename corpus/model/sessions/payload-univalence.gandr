@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "modules"))]
+
 // This source pays session bisimilarity with a univalence
 // between nominal types.
 //

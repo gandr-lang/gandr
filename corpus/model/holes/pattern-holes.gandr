@@ -9,6 +9,8 @@
 //! - see: `corpus/pathological/holes/` — each source refuses one pattern-hole shape.
 //! - see: #391 — `rank`, `weigh`
 //!
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 /// This data type has three colours.
 data Shade : Type where
   | Crimson : Shade

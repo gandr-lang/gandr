@@ -5,6 +5,8 @@
 //! The checker rejects that write before the program runs.
 //!
 //! - see: #1492
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+
 // Early exit's host interface.
 import std.process
 

@@ -6,6 +6,8 @@
 //!
 //! - see: `corpus/pathological/holes/pattern-hole-arms.gandr` — a pattern hole leaves the arm undecided.
 //!
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 /// This data type has three colours.
 data Color : Type where
   | Red : Color

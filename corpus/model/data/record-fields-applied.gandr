@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "pattern-matching", "records"))]
+
 // A match splits a record with function fields.
 // A match applies each field.
 // `twoSteps` applies `step` twice after `start`.

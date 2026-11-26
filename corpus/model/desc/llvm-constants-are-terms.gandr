@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching"))]
+
 // The constants of the block `Llvm` of `std.llvm` are closed terms of their
 // sorts.
 //

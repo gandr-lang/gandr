@@ -7,6 +7,8 @@
 //!
 //! - see: #2713
 
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 /// A signal's aspect.
 pub data Signal : Type where
   /// The aspect that holds a train.

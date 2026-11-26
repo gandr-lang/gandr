@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 // This source tests nested record updates.
 //
 // The inner update rebuilds the inner record. The outer update puts it at

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "imports", "let-statements", "pattern-matching", "products-and-sums", "tarski-universes", "type-codes", "universes"))]
+
 // A quoted product whose components are values: a variable, a call or a
 // recursive call.
 //

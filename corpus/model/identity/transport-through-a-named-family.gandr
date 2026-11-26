@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "universes"))]
+
 /// `Path.walk` takes its family from a parameter, by name or as a lambda.
 ///
 /// A library function over any family receives the family as a parameter.

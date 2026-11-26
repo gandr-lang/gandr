@@ -7,6 +7,8 @@
 //!
 //! - see: #1106 — `observed`
 //! - see: streams.gandr — the current surface spelling
+@![features(("codata", "dependent-functions", "let-statements", "native-primitives", "universes"))]
+
 /// Scaled exposes an integer observation named doubled.
 @[refuses("CodataKindNotUniverse")]
 codata Scaled : Type where

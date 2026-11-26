@@ -1,3 +1,5 @@
+@![features(("conditionals", "data-parameters", "let-statements", "modules", "native-primitives", "signature-models", "signatures-as-values", "universes"))]
+
 // This source shows an omitted model implicit at a manifest type.
 //
 // The manifest sort distinguishes `Up` from `Flips`.

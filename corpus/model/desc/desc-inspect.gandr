@@ -9,6 +9,8 @@
 //!
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
+@![features(("nominal-data", "universes"))]
+
 /// A traffic signal has stop, go and wait states.
 data Traffic : Type where
   | Stop : Traffic

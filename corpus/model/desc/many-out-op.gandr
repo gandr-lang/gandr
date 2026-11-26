@@ -10,6 +10,8 @@
 //!
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
+@![features(("let-statements", "nominal-data", "products-and-sums", "records", "universes"))]
+
 /// The naturals with division and remainder, both outputs named.
 @[normalizes("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero))) ~> (Succ(Succ(Zero)), Succ(Zero))")]
 data NatDiv : Type where {

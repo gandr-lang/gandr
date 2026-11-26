@@ -10,6 +10,8 @@
 //!
 //! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
 
+@![features("modules")]
+
 /// `Origin` has an empty-argument member.
 module Origin where
   /// `zero` gives the starting point.

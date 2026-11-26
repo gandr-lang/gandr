@@ -13,6 +13,8 @@
 //! - see: #5290
 //! - see: #5255 — `std.ir` over the native dependent pair
 
+@![features(("data-parameters", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "type-codes", "universes"))]
+
 /// The spools: bare, or wound once more.
 data Spool : Type where
   /// The bare spool.

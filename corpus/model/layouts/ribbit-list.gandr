@@ -17,6 +17,8 @@
 //!
 //! [Baudon-2024-algebraic_data_types_highperformance_computing]: https://doi.org/10.70675/7bb9b51ezf689z4cb5z8d80z794397b5f052 "Baudon, Algebraic Data Types for High-Performance Computing"
 
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes", "visibility"))]
+
 /// The list of Ribbit's Example 3.1: empty, or an `i32` before the rest.
 pub data Ints : Type where
   /// The empty list.

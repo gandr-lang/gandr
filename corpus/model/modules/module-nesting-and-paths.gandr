@@ -1,3 +1,5 @@
+@![features(("module-nesting", "modules", "records"))]
+
 // This source shows nested modules and their paths.
 //
 // `Config` contains limits at several nested depths.

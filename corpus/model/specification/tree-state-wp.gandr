@@ -14,6 +14,8 @@
 //! - cites: [Maillard-2019-dijkstra_monads_all]
 //! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "native-primitives", "pattern-matching", "records", "structural-recursion", "universes", "visibility"))]
+
 // The import gives Either, StateOp and Prog.
 import "../effects/tree.gandr"
 

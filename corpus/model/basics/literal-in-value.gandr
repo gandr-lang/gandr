@@ -1,3 +1,5 @@
+@![features(("modules", "nominal-data", "universes"))]
+
 // A natural literal read through a reader, in a body and as a definition's
 // own value.
 //

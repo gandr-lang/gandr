@@ -10,6 +10,8 @@
 //!
 //! - see: #8323
 
+@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "signatures-as-values", "universes", "visibility"))]
+
 /// The type with no value.
 pub data Hollow : Type where {}
 

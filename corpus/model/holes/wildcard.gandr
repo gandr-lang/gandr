@@ -11,6 +11,8 @@
 //! - see: #528
 //! - see: #1979 — `endForced`, `endSigned`, `endMet`
 //!
+@![features(("data-parameters", "identity-types", "implicit-arguments", "let-statements", "records", "universes", "visibility", "wildcards"))]
+
 /// This function is the identity at an explicit type.
 pub def idAt(a : Type, y : a) -> a = y
 

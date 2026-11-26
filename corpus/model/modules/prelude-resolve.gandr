@@ -1,3 +1,5 @@
+@![features(("modules", "native-primitives", "nominal-data", "universes"))]
+
 // This source shows prelude model resolution.
 //
 // The prelude provides `Eq` and `Ord` models for integers and strings.

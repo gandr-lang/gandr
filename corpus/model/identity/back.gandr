@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "visibility"))]
+
 /// This source states path inversion over integers.
 ///
 /// `Path.back` reverses the endpoints of a path.

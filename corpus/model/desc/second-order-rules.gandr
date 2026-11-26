@@ -18,6 +18,8 @@
 //! [Klop-1993-combinatory_reduction_systems_introduction_and_survey]: https://doi.org/10.1016/0304-3975(93)90091-7 "Klop, van Oostrom and van Raamsdonk, Combinatory reduction systems: introduction and survey"
 //! [Mayr-1998-higher_order_rewrite_systems_and_their_confluence]: https://doi.org/10.1016/S0304-3975(97)00143-6 "Mayr and Nipkow, Higher-order rewrite systems and their confluence"
 
+@![features(("dependent-functions", "pattern-matching", "signatures-as-values"))]
+
 /// ζ substitutes the bound term into the `let` body.
 theory Let where
   sort Tm : Type+

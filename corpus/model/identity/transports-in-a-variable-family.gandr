@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "universes"))]
+
 /// Two transports in a variable family compare by their family, their path
 /// and their value.
 ///

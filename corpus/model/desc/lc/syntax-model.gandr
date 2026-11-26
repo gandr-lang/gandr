@@ -7,6 +7,8 @@
 //!
 //! - see: #640
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "modules", "visibility"))]
+
 // This source imports naturals, syntax and the six law proofs.
 import "../model-in-source.gandr"
 import "./syntax.gandr"

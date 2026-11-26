@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "universes"))]
+
 /// This source states unbiased composition of a path chain at
 /// a certified stratum.
 ///

@@ -13,6 +13,8 @@
 //!
 //! - see: #5213 — a type reads a qualified call and a call of a call
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "modules", "records", "universes"))]
+
 /// The types of a small theory, each a function to `Type`.
 module Standard where
   /// The type with one point.

@@ -10,6 +10,8 @@
 //!
 //! [Zhang-2024-three_noncubical_applications_extension_types]: https://arxiv.org/abs/2311.05658 "Zhang, Three non-cubical applications of extension types"
 //!
+@![features(("signatures-as-values", "universes"))]
+
 /// `Generated` states how `left` fixes `Val` cells to `zero` over `Two`.
 /// `Generated` uses its boundary, β and η laws for `c` and cells from `inCell`.
 @[normalizes("cells(outCellp(c), outCellq(inCell(one)), inCell(outCellq(c))) ~> cells(zero, one, c)")]

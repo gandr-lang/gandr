@@ -1,3 +1,5 @@
+@![features(("modules", "native-primitives", "records"))]
+
 // This source shows module signature matching.
 //
 // `Metrics` exposes the members that its signature states.

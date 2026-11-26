@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "pattern-matching", "products-and-sums", "records"))]
+
 // This source shows Boolean values.
 //
 // `true` and `false` provide the two units of `Bool`.

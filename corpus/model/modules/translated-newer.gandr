@@ -1,3 +1,5 @@
+@![features(("modules", "signature-translation", "signatures-as-values", "visibility"))]
+
 // This source shows a newer package version.
 //
 // `Newer` renames the old answer as `reply` and adds `count`.

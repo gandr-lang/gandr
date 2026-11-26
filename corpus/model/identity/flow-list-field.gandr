@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "let-statements", "modules", "native-lists", "pattern-matching", "products-and-sums", "records"))]
+
 /// This source states a flow between records that contain lists.
 ///
 /// The translator reorders record fields and keeps the list intact.

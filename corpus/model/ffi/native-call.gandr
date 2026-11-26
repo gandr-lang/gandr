@@ -8,6 +8,8 @@
 //!
 //! - see: #327 — `gandr_test_add`, `measured`
 //! - see: #1106 — `measured`
+@![features(("call-by-push-value", "interop-boundary", "let-statements", "products-and-sums", "records"))]
+
 /// The test library's adder and string length.
 @[refuses("OutOfFragment.extern_block")]
 extern "c" from "./testlib" as testlib {

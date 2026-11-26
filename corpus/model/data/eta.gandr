@@ -14,6 +14,8 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
+@![features(("data-parameters", "identity-types", "let-statements", "products-and-sums", "records"))]
+
 /// A pair is the pair of its projections.
 def etaPair(e : Integer * Integer) -> Path *{e.0, e.1} e =
   Path.here e

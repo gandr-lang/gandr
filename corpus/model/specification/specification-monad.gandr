@@ -10,6 +10,8 @@
 //! - cites: [Maillard-2019-dijkstra_monads_all]
 //! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
+@![features(("data-parameters", "dependent-functions", "signatures-as-values", "universes"))]
+
 /// `SpecificationMonad` has values, computations and an order.
 /// The order is reflexive, transitive and monotone under extension.
 theory SpecificationMonad where

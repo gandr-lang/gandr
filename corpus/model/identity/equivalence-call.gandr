@@ -1,3 +1,5 @@
+@![features(("equivalence-record", "imports", "let-statements", "pattern-matching", "records", "universes"))]
+
 /// This source splits equivalence records returned by calls.
 ///
 /// A returned quasi-inverse has four fields.

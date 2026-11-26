@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// This source winds a loop word at three lengths of cctt's
 /// `tests/bench/s1.cctt`. There the winding transports zero along a word of
 /// loops in the helix, and `forceℤ` forces the result.

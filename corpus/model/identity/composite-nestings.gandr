@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "universes"))]
+
 /// This source states that each nesting of one path chain has one composite.
 ///
 /// The unbiased composite does not select a bracketing.

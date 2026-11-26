@@ -11,6 +11,8 @@
 //!
 //! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
 
+@![features(("call-by-push-value", "data-parameters", "imports", "let-statements", "modules", "native-primitives", "pattern-matching", "temporary-access", "visibility"))]
+
 // This source imports declarations for lists, bytes, ownership and writes.
 import "../data/data-base.gandr"
 import "./string-base.gandr"

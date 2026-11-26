@@ -8,6 +8,8 @@
 //!
 //! Rust passes an owned value through `fn f(x: T) -> T`.
 //! - see: file-base.gandr — the file protocol
+@![features(("imports", "let-statements", "modules", "session-types", "traces"))]
+
 import "./file-base.gandr"
 
 /// `movedThrough` gives a writer a handle that the writer returns.

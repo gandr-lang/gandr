@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 /// This source folds state-only programs with an explicit state parameter.
 ///
 /// The `put-put` rule removes a store overwritten by the next store.

@@ -1,3 +1,5 @@
+@![features(("atom-identity", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "modules", "records", "type-codes", "universes", "visibility"))]
+
 /// This source states an identity system for a unit atom that the module seals.
 ///
 /// Its relation and transport law make evidence between two points a path.

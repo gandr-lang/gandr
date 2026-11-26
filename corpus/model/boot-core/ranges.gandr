@@ -8,6 +8,8 @@
 //!
 //! - see: `../../../crates/boot-core/src/lib.rs` — the Rust types
 
+@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 // The bytes of a memory of `Extent`.
 import std.list (List)
 

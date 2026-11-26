@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 // This source handles rows as explicit effect trees.
 //
 // Each handler answers the front operation and forwards the remaining row.

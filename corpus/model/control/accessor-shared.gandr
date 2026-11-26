@@ -13,6 +13,8 @@
 //!
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
+@![features(("call-by-push-value", "let-statements", "native-primitives", "records", "temporary-access"))]
+
 /// A shared view and its hold access the same value.
 @[runs("6")]
 def read_beside() -> Integer =

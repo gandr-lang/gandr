@@ -13,6 +13,8 @@
 //! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
 //! [Petrakis-2022-univalent_typoids]: https://arxiv.org/abs/2205.06651 "Petrakis, Univalent Typoids"
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `Rig` defines two binary operations with one corolla shape.
 theory Rig where
   sort R : Type

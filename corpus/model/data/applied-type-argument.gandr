@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 // Data families accept applied type arguments.
 //
 // A type parameter receives a family's type over its arguments.

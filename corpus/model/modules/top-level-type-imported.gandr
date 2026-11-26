@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "records"))]
+
 // This source shows an imported top-level type member.
 //
 // `Band` and `Twice` come from `top-level-type.gandr`.

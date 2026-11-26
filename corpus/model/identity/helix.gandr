@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "explicit-exits", "identity-types", "imports", "let-statements", "pattern-matching", "records", "universes"))]
+
 /// This source states the winding number of a loop by transport in the
 /// helix over the circle. It follows cctt's `tests/bench/s1.cctt`, the first
 /// rung of the Brunerie ladder, and the HoTT book's § 8.1.

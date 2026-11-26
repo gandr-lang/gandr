@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "let-statements", "native-primitives", "thunks-and-force"))]
+
 // This source shows paired signatures and definitions.
 //
 // A pair may join one item or remain separate.

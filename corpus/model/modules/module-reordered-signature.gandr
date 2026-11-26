@@ -1,3 +1,5 @@
+@![features(("modules", "native-primitives", "records"))]
+
 // This source shows a module with a reordered signature.
 //
 // `Ordered` declares its members in a different order from its signature.

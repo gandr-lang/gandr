@@ -1,3 +1,5 @@
+@![features(("bridge-types", "data-parameters", "dependent-functions", "directed-paths", "explicit-exits", "identity-types", "indexed-data", "let-statements", "records", "thunks-and-force", "universes"))]
+
 // A path-shaped type takes its carrier by name, as a call takes an implicit.
 //
 // The endpoints often fix the carrier, so a source need not write it first.

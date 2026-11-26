@@ -14,6 +14,8 @@
 //! [Pitts-2013-nominal_sets_names_symmetry_computer_science]: https://doi.org/10.1017/CBO9781139084673 "Pitts, Nominal Sets: Names and Symmetry in Computer Science"
 //! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
 
+@![features(("dependent-functions", "let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 /// `nu` restricts a channel name over a process. The port abstracts that name.
 pub theory Restriction where
   sort Name : Atom

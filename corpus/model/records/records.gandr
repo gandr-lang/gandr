@@ -1,3 +1,5 @@
+@![features("records")]
+
 // This source tests `record` namespace operations.
 //
 // The namespace inserts a field and reads it back by name.

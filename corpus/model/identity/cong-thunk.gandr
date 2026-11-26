@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "native-primitives", "thunks-and-force", "type-codes"))]
+
 /// This source states action on a path through a suspended computation.
 ///
 /// The action carries an integer path between the returned thunks.

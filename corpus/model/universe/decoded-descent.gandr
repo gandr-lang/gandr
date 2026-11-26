@@ -11,6 +11,8 @@
 //!
 //! - see: `pathological/universe/decoded-descent.gandr`
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "tarski-universes", "thunks-and-force", "universes", "visibility"))]
+
 // The naturals, their addition and the lists.
 import "../data/data-base.gandr"
 

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "modules", "pattern-matching", "records", "signature-models", "signatures-as-values", "type-codes", "universes", "visibility"))]
+
 /// This source states manifest sorts in counter and pairing models.
 ///
 /// A manifest sort fixes a carrier while a model remains usable as its theory.

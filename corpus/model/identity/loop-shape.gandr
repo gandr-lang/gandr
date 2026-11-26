@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "modules", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 /// This source gives the circle shape and two models.
 ///
 /// The presented-integer model proves its cancellation laws by conversion.

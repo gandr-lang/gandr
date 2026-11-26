@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "identity-types", "let-statements", "native-primitives", "pattern-matching", "records", "universes"))]
+
 // A case on a `Bool` and a split of the unit, each of which refines its goal.
 //
 // A match on a `Bool` parameter refines a later binder whose type reads the

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "records", "rule-respect", "structural-recursion", "visibility"))]
+
 /// This source maps loop words to presented and native integers.
 ///
 /// The presented fold respects word rules by conversion.

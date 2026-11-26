@@ -1,3 +1,5 @@
+@![features(("conditionals", "data-parameters", "let-statements", "model-include", "modules", "native-primitives", "signatures-as-values"))]
+
 // This source shows an included model.
 //
 // `GradeInteger` includes `EqInteger` as its equality reduct.

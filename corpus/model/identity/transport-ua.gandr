@@ -10,6 +10,8 @@
 //! - see: HoTT Book Theorem 2.6.4
 //! - see: HoTT Book §2.12
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "native-lists", "products-and-sums", "records", "type-codes"))]
+
 // The circle, the presented integers, the winding number and spinning.
 import "./circle-base.gandr"
 // The equivalence of the loops at the point with the integers, `winding`.

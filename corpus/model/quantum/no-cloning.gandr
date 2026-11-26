@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "nominal-data", "products-and-sums", "qubit-type", "records", "typed-holes", "universes"))]
+
 // No cloning in the type system: a qubit carries no comonoid, so no binder
 // copies or discards it.
 //

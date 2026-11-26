@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "native-primitives"))]
+
 // This source supplies an integer model of `Count`.
 //
 // `Up` increments and reads an integer carrier.

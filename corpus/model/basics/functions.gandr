@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 // This source shows calls between functions.
 //
 // A function computes over its parameters.

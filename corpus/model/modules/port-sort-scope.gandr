@@ -1,3 +1,5 @@
+@![features(("modules", "signatures-as-values", "universes", "visibility"))]
+
 // This source shows a theory whose port names a type of its own source.
 //
 // A port sort that no sort of the theory declares names a type member. The

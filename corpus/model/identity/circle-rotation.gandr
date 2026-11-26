@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "records", "visibility"))]
+
 /// This source states rotation group laws for the circle.
 ///
 /// Rotation has four inverse laws and a universal property.

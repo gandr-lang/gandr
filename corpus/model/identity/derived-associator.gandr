@@ -1,3 +1,5 @@
+@![features(("data-parameters", "derived-rules", "identity-types", "let-statements", "modules", "nominal-data", "pattern-matching", "signature-models", "signatures-as-values", "universes", "visibility"))]
+
 /// This source states a derived associator for every monoid.
 ///
 /// Completion derives the four-term associator from binary associativity.

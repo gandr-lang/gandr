@@ -1,3 +1,5 @@
+@![features(("directed-paths", "imports", "modules"))]
+
 // This source passes a module type as an expression argument.
 //
 // `Seat.SeatEnd` names a type code.

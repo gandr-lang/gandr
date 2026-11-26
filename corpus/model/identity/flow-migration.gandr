@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "let-statements", "modules", "native-lists", "pattern-matching", "products-and-sums", "records", "visibility"))]
+
 /// This source states a record-schema flow from a translator.
 ///
 /// The translator swaps two fields and adds a flag.

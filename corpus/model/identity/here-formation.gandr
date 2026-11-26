@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "universes"))]
+
 /// This source states formation for `Path.here`.
 ///
 /// Reflexivity synthesises a type or checks against a written path type.

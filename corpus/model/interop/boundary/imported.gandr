@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "visibility"))]
+
 // A source that performs the operation of an `extern` block in another source.
 // `round-trip.gandr` declares the block `Boundary`, and this source declares
 // no block.

@@ -11,6 +11,8 @@
 //! - see: #1480 — `flipped_value`
 //! - see: #1064 — `moved_inline`, `flipped_inline`
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching", "products-and-sums", "records", "visibility"))]
+
 // Negation and the identity on the booleans.
 import "./funext.gandr"
 // The native finite lists.

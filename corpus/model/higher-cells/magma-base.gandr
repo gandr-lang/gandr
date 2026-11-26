@@ -10,6 +10,8 @@
 //!
 //! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
 
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes", "visibility"))]
+
 /// `Magma` defines one sort, one binary operation and one constant.
 pub theory Magma where
   sort M : Type

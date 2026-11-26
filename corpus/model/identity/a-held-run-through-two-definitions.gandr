@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "universes"))]
+
 /// A held run reaches two definitions.
 ///
 /// The kernel reads the composite as its second path, as the checker does.

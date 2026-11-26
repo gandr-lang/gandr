@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "effect-handlers", "effect-rows", "imports", "interop-boundary", "let-statements", "native-primitives", "visibility"))]
+
 // Definitions a Rust caller runs on its own values, and a Rust function they
 // call, admitted against its row.
 //

@@ -7,6 +7,8 @@
 //!
 //! - see: #640
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "visibility"))]
+
 // This source imports naturals and substitution syntax.
 import "../model-in-source.gandr"
 import "./syntax.gandr"

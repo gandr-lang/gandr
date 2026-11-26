@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-rows", "exact-distributions", "imports", "let-statements", "modules", "native-primitives", "products-and-sums", "records", "session-types", "visibility"))]
+
 // Two seats share one binary session. Each seat draws one fair bit through
 // `std.rand.Eff` and sends it to the other seat. Each seat answers whether
 // the two bits agree, and `exchanged` answers the pair of answers.

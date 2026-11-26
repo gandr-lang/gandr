@@ -9,6 +9,8 @@
 //!
 //! [Augustsson-1985-compiling_pattern_matching]: https://doi.org/10.1007/3-540-15975-4_48 "Augustsson, Compiling pattern matching"
 
+@![features(("imports", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 // The three colours.
 import "./data-base.gandr"
 

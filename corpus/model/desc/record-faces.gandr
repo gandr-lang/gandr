@@ -1,3 +1,5 @@
+@![features(("extension-types", "indexed-data", "modules", "native-primitives", "records", "signatures-as-values"))]
+
 // A record face is a named set of record labels.
 //
 // A `where` block declares faces after a record type. The reader `.#{` fixes

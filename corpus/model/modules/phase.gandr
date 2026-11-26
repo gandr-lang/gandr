@@ -13,6 +13,8 @@
 //!
 //! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]: https://doi.org/10.1145/3474834 "Sterling and Harper, Logical relations as types: proof-relevant parametricity for program modules"
 
+@![features(("data-parameters", "identity-types", "modules", "nominal-data", "products-and-sums", "records", "universes"))]
+
 /// `Sign` is closed data. Its constructors are static.
 data Sign : Type where
   | Plus : Sign

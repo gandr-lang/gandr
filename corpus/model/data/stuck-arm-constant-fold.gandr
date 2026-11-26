@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes"))]
+
 /// This source checks a pair against a fold at a constant.
 ///
 /// It specifies how the kernel replays a mode switch.

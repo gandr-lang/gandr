@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "modules", "records", "session-types"))]
+
 // This source uses named session types as endpoint parameters.
 //
 // A program names its protocol once.

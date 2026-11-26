@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "implicit-arguments", "imports", "let-statements", "pattern-matching", "sized-types", "structural-recursion", "universes", "visibility"))]
+
 // Higher-order calls preserve recursive stages.
 //
 // `apply` uses one type parameter for its function and argument.

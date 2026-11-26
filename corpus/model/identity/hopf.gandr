@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "explicit-exits", "identity-types", "imports", "let-statements", "pattern-matching", "records", "universes"))]
+
 /// This source states the Hopf family over the 2-sphere. Its arm at the 2-cell
 /// is `ua` of a homotopy.
 ///

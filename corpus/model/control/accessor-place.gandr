@@ -12,6 +12,8 @@
 //!
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
+@![features(("call-by-push-value", "data-parameters", "imports", "let-statements", "native-lists", "native-primitives", "products-and-sums", "records", "temporary-access", "visibility"))]
+
 // The native finite lists.
 import std.list (List)
 

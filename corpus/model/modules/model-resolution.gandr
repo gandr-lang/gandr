@@ -1,3 +1,5 @@
+@![features(("imports", "native-primitives"))]
+
 // This source shows an omitted model implicit.
 //
 // `Up` and `Flips` both provide a model of `Count`.

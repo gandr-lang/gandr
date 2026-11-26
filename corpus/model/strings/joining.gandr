@@ -1,3 +1,5 @@
+@![features("imports")]
+
 // This source models string joining.
 //
 // The source tests `concat`, `empty` and `isEmpty`. The module states monoid

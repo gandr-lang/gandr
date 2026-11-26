@@ -10,6 +10,8 @@
 //!
 //! [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory]: https://doi.org/10.1017/S095679681800014X "Cockx and Devriese, Proof-relevant unification: dependent pattern matching with only the axioms of your type theory"
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching"))]
+
 // The free naturals.
 import "./data-base.gandr"
 

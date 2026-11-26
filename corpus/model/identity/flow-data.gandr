@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "let-statements", "modules", "native-lists", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 /// This source states a data-type flow from a translator.
 ///
 /// A translator moves fields between constructors of the source

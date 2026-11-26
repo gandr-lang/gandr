@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 /// This source states function extensionality for data types.
 ///
 /// Two functions agree when they return the same result for every constructor.

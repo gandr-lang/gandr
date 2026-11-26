@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "modules", "nominal-data", "signatures-as-values", "universes"))]
+
 // This source models globular cells at dimension one.
 //
 // `Glob` has an associator cell. A stated law does not orient. A stated law

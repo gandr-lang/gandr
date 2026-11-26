@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "products-and-sums", "visibility"))]
+
 /// This source states function extensionality.
 ///
 /// Functions form one path when they agree at every argument.

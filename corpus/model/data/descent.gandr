@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion", "universes"))]
+
 // A recursive definition descends through the parameter an
 // innermost match scrutinises.
 //

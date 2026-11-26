@@ -1,3 +1,5 @@
+@![features("records")]
+
 // This source tests record updates that add a field.
 //
 // An update at `b` gives `single` two fields.

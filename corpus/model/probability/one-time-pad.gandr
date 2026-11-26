@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-rows", "exact-distributions", "imports", "let-statements", "modules", "native-primitives", "products-and-sums", "records", "visibility"))]
+
 // The one-time pad of `std.crypto` hides its message: under a uniform key,
 // the ciphertext is uniform, whatever the message.
 //

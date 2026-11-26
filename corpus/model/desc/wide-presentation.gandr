@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "signatures-as-values"))]
+
 // This source holds two presentations wider than one round of the checker's
 // unfolding fuel. `Named` has 64 constants at `String`. `Flags` has 48
 // constants at `Bool`. The entries of each model check at the type that its

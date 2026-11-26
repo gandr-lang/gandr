@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 // Lexical-class words can bind names.
 //
 // The parser reads fields, parameters and pattern binders as names.

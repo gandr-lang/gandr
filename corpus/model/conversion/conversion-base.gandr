@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+
 // The conversion subject's shared declarations: products, truncated
 // subtraction and numerals over the data subject's free naturals.
 //

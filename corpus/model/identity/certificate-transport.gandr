@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "records"))]
+
 /// This source identifies confluence certificates as paths in a presented type.
 ///
 /// The integer critical pair reaches one join by two certificates.

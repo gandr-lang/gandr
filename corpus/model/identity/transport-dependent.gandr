@@ -10,6 +10,8 @@
 //! - see: #1854 — `carriedUnit`
 //! - see: #1886 — `backUnit`
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "records"))]
+
 // The free naturals.
 import "./circle-base.gandr"
 

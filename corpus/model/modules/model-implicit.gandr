@@ -1,3 +1,5 @@
+@![features(("data-parameters", "implicit-arguments", "let-statements", "modules", "native-primitives", "signature-models", "signatures-as-values", "universes"))]
+
 // This source shows model implicits.
 //
 // A model implicit provides each component of its theory.

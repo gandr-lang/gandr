@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "native-primitives", "pattern-matching", "products-and-sums", "records"))]
+
 // This source shows type annotations on values.
 //
 // An annotation `(e : T)` sets a value's type.

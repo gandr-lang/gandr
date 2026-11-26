@@ -1,3 +1,5 @@
+@![features("records")]
+
 // This source tests value semantics of record updates.
 //
 // Updates create a new record. Other references keep the old record.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "explicit-exits", "imports", "let-statements", "modules", "products-and-sums", "signature-models"))]
+
 /// This source writes the explicit forgetting map for models.
 ///
 /// The checker allows a manifest model where it requires a theory model.

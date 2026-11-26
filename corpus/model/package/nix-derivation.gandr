@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "native-lists", "products-and-sums", "records", "visibility"))]
+
 /// `hello`'s derivation, as `nix derivation show` prints it, read into a record
 /// type and a value.
 ///

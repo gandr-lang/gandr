@@ -1,3 +1,5 @@
+@![features(("let-statements", "products-and-sums", "session-types", "traces"))]
+
 // This source parses a parenthesised payload after a receive.
 //
 // A receive reads the parenthesised type as its payload.

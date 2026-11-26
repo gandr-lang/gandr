@@ -12,6 +12,8 @@
 //! - owes: #2139 — a value type that quantifies a region
 //! - see: corpus/pathological/regions/natural.gandr — invalid squares
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "identity-types", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force", "visibility"))]
+
 // `pass` returns a thunk in its input region.
 import "./passed.gandr"
 // The source imports the early exit host interface.

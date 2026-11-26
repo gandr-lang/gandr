@@ -12,6 +12,8 @@
 //!
 //! - see: #577 — `idNat`
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "tarski-universes", "thunks-and-force", "universes"))]
+
 // The naturals.
 import "../data/data-base.gandr"
 

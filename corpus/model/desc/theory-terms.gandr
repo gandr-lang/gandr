@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "modules", "nominal-data", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "universes"))]
+
 // `Terms(S)` is the type of closed terms of theory `S`.
 //
 // A theory has models. The initial model contains its terms.

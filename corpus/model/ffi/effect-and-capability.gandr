@@ -7,6 +7,8 @@
 //!
 //! - see: #327 — `gandr_test_strlen`, `measured`
 //! - see: #1106 — `measured`
+@![features("interop-boundary")]
+
 /// The sensor library's reading of one channel.
 @[refuses("OutOfFragment.extern_block")]
 extern "c" from "sensor" {

@@ -7,6 +7,8 @@
 //! lifetime parameter as `fn read<'a>(k: &'a T)`.
 //!
 //! - see: corpus/pathological/regions/stashed.gandr — a returned thunk outside its region
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+
 import std.process
 
 /// `read` forces its thunk in the region that keeps it.

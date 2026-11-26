@@ -11,6 +11,8 @@
 //!
 //! [MartinLof-1982-constructive_mathematics_and_computer_programming]: https://doi.org/10.1016/S0049-237X(09)70189-2 "Martin-Löf, Constructive Mathematics and Computer Programming"
 
+@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // This source uses naturals for fold counts and `Two` for branches.
 import "./data-base.gandr"
 

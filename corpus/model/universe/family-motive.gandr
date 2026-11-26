@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "universes"))]
+
 // A motive that names a path type, a bridge type or a flow type.
 //
 // A motive maps each index to a type. An eliminator reads its motive at each

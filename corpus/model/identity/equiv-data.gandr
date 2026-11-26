@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching"))]
+
 /// This source states an equivalence between two data types.
 ///
 /// The maps move constructor fields between shapes and figures.

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "native-primitives", "pattern-matching", "records"))]
+
 // Positional patterns use a plain-record split.
 //
 // Each binder receives the field type at its position.

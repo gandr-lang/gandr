@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "records", "structural-recursion", "visibility"))]
+
 /// This source gives an equivalence between loop words and presented integers.
 ///
 /// `spinWords` maps counts to loops and inverse loops.

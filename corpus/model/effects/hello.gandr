@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "modules"))]
+
 // This source runs a greeting through standard output.
 //
 // `gandr run` passes `Authority` to `main`. The program opens a console from

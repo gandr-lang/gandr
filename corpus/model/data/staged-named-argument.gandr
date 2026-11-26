@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// This source calls recursions staged past their first parameter
 /// at named values.
 ///

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "nominal-data", "universes"))]
+
 // Paths whose endpoints call a recursive operation of a data block.
 //
 // The kernel replays each path that the checker admits. So the two engines

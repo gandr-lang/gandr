@@ -16,6 +16,8 @@
 //!
 //! [Racordon-2020-formal_definition_swifts_value_semantics]: https://archive-ouverte.unige.ch/unige:145490 "Racordon, A Formal Definition of Swift's Value Semantics"
 
+@![features(("call-by-push-value", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "temporary-access", "universes", "visibility"))]
+
 /// A pair of integers.
 pub data Pair : Type where
   /// The pair of `a` and `b`.

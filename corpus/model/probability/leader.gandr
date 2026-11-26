@@ -1,3 +1,5 @@
+@![features(("conditionals", "effect-rows", "exact-distributions", "imports", "let-statements", "located-judgements", "modules", "native-primitives", "records", "visibility"))]
+
 // Three worlds each draw two fair bits through `std.rand.Eff`, in a body
 // that the caller migrates there. The caller elects the world whose draw is
 // greatest, or no leader when two draws tie for the greatest.

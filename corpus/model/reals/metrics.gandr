@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+
 // A program reads the release metrics of the exact reals through
 // `std.reals.Eff`, the host interface of exact reals. `report` gives nine
 // counters of a machine in a fixed order. `gandr run metrics.gandr` prints

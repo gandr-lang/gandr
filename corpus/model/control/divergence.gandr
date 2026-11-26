@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "effect-rows", "identity-types", "let-statements", "loops", "native-primitives", "pattern-matching", "universes", "visibility"))]
+
 // This source shows `Partial` rows.
 //
 // A loop without an exit can run forever.

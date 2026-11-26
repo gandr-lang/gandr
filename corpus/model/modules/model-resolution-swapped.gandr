@@ -1,3 +1,5 @@
+@![features(("imports", "native-primitives"))]
+
 // This source repeats model resolution with reversed imports.
 //
 // The source imports `Flips` before `Up`.

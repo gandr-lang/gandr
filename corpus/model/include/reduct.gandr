@@ -10,6 +10,8 @@
 //! - see: #1092
 //! - see: #2136
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "records", "signature-models", "visibility"))]
+
 // The source imports the included theories and the endomorphism model.
 import "./monoid.gandr"
 

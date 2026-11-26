@@ -7,6 +7,8 @@
 //! continuation. The clause returns nine.
 //!
 //! - see: #1334 — `answered`
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives"))]
+
 // The import gives the shared declarations.
 import "./cancel-base.gandr"
 // The import gives the early-exit host interface.

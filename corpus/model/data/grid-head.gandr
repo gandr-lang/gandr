@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 // A case at a family of two indices omits an arm that is apart at one index.
 //
 // Each branch binds one path for each index. The path runs from the index

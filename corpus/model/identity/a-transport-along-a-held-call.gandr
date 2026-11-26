@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "universes"))]
+
 /// This source compares transport with composites over a held call.
 ///
 /// A stuck call can occur alone or below an identity function.

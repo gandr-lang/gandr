@@ -17,6 +17,8 @@
 //! - see: #5326 — a type reads a juxtaposed application beside its call form
 //! - see: #5330 — the juxtaposed type at a mode variable
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "let-statements", "nominal-data", "universes"))]
+
 /// Optional values, `None` and `Some x`.
 import "./data-maybe.gandr"
 

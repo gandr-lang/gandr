@@ -17,6 +17,8 @@
 //!
 //! [Epstein-2011-towards_haskell_in_the_cloud]: https://doi.org/10.1145/2034675.2034690 "Epstein, Black and Peyton Jones, Towards Haskell in the Cloud"
 
+@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "modules", "native-primitives", "records", "thunks-and-force"))]
+
 // The operator and seat worlds define the exchange. The signature of the seat
 // seals its side and marks only its report mobile.
 import "./seat-and-operator.gandr"

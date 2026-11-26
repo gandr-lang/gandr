@@ -10,6 +10,8 @@
 //!
 //! [Lafont-1990-interaction_nets]: https://doi.org/10.1145/96709.96718 "Lafont, Interaction Nets"
 
+@![features(("nominal-data", "signatures-as-values", "universes"))]
+
 /// `Nat` defines data constructors with the circuit arrow.
 data Nat : Type where
   | Zero : Nat

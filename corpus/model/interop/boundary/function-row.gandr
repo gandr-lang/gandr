@@ -27,6 +27,8 @@
 //!
 //! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "visibility"))]
+
 // The Rust side, built by rustc 1.98.0-nightly (f28ac764c 2026-06-23) for
 // x86_64-unknown-linux-gnu. Its layouts are from `rustc --edition 2024
 // --crate-type=lib -Zprint-type-sizes` over the eight externs, with

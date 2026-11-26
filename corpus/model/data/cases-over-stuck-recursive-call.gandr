@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 /// This source converts two cases over cases of one stuck recursive call.
 ///
 /// It pins how the checker compares `outer(first(look(a, b)))` with the same

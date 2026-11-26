@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "signatures-as-values", "visibility"))]
+
 // A workspace's second member, its `package.gandr` alone at its root,
 // its version read from the workspace it sits in.
 //

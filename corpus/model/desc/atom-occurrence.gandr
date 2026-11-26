@@ -24,6 +24,8 @@
 //! [Mayr-1998-higher_order_rewrite_systems_and_their_confluence]: https://doi.org/10.1016/S0304-3975(97)00143-6 "Mayr and Nipkow, Higher-order rewrite systems and their confluence"
 //! [Miller-1991-a_logic_programming_language_with_lambda_abstraction]: https://doi.org/10.1093/logcom/1.4.497 "Miller, A Logic Programming Language with Lambda-Abstraction, Function Variables, and Simple Unification"
 
+@![features(("second-order-rules", "signatures-as-values", "universes"))]
+
 /// A restricted send has no receiver, and it is inert. The checker orients the
 /// law, and the kernel replays the verdict for restrictions named `a` or `b`.
 @[normalizes("nu(bind b . out(b, nil)) ~> nil")]

@@ -282,7 +282,7 @@ fn the_exemplar_answers_each_name_it_declares()
         gaps(SourceText::from(written.as_str()), &path),
         Gaps(BTreeMap::from([(
             String::from("definition TypeBuiltin universe_type"),
-            String::from("17 `Type`")
+            String::from("19 `Type`")
         )]))
     );
 }

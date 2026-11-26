@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "list-case", "native-lists", "pattern-matching", "structural-recursion", "type-codes"))]
+
 /// This source states the group laws of the circle loop space.
 ///
 /// The laws compare `wind` and `spin` with integer addition.

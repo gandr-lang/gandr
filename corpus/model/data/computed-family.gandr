@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "imports", "nominal-data", "universes"))]
+
 // A constructor at a type that a definition computes names its own family.
 // `pairOf(Nat, Nat)` unfolds to `Both(Nat, Nat)`, and `MkBoth` checks there.
 //

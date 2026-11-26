@@ -11,6 +11,8 @@
 //!
 //! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]: https://doi.org/10.1145/174675.176927 "Harper and Lillibridge, A Type-Theoretic Approach to Higher-Order Modules with Sharing"
 
+@![features(("imports", "let-statements", "modules"))]
+
 // This import provides `Seed`.
 import "./functor-pair.gandr"
 

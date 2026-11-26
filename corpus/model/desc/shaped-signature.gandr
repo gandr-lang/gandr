@@ -10,6 +10,8 @@
 //!
 //! [Nuyts-2026-facett_generalization_intensional_type_systems_glue]: https://types2026.cse.chalmers.se/files/book-of-abstracts.pdf "Schönlank, Nuyts and Devriese, Towards FaceTT: A Generalization of Intensional Type Systems with Glue"
 
+@![features(("let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+
 /// `Cells` declares a square, its six faces and a cell sort.
 theory Cells where
   boundary Square {tl, tr, bl, br};

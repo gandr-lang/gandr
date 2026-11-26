@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "records"))]
+
 /// This source states calls that supply values for dependent types.
 ///
 /// A dependent record type reads its first component.

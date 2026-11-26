@@ -13,6 +13,8 @@
 //! - cites: [Leroy-1994-manifest_types_modules_and_separate_compilation]
 //!
 //! [Leroy-1994-manifest_types_modules_and_separate_compilation]: https://doi.org/10.1145/174675.176926 "Leroy, Manifest Types, Modules, and Separate Compilation"
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "imports", "let-statements", "modules", "pattern-matching", "products-and-sums", "records", "signature-models", "type-codes", "universes"))]
+
 import "./model-ascription.gandr"
 
 /// `toLeft` reassociates three sum states to the left.

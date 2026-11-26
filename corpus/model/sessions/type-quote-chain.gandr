@@ -1,3 +1,5 @@
+@![features(("directed-paths", "products-and-sums", "type-codes"))]
+
 // This source quotes product and sum chains for expression arguments.
 //
 // An expression reads `*` as a product operator.

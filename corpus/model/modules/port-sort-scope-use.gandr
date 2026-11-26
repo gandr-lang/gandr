@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "native-primitives"))]
+
 // This source shows a model of a theory that another source declares.
 //
 // A port sort names a type of the theory's own source. A model in another

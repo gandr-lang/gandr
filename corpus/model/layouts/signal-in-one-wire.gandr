@@ -12,6 +12,8 @@
 //!
 //! - see: #8333
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "modules", "pattern-matching", "records", "rule-respect", "thunks-and-force", "visibility"))]
+
 // `Signal` and `Wire`.
 import "../desc/rule-keeps-count.gandr"
 

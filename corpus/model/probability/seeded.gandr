@@ -1,3 +1,5 @@
+@![features(("effect-rows", "exact-distributions", "imports", "let-statements", "modules", "native-primitives", "visibility"))]
+
 // One program draws a word of four bits, and three models of `std.rand.Eff`
 // answer its draws: the host's entropy, the seeded generator `std.rand.lcg`
 // and the exact model.

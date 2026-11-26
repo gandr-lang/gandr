@@ -1,286 +1,287 @@
-17:1-17:28 import "./circle-base.ga… ⇒ import "./circle-base.gandr"⏎⏎Reads `<corpus>/corpus/model/identity/circle-base.gandr`.⏎⏎This source supplies the identity subject's shared circle declarations.⏎⏎The declarations provide the circle, its loop words, and⏎their integer model.⏎Winding and spinning follow the HoTT book's § 8.1. The circle follows⏎cubical Agda's `Cubical/HITs/S1/Base.agda`.⏎⏎Each subject source imports these declarations to state its own law.⏎The checker evaluates their rules and path operations.⏎⏎- see: corpus/model/identity/circle.gandr @17:1-17:29
-19:1-19:28 import "./equivalence.ga… ⇒ import "./equivalence.gandr"⏎⏎Reads `<corpus>/corpus/model/identity/equivalence.gandr`. @19:1-19:29
-22:1-22:32 @[runs("loop ∷ Path.here… ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @22:1-23:1
-23:1-23:3 def ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @23:1-23:49
-23:5-23:9 once( ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @23:5-23:9
-23:10-23:13 ) -> ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @23:1-23:49
-23:15-23:23 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @23:15-23:42
-23:25-23:30 Circle ⇒ Circle : Type @23:25-23:31
-23:31-23:31 ] ⇒ Path[.A = Circle] Base Base : Type @23:15-23:42
-23:33-23:36 Base ⇒ Base : Circle @23:33-23:37
-23:38-23:41 Base ⇒ Base : Circle @23:38-23:42
-23:43-23:43 = ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @23:1-23:49
-23:45-23:48 loop ⇒ loop : Path[.A = Circle] Base Base @23:45-23:49
-26:1-26:3 def ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @26:1-27:49
-26:5-26:11 unwound ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @26:5-26:12
-26:13-26:13 : ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @26:1-27:49
-26:15-26:23 Path[.A = ⇒ Type @26:15-27:8
-26:25-26:33 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @26:25-26:52
-26:35-26:40 Circle ⇒ Circle : Type @26:35-26:41
-26:41-26:41 ] ⇒ Path[.A = Circle] Base Base : Type @26:25-26:52
-26:43-26:46 Base ⇒ Base : Circle @26:43-26:47
-26:48-26:51 Base ⇒ Base : Circle @26:48-26:52
-26:52-26:54 ] ( ⇒ Type @26:15-27:8
-26:55-26:63 Path.back ⇒ Path.back loop : -F Path[.A = Circle] Base Base @26:55-26:69
-26:65-26:68 loop ⇒ loop : Path[.A = Circle] Base Base @26:65-26:69
-26:69-26:71 ) ( ⇒ Type @26:15-27:8
-26:72-26:75 back ⇒ back loop : Path[.A = Circle] Base Base @26:72-26:81
-26:77-26:80 loop ⇒ loop : Path[.A = Circle] Base Base @26:77-26:81
-26:82-26:82 ∷ ⇒ Path[.A = Circle] Base Base @26:72-27:7
-26:84-26:92 Path.here ⇒ Path[.A = Circle] Base Base @26:84-27:7
-27:3-27:6 Base ⇒ Base : Circle @27:3-27:7
-27:7-27:7 ) ⇒ Type @26:15-27:8
-27:9-27:9 = ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @26:1-27:49
-27:11-27:21 Path.here ( ⇒ Path.here (back loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base) @27:11-27:49
-27:22-27:25 back ⇒ back loop : Path[.A = Circle] Base Base @27:22-27:31
-27:27-27:30 loop ⇒ loop : Path[.A = Circle] Base Base @27:27-27:31
-27:32-27:32 ∷ ⇒ Path[.A = Circle] Base Base @27:22-27:48
-27:34-27:42 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @27:34-27:48
-27:44-27:47 Base ⇒ Base : Circle @27:44-27:48
-27:48-27:48 ) ⇒ Path.here (back loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base) @27:11-27:49
-30:1-30:3 def ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @30:1-31:37
-30:5-30:13 cancelled ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @30:5-30:14
-30:15-30:15 : ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @30:1-31:37
-30:17-30:25 Path[.A = ⇒ Type @30:17-31:8
-30:27-30:35 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @30:27-30:54
-30:37-30:42 Circle ⇒ Circle : Type @30:37-30:43
-30:43-30:43 ] ⇒ Path[.A = Circle] Base Base : Type @30:27-30:54
-30:45-30:48 Base ⇒ Base : Circle @30:45-30:49
-30:50-30:53 Base ⇒ Base : Circle @30:50-30:54
-30:54-30:56 ] ( ⇒ Type @30:17-31:8
-30:57-30:65 Path.step ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle] Base Base @30:57-30:88
-30:67-30:70 loop ⇒ loop : Path[.A = Circle] Base Base @30:67-30:71
-30:72-30:72 ( ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle] Base Base @30:57-30:88
-30:73-30:81 Path.back ⇒ Path.back loop : -F Path[.A = Circle] Base Base @30:73-30:87
-30:83-30:86 loop ⇒ loop : Path[.A = Circle] Base Base @30:83-30:87
-30:87-30:87 ) ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle] Base Base @30:57-30:88
-30:88-30:90 ) ( ⇒ Type @30:17-31:8
-30:91-30:99 Path.here ⇒ Path[.A = Circle] Base Base @30:91-31:7
-31:3-31:6 Base ⇒ Base : Circle @31:3-31:7
-31:7-31:7 ) ⇒ Type @30:17-31:8
-31:9-31:9 = ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @30:1-31:37
-31:11-31:21 Path.here ( ⇒ Path.here (Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base) @31:11-31:37
-31:22-31:30 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @31:22-31:36
-31:32-31:35 Base ⇒ Base : Circle @31:32-31:36
-31:36-31:36 ) ⇒ Path.here (Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base) @31:11-31:37
-34:1-34:30 @[refuses("EndpointMisma… ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @34:1-35:1
-35:1-35:3 def ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @35:1-36:19
-35:5-35:15 around_once ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @35:5-35:16
-35:17-35:17 : ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @35:1-36:19
-35:19-35:27 Path[.A = ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @35:19-35:79
-35:29-35:37 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @35:29-35:56
-35:39-35:44 Circle ⇒ Circle : Type @35:39-35:45
-35:45-35:45 ] ⇒ Path[.A = Circle] Base Base : Type @35:29-35:56
-35:47-35:50 Base ⇒ Base : Circle @35:47-35:51
-35:52-35:55 Base ⇒ Base : Circle @35:52-35:56
-35:56-35:56 ] ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @35:19-35:79
-35:58-35:61 loop ⇒ loop : Path[.A = Circle] Base Base @35:58-35:62
-35:63-35:63 ( ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @35:19-35:79
-35:64-35:72 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @35:64-35:78
-35:74-35:77 Base ⇒ Base : Circle @35:74-35:78
-35:78-35:78 ) ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @35:19-35:79
-35:80-35:80 = ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @35:1-36:19
-35:82-36:3 Path.here⏎  ( ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) @35:82-36:19
-36:4-36:12 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @36:4-36:18
-36:14-36:17 Base ⇒ Base : Circle @36:14-36:18
-36:18-36:18 ) ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) @35:82-36:19
-39:1-39:30 @[refuses("RuleNotRespec… ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @39:1-40:1
-40:1-40:3 def ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @40:1-40:54
-40:5-40:9 tell( ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @40:5-40:9
-40:10-40:10 p ⇒ p : Path[.A = Circle] Base Base @40:10-40:11
-40:12-40:12 : ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @40:1-40:54
-40:14-40:22 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @40:14-40:41
-40:24-40:29 Circle ⇒ Circle : Type @40:24-40:30
-40:30-40:30 ] ⇒ Path[.A = Circle] Base Base : Type @40:14-40:41
-40:32-40:35 Base ⇒ Base : Circle @40:32-40:36
-40:37-40:40 Base ⇒ Base : Circle @40:37-40:41
-40:41-40:44 ) -> ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @40:1-40:54
-40:46-40:52 Integer ⇒ Integer : Type @40:46-40:53
-40:54-40:54 = ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @40:1-44:26
-41:3-41:7 match ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
-41:9-41:9 p ⇒ p : Path[.A = Circle] Base Base @41:9-41:10
-41:11-42:5 where⏎    | ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
-42:7-42:10 here ⇒ here : Path[.A = Circle] Base Base @42:7-42:11
-42:12-42:13 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
-42:15-42:15 0 ⇒ Integer @42:15-42:16
-43:5-43:5 | ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
-43:7-43:10 loop ⇒ loop : Path[.A = Circle] Base Base @43:7-43:11
-43:12-43:12 ∷ ⇒ loop ∷ q : Path[.A = Circle] Base Base @43:7-43:15
-43:14-43:14 q ⇒ q : Path[.A = Circle] Base Base @43:14-43:15
-43:16-43:17 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
-43:19-43:19 1 ⇒ Integer @43:19-43:20
-44:5-44:5 | ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
-44:7-44:10 back ⇒ back : Path[.A = Circle] Base Base @44:7-44:11
-44:11-44:11 ( ⇒ back(loop) ∷ q : Path[.A = Circle] Base Base @44:7-44:21
-44:12-44:15 loop ⇒ loop : Path[.A = Circle] Base Base @44:12-44:16
-44:16-44:18 ) ∷ ⇒ back(loop) ∷ q : Path[.A = Circle] Base Base @44:7-44:21
-44:20-44:20 q ⇒ q : Path[.A = Circle] Base Base @44:20-44:21
-44:22-44:23 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
-44:25-44:25 2 ⇒ Integer @44:25-44:26
-47:1-47:3 def ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @47:1-49:33
-47:5-47:9 round ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @47:5-47:10
-47:11-47:11 : ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @47:1-49:33
-47:13-47:21 Path[.A = ⇒ Type @47:13-48:63
-47:23-47:31 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @47:23-47:50
-47:33-47:38 Circle ⇒ Circle : Type @47:33-47:39
-47:39-47:39 ] ⇒ Path[.A = Circle] Base Base : Type @47:23-47:50
-47:41-47:44 Base ⇒ Base : Circle @47:41-47:45
-47:46-47:49 Base ⇒ Base : Circle @47:46-47:50
-47:50-47:52 ] ( ⇒ Type @47:13-48:63
-47:53-47:56 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @47:53-47:57
-48:3-48:3 ( ⇒ -F Path[.A = Circle] Base Base @47:53-48:31
-48:4-48:7 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @48:4-48:8
-48:9-48:9 ( ⇒ -F Int @48:4-48:30
-48:10-48:18 Path.step ⇒ Path.step loop loop : -F Path[.A = Circle] Base Base @48:10-48:29
-48:20-48:23 loop ⇒ loop : Path[.A = Circle] Base Base @48:20-48:24
-48:25-48:28 loop ⇒ loop : Path[.A = Circle] Base Base @48:25-48:29
-48:29-48:29 ) ⇒ -F Int @48:4-48:30
-48:30-48:30 ) ⇒ -F Path[.A = Circle] Base Base @47:53-48:31
-48:31-48:33 ) ( ⇒ Type @47:13-48:63
-48:34-48:37 loop ⇒ loop : Path[.A = Circle] Base Base @48:34-48:38
-48:39-48:39 ∷ ⇒ Path[.A = Circle] Base Base @48:34-48:62
-48:41-48:44 loop ⇒ loop : Path[.A = Circle] Base Base @48:41-48:45
-48:46-48:46 ∷ ⇒ Path[.A = Circle] Base Base @48:41-48:62
-48:48-48:56 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @48:48-48:62
-48:58-48:61 Base ⇒ Base : Circle @48:58-48:62
-48:62-48:62 ) ⇒ Type @47:13-48:63
-48:64-48:64 = ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @47:1-49:33
-48:66-49:3 Path.here⏎  ( ⇒ Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base) @48:66-49:33
-49:4-49:7 loop ⇒ loop : Path[.A = Circle] Base Base @49:4-49:8
-49:9-49:9 ∷ ⇒ Path[.A = Circle] Base Base @49:4-49:32
-49:11-49:14 loop ⇒ loop : Path[.A = Circle] Base Base @49:11-49:15
-49:16-49:16 ∷ ⇒ Path[.A = Circle] Base Base @49:11-49:32
-49:18-49:26 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @49:18-49:32
-49:28-49:31 Base ⇒ Base : Circle @49:28-49:32
-49:32-49:32 ) ⇒ Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base) @48:66-49:33
-52:1-52:3 def ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @52:1-53:51
-52:5-52:9 twice ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @52:5-52:10
-52:11-52:11 : ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @52:1-53:51
-52:13-52:21 Path[.A = ⇒ Type @52:13-53:8
-52:23-52:31 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @52:23-52:50
-52:33-52:38 Circle ⇒ Circle : Type @52:33-52:39
-52:39-52:39 ] ⇒ Path[.A = Circle] Base Base : Type @52:23-52:50
-52:41-52:44 Base ⇒ Base : Circle @52:41-52:45
-52:46-52:49 Base ⇒ Base : Circle @52:46-52:50
-52:50-52:52 ] ( ⇒ Type @52:13-53:8
-52:53-52:61 Path.step ⇒ Path.step loop loop : -F Path[.A = Circle] Base Base @52:53-52:72
-52:63-52:66 loop ⇒ loop : Path[.A = Circle] Base Base @52:63-52:67
-52:68-52:71 loop ⇒ loop : Path[.A = Circle] Base Base @52:68-52:72
-52:72-52:74 ) ( ⇒ Type @52:13-53:8
-52:75-52:78 loop ⇒ loop : Path[.A = Circle] Base Base @52:75-52:79
-52:80-52:80 ∷ ⇒ Path[.A = Circle] Base Base @52:75-53:7
-52:82-52:85 loop ⇒ loop : Path[.A = Circle] Base Base @52:82-52:86
-52:87-52:87 ∷ ⇒ Path[.A = Circle] Base Base @52:82-53:7
-52:89-52:97 Path.here ⇒ Path[.A = Circle] Base Base @52:89-53:7
-53:3-53:6 Base ⇒ Base : Circle @53:3-53:7
-53:7-53:7 ) ⇒ Type @52:13-53:8
-53:9-53:9 = ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @52:1-53:51
-53:11-53:21 Path.here ( ⇒ Path.here (loop ∷ loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base) @53:11-53:51
-53:22-53:25 loop ⇒ loop : Path[.A = Circle] Base Base @53:22-53:26
-53:27-53:27 ∷ ⇒ Path[.A = Circle] Base Base @53:22-53:50
-53:29-53:32 loop ⇒ loop : Path[.A = Circle] Base Base @53:29-53:33
-53:34-53:34 ∷ ⇒ Path[.A = Circle] Base Base @53:29-53:50
-53:36-53:44 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @53:36-53:50
-53:46-53:49 Base ⇒ Base : Circle @53:46-53:50
-53:50-53:50 ) ⇒ Path.here (loop ∷ loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base) @53:11-53:51
-56:1-56:18 @[runs("S (S Z)")] ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @56:1-57:1
-57:1-57:3 def ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @57:1-57:48
-57:5-57:11 counted ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @57:5-57:12
-57:13-57:13 : ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @57:1-57:48
-57:15-57:19 () -> ⇒ () -> Int : Type[-] @57:15-57:24
-57:21-57:23 Int ⇒ Int : Type @57:21-57:24
-57:25-57:25 = ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @57:1-57:48
-57:27-57:30 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @57:27-57:31
-57:32-57:32 ( ⇒ -F Int @57:27-57:48
-57:33-57:36 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @57:33-57:37
-57:38-57:38 ( ⇒ -F Path[.A = Circle] Base Base @57:33-57:47
-57:39-57:41 S ( ⇒ S (S Z) : Int @57:39-57:46
-57:42-57:42 S ⇒ S Z : Int @57:42-57:45
-57:44-57:44 Z ⇒ Z : Int @57:44-57:45
-57:45-57:45 ) ⇒ S (S Z) : Int @57:39-57:46
-57:46-57:46 ) ⇒ -F Path[.A = Circle] Base Base @57:33-57:47
-57:47-57:47 ) ⇒ -F Int @57:27-57:48
-60:1-60:3 def ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @60:1-60:86
-60:5-60:14 windingIso ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @60:5-60:15
-60:16-60:16 : ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @60:1-60:86
-60:18-60:26 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @60:18-60:45
-60:28-60:33 Circle ⇒ Circle : Type @60:28-60:34
-60:34-60:34 ] ⇒ Path[.A = Circle] Base Base : Type @60:18-60:45
-60:36-60:39 Base ⇒ Base : Circle @60:36-60:40
-60:41-60:44 Base ⇒ Base : Circle @60:41-60:45
-60:46-60:46 ≅ ⇒ Path[.A = Circle] Base Base ≅ Int : Type @60:18-60:51
-60:48-60:50 Int ⇒ Int : Type @60:48-60:51
-60:52-60:52 = ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @60:1-60:86
-60:54-60:55 *{ ⇒ Path[.A = Circle] Base Base ≅ Int @60:54-60:85
-60:56-60:59 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @60:56-60:60
-60:60-60:60 , ⇒ Path[.A = Circle] Base Base ≅ Int @60:54-60:85
-60:62-60:63 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : ((b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b) * ((b : Int) ->⏎  Path[.A = Int] (wind (a b)) b)} @60:62-60:84
-60:64-60:67 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @60:64-60:68
-60:68-60:68 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : ((b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b) * ((b : Int) ->⏎  Path[.A = Int] (wind (a b)) b)} @60:62-60:84
-60:70-60:71 *{ ⇒ ((a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a) * ((a : Int) -> Path[.A = Int] (wind (spin a)) a) @60:70-60:83
-60:72-60:75 sect ⇒ sect : (p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind p)) p⏎⏎checked against⏎⏎(a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a @60:72-60:76
-60:76-60:76 , ⇒ ((a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a) * ((a : Int) -> Path[.A = Int] (wind (spin a)) a) @60:70-60:83
-60:78-60:81 retr ⇒ retr : (n : Int) -> Path[.A = Int] (wind (spin n)) n⏎⏎checked against⏎⏎(a : Int) -> Path[.A = Int] (wind (spin a)) a @60:78-60:82
-60:82-60:82 } ⇒ ((a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a) * ((a : Int) -> Path[.A = Int] (wind (spin a)) a) @60:70-60:83
-60:83-60:83 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : ((b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b) * ((b : Int) ->⏎  Path[.A = Int] (wind (a b)) b)} @60:62-60:84
-60:84-60:84 } ⇒ Path[.A = Circle] Base Base ≅ Int @60:54-60:85
-60:85-60:85 ; ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @60:1-60:86
-63:1-63:3 pub ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @63:1-63:5
-63:5-63:7 def ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @63:5-63:96
-63:9-63:15 winding ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @63:9-63:16
-63:17-63:17 : ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @63:5-63:96
-63:19-63:27 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @63:19-63:46
-63:29-63:34 Circle ⇒ Circle : Type @63:29-63:35
-63:35-63:35 ] ⇒ Path[.A = Circle] Base Base : Type @63:19-63:46
-63:37-63:40 Base ⇒ Base : Circle @63:37-63:41
-63:42-63:45 Base ⇒ Base : Circle @63:42-63:46
-63:47-63:47 ≃ ⇒ Path[.A = Circle] Base Base ≃ Int : Type @63:19-63:52
-63:49-63:51 Int ⇒ Int : Type @63:49-63:52
-63:53-63:53 = ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @63:5-63:96
-63:55-63:56 *{ ⇒ Path[.A = Circle] Base Base ≃ Int @63:55-63:95
-63:57-63:60 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @63:57-63:61
-63:61-63:61 , ⇒ Path[.A = Circle] Base Base ≃ Int @63:55-63:95
-63:63-63:64 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} * *{a : Int ->⏎  Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind (a b)) b} @63:63-63:94
-63:65-63:66 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} @63:65-63:78
-63:67-63:70 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @63:67-63:71
-63:71-63:71 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} @63:65-63:78
-63:73-63:76 sect ⇒ sect : (p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind p)) p⏎⏎checked against⏎⏎(a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a @63:73-63:77
-63:77-63:77 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} @63:65-63:78
-63:78-63:78 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} * *{a : Int ->⏎  Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind (a b)) b} @63:63-63:94
-63:80-63:81 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind⏎  (a b)) b} @63:80-63:93
-63:82-63:85 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @63:82-63:86
-63:86-63:86 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind⏎  (a b)) b} @63:80-63:93
-63:88-63:91 retr ⇒ retr : (n : Int) -> Path[.A = Int] (wind (spin n)) n⏎⏎checked against⏎⏎(a : Int) -> Path[.A = Int] (wind (spin a)) a @63:88-63:92
-63:92-63:92 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind⏎  (a b)) b} @63:80-63:93
-63:93-63:93 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} * *{a : Int ->⏎  Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind (a b)) b} @63:63-63:94
-63:94-63:94 } ⇒ Path[.A = Circle] Base Base ≃ Int @63:55-63:95
-63:95-63:95 ; ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @63:5-63:96
-66:1-66:3 def ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @66:1-69:35
-66:5-66:16 windingByIso ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @66:5-66:17
-66:18-66:18 : ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @66:1-69:35
-66:20-66:28 Path[.A = ⇒ Type @66:20-69:14
-66:30-66:38 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @66:30-66:57
-66:40-66:45 Circle ⇒ Circle : Type @66:40-66:46
-66:46-66:46 ] ⇒ Path[.A = Circle] Base Base : Type @66:30-66:57
-66:48-66:51 Base ⇒ Base : Circle @66:48-66:52
-66:53-66:56 Base ⇒ Base : Circle @66:53-66:57
-66:58-66:58 ≃ ⇒ Path[.A = Circle] Base Base ≃ Int : Type @66:30-66:63
-66:60-66:62 Int ⇒ Int : Type @66:60-66:63
-66:63-66:63 ] ⇒ Type @66:20-69:14
-66:65-66:71 winding ⇒ winding : Path[.A = Circle] Base Base ≃ Int @66:65-66:72
-66:73-66:73 ( ⇒ Type @66:20-69:14
-66:74-66:83 isoToEquiv ⇒ isoToEquiv : (a : Type, b : Type, a ≅ b) -> a ≃ b @66:74-66:84
-67:3-67:8 (type( ⇒ -F *{a : Path[.A = Circle] Base Base -> Int, b : *{b : Int -> Path[.A = Circle]⏎  Base Base, c : (c : Path[.A = Circle] Base Base) ->⏎  Path[.A = Path[.A = Circle] Base Base] (b (a c)) c} * *{b : Int ->⏎  Path[.A = Circle] Base Base, c : (c : Int) -> Path[.A = Int] (a (b c)) c}} @66:74-69:13
-67:9-67:17 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @67:9-67:36
-67:19-67:24 Circle ⇒ Circle : Type @67:19-67:25
-67:25-67:25 ] ⇒ Path[.A = Circle] Base Base : Type @67:9-67:36
-67:27-67:30 Base ⇒ Base : Circle @67:27-67:31
-67:32-67:35 Base ⇒ Base : Circle @67:32-67:36
-67:36-67:37 )) ⇒ -F *{a : Path[.A = Circle] Base Base -> Int, b : *{b : Int -> Path[.A = Circle]⏎  Base Base, c : (c : Path[.A = Circle] Base Base) ->⏎  Path[.A = Path[.A = Circle] Base Base] (b (a c)) c} * *{b : Int ->⏎  Path[.A = Circle] Base Base, c : (c : Int) -> Path[.A = Int] (a (b c)) c}} @66:74-69:13
-68:3-68:5 Int ⇒ Int : Type @68:3-68:6
-69:3-69:12 windingIso ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎checked against⏎⏎*{a : Path[.A = Circle] Base Base -> Int, b : *{b : Int -> Path[.A = Circle]⏎  Base Base, c : ((c : Path[.A = Circle] Base Base) ->⏎  Path[.A = Path[.A = Circle] Base Base] (b (a c)) c) * ((c : Int) ->⏎  Path[.A = Int] (a (b c)) c)}} @69:3-69:13
-69:13-69:13 ) ⇒ Type @66:20-69:14
-69:15-69:15 = ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @66:1-69:35
-69:17-69:25 Path.here ⇒ Path.here winding : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso) @69:17-69:34
-69:27-69:33 winding ⇒ winding : Path[.A = Circle] Base Base ≃ Int @69:27-69:34
-69:34-69:34 ; ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @66:1-69:35
+1:1-1:213 @![features(("data-param… ⇒ @![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "list-case", "native-lists", "pattern-matching", "records", "type-codes", "visibility"))] @1:1-1:214
+19:1-19:28 import "./circle-base.ga… ⇒ import "./circle-base.gandr"⏎⏎Reads `<corpus>/corpus/model/identity/circle-base.gandr`.⏎⏎This source supplies the identity subject's shared circle declarations.⏎⏎The declarations provide the circle, its loop words, and⏎their integer model.⏎Winding and spinning follow the HoTT book's § 8.1. The circle follows⏎cubical Agda's `Cubical/HITs/S1/Base.agda`.⏎⏎Each subject source imports these declarations to state its own law.⏎The checker evaluates their rules and path operations.⏎⏎- see: corpus/model/identity/circle.gandr @19:1-19:29
+21:1-21:28 import "./equivalence.ga… ⇒ import "./equivalence.gandr"⏎⏎Reads `<corpus>/corpus/model/identity/equivalence.gandr`. @21:1-21:29
+24:1-24:32 @[runs("loop ∷ Path.here… ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @24:1-25:1
+25:1-25:3 def ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @25:1-25:49
+25:5-25:9 once( ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @25:5-25:9
+25:10-25:13 ) -> ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @25:1-25:49
+25:15-25:23 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @25:15-25:42
+25:25-25:30 Circle ⇒ Circle : Type @25:25-25:31
+25:31-25:31 ] ⇒ Path[.A = Circle] Base Base : Type @25:15-25:42
+25:33-25:36 Base ⇒ Base : Circle @25:33-25:37
+25:38-25:41 Base ⇒ Base : Circle @25:38-25:42
+25:43-25:43 = ⇒ once : () -> Path[.A = Circle] Base Base⏎⏎The loop word has one letter before the empty word. @25:1-25:49
+25:45-25:48 loop ⇒ loop : Path[.A = Circle] Base Base @25:45-25:49
+28:1-28:3 def ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @28:1-29:49
+28:5-28:11 unwound ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @28:5-28:12
+28:13-28:13 : ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @28:1-29:49
+28:15-28:23 Path[.A = ⇒ Type @28:15-29:8
+28:25-28:33 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @28:25-28:52
+28:35-28:40 Circle ⇒ Circle : Type @28:35-28:41
+28:41-28:41 ] ⇒ Path[.A = Circle] Base Base : Type @28:25-28:52
+28:43-28:46 Base ⇒ Base : Circle @28:43-28:47
+28:48-28:51 Base ⇒ Base : Circle @28:48-28:52
+28:52-28:54 ] ( ⇒ Type @28:15-29:8
+28:55-28:63 Path.back ⇒ Path.back loop : -F Path[.A = Circle] Base Base @28:55-28:69
+28:65-28:68 loop ⇒ loop : Path[.A = Circle] Base Base @28:65-28:69
+28:69-28:71 ) ( ⇒ Type @28:15-29:8
+28:72-28:75 back ⇒ back loop : Path[.A = Circle] Base Base @28:72-28:81
+28:77-28:80 loop ⇒ loop : Path[.A = Circle] Base Base @28:77-28:81
+28:82-28:82 ∷ ⇒ Path[.A = Circle] Base Base @28:72-29:7
+28:84-28:92 Path.here ⇒ Path[.A = Circle] Base Base @28:84-29:7
+29:3-29:6 Base ⇒ Base : Circle @29:3-29:7
+29:7-29:7 ) ⇒ Type @28:15-29:8
+29:9-29:9 = ⇒ unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @28:1-29:49
+29:11-29:21 Path.here ( ⇒ Path.here (back loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base) @29:11-29:49
+29:22-29:25 back ⇒ back loop : Path[.A = Circle] Base Base @29:22-29:31
+29:27-29:30 loop ⇒ loop : Path[.A = Circle] Base Base @29:27-29:31
+29:32-29:32 ∷ ⇒ Path[.A = Circle] Base Base @29:22-29:48
+29:34-29:42 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @29:34-29:48
+29:44-29:47 Base ⇒ Base : Circle @29:44-29:48
+29:48-29:48 ) ⇒ Path.here (back loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.back loop)⏎  (back loop ∷ Path.here Base) @29:11-29:49
+32:1-32:3 def ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @32:1-33:37
+32:5-32:13 cancelled ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @32:5-32:14
+32:15-32:15 : ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @32:1-33:37
+32:17-32:25 Path[.A = ⇒ Type @32:17-33:8
+32:27-32:35 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @32:27-32:54
+32:37-32:42 Circle ⇒ Circle : Type @32:37-32:43
+32:43-32:43 ] ⇒ Path[.A = Circle] Base Base : Type @32:27-32:54
+32:45-32:48 Base ⇒ Base : Circle @32:45-32:49
+32:50-32:53 Base ⇒ Base : Circle @32:50-32:54
+32:54-32:56 ] ( ⇒ Type @32:17-33:8
+32:57-32:65 Path.step ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle] Base Base @32:57-32:88
+32:67-32:70 loop ⇒ loop : Path[.A = Circle] Base Base @32:67-32:71
+32:72-32:72 ( ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle] Base Base @32:57-32:88
+32:73-32:81 Path.back ⇒ Path.back loop : -F Path[.A = Circle] Base Base @32:73-32:87
+32:83-32:86 loop ⇒ loop : Path[.A = Circle] Base Base @32:83-32:87
+32:87-32:87 ) ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle] Base Base @32:57-32:88
+32:88-32:90 ) ( ⇒ Type @32:17-33:8
+32:91-32:99 Path.here ⇒ Path[.A = Circle] Base Base @32:91-33:7
+33:3-33:6 Base ⇒ Base : Circle @33:3-33:7
+33:7-33:7 ) ⇒ Type @32:17-33:8
+33:9-33:9 = ⇒ cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @32:1-33:37
+33:11-33:21 Path.here ( ⇒ Path.here (Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base) @33:11-33:37
+33:22-33:30 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @33:22-33:36
+33:32-33:35 Base ⇒ Base : Circle @33:32-33:36
+33:36-33:36 ) ⇒ Path.here (Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop))⏎  (Path.here Base) @33:11-33:37
+36:1-36:30 @[refuses("EndpointMisma… ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @36:1-37:1
+37:1-37:3 def ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @37:1-38:19
+37:5-37:15 around_once ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @37:5-37:16
+37:17-37:17 : ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @37:1-38:19
+37:19-37:27 Path[.A = ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @37:19-37:79
+37:29-37:37 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @37:29-37:56
+37:39-37:44 Circle ⇒ Circle : Type @37:39-37:45
+37:45-37:45 ] ⇒ Path[.A = Circle] Base Base : Type @37:29-37:56
+37:47-37:50 Base ⇒ Base : Circle @37:47-37:51
+37:52-37:55 Base ⇒ Base : Circle @37:52-37:56
+37:56-37:56 ] ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @37:19-37:79
+37:58-37:61 loop ⇒ loop : Path[.A = Circle] Base Base @37:58-37:62
+37:63-37:63 ( ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @37:19-37:79
+37:64-37:72 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @37:64-37:78
+37:74-37:77 Base ⇒ Base : Circle @37:74-37:78
+37:78-37:78 ) ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) : Type @37:19-37:79
+37:80-37:80 = ⇒ around_once : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @37:1-38:19
+37:82-38:3 Path.here⏎  ( ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) @37:82-38:19
+38:4-38:12 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @38:4-38:18
+38:14-38:17 Base ⇒ Base : Circle @38:14-38:18
+38:18-38:18 ) ⇒ Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) @37:82-38:19
+41:1-41:30 @[refuses("RuleNotRespec… ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @41:1-42:1
+42:1-42:3 def ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @42:1-42:54
+42:5-42:9 tell( ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @42:5-42:9
+42:10-42:10 p ⇒ p : Path[.A = Circle] Base Base @42:10-42:11
+42:12-42:12 : ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @42:1-42:54
+42:14-42:22 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @42:14-42:41
+42:24-42:29 Circle ⇒ Circle : Type @42:24-42:30
+42:30-42:30 ] ⇒ Path[.A = Circle] Base Base : Type @42:14-42:41
+42:32-42:35 Base ⇒ Base : Circle @42:32-42:36
+42:37-42:40 Base ⇒ Base : Circle @42:37-42:41
+42:41-42:44 ) -> ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @42:1-42:54
+42:46-42:52 Integer ⇒ Integer : Type @42:46-42:53
+42:54-42:54 = ⇒ tell : Path[.A = Circle] Base Base -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @42:1-46:26
+43:3-43:7 match ⇒ ?⏎⏎checked against⏎⏎-F Integer @43:3-46:26
+43:9-43:9 p ⇒ p : Path[.A = Circle] Base Base @43:9-43:10
+43:11-44:5 where⏎    | ⇒ ?⏎⏎checked against⏎⏎-F Integer @43:3-46:26
+44:7-44:10 here ⇒ here : Path[.A = Circle] Base Base @44:7-44:11
+44:12-44:13 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @43:3-46:26
+44:15-44:15 0 ⇒ Integer @44:15-44:16
+45:5-45:5 | ⇒ ?⏎⏎checked against⏎⏎-F Integer @43:3-46:26
+45:7-45:10 loop ⇒ loop : Path[.A = Circle] Base Base @45:7-45:11
+45:12-45:12 ∷ ⇒ loop ∷ q : Path[.A = Circle] Base Base @45:7-45:15
+45:14-45:14 q ⇒ q : Path[.A = Circle] Base Base @45:14-45:15
+45:16-45:17 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @43:3-46:26
+45:19-45:19 1 ⇒ Integer @45:19-45:20
+46:5-46:5 | ⇒ ?⏎⏎checked against⏎⏎-F Integer @43:3-46:26
+46:7-46:10 back ⇒ back : Path[.A = Circle] Base Base @46:7-46:11
+46:11-46:11 ( ⇒ back(loop) ∷ q : Path[.A = Circle] Base Base @46:7-46:21
+46:12-46:15 loop ⇒ loop : Path[.A = Circle] Base Base @46:12-46:16
+46:16-46:18 ) ∷ ⇒ back(loop) ∷ q : Path[.A = Circle] Base Base @46:7-46:21
+46:20-46:20 q ⇒ q : Path[.A = Circle] Base Base @46:20-46:21
+46:22-46:23 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @43:3-46:26
+46:25-46:25 2 ⇒ Integer @46:25-46:26
+49:1-49:3 def ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @49:1-51:33
+49:5-49:9 round ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @49:5-49:10
+49:11-49:11 : ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @49:1-51:33
+49:13-49:21 Path[.A = ⇒ Type @49:13-50:63
+49:23-49:31 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @49:23-49:50
+49:33-49:38 Circle ⇒ Circle : Type @49:33-49:39
+49:39-49:39 ] ⇒ Path[.A = Circle] Base Base : Type @49:23-49:50
+49:41-49:44 Base ⇒ Base : Circle @49:41-49:45
+49:46-49:49 Base ⇒ Base : Circle @49:46-49:50
+49:50-49:52 ] ( ⇒ Type @49:13-50:63
+49:53-49:56 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @49:53-49:57
+50:3-50:3 ( ⇒ -F Path[.A = Circle] Base Base @49:53-50:31
+50:4-50:7 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @50:4-50:8
+50:9-50:9 ( ⇒ -F Int @50:4-50:30
+50:10-50:18 Path.step ⇒ Path.step loop loop : -F Path[.A = Circle] Base Base @50:10-50:29
+50:20-50:23 loop ⇒ loop : Path[.A = Circle] Base Base @50:20-50:24
+50:25-50:28 loop ⇒ loop : Path[.A = Circle] Base Base @50:25-50:29
+50:29-50:29 ) ⇒ -F Int @50:4-50:30
+50:30-50:30 ) ⇒ -F Path[.A = Circle] Base Base @49:53-50:31
+50:31-50:33 ) ( ⇒ Type @49:13-50:63
+50:34-50:37 loop ⇒ loop : Path[.A = Circle] Base Base @50:34-50:38
+50:39-50:39 ∷ ⇒ Path[.A = Circle] Base Base @50:34-50:62
+50:41-50:44 loop ⇒ loop : Path[.A = Circle] Base Base @50:41-50:45
+50:46-50:46 ∷ ⇒ Path[.A = Circle] Base Base @50:41-50:62
+50:48-50:56 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @50:48-50:62
+50:58-50:61 Base ⇒ Base : Circle @50:58-50:62
+50:62-50:62 ) ⇒ Type @49:13-50:63
+50:64-50:64 = ⇒ round : Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `round` composite converts to two loops. @49:1-51:33
+50:66-51:3 Path.here⏎  ( ⇒ Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base) @50:66-51:33
+51:4-51:7 loop ⇒ loop : Path[.A = Circle] Base Base @51:4-51:8
+51:9-51:9 ∷ ⇒ Path[.A = Circle] Base Base @51:4-51:32
+51:11-51:14 loop ⇒ loop : Path[.A = Circle] Base Base @51:11-51:15
+51:16-51:16 ∷ ⇒ Path[.A = Circle] Base Base @51:11-51:32
+51:18-51:26 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @51:18-51:32
+51:28-51:31 Base ⇒ Base : Circle @51:28-51:32
+51:32-51:32 ) ⇒ Path[.A = Path[.A = Circle] Base Base] (spin (wind (Path.step loop loop)))⏎  (loop ∷ loop ∷ Path.here Base) @50:66-51:33
+54:1-54:3 def ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @54:1-55:51
+54:5-54:9 twice ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @54:5-54:10
+54:11-54:11 : ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @54:1-55:51
+54:13-54:21 Path[.A = ⇒ Type @54:13-55:8
+54:23-54:31 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @54:23-54:50
+54:33-54:38 Circle ⇒ Circle : Type @54:33-54:39
+54:39-54:39 ] ⇒ Path[.A = Circle] Base Base : Type @54:23-54:50
+54:41-54:44 Base ⇒ Base : Circle @54:41-54:45
+54:46-54:49 Base ⇒ Base : Circle @54:46-54:50
+54:50-54:52 ] ( ⇒ Type @54:13-55:8
+54:53-54:61 Path.step ⇒ Path.step loop loop : -F Path[.A = Circle] Base Base @54:53-54:72
+54:63-54:66 loop ⇒ loop : Path[.A = Circle] Base Base @54:63-54:67
+54:68-54:71 loop ⇒ loop : Path[.A = Circle] Base Base @54:68-54:72
+54:72-54:74 ) ( ⇒ Type @54:13-55:8
+54:75-54:78 loop ⇒ loop : Path[.A = Circle] Base Base @54:75-54:79
+54:80-54:80 ∷ ⇒ Path[.A = Circle] Base Base @54:75-55:7
+54:82-54:85 loop ⇒ loop : Path[.A = Circle] Base Base @54:82-54:86
+54:87-54:87 ∷ ⇒ Path[.A = Circle] Base Base @54:82-55:7
+54:89-54:97 Path.here ⇒ Path[.A = Circle] Base Base @54:89-55:7
+55:3-55:6 Base ⇒ Base : Circle @55:3-55:7
+55:7-55:7 ) ⇒ Type @54:13-55:8
+55:9-55:9 = ⇒ twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @54:1-55:51
+55:11-55:21 Path.here ( ⇒ Path.here (loop ∷ loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base) @55:11-55:51
+55:22-55:25 loop ⇒ loop : Path[.A = Circle] Base Base @55:22-55:26
+55:27-55:27 ∷ ⇒ Path[.A = Circle] Base Base @55:22-55:50
+55:29-55:32 loop ⇒ loop : Path[.A = Circle] Base Base @55:29-55:33
+55:34-55:34 ∷ ⇒ Path[.A = Circle] Base Base @55:29-55:50
+55:36-55:44 Path.here ⇒ Path.here Base : Path[.A = Circle] Base Base @55:36-55:50
+55:46-55:49 Base ⇒ Base : Circle @55:46-55:50
+55:50-55:50 ) ⇒ Path.here (loop ∷ loop ∷ Path.here Base) : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop)⏎  (loop ∷ loop ∷ Path.here Base) @55:11-55:51
+58:1-58:18 @[runs("S (S Z)")] ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @58:1-59:1
+59:1-59:3 def ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @59:1-59:48
+59:5-59:11 counted ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @59:5-59:12
+59:13-59:13 : ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @59:1-59:48
+59:15-59:19 () -> ⇒ () -> Int : Type[-] @59:15-59:24
+59:21-59:23 Int ⇒ Int : Type @59:21-59:24
+59:25-59:25 = ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @59:1-59:48
+59:27-59:30 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @59:27-59:31
+59:32-59:32 ( ⇒ -F Int @59:27-59:48
+59:33-59:36 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @59:33-59:37
+59:38-59:38 ( ⇒ -F Path[.A = Circle] Base Base @59:33-59:47
+59:39-59:41 S ( ⇒ S (S Z) : Int @59:39-59:46
+59:42-59:42 S ⇒ S Z : Int @59:42-59:45
+59:44-59:44 Z ⇒ Z : Int @59:44-59:45
+59:45-59:45 ) ⇒ S (S Z) : Int @59:39-59:46
+59:46-59:46 ) ⇒ -F Path[.A = Circle] Base Base @59:33-59:47
+59:47-59:47 ) ⇒ -F Int @59:27-59:48
+62:1-62:3 def ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @62:1-62:86
+62:5-62:14 windingIso ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @62:5-62:15
+62:16-62:16 : ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @62:1-62:86
+62:18-62:26 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @62:18-62:45
+62:28-62:33 Circle ⇒ Circle : Type @62:28-62:34
+62:34-62:34 ] ⇒ Path[.A = Circle] Base Base : Type @62:18-62:45
+62:36-62:39 Base ⇒ Base : Circle @62:36-62:40
+62:41-62:44 Base ⇒ Base : Circle @62:41-62:45
+62:46-62:46 ≅ ⇒ Path[.A = Circle] Base Base ≅ Int : Type @62:18-62:51
+62:48-62:50 Int ⇒ Int : Type @62:48-62:51
+62:52-62:52 = ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @62:1-62:86
+62:54-62:55 *{ ⇒ Path[.A = Circle] Base Base ≅ Int @62:54-62:85
+62:56-62:59 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @62:56-62:60
+62:60-62:60 , ⇒ Path[.A = Circle] Base Base ≅ Int @62:54-62:85
+62:62-62:63 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : ((b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b) * ((b : Int) ->⏎  Path[.A = Int] (wind (a b)) b)} @62:62-62:84
+62:64-62:67 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @62:64-62:68
+62:68-62:68 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : ((b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b) * ((b : Int) ->⏎  Path[.A = Int] (wind (a b)) b)} @62:62-62:84
+62:70-62:71 *{ ⇒ ((a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a) * ((a : Int) -> Path[.A = Int] (wind (spin a)) a) @62:70-62:83
+62:72-62:75 sect ⇒ sect : (p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind p)) p⏎⏎checked against⏎⏎(a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a @62:72-62:76
+62:76-62:76 , ⇒ ((a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a) * ((a : Int) -> Path[.A = Int] (wind (spin a)) a) @62:70-62:83
+62:78-62:81 retr ⇒ retr : (n : Int) -> Path[.A = Int] (wind (spin n)) n⏎⏎checked against⏎⏎(a : Int) -> Path[.A = Int] (wind (spin a)) a @62:78-62:82
+62:82-62:82 } ⇒ ((a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a) * ((a : Int) -> Path[.A = Int] (wind (spin a)) a) @62:70-62:83
+62:83-62:83 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : ((b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b) * ((b : Int) ->⏎  Path[.A = Int] (wind (a b)) b)} @62:62-62:84
+62:84-62:84 } ⇒ Path[.A = Circle] Base Base ≅ Int @62:54-62:85
+62:85-62:85 ; ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎Winding and spinning form a quasi-inverse with two round trips. @62:1-62:86
+65:1-65:3 pub ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @65:1-65:5
+65:5-65:7 def ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @65:5-65:96
+65:9-65:15 winding ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @65:9-65:16
+65:17-65:17 : ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @65:5-65:96
+65:19-65:27 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @65:19-65:46
+65:29-65:34 Circle ⇒ Circle : Type @65:29-65:35
+65:35-65:35 ] ⇒ Path[.A = Circle] Base Base : Type @65:19-65:46
+65:37-65:40 Base ⇒ Base : Circle @65:37-65:41
+65:42-65:45 Base ⇒ Base : Circle @65:42-65:46
+65:47-65:47 ≃ ⇒ Path[.A = Circle] Base Base ≃ Int : Type @65:19-65:52
+65:49-65:51 Int ⇒ Int : Type @65:49-65:52
+65:53-65:53 = ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @65:5-65:96
+65:55-65:56 *{ ⇒ Path[.A = Circle] Base Base ≃ Int @65:55-65:95
+65:57-65:60 wind ⇒ wind : Path[.A = Circle] Base Base -> Int @65:57-65:61
+65:61-65:61 , ⇒ Path[.A = Circle] Base Base ≃ Int @65:55-65:95
+65:63-65:64 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} * *{a : Int ->⏎  Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind (a b)) b} @65:63-65:94
+65:65-65:66 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} @65:65-65:78
+65:67-65:70 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @65:67-65:71
+65:71-65:71 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} @65:65-65:78
+65:73-65:76 sect ⇒ sect : (p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind p)) p⏎⏎checked against⏎⏎(a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base]⏎  (spin (wind a)) a @65:73-65:77
+65:77-65:77 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} @65:65-65:78
+65:78-65:78 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} * *{a : Int ->⏎  Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind (a b)) b} @65:63-65:94
+65:80-65:81 *{ ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind⏎  (a b)) b} @65:80-65:93
+65:82-65:85 spin ⇒ spin : Int -> Path[.A = Circle] Base Base @65:82-65:86
+65:86-65:86 , ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind⏎  (a b)) b} @65:80-65:93
+65:88-65:91 retr ⇒ retr : (n : Int) -> Path[.A = Int] (wind (spin n)) n⏎⏎checked against⏎⏎(a : Int) -> Path[.A = Int] (wind (spin a)) a @65:88-65:92
+65:92-65:92 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind⏎  (a b)) b} @65:80-65:93
+65:93-65:93 } ⇒ *{a : Int -> Path[.A = Circle] Base Base, b : (b : Path[.A = Circle] Base Base⏎) -> Path[.A = Path[.A = Circle] Base Base] (a (wind b)) b} * *{a : Int ->⏎  Path[.A = Circle] Base Base, b : (b : Int) -> Path[.A = Int] (wind (a b)) b} @65:63-65:94
+65:94-65:94 } ⇒ Path[.A = Circle] Base Base ≃ Int @65:55-65:95
+65:95-65:95 ; ⇒ winding : Path[.A = Circle] Base Base ≃ Int⏎⏎The quasi-inverse yields the stated equivalence as an `isoToEquiv` record. @65:5-65:96
+68:1-68:3 def ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @68:1-71:35
+68:5-68:16 windingByIso ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @68:5-68:17
+68:18-68:18 : ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @68:1-71:35
+68:20-68:28 Path[.A = ⇒ Type @68:20-71:14
+68:30-68:38 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @68:30-68:57
+68:40-68:45 Circle ⇒ Circle : Type @68:40-68:46
+68:46-68:46 ] ⇒ Path[.A = Circle] Base Base : Type @68:30-68:57
+68:48-68:51 Base ⇒ Base : Circle @68:48-68:52
+68:53-68:56 Base ⇒ Base : Circle @68:53-68:57
+68:58-68:58 ≃ ⇒ Path[.A = Circle] Base Base ≃ Int : Type @68:30-68:63
+68:60-68:62 Int ⇒ Int : Type @68:60-68:63
+68:63-68:63 ] ⇒ Type @68:20-71:14
+68:65-68:71 winding ⇒ winding : Path[.A = Circle] Base Base ≃ Int @68:65-68:72
+68:73-68:73 ( ⇒ Type @68:20-71:14
+68:74-68:83 isoToEquiv ⇒ isoToEquiv : (a : Type, b : Type, a ≅ b) -> a ≃ b @68:74-68:84
+69:3-69:8 (type( ⇒ -F *{a : Path[.A = Circle] Base Base -> Int, b : *{b : Int -> Path[.A = Circle]⏎  Base Base, c : (c : Path[.A = Circle] Base Base) ->⏎  Path[.A = Path[.A = Circle] Base Base] (b (a c)) c} * *{b : Int ->⏎  Path[.A = Circle] Base Base, c : (c : Int) -> Path[.A = Int] (a (b c)) c}} @68:74-71:13
+69:9-69:17 Path[.A = ⇒ Path[.A = Circle] Base Base : Type @69:9-69:36
+69:19-69:24 Circle ⇒ Circle : Type @69:19-69:25
+69:25-69:25 ] ⇒ Path[.A = Circle] Base Base : Type @69:9-69:36
+69:27-69:30 Base ⇒ Base : Circle @69:27-69:31
+69:32-69:35 Base ⇒ Base : Circle @69:32-69:36
+69:36-69:37 )) ⇒ -F *{a : Path[.A = Circle] Base Base -> Int, b : *{b : Int -> Path[.A = Circle]⏎  Base Base, c : (c : Path[.A = Circle] Base Base) ->⏎  Path[.A = Path[.A = Circle] Base Base] (b (a c)) c} * *{b : Int ->⏎  Path[.A = Circle] Base Base, c : (c : Int) -> Path[.A = Int] (a (b c)) c}} @68:74-71:13
+70:3-70:5 Int ⇒ Int : Type @70:3-70:6
+71:3-71:12 windingIso ⇒ windingIso : Path[.A = Circle] Base Base ≅ Int⏎⏎checked against⏎⏎*{a : Path[.A = Circle] Base Base -> Int, b : *{b : Int -> Path[.A = Circle]⏎  Base Base, c : ((c : Path[.A = Circle] Base Base) ->⏎  Path[.A = Path[.A = Circle] Base Base] (b (a c)) c) * ((c : Int) ->⏎  Path[.A = Int] (a (b c)) c)}} @71:3-71:13
+71:13-71:13 ) ⇒ Type @68:20-71:14
+71:15-71:15 = ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @68:1-71:35
+71:17-71:25 Path.here ⇒ Path.here winding : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso) @71:17-71:34
+71:27-71:33 winding ⇒ winding : Path[.A = Circle] Base Base ≃ Int @71:27-71:34
+71:34-71:34 ; ⇒ windingByIso : Path[.A = Path[.A = Circle] Base Base ≃ Int] winding (isoToEquiv⏎  type(Path[.A = Circle] Base Base) Int windingIso)⏎⏎The `isoToEquiv` form converts to `winding`. @68:1-71:35

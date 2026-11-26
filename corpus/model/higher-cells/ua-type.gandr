@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "modules", "pattern-matching", "products-and-sums", "records", "visibility"))]
+
 // This source applies univalence at a user-universe stratum code.
 //
 // `ua[1, 4]` makes the magma degree telescope a path in `Type`. `univalence`

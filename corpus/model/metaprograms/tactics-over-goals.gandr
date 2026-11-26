@@ -11,6 +11,8 @@
 //! So the kernel trusts no tactic.
 //!
 //! - see: #2762
+@![features(("dependent-functions", "records", "tactics-over-goals", "universes"))]
+
 /// `pick` uses `assumption` to select the innermost integer binder.
 def pick(a : Integer, u : Unit, b : Integer) -> Integer = ~assumption
 

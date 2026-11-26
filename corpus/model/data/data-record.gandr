@@ -9,6 +9,8 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
+@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "universes"))]
+
 /// A colour as its three channels.
 data Color3 : Type where
   | RGB : (r : Integer, g : Integer, b : Integer) --> Color3

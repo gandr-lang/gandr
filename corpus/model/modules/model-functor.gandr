@@ -12,6 +12,8 @@
 //!
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics"
 
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "modules", "native-primitives", "records", "signatures-as-values", "universes", "visibility"))]
+
 /// `Mag` states a carrier and a binary operation.
 theory Mag where
   sort M : Type

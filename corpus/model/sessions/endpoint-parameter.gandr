@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 // A function's parameter at a session type is an endpoint its body drives to
 // its end.
 //

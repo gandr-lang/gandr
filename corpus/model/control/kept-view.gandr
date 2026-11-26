@@ -17,6 +17,8 @@
 //! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 //! [boats-2024-references_are_jumps]: https://without.boats/blog/references-are-like-jumps/ "boats, References are like jumps"
 
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "native-primitives", "temporary-access", "thunks-and-force"))]
+
 // Early exit's host interface.
 import std.process
 

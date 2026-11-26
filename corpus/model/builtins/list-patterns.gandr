@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // This source tests native list patterns.
 //
 // A list pattern names the empty list, elements, a rest binding and an

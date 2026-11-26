@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 // A case on a value of a family with a parameter. The goal of the case reads
 // the value.
 //

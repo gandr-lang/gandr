@@ -13,6 +13,8 @@
 //!
 //! [Gay-2005-subtyping_session_types_pi_calculus]: https://doi.org/10.1007/s00236-005-0177-z "Gay and Hole, Subtyping for Session Types in the Pi Calculus"
 
+@![features(("data-parameters", "dependent-functions", "directed-paths", "identity-types", "imports", "lazy-records", "let-statements", "modules", "products-and-sums", "run-prefixes", "session-types", "visibility"))]
+
 // The native session formers.
 import std.session (Run)
 

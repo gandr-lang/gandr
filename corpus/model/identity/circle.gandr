@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "list-case", "native-lists", "pattern-matching", "records", "type-codes", "visibility"))]
+
 /// This source states the circle's loop space and its equivalence with a
 /// presentation of the integers.
 ///

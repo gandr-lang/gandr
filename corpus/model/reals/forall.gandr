@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "native-lists", "visibility"))]
+
 // A program decides a compact bounded universal through `std.reals.Eff`, the
 // host interface of exact reals. The universal is `∀ x ∈ [0, 1] (x · x < 2)`.
 // `gandr run forall.gandr` prints `holds`. The same `decided` runs under a
