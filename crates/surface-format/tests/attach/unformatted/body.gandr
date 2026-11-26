@@ -1,4 +1,4 @@
-def f(x : Integer) -> -F Integer {
+def f(x : Integer) -> -F Integer = {
   // first
   let y = inc x ; /* after y */
   let z = inc
@@ -6,4 +6,4 @@ def f(x : Integer) -> -F Integer {
     y ;
   z
   // end
-}
+};

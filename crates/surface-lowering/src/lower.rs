@@ -5460,7 +5460,7 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def one_laid(b : Bool) -> Integer =\n  if b then\n    1\n  else\n    2\n\
-                 def one_braced(b : Bool) -> Integer {\n  if b { 1 } else { 2 }\n}\n\
+                 def one_braced(b : Bool) -> Integer = {\n  if b { 1 } else { 2 }\n};\n\
                  def chain_laid(a : Bool, b : Bool) -> Integer =\n  if a then\n    2\n  \
                  else if b then\n    1\n  else\n    0\n\
                  def chain_braced(a : Bool, b : Bool) -> Integer {\n  \
@@ -7765,7 +7765,7 @@ mod tests
         assert_eq!(
             refusal_in(&pbg, &tree),
             LoweringRefusal::MalformedForm {
-                span: at(74_usize, 74_usize),
+                span: at(76_usize, 76_usize),
                 form: FormName::MATCH,
                 fault: FormFault::Repaired(Repair::GhostClose(
                     gandr_surface_syntax::ClosingClass::Brace,

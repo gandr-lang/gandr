@@ -2375,7 +2375,7 @@ fn a_sealed_atom_reads_the_identity_its_type_member_states()
     let stated = |payload: &str| {
         format!(
             "def rel(a : Integer, b : Integer) -> -F Type = return Integer;\ndef refl(a : \
-             Integer) -> -F Integer {{ return 0 }}\ndef law = 0;\nmodule M :> *{{ type T, seed : \
+             Integer) -> -F Integer = return 0;\ndef law = 0;\nmodule M :> *{{ type T, seed : \
              T }} where {{ @[ identity({payload}) ] type T = Integer; def seed = 7; }}"
         )
     };

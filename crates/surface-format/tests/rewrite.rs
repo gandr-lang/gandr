@@ -506,9 +506,8 @@ fn an_action_under_a_quoted_motive_folds_in_both_forms_4645()
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   F : Path[.A = A](x, y) -> Path[.A = A](x, w)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](F f1, F f2)]({action}, {action}) {{
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F f1, F f2)]({action}, {action}) =
   Path.here ({action})
-}}
 "
         )
     };
@@ -1091,7 +1090,7 @@ fn a_match_over_a_stated_sum_is_sugared_791()
     let grammar = grammar();
     let matched = |stated: &str, exit: &str, result: &str| {
         format!(
-            "def pick(t : {stated}) -> {result} {{\n  match t {{\n    | +{{.1 = x}} => {exit}x\n    | _ => {exit}0\n  }}\n}}"
+            "def pick(t : {stated}) -> {result} = match t {{\n  | +{{.1 = x}} => {exit}x\n  | _ => {exit}0\n}};"
         )
     };
     let source = format!(

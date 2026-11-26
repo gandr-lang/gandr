@@ -2450,14 +2450,11 @@ mod tests
             SourceText::from("def f(x : Integer"),
             SourceText::from(""),
         );
-        assert_eq!(
-            found.first().map(String::as_str),
-            Some(") { ${1:computation} \\}")
-        );
+        assert_eq!(found.first().map(String::as_str), Some(") = ${1:value};"));
         assert!(
             found
                 .iter()
-                .any(|ghost| ghost == ") -> ${1:type} { ${2:computation} \\}"),
+                .any(|ghost| ghost == ") -> ${1:type} = ${2:value};"),
             "the return type is offered: {found:?}"
         );
         // Inside an auto-closed pair the answer is the pair's contents: no

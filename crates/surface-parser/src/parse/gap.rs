@@ -1993,7 +1993,7 @@ mod tests
                 "m : Integer",
             ),
             (
-                "def divmod(m : Integer) -> (q : Integer r : Integer) { m }\n",
+                "def divmod(m : Integer) -> (q : Integer r : Integer) = m;\n",
                 "q : Integer",
             ),
         ] {

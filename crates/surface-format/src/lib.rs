@@ -222,7 +222,7 @@
 //!
 //! A signature at a suspended returner and the thunk defining it after it
 //! are the two halves of one function form: `def f : () => B ; def f = thunk
-//! { c } ;` is written `def f() -> -F B { c }` in either form, as the
+//! { c } ;` is written `def f() -> -F B = c ;` in either form, as the
 //! presentation printer writes such a declaration. The merge reads two
 //! top-level forms where every other rewrite reads one; both spellings lower
 //! to the same thunk at the same type, and a declaration whose merged form

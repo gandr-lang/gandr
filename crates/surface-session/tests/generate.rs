@@ -612,7 +612,7 @@ pub fn apply(
                 lines
                     .next()
                     .is_some_and(|line| {
-                        line.split_once("(x : Integer) -> -F Integer { return ")
+                        line.split_once("(x : Integer) -> -F Integer = return ")
                             .is_some_and(|(name, tail)| {
                                 name
                                     .strip_prefix("def d")
@@ -620,7 +620,7 @@ pub fn apply(
                                         name.parse::<usize>() == Ok(statement.name)
                                     })
                                     && tail
-                                        .strip_suffix(" }")
+                                        .strip_suffix(';')
                                         .is_some_and(|number| number.parse::<u64>() == Ok(literal))
                             })
                     })
@@ -699,7 +699,7 @@ pub fn render(statements: &[Stmt]) -> String
         if let Body::Function(literal) = statement.body {
             writeln!(
                 text,
-                "def d{name}(x : Integer) -> -F Integer {{ return {literal} }}"
+                "def d{name}(x : Integer) -> -F Integer = return {literal};"
             )
             .expect("a string takes every write");
             continue;

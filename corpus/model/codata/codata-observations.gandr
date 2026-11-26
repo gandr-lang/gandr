@@ -1,7 +1,7 @@
 //! `codata-observations` is an earlier source with rejected observations.
 //!
 //! A declaration of codata needs a universe for computations.
-//! A copattern needs a copattern block.
+//! A copattern needs a lazy record after `=`.
 //!
 //! The source defines a rejected point and projects its rejected origin.
 //!
@@ -13,13 +13,13 @@ codata Point : Type where
   x : Integer
   y : Integer
 
-/// `origin` supplies three and four with bare copatterns.
-/// The checker refuses it without a copattern block.
-@[refuses("MalformedForm")]
-def rec origin() -> Point {
+/// `origin` supplies three and four in a lazy record.
+/// The checker refuses it: `Point` is refused, so it names no codata.
+@[refuses("CodataUndeclared")]
+def rec origin() -> Point = &{
   .x => 3,
   .y => 4
-}
+};
 
 /// `coordinates` sums the rejected origin coordinates.
 /// It is refused because origin has no known type.

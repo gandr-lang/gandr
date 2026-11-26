@@ -2,4 +2,4 @@ module Shapes where
   Same(a : Type) = a;
   type Count = Integer;
 
-def flat(x : Shapes.Count) -> Integer { 0 }
+def flat(x : Shapes.Count) -> Integer = 0;

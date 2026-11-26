@@ -90,7 +90,7 @@ def plain : Config.#{.port = 443} = http;
 def again(c : Config.#{
   secure ↦ *{.port = 443, .tls = true},
   secure ↦ *{.port = 443, .tls = true}
-}) -> Integer { 0 }
+}) -> Integer = 0;
 
 /// The faces meet at the port, but `secure` fixes it at 443 and `addr` at 80:
 /// the system is refused at the port of `addr`.
@@ -98,4 +98,4 @@ def again(c : Config.#{
 def split_port(c : Config.#{
   secure ↦ *{.port = 443, .tls = true},
   addr ↦ *{.host = "localhost", .port = 80}
-}) -> Integer { c.port }
+}) -> Integer = c.port;

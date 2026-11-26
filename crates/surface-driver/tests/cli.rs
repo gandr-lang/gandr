@@ -1086,9 +1086,9 @@ fn a_stated_web_the_run_does_not_produce_is_unsettled_3338()
                        (event left 1) (event left 2)) (event right 2))";
     let text = format!(
         "@[ runs(\"*{{}}\"), traces(decomposes task ({asked_first})) ]\ndef swapped() -> Unit \
-         {{\n  let asked = fork (task : String >! String >? end) {{\n    send task \"notes\";\n    \
+         = {{\n  let asked = fork (task : String >! String >? end) {{\n    send task \"notes\";\n    \
          let answer = recv task;\n    close task\n  }};\n  let told = recv asked;\n  \
-         send asked told;\n  close asked\n}}\n"
+         send asked told;\n  close asked\n}};\n"
     );
     let scratch = Scratch::new(Path::new("traced"));
     let source = scratch.file(Path::new("swapped.gandr"), Text::from(text.as_str()));
@@ -2156,8 +2156,8 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     let source = scratch.file(
         Path::new("pick.gandr"),
         Text::from(
-            "def pair : *{Integer, String} ;\n\ndef pick(t : +{Integer, Integer}) -> -F Integer \
-             {\n  match t {\n    | +{.1 = x} => return x\n    | _ => return 0\n  }\n}\n",
+            "def pair : *{Integer, String} ;\n\ndef pick(t : +{Integer, Integer}) -> -F Integer = \
+             match t {\n  | +{.1 = x} => return x\n  | _ => return 0\n};\n",
         ),
     );
     let (fmt, form) = (Path::new("fmt"), Path::new("--form=sugared"));

@@ -372,7 +372,7 @@ fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Failure>
     let good = find_meld_with_tile(result.tree(), result.tree().root(), TileText::from("good"))
         .expect("the later valid definition survives prefix recovery");
     assert_eq!(
-        "def good[B : Type](y : Type) -> Type { pure y }",
+        "def good[B : Type](y : Type) -> Type = pure y;",
         text(result.tree(), good),
         "the surviving declaration is not absorbed by the malformed prefix"
     );
@@ -384,9 +384,9 @@ fn value_statement_uses_let_keyword() -> Result<(), Failure>
 {
     let pbg = built();
     let written = [
-        "def use() -> -F Integer { let value = expression; pure value }",
-        "def use() -> -F Integer { let value : Integer = expression; pure value }",
-        "def use() -> -F Integer { let *{a, b} = expression; pure a }",
+        "def use() -> -F Integer = { let value = expression; pure value };",
+        "def use() -> -F Integer = { let value : Integer = expression; pure value };",
+        "def use() -> -F Integer = { let *{a, b} = expression; pure a };",
     ];
     for src in written {
         let result = parse(pbg, SourceText::from(src))?;
@@ -408,8 +408,8 @@ fn retired_binding_spellings_require_repair() -> Result<(), Failure>
 {
     let pbg = built();
     for src in [
-        "def bind() -> -F Integer { run value <- action; pure value }",
-        "def bind() -> -F Integer { run value : -F Integer <- action; pure value }",
+        "def bind() -> -F Integer = { run value <- action; pure value };",
+        "def bind() -> -F Integer = { run value : -F Integer <- action; pure value };",
         "let value <- action;",
         "value <- action;",
     ] {
@@ -572,9 +572,9 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Failure>
     let pbg = built();
     let unchanged: &[&str] = &[
         "match x { | A => 1 | B => 2 }",
-        "def bind() -> -F Integer { let value = action; pure value }",
-        "def le() -> -F Boolean { return a <= b }",
-        "def eq() -> -F Boolean { return a == b }",
+        "def bind() -> -F Integer = { let value = action; pure value };",
+        "def le() -> -F Boolean = return a <= b;",
+        "def eq() -> -F Boolean = return a == b;",
         "def arrow : A -> B;",
     ];
     for &src in unchanged {
@@ -690,8 +690,8 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Failure>
         "def sort = 1;",
         "def node = 1;",
         "def feed = 1;",
-        "def use() -> -F Integer { let node = 1; pure node }",
-        "def project(sort : Integer) -> -F Integer { return sort }",
+        "def use() -> -F Integer = { let node = 1; pure node };",
+        "def project(sort : Integer) -> -F Integer = return sort;",
         "def record = *{ .node = 1, .feed = 2 };",
     ];
     for &src in binding {
@@ -2431,7 +2431,7 @@ fn a_product_opens_with_its_own_sign() -> Result<(), Failure>
         "def point = *{.x = 1, .y = 2};",
         "def pair : *{Integer, Integer};",
         "module M : *{ x : Integer } where { def x = 1; }",
-        "def first(p : *{Integer, Integer}) -> -F Integer { match p { | *{a, b} => return a } }",
+        "def first(p : *{Integer, Integer}) -> -F Integer = match p { | *{a, b} => return a };",
         "def picked = r.*{ .a };",
     ] {
         labels(source)?;
@@ -3005,15 +3005,15 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Failure>
     let pbg = built();
     for (src, inline) in [
         (
-            "def g() -> -F Integer { run f x; pure 0 }",
+            "def g() -> -F Integer = { run f x; pure 0 };",
             [true].as_slice(),
         ),
-        ("def g() -> -F Integer { let v = run f x; pure v }", &[true]),
+        ("def g() -> -F Integer = { let v = run f x; pure v };", &[true]),
         (
-            "def g() -> -F Integer { let r = f (run h x); pure g (run f r) r }",
+            "def g() -> -F Integer = { let r = f (run h x); pure g (run f r) r };",
             &[true, true],
         ),
-        ("def g() -> -F Nat { Succ (run plus n p) }", &[true]),
+        ("def g() -> -F Nat = Succ (run plus n p);", &[true]),
     ] {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(

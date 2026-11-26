@@ -19,7 +19,7 @@ def punned(r : *{n : Integer, s : String}) -> -F String =
   match r { | *{.n,.s} => return s }
 def renamed(r : *{n : Integer, s : String}) -> -F Integer =
   match r { | *{.n = m} => return m }
-def absurd(x : +{  }) -> -F Integer { match x {} }
+def absurd(x : +{  }) -> -F Integer = match x {};
 def only : +{Integer} ;
 def only = +{.0 = 1} ;
 def failed : +{ ok : Integer , err : String } ;
@@ -31,7 +31,7 @@ def terminal : +U &{ } ;
 def lazy() -> &{get : -F Integer,put : -F String} =
   &{ .put => return "s" , .get => return 1 }
 def binary : +U (-F Integer  &  -F String) ;
-def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer { become m.get }
+def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer = become m.get;
 def nothing : ()  -> Integer ;
 def unary : ( Integer ) -> Integer ;
 def two : (x : Integer,y : String) -> Integer ;

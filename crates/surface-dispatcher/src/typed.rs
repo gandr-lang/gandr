@@ -5663,7 +5663,7 @@ impl TypeTable
                 || format!(" : {} ;\n", signature(node, spelled)),
                 |under| {
                     format!(
-                        "{}({}read_back_it : {}) -> -F Unit {{ return *{{}} }}\n",
+                        "{}({}read_back_it : {}) -> -F Unit = return *{{}};\n",
                         under.implicits,
                         under.parameters,
                         signature(node, spelled),
@@ -10548,9 +10548,9 @@ mod tests
         };
         let scope = |name: &str, theory: &str| {
             format!(
-                "def {name}() -> -F Integer {{\n  handle st : {theory} with sort S = Integer {{\n    \
+                "def {name}() -> -F Integer = {{\n  handle st : {theory} with sort S = Integer {{\n    \
                  let a = st.get;\n    let b = st.get;\n    pure a + b\n  }} with {{\n    \
-                 | pure(x) => pure x\n    | oper get(k) => k 4\n  }}\n}}\n\n"
+                 | pure(x) => pure x\n    | oper get(k) => k 4\n  }}\n}};\n\n"
             )
         };
         let text = format!(
@@ -11435,14 +11435,14 @@ mod tests
         let source = SourceText::from(
             "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat } data Both(a : Type, b : \
              Type) : Type where { | MkBoth : (x : a, y : b) --> Both a b } def apart(x : Nat, y : \
-             Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh x xs) --> Fresh } def rec fresh(x : Nat, xs : \
-             Fresh) -> -F Type { match xs { | FNil => return Unit | FCons(y, ys, q) => { let p = \
-             apart x y; let r = fresh[<] x ys; return (Both p r) } } } } rec { data \
+             Nat) -> -F Type = return Unit; rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh x xs) --> Fresh } def rec fresh(x : Nat, xs : \
+             Fresh) -> -F Type = match xs { | FNil => return Unit | FCons(y, ys, q) => { let p = \
+             apart x y; let r = fresh[<] x ys; return (Both p r) } }; } rec { data \
              UD(d : Type) : Type where { | BaseD : UD d | PiD : (a : UD d, b : +U (elD d a -> -F \
-             UD d)) --> UD d } def rec elD(d : Type, u : UD d) -> -F Type { match u { | BaseD \
+             UD d)) --> UD d } def rec elD(d : Type, u : UD d) -> -F Type = match u { | BaseD \
              => return d | PiD(a, b) => return (+U ((x : elD [<] d a) -> -F elD [<] d (b x))) \
-             } } } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop a ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type { match u { | Base => \
-             return Nat | PiL(a, b) => return (+U ((x : unloop [<] (PiL a b)) -> -F Nat)) } } }",
+             }; } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop a ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type = match u { | Base => \
+             return Nat | PiL(a, b) => return (+U ((x : unloop [<] (PiL a b)) -> -F Nat)) }; }",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads =

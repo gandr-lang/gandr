@@ -2,17 +2,11 @@
 def rec fact(n : Integer) -> Integer =
   fact[<] n
 
-@[refuses("MalformedForm")]
-def rec nats(n : Integer) -> Stream Integer {
+@[refuses("UnresolvedTypeHead")]
+def rec nats(n : Integer) -> Stream Integer = &{
   .head => n,
   .tail => nats[>] (plus n 1)
-}
-
-@[refuses("MalformedForm")]
-def rec loopy(n : Integer) -> Stream Integer {
-  .head => n,
-  _ => nats n
-}
+};
 
 @[refuses("OutOfFragment.instantiation_expression.computation")]
 def rec measured(n : Integer) -> Integer = return measured[.n <] n

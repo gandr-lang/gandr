@@ -2923,7 +2923,7 @@ mod tests
         for src in [
             "",
             "   ",
-            "def f() -> -F Integer { return (x * x) }",
+            "def f() -> -F Integer = return (x * x);",
             "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
             "1u32 + 2.5f64 - .5e-3 * 42",
             "@[doc(\"d\")] def x = *{ .a = 1 };",

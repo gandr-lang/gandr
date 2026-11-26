@@ -6156,7 +6156,7 @@ mod tests
         // byte-identical across 100 runs. Nothing process-varying (hash order,
         // allocation address) reaches the decision.
         let pbg = built()?;
-        let src = "def f() -> -F Integer { pure (x * x) } square(9) [1, 2, 3]";
+        let src = "def f() -> -F Integer = pure (x * x); square(9) [1, 2, 3]";
 
         let reference = mold_and_hash(&pbg, SourceText::from(src))?;
         for _ in 0 .. 100_u32 {
@@ -6656,7 +6656,7 @@ mod tests
         // A window can end inside the operands, where the complete type
         // `Pair` competes with the application that goes on.
         let pbg = built()?;
-        let source = "def pair(x : Integer) -> -F Pair Integer String x x { ret x }\n";
+        let source = "def pair(x : Integer) -> -F Pair Integer String x x = ret x;\n";
         let parsed = crate::parse(&pbg, SourceText::from(source))?;
         let tree = parsed.tree();
         let applied = source.find("Pair ").ok_or("the source applies `Pair`")?;
@@ -6754,7 +6754,7 @@ mod tests
         let declarations = [
             ("def x = 1 ;", "def_value"),
             ("def x : Integer ;", "def_value"),
-            ("def f(y : Integer) -> -F Integer { return y }", "def_value"),
+            ("def f(y : Integer) -> -F Integer = return y;", "def_value"),
             (
                 include_str!("mold/fixtures/an-attribute-block-is-a-form-of-its-own-1.gandr"),
                 "data_declaration",

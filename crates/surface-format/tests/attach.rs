@@ -108,8 +108,8 @@ fn expected(
 }
 
 /// A body a narrow page breaks one statement per line, a comment of each
-/// role inside it: the definition owns its block's statements, whose
-/// keywords are its own tiles, and a call owns what its brackets hold.
+/// role inside it: the block after `=` owns its statements, whose keywords
+/// are its own tiles, and a call owns what its brackets hold.
 const BODY: &str = include_str!("attach/unformatted/body.gandr");
 
 #[test]
@@ -124,7 +124,7 @@ fn a_comment_on_its_own_line_leads_the_form_below_it()
                 "// first",
                 CommentKind::Line,
                 Role::Leading,
-                "def_value"
+                "block"
             )),
             Some(&expected(
                 "// why",
@@ -149,7 +149,7 @@ fn a_comment_after_material_on_its_line_trails_it()
             "/* after y */",
             CommentKind::Block,
             Role::Trailing,
-            "def_value"
+            "block"
         )),
         "a comment after a separator on its line trails it: {found:#?}"
     );
@@ -166,7 +166,7 @@ fn a_comment_before_a_closing_bracket_dangles_on_its_block()
             "// end",
             CommentKind::Line,
             Role::Dangling,
-            "def_value"
+            "block"
         )),
         "a comment with nothing of its form after it but the closer dangles: {found:#?}"
     );

@@ -1513,10 +1513,10 @@ fn a_sealed_atom_s_identity_decides_what_its_relation_s_evidence_is()
         )
     };
     let source = [
-        "def related(a : Unit, b : Unit) -> -F Type { return Unit }\n".to_owned(),
-        "def reflexive(a : Unit) -> -F related a a { return *{} }\n".to_owned(),
+        "def related(a : Unit, b : Unit) -> -F Type = return Unit;\n".to_owned(),
+        "def reflexive(a : Unit) -> -F related a a = return *{};\n".to_owned(),
         "def contraction(a : Unit, b : Unit, r : related a b) -> -F Path[.A = *{ y : Unit, s : \
-             related a y }](*{b, r}, *{a, reflexive a}) { return *{*{}, *{}} }\n"
+             related a y }](*{b, r}, *{a, reflexive a}) = return *{*{}, *{}};\n"
             .to_owned(),
         sealed(
             "Lawful",

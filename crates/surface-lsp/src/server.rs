@@ -20158,7 +20158,7 @@ mod tests
             &shared(
                 Json("textDocument/didOpen"),
                 Json(
-                    r#","version":1,"text":"def1 f(x : Integer) -> -F Integer {\n  return x\n}\n"}"#,
+                    r#","version":1,"text":"def1 f(x : Integer) -> -F Integer = {\n  return x\n};\n"}"#,
                 ),
             ),
         ));
@@ -20168,7 +20168,7 @@ mod tests
             &mut workspace,
             &rewrite(
                 Json("2"),
-                Json(r"def1 f(x : Integer) -> -F Integer {\n  return x \n}\n"),
+                Json(r"def1 f(x : Integer) -> -F Integer = {\n  return x \n};\n"),
             ),
         ));
         let _typed = hovered(&mut first, &mut workspace);
@@ -20195,11 +20195,11 @@ mod tests
         for (version, text) in [
             (
                 "3",
-                r"def1 f(x : Integer) -> -F Integer {\n  return x  \n}\n",
+                r"def1 f(x : Integer) -> -F Integer = {\n  return x  \n};\n",
             ),
             (
                 "4",
-                r"def1 f(x : Integer) -> -F Integer {\n  return x   \n}\n",
+                r"def1 f(x : Integer) -> -F Integer = {\n  return x   \n};\n",
             ),
         ] {
             drop(first.handle(&mut workspace, &rewrite(Json(version), Json(text))));

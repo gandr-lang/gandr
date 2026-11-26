@@ -2125,7 +2125,7 @@ impl Offering<'_>
                 written.push_str(", ");
                 written.push_str(operation.name.as_ref());
             }
-            written.push_str(" } { authority }\n");
+            written.push_str(" } = authority;\n");
             wrote.push(Wrote {
                 position: interface.position,
                 start,

@@ -1899,12 +1899,12 @@ mod tests
         // The `where` ending a `match` head is the arms' brace: the arms take
         // no separator, after an answer type too.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x where\n    | a => a\n    | b => b\n}\n"),
-            "def f(x : A) -> A {\n  match x ⟪where→{⟫\n    | a => a\n    | b => b⟪}⟫\n}\n"
+            marked("def f(x : A) -> A = {\n  match x where\n    | a => a\n    | b => b\n};\n"),
+            "def f(x : A) -> A = {\n  match x ⟪where→{⟫\n    | a => a\n    | b => b⟪}⟫\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x -> A where\n    | a => a\n}\n"),
-            "def f(x : A) -> A {\n  match x -> A ⟪where→{⟫\n    | a => a⟪}⟫\n}\n"
+            marked("def f(x : A) -> A = {\n  match x -> A where\n    | a => a\n};\n"),
+            "def f(x : A) -> A = {\n  match x -> A ⟪where→{⟫\n    | a => a⟪}⟫\n};\n"
         );
         // A line no further right than the head's closes its arms at once.
         assert_eq!(
@@ -1914,19 +1914,19 @@ mod tests
         // A bare `match` head ending its line opens its arms too, so the parse
         // stays whole and the lowering refuses the head by name.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x\n    | a => a\n}\n"),
-            "def f(x : A) -> A {\n  match x⟪{⟫\n    | a => a⟪}⟫\n}\n"
+            marked("def f(x : A) -> A = {\n  match x\n    | a => a\n};\n"),
+            "def f(x : A) -> A = {\n  match x⟪{⟫\n    | a => a⟪}⟫\n};\n"
         );
         // A `match` whose head takes its brace opens nothing, and a `where`
         // that does not end the head's line stays a word, no part of the
         // match.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"),
-            "def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"
+            marked("def f(x : A) -> A = {\n  match x {\n    | a => a\n  }\n};\n"),
+            "def f(x : A) -> A = {\n  match x {\n    | a => a\n  }\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x where {\n    | a => a\n  }\n}\n"),
-            "def f(x : A) -> A {\n  match x where {\n    | a => a\n  }\n}\n"
+            marked("def f(x : A) -> A = {\n  match x where {\n    | a => a\n  }\n};\n"),
+            "def f(x : A) -> A = {\n  match x where {\n    | a => a\n  }\n};\n"
         );
         // A `where` ending its line opens a declaration body.
         assert_eq!(
@@ -1947,15 +1947,15 @@ mod tests
         // Inside an explicit brace the column rule separates statements, and
         // a `;` already written takes no second one.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  let y = x;\n  let z = y\n  z\n}\n"),
-            "def f(x : A) -> A {\n  let y = x;\n  let z = y⟪;⟫\n  z\n}\n"
+            marked("def f(x : A) -> A = {\n  let y = x;\n  let z = y\n  z\n};\n"),
+            "def f(x : A) -> A = {\n  let y = x;\n  let z = y⟪;⟫\n  z\n};\n"
         );
         // A statement that ends in a brace ends at its line end, as any other
         // does (#8326); a continuation indented past the column continues
         // it; a comment after a statement stays outside the separator.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  if x { a } else { b }\n  g x\n    y // c\n  z\n}\n"),
-            "def f(x : A) -> A {\n  if x { a } else { b }⟪;⟫\n  g x\n    y⟪;⟫ // c\n  z\n}\n"
+            marked("def f(x : A) -> A = {\n  if x { a } else { b }\n  g x\n    y // c\n  z\n};\n"),
+            "def f(x : A) -> A = {\n  if x { a } else { b }⟪;⟫\n  g x\n    y⟪;⟫ // c\n  z\n};\n"
         );
         // A line-leading bar and a closer take no separator; a sigil's brace
         // is no statement block.
@@ -1976,8 +1976,8 @@ mod tests
             "def f() -> A =⟪{⟫\n  let *{b, n} = *{true, 2}⟪;⟫\n  n⟪}⟫⟪;⟫\n"
         );
         assert_eq!(
-            marked("def f() -> A {\n  let p = *{true, 2}\n  p\n}\n"),
-            "def f() -> A {\n  let p = *{true, 2}⟪;⟫\n  p\n}\n"
+            marked("def f() -> A = {\n  let p = *{true, 2}\n  p\n};\n"),
+            "def f() -> A = {\n  let p = *{true, 2}⟪;⟫\n  p\n};\n"
         );
         assert_eq!(
             marked("def f(b : B) -> A =\n  let n = match b { | t => 1 | f => 2 }\n  n\n"),
@@ -1990,8 +1990,8 @@ mod tests
         // A `loop` that its own brace closes takes the separator too, and a
         // `}` before the block's close takes none.
         assert_eq!(
-            marked("def f() -> A {\n  loop { break }\n  return 1\n}\n"),
-            "def f() -> A {\n  loop { break }⟪;⟫\n  return 1\n}\n"
+            marked("def f() -> A = {\n  loop { break }\n  return 1\n};\n"),
+            "def f() -> A = {\n  loop { break }⟪;⟫\n  return 1\n};\n"
         );
     }
 
@@ -2007,42 +2007,42 @@ mod tests
         );
         // A `var` and an assignment open in the same way, in braces too.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  var n : A =\n    g x\n  n =\n    h n\n  n\n}\n"),
-            "def f(x : A) -> A {\n  var n : A =⟪{⟫\n    g x⟪}⟫⟪;⟫\n  n =⟪{⟫\n    h n⟪}⟫⟪;⟫\n  n\n}\n"
+            marked("def f(x : A) -> A = {\n  var n : A =\n    g x\n  n =\n    h n\n  n\n};\n"),
+            "def f(x : A) -> A = {\n  var n : A =⟪{⟫\n    g x⟪}⟫⟪;⟫\n  n =⟪{⟫\n    h n⟪}⟫⟪;⟫\n  n\n};\n"
         );
         // A line at the statement's column or left of it opens nothing.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  let a =\n  x\n}\n"),
-            "def f(x : A) -> A {\n  let a =⟪;⟫\n  x\n}\n"
+            marked("def f(x : A) -> A = {\n  let a =\n  x\n};\n"),
+            "def f(x : A) -> A = {\n  let a =⟪;⟫\n  x\n};\n"
         );
         // A `=` that does not end its line opens nothing, and the line to its
         // right continues the statement.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  let a = g\n    x\n  a\n}\n"),
-            "def f(x : A) -> A {\n  let a = g\n    x⟪;⟫\n  a\n}\n"
+            marked("def f(x : A) -> A = {\n  let a = g\n    x\n  a\n};\n"),
+            "def f(x : A) -> A = {\n  let a = g\n    x⟪;⟫\n  a\n};\n"
         );
         // The `=` after the name of a `module` or of a `sort` opens nothing.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  module m =\n    M\n  x\n}\n"),
-            "def f(x : A) -> A {\n  module m =\n    M⟪;⟫\n  x\n}\n"
+            marked("def f(x : A) -> A = {\n  module m =\n    M\n  x\n};\n"),
+            "def f(x : A) -> A = {\n  module m =\n    M⟪;⟫\n  x\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  handle c : S.Eff with sort T =\n    A { x }\n}\n"),
-            "def f(x : A) -> A {\n  handle c : S.Eff with sort T =\n    A { x }\n}\n"
+            marked("def f(x : A) -> A = {\n  handle c : S.Eff with sort T =\n    A { x }\n};\n"),
+            "def f(x : A) -> A = {\n  handle c : S.Eff with sort T =\n    A { x }\n};\n"
         );
         // No `=` opens inside a bracket, in a `glob` block or before a line
         // that starts with an explicit `{`.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  let a = *{ b =\n    x }\n  a\n}\n"),
-            "def f(x : A) -> A {\n  let a = *{ b =\n    x }⟪;⟫\n  a\n}\n"
+            marked("def f(x : A) -> A = {\n  let a = *{ b =\n    x }\n  a\n};\n"),
+            "def f(x : A) -> A = {\n  let a = *{ b =\n    x }⟪;⟫\n  a\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  glob {\n    cells =\n      A\n  }\n}\n"),
-            "def f(x : A) -> A {\n  glob {\n    cells =\n      A\n  }\n}\n"
+            marked("def f(x : A) -> A = {\n  glob {\n    cells =\n      A\n  }\n};\n"),
+            "def f(x : A) -> A = {\n  glob {\n    cells =\n      A\n  }\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  let a =\n    { x }\n  a\n}\n"),
-            "def f(x : A) -> A {\n  let a =\n    { x }⟪;⟫\n  a\n}\n"
+            marked("def f(x : A) -> A = {\n  let a =\n    { x }\n  a\n};\n"),
+            "def f(x : A) -> A = {\n  let a =\n    { x }⟪;⟫\n  a\n};\n"
         );
     }
 
@@ -2062,37 +2062,37 @@ mod tests
         // handler.
         assert_eq!(
             marked(
-                "def f(x : A) -> A {\n  match x {\n    | a =>\n      let y = x\n      y\n    | b => x\n  }\n}\n"
+                "def f(x : A) -> A = {\n  match x {\n    | a =>\n      let y = x\n      y\n    | b => x\n  }\n};\n"
             ),
-            "def f(x : A) -> A {\n  match x {\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫\n    | b => x\n  }\n}\n"
+            "def f(x : A) -> A = {\n  match x {\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫\n    | b => x\n  }\n};\n"
         );
         assert_eq!(
             marked(
-                "def f() -> A {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>\n      let y = g\n      k y\n  }\n}\n"
+                "def f() -> A = {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>\n      let y = g\n      k y\n  }\n};\n"
             ),
-            "def f() -> A {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>⟪{⟫\n      let y = g⟪;⟫\n      k y⟪}⟫\n  }\n}\n"
+            "def f() -> A = {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>⟪{⟫\n      let y = g⟪;⟫\n      k y⟪}⟫\n  }\n};\n"
         );
         // The last arm's block closes with the arms, and the statement that
         // binds the match takes its separator.
         assert_eq!(
             marked(
-                "def f(x : A) -> A {\n  let n = match x where\n    | a =>\n      let y = x\n      y\n  n\n}\n"
+                "def f(x : A) -> A = {\n  let n = match x where\n    | a =>\n      let y = x\n      y\n  n\n};\n"
             ),
-            "def f(x : A) -> A {\n  let n = match x ⟪where→{⟫\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫⟪}⟫⟪;⟫\n  n\n}\n"
+            "def f(x : A) -> A = {\n  let n = match x ⟪where→{⟫\n    | a =>⟪{⟫\n      let y = x⟪;⟫\n      y⟪}⟫⟪}⟫⟪;⟫\n  n\n};\n"
         );
         // A line at the arm's column opens nothing, nor a line that starts
         // with an explicit `{`, nor a `=>` inside a bracket.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x {\n    | a =>\n    | b => x\n  }\n}\n"),
-            "def f(x : A) -> A {\n  match x {\n    | a =>\n    | b => x\n  }\n}\n"
+            marked("def f(x : A) -> A = {\n  match x {\n    | a =>\n    | b => x\n  }\n};\n"),
+            "def f(x : A) -> A = {\n  match x {\n    | a =>\n    | b => x\n  }\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x {\n    | a =>\n      { x }\n  }\n}\n"),
-            "def f(x : A) -> A {\n  match x {\n    | a =>\n      { x }\n  }\n}\n"
+            marked("def f(x : A) -> A = {\n  match x {\n    | a =>\n      { x }\n  }\n};\n"),
+            "def f(x : A) -> A = {\n  match x {\n    | a =>\n      { x }\n  }\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"),
-            "def f(x : A) -> A {\n  &{ .get =>\n    x }\n}\n"
+            marked("def f(x : A) -> A = {\n  &{ .get =>\n    x }\n};\n"),
+            "def f(x : A) -> A = {\n  &{ .get =>\n    x }\n};\n"
         );
     }
 
@@ -2103,12 +2103,12 @@ mod tests
         // `match` head, and a bare `offer` head opens its arms with an open
         // of no width, which the lowering refuses.
         assert_eq!(
-            marked("def f() -> A {\n  offer c where\n    | l => x\n    | r => y\n}\n"),
-            "def f() -> A {\n  offer c ⟪where→{⟫\n    | l => x\n    | r => y⟪}⟫\n}\n"
+            marked("def f() -> A = {\n  offer c where\n    | l => x\n    | r => y\n};\n"),
+            "def f() -> A = {\n  offer c ⟪where→{⟫\n    | l => x\n    | r => y⟪}⟫\n};\n"
         );
         assert_eq!(
-            marked("def f() -> A {\n  offer c\n    | l => x\n}\n"),
-            "def f() -> A {\n  offer c⟪{⟫\n    | l => x⟪}⟫\n}\n"
+            marked("def f() -> A = {\n  offer c\n    | l => x\n};\n"),
+            "def f() -> A = {\n  offer c⟪{⟫\n    | l => x⟪}⟫\n};\n"
         );
         // The `where` of `rec` keeps its tile, and its block holds
         // declarations that end as the source's do, the last one before the
@@ -2134,9 +2134,9 @@ mod tests
         // that holds it.
         assert_eq!(
             marked(
-                "def f(n : Integer) -> Integer {\n  while n > 0 do\n    let m = n\n    g m\n  n\n}\n"
+                "def f(n : Integer) -> Integer = {\n  while n > 0 do\n    let m = n\n    g m\n  n\n};\n"
             ),
-            "def f(n : Integer) -> Integer {\n  while n > 0 ⟪do→{⟫\n    let m = n⟪;⟫\n    g m⟪}⟫⟪;⟫\n  n\n}\n"
+            "def f(n : Integer) -> Integer = {\n  while n > 0 ⟪do→{⟫\n    let m = n⟪;⟫\n    g m⟪}⟫⟪;⟫\n  n\n};\n"
         );
         assert_eq!(
             marked(
@@ -2159,17 +2159,17 @@ mod tests
         );
         // A line no further right than the head's closes the block at once.
         assert_eq!(
-            marked("def f() -> A {\n  loop do\n  x\n}\n"),
-            "def f() -> A {\n  loop ⟪do→{⟫⟪}⟫⟪;⟫\n  x\n}\n"
+            marked("def f() -> A = {\n  loop do\n  x\n};\n"),
+            "def f() -> A = {\n  loop ⟪do→{⟫⟪}⟫⟪;⟫\n  x\n};\n"
         );
         // A `do` inside a line, or inside a bracket, stays a word.
         assert_eq!(
-            marked("def f(n : Integer) -> Integer {\n  while n > 0 do g n\n  n\n}\n"),
-            "def f(n : Integer) -> Integer {\n  while n > 0 do g n⟪;⟫\n  n\n}\n"
+            marked("def f(n : Integer) -> Integer = {\n  while n > 0 do g n\n  n\n};\n"),
+            "def f(n : Integer) -> Integer = {\n  while n > 0 do g n⟪;⟫\n  n\n};\n"
         );
         assert_eq!(
-            marked("def f() -> A {\n  g (thunk do\n    x)\n  y\n}\n"),
-            "def f() -> A {\n  g (thunk do\n    x)⟪;⟫\n  y\n}\n"
+            marked("def f() -> A = {\n  g (thunk do\n    x)\n  y\n};\n"),
+            "def f() -> A = {\n  g (thunk do\n    x)⟪;⟫\n  y\n};\n"
         );
     }
 
@@ -2282,8 +2282,8 @@ mod tests
         // A line that starts with `else` after a block in braces continues
         // the conditional too.
         assert_eq!(
-            marked("def f(b : Bool) -> Integer {\n  if b { 1 }\n  else { 2 }\n}\n"),
-            "def f(b : Bool) -> Integer {\n  if b { 1 }\n  else { 2 }\n}\n"
+            marked("def f(b : Bool) -> Integer = {\n  if b { 1 }\n  else { 2 }\n};\n"),
+            "def f(b : Bool) -> Integer = {\n  if b { 1 }\n  else { 2 }\n};\n"
         );
         // A `then` inside a line, or after no `if`, stays a word.
         assert_eq!(
@@ -2330,8 +2330,8 @@ mod tests
             "def f(x : A) -> A = { x }⟪;⟫\ndef g(x : A) -> A { x }\ndef h(x : A) -> A = x;\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A {\n  let y = { x }\n  y\n}\n"),
-            "def f(x : A) -> A {\n  let y = { x }⟪;⟫\n  y\n}\n"
+            marked("def f(x : A) -> A = {\n  let y = { x }\n  y\n};\n"),
+            "def f(x : A) -> A = {\n  let y = { x }⟪;⟫\n  y\n};\n"
         );
         // The end of the source ends nothing, so a source cut short stays
         // open where it stops.

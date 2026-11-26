@@ -1,2 +1,2 @@
-def f(p : Integer) -> -F Integer {
+def f(p : Integer) -> -F Integer = {
   return 

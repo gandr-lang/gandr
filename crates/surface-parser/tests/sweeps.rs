@@ -476,12 +476,12 @@ fn tables_agree(sweep: &Sweep) -> Result<(), Failure>
     /// The strays the molder's cost was measured on, each a one-token edit of
     /// a corpus-shaped definition.
     const STRAYS: [&str; 6] = [
-        "def f(x : In[: Nat]) -> Nat { pure x }",
-        "def g(b : Unit) -> Unit { let c = not b); become not(c) }",
+        "def f(x : In[: Nat]) -> Nat = pure x;",
+        "def g(b : Unit) -> Unit = { let c = not b); become not(c) };",
         include_str!("sweeps/unformatted/strays-1.gandr"),
         include_str!("sweeps/unformatted/strays-2.gandr"),
         "def h(x : List[Nat) -> Nat { pure x }",
-        "def k(a : Unit) -> Unit { run r go a; pure r }",
+        "def k(a : Unit) -> Unit = { run r go a; pure r };",
     ];
 
     let pbg = built();

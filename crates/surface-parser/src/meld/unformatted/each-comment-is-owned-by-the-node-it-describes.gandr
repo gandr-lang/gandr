@@ -6,9 +6,9 @@ def x = 1; // trail
 // first
 // second
 def w = 2;
-def f(x : Integer) -> -F Integer {
+def f(x : Integer) -> -F Integer = {
   // above
   return x
-}
+};
 def y = #[ /* empty */ ];
 def z = 1 /* one */;

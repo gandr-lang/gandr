@@ -13260,7 +13260,7 @@ mod tests
         let sources = [
             "def f = g a b c d e f h;",
             "def f = g (h a b) #[c, d] e;",
-            "def f(x : Integer) -> -F Integer { return (x * x + 1) }",
+            "def f(x : Integer) -> -F Integer = return (x * x + 1);",
             "data Tree(a) where { Leaf, Node(l : Tree(a), v : a, r : Tree(a)) }",
             "def s = \"a ${ f \"${x}\" } b\";",
             "match v { Inl(x) => x, Inr(y) => y }",
@@ -13524,12 +13524,12 @@ mod tests
         };
         assert_eq!(
             vec!["access c as v { abort v } unwind { pure *{} }".to_owned()],
-            accesses("def g() -> Integer { access c as v { abort v } unwind { pure *{} } }")?,
+            accesses("def g() -> Integer = access c as v { abort v } unwind { pure *{} };")?,
             "the `unwind` clause continues the access after its block"
         );
         assert_eq!(
             vec!["access c as v { resume v 1 }".to_owned()],
-            accesses("def g() -> Integer { access c as v { resume v 1 }; pure c }")?,
+            accesses("def g() -> Integer = { access c as v { resume v 1 }; pure c };")?,
             "a `;` after the block closes the access"
         );
         Ok(())
@@ -13714,7 +13714,7 @@ mod tests
             ("/// a".to_owned(), "def x = 1".to_owned()),
             (
                 "//! inner".to_owned(),
-                "def f(x : Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
+                "{\n  //! inner\n  return x\n}".to_owned()
             ),
         ]);
         Ok(())

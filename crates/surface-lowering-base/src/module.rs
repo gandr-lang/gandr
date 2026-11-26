@@ -15980,7 +15980,7 @@ mod tests
             refusals(doubled),
             [LoweringRefusal::MalformedForm {
                 span: at(doubled, "}}", 1),
-                form: FormName::DECLARATION,
+                form: FormName::BLOCK,
                 fault: FormFault::ExtraClose(ClosingClass::Brace),
             }],
             "the stray is refused at the second `}}` of the access line"
@@ -15993,10 +15993,10 @@ mod tests
             refusals(nested),
             [LoweringRefusal::MalformedForm {
                 span: at(nested, "}}", 1),
-                form: FormName::MODULE,
+                form: FormName::BLOCK,
                 fault: FormFault::ExtraClose(ClosingClass::Brace),
             }],
-            "the module's closer stands where the definition's belonged"
+            "the stray stands in the block after `=`, at the second `}}` of its line"
         );
 
         let settled = include_str!(

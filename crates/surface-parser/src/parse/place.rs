@@ -2670,7 +2670,7 @@ mod tests
                 None,
                 ClosingClass::Brace,
                 "a block's `}` left out at the end, which the layout places, stays where the \
-                 melder minted it",
+                 melder minted it, and the definition after `=` owes its `;` too",
             ),
         ] {
             let parsed = parse(&pbg, SourceText::from(source)).unwrap();
@@ -2709,9 +2709,20 @@ mod tests
                 source,
                 "{why}: the tree reconstructs the source"
             );
+            // The block after `=` owes its `}`, and its definition its `;`.
+            let owed = if core::ptr::eq(source, open) {
+                2_usize
+            }
+            else {
+                1_usize
+            };
             assert!(
-                matches!(parsed.obligations(), [repair] if repair.class == Oblig::MissingTile),
-                "{why}: one repair stands: {:?}",
+                parsed.obligations().len() == owed
+                    && parsed
+                        .obligations()
+                        .iter()
+                        .all(|repair| repair.class == Oblig::MissingTile),
+                "{why}: {owed} repairs stand: {:?}",
                 parsed.obligations()
             );
         }

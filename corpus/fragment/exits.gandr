@@ -291,8 +291,8 @@ def joined_elided(n : Nat) -> -F Nat =
     | Succ(p) => pure p
   m
 
-@[refuses("MalformedForm")]
-def rec stream(n : Nat) -> Stream Nat {
+@[refuses("UnresolvedTypeHead")]
+def rec stream(n : Nat) -> Stream Nat = &{
   .head => return n,
   .tail => stream[>] (Succ n)
-}
+};

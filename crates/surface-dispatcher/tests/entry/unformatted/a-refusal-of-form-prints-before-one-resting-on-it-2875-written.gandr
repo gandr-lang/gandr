@@ -1,5 +1,5 @@
 def f() -> Integer = return g ();
 
-de g() -> Integer {
+de g() -> Integer = {
   return 1
-}
+};

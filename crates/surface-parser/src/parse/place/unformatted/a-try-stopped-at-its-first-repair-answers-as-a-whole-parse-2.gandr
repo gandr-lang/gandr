@@ -1,3 +1,3 @@
-def once(n : Integer)) -> -F Integer {
+def once(n : Integer)) -> -F Integer = {
   return n
-}
+};

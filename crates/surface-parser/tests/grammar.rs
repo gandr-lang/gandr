@@ -51,20 +51,20 @@ fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Failure>
 fn recursion_marker_instantiations_parse_cleanly() -> Result<(), Failure>
 {
     let cases = [
-        ("descending recursion marker", "def rec f() { f[<] () }"),
-        ("productive recursion marker", "def rec f() { f[>] () }"),
+        ("descending recursion marker", "def rec f() = f[<] ();"),
+        ("productive recursion marker", "def rec f() = f[>] ();"),
         (
             "productive copattern marker",
-            "def rec n() { .head => 0, .tail => n[>] () }",
+            "def rec n() = &{ .head => 0, .tail => n[>] () };",
         ),
-        ("combined recursion markers", "def rec f() { f[<, >] () }"),
-        ("reserved named measure", "def rec f() { f[.n <] () }"),
-        ("reserved explicit resident", "def rec f() { f[.n = 1] () }"),
-        ("punned explicit resident", "def rec f() { f[.n] () }"),
-        ("reserved explicit size", "def rec f() { f[.size = 1] () }"),
-        ("reserved cost bound", "def rec f() { f[.cost = 1] () }"),
-        ("reserved tail resident", "def rec f() { f[tail] () }"),
-        ("qualified outer reference", "def rec f() { (outer.f) () }"),
+        ("combined recursion markers", "def rec f() = f[<, >] ();"),
+        ("reserved named measure", "def rec f() = f[.n <] ();"),
+        ("reserved explicit resident", "def rec f() = f[.n = 1] ();"),
+        ("punned explicit resident", "def rec f() = f[.n] ();"),
+        ("reserved explicit size", "def rec f() = f[.size = 1] ();"),
+        ("reserved cost bound", "def rec f() = f[.cost = 1] ();"),
+        ("reserved tail resident", "def rec f() = f[tail] ();"),
+        ("qualified outer reference", "def rec f() = (outer.f) ();"),
     ];
     for (case, source) in cases {
         assert_parses_clean(CaseName(case), SourceText::from(source))?;
@@ -106,7 +106,7 @@ fn every_universe_spelling_reads_cleanly() -> Result<(), Failure>
         ("computation sort", "def f : Type[-];"),
         ("value sort and level", "def f : Type[+, 1];"),
         ("computation sort and level", "def f : Type[-, 0];"),
-        ("bare binder", "def f(a : Type, x : a) -> -F a { return x }"),
+        ("bare binder", "def f(a : Type, x : a) -> -F a = return x;"),
         ("under an arrow", "def f : +U (Type[+, 1] -> -F Type);"),
     ];
     for (case, source) in cases {
@@ -142,11 +142,11 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Failure>
         ("alias in a product", "def f : (A -> B) * (*{C, D} -> E);"),
         (
             "alias in a binder",
-            "def f(k : A -> B) -> -F B { become force k }",
+            "def f(k : A -> B) -> -F B = become force k;",
         ),
         (
             "case arm beside the alias",
-            "def f : A -> B; def g(c : C) -> -F Integer { match c { | Red => pure 0 | _ => pure 1 } }",
+            "def f : A -> B; def g(c : C) -> -F Integer = match c { | Red => pure 0 | _ => pure 1 };",
         ),
         (
             "telescope as a call's argument",
@@ -218,7 +218,7 @@ fn juxtaposition_applies_between_operands_4853() -> Result<(), Failure>
         ("def f = g x.y;", 1),
         ("def f = - g x;", 1),
         ("def f = g x + h y;", 2),
-        ("def f() -> Integer { if c { a } else { b } x }", 0),
+        ("def f() -> Integer = if c { a } else { b } x;", 0),
         ("def f = g *{} x;", 2),
         ("def f = g +{.l = a} *{.x = b} y;", 3),
         ("def f = g &{ .l => a } x;", 2),
@@ -427,7 +427,7 @@ fn a_path_type_reads_its_endpoints_juxtaposed_5750() -> Result<(), Failure>
         ("def x : Path[.A = Integer] a (b);", &[
             Expression, Expression,
         ]),
-        ("def f(p : Path[.A = Type] a b) -> Integer { 0 }", &[
+        ("def f(p : Path[.A = Type] a b) -> Integer = 0;", &[
             Type, Type,
         ]),
         // The inner path's carrier is no universe, so its own endpoints stay
@@ -496,7 +496,7 @@ fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Failure>
             2_usize,
         ),
         (
-            "def f() -> Integer { pack Site at Model Site }",
+            "def f() -> Integer = pack Site at Model Site;",
             "pack_model_expression",
             "Model Site",
             1,
@@ -776,12 +776,12 @@ fn a_type_form_s_last_hole_takes_a_juxtaposed_application_6130() -> Result<(), F
             "-F [Partial] Maybe Integer",
         ),
         (
-            "def f() -> [Partial] Maybe Integer { pure 1 }",
+            "def f() -> [Partial] Maybe Integer = pure 1;",
             "f_type.result",
             "[Partial] Maybe Integer",
         ),
         (
-            "def again(T : Type -> Type[-], m : +U T Integer) -> T Integer { force m }",
+            "def again(T : Type -> Type[-], m : +U T Integer) -> T Integer = force m;",
             "u_type",
             "+U T Integer",
         ),

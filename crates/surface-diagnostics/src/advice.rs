@@ -483,7 +483,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         },
         LoweringRefusal::ImplicitTelescope { .. } => String::from(
             "write the telescope before a function's parameters, as in `def f[a : Type]() -> \
-             Integer { 1 }`",
+             Integer = 1;`",
         ),
         LoweringRefusal::ImplicitUnsupplied { .. }
         | LoweringRefusal::ImplicitInParentheses { .. } => {

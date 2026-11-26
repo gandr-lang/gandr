@@ -1810,7 +1810,7 @@ fn a_signature_s_refusal_spells_its_binders_by_name_4043()
     const BOUNDS: &str = include_str!("diagnostics/fixtures/bounds-1.gandr");
     for (declaration, hypotheses) in [
         (
-            "def atZero(k : Nat, f : (x : Fin(k)) -> Fin(x)) -> Nat { Zero }\n",
+            "def atZero(k : Nat, f : (x : Fin(k)) -> Fin(x)) -> Nat = Zero;\n",
             &["k : Nat", "x : Fin k"][..],
         ),
         (

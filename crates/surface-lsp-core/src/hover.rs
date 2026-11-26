@@ -2479,12 +2479,12 @@ mod tests
             ),
             (
                 "a function's name",
-                "def $0f(x : Integer) -> -F Integer { return x }\n",
+                "def $0f(x : Integer) -> -F Integer = return x;\n",
                 Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
                 "the name of a function the lowering refused",
-                "def $0f(x : Integer) -> -F Integer { let y = return x ; return y }\n",
+                "def $0f(x : Integer) -> -F Integer = { let y = return x ; return y };\n",
                 Ok(String::from(
                     "```gandr\nf\n```\n\nrefused: no path reaches this code: every path \
                      through the statement before it exits",
@@ -3016,7 +3016,7 @@ mod tests
             format!("<span style=\"color:var(--vscode-gandr-hover-{role});\">{text}</span>")
         };
         let (text, at) = marker(SourceText::from(
-            "def $0f(x : Integer) -> -F Integer { return x }\n",
+            "def $0f(x : Integer) -> -F Integer = return x;\n",
         ));
         assert_eq!(
             styled(SourceText::from(text.as_str()), at, html),
@@ -3432,14 +3432,15 @@ mod tests
     }
 
     /// #5196: a hover answers alike in two spellings of one source. A tile of
-    /// a refused layout body answers as the same tile of the braced body, and
-    /// a rule's pattern variable in a spine answers as in the call form.
+    /// a refused layout body answers as the same tile of the body in braces
+    /// after `=`, and a rule's pattern variable in a spine answers as in the
+    /// call form.
     #[test]
     fn a_layout_body_and_a_spine_hover_as_their_braced_and_call_forms_5196()
     {
         let layout = include_str!("hover/fixtures/refused-call.gandr");
         let braced = layout
-            .replace("-F Nat =\n", "-F Nat {\n")
+            .replace("-F Nat =\n", "-F Nat = {\n")
             .replace("Succ x x\n", include_str!("hover/unformatted/a-layout-body-and-a-spine-hover-as-their-braced-and-call-forms-5196.gandr"));
         for (tile, (line, character)) in [("a constructor's use", (4, 9)), ("a keyword", (4, 2))] {
             let at = |text: &str| shown(SourceText::from(text), (line.into(), character.into()));

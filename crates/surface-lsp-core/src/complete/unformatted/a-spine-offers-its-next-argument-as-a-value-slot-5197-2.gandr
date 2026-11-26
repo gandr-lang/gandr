@@ -1,2 +1,2 @@
-def g(c : Bool) -> -F Integer {
+def g(c : Bool) -> -F Integer = {
   if c { return 1 } else { return 2 } 

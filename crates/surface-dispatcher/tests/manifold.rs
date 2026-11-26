@@ -569,7 +569,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
             Path::new(name),
             Text(&format!(
                 "pub module Secrets : Model(Secrets) with sort K = Secret.T where {{\n  def \
-                 secret(name : String) -> Secret.T {{ Secret.seal \"{text}\" }}\n}}\n"
+                 secret(name : String) -> Secret.T = Secret.seal \"{text}\";\n}}\n"
             )),
         )
     };

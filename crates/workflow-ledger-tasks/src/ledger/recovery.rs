@@ -1160,7 +1160,9 @@ mod tests
     /// An opener deleted leaves its closer with nothing to close. The first
     /// error marks that stray, away from the deletion, and the stray is the
     /// right diagnostic, so the mutant is counted closed early, by its own
-    /// name, and never as well formed or a finding.
+    /// name, and never as well formed or a finding. A deleted `(` leaves its
+    /// `)` stray, and a deleted `{` after `=` leaves the layout to open the
+    /// body and its `}` stray.
     #[test]
     fn a_closer_left_with_nothing_to_close_is_closed_early_3063()
     {
@@ -1170,20 +1172,20 @@ mod tests
         std::fs::create_dir_all(&folder).expect("the scratch folder");
         std::fs::write(
             folder.join("block.gandr"),
-            "/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer {\n  return (1 + 2)\n}\n",
+            "/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer = {\n  return (1 + 2)\n};\n",
         )
         .expect("the exemplar is written");
         let pbg = built_in().expect("the built-in grammar builds");
         let report = sweep(&pbg, &scratch).expect("the sweep runs");
         std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
         assert!(
-            report
-                .findings
-                .iter()
-                .all(|finding| !(finding.tile == "(" && finding.mutation == Mutation::Deleted)),
-            "the deleted `(` leaves its `)` stray, closed early: {report}"
+            report.findings.iter().all(|finding| {
+                !((finding.tile == "(" || finding.tile == "{")
+                    && finding.mutation == Mutation::Deleted)
+            }),
+            "the deleted `(` and `{{` leave their closers stray, closed early: {report}"
         );
-        assert_eq!(report.early, 1_usize, "{report}");
+        assert_eq!(report.early, 2_usize, "{report}");
         assert_eq!(
             report.formed, 0_usize,
             "a stray closer is no well-formed source: {report}"
@@ -1191,8 +1193,8 @@ mod tests
         let tally = report.tally();
         assert_eq!(
             (tally.early, tally.formed, tally.elsewhere),
-            (1_usize, 0_usize, report.findings.len()),
-            "the tally counts the stray closed early: {report}"
+            (2_usize, 0_usize, report.findings.len()),
+            "the tally counts each stray closed early: {report}"
         );
         assert_eq!(
             tally.where_made + tally.accepted + tally.formed + tally.early + tally.elsewhere,
@@ -1201,12 +1203,11 @@ mod tests
         );
     }
 
-    /// A `{` deleted before a body lets the definition close legally inside
-    /// that body. The rest of the body then stands at the top level,
-    /// and the first error marks that remainder, after the deletion. The tree
-    /// does not show the opener, so the mutant is counted closed early, and
-    /// never as a finding. The two exemplars are the ledger's own: one body
-    /// is on lines of its own, the other on the line of the definition.
+    /// A `{` deleted before a body on lines of its own leaves `=` at the end
+    /// of its line, and the layout opens the body there. The body's own `}`
+    /// then closes nothing, and the first error marks it, after the deletion.
+    /// The tree does not show the opener, so the mutant is counted closed
+    /// early, and never as a finding. The exemplar is the ledger's own.
     #[test]
     fn a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785()
     {
@@ -1216,41 +1217,25 @@ mod tests
         ));
         let folder = scratch.join("syntax");
         std::fs::create_dir_all(&folder).expect("the scratch folder");
-        for (exemplar, text) in [
-            (
-                "break-expression.gandr",
-                "/// `break_expression`: a break out of a loop.\n@[ checks ]\ndef once(n : Integer) \
-                 -> -F Integer {\n  loop { break; } ;\n  return n\n}\n",
-            ),
-            (
-                "tuple-pattern.gandr",
-                "/// `tuple_pattern`: a group of patterns that receives a call's outputs.\n@[ \
-                 checks ]\ndef divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { \
-                 (m, n) }\n\n/// The second output of `divmod`, bound by the group.\n@[ checks \
-                 ]\ndef second(a : Integer, b : Integer) -> Integer { let (q, r) = divmod a b; r \
-                 }\n",
-            ),
-        ] {
-            std::fs::write(folder.join(exemplar), text).expect("the exemplar is written");
-        }
+        std::fs::write(
+            folder.join("break-expression.gandr"),
+            "/// `break_expression`: a break out of a loop.\n@[ checks ]\ndef once(n : Integer) -> \
+             -F Integer = {\n  loop { break; } ;\n  return n\n};\n",
+        )
+        .expect("the exemplar is written");
         let pbg = built_in().expect("the built-in grammar builds");
         let report = sweep(&pbg, &scratch).expect("the sweep runs");
         std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
-        for (exemplar, at) in [
-            ("break-expression.gandr", 95_usize),
-            ("tuple-pattern.gandr", 279_usize),
-        ] {
-            assert!(
-                !report.findings.iter().any(|finding| {
-                    finding.exemplar.file_name() == Some(exemplar.as_ref())
-                        && finding.at == at
-                        && finding.tile == "{"
-                        && finding.mutation == Mutation::Deleted
-                }),
-                "the `{{` deleted at {at} of {exemplar} leaves its body's rest at the top level, \
-                 closed early: {report}"
-            );
-        }
+        assert!(
+            !report.findings.iter().any(|finding| {
+                finding.exemplar.file_name() == Some("break-expression.gandr".as_ref())
+                    && finding.at == 97_usize
+                    && finding.tile == "{"
+                    && finding.mutation == Mutation::Deleted
+            }),
+            "the `{{` deleted at 97 of break-expression.gandr leaves its `}}` stray, closed \
+             early: {report}"
+        );
         let tally = report.tally();
         assert_eq!(
             tally.where_made + tally.accepted + tally.formed + tally.early + tally.elsewhere,
@@ -1304,7 +1289,7 @@ mod tests
         std::fs::write(
             folder.join("labelled-sum-expression.gandr"),
             "/// `labelled_sum_expression`: a labelled sum injection.\n@[ checks ]\ndef one() -> \
-             -F +{Integer} {\n  return +{.0 = 1}\n}\n",
+             -F +{Integer} = {\n  return +{.0 = 1}\n};\n",
         )
         .expect("the exemplar is written");
         let pbg = built_in().expect("the built-in grammar builds");

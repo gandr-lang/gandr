@@ -1,2 +1,2 @@
 @[doc("d")]
-def tagged[](x : Type) -> Type { pure x }
+def tagged[](x : Type) -> Type = pure x;

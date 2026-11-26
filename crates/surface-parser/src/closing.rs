@@ -1193,7 +1193,7 @@ mod tests
             ]),
             ("def f = #[1, 2", LeadingSlot::Occupied, vec![tile("]")]),
             (
-                "def f(x : Nat) -> -F Nat { let y =",
+                "def f(x : Nat) -> -F Nat = { let y =",
                 LeadingSlot::Empty,
                 vec![hole(Sort::Expression), tile(";"), tile("}")],
             ),
@@ -1281,16 +1281,15 @@ mod tests
                 ": <Type@:> )",
             ]),
             // A parameter list's parenthesis faces only tiles, so its pair is
-            // never filled; a definition closes with a `=` body as with a
-            // block.
+            // never filled; a definition closes with its `=` body.
             ("def f(x : Integer", LeadingSlot::Occupied, 4, vec![
-                ") { <Expression@{> }",
-                ", ) { <Expression@{> }",
                 ") = <Expression@=> ;",
-                ") -> <Type@->> { <Expression@{> }",
+                ", ) = <Expression@=> ;",
+                ") -> <Type@->> = <Expression@=> ;",
+                ") ⊸ <Type@⊸> = <Expression@=> ;",
             ]),
             (
-                "def f(x : Integer) -> -F Integer {",
+                "def f(x : Integer) -> -F Integer = {",
                 LeadingSlot::Empty,
                 3,
                 vec![
@@ -1304,7 +1303,7 @@ mod tests
             // opens with its bar, is a closing of the arm block's reading of
             // the same `{`.
             (
-                "def f(x : Nat) -> -F Nat { match x {",
+                "def f(x : Nat) -> -F Nat = { match x {",
                 LeadingSlot::Empty,
                 2,
                 vec!["}", "arm_bar <Pattern@arm_bar> => <Expression@=>> }"],
