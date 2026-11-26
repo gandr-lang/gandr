@@ -26,15 +26,15 @@ use crate::attribute::RegisteredAttribute;
 /// The gate of each registered attribute, in the order of the registry.
 ///
 /// # Specification
-/// - ensures: the names are the names of the attribute registry, in its
-///   order, each one time.
+/// - ensures: the names are the names of the attribute registry, in its order,
+///   each one time.
 /// - provides: the one place where an attribute gets its language feature.
 /// - executable: none — the specification attribute does not support constant
 ///   items; the test of this module holds the names.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the names of the table are compared with the names of
-///   the registry, and the attributes of the first twin are in the core.
+/// - hypothesis: L3 — the names of the table are compared with the names of the
+///   registry, and the attributes of the first twin are in the core.
 /// - witness: `gate::tests::each_attribute_has_its_line_in_the_order_of_the_registry`
 pub const ATTRIBUTE_GATES: [(&str, RuleGate); 26_usize] = [
     ("checks", RuleGate::Core(CoreReason::Record)),
@@ -75,10 +75,10 @@ pub const ATTRIBUTE_GATES: [(&str, RuleGate); 26_usize] = [
 ///   items; the test of this module holds the cover.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each row of the builtin table is looked up, each line
-///   is counted, and the integer widths of the first twin are in the core.
+/// - hypothesis: L3 — each row of the builtin table is looked up, each line is
+///   counted, and the integer widths of the first twin are in the core.
 /// - witness: `gate::tests::each_builtin_row_has_one_line_and_each_line_a_row`
-pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 58_usize] = [
+pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 56_usize] = [
     (Kind::Native, "add", RuleGate::Feature("native-primitives")),
     (Kind::Native, "and", RuleGate::Feature("native-primitives")),
     (Kind::Native, "bool", RuleGate::Feature("native-primitives")),
@@ -130,13 +130,27 @@ pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 58_usize] = [
     (Kind::Former, "dialogue", RuleGate::Feature("traces")),
     (Kind::Former, "list", RuleGate::Feature("native-lists")),
     (Kind::Former, "prefix", RuleGate::Feature("run-prefixes")),
-    (Kind::Former, "returner", RuleGate::Feature("call-by-push-value")),
     (Kind::Former, "run", RuleGate::Feature("run-prefixes")),
-    (Kind::Former, "thunk", RuleGate::Feature("thunks-and-force")),
-    (Kind::Role, "irArgs", RuleGate::Feature("induction-recursion")),
-    (Kind::Role, "irDecode", RuleGate::Feature("induction-recursion")),
-    (Kind::Role, "irPair", RuleGate::Feature("induction-recursion")),
-    (Kind::Role, "irSignature", RuleGate::Feature("induction-recursion")),
+    (
+        Kind::Role,
+        "irArgs",
+        RuleGate::Feature("induction-recursion"),
+    ),
+    (
+        Kind::Role,
+        "irDecode",
+        RuleGate::Feature("induction-recursion"),
+    ),
+    (
+        Kind::Role,
+        "irPair",
+        RuleGate::Feature("induction-recursion"),
+    ),
+    (
+        Kind::Role,
+        "irSignature",
+        RuleGate::Feature("induction-recursion"),
+    ),
 ];
 
 /// The gate of the registered attribute `attribute`: tier zero with its
@@ -175,7 +189,9 @@ pub fn builtin_word(row: Row) -> &'static str
 {
     let key = row.key().0;
     match row.kind() {
-        Kind::Native => key.split_once('.').map_or(key, |(namespace, _member)| namespace),
+        Kind::Native => key
+            .split_once('.')
+            .map_or(key, |(namespace, _member)| namespace),
         Kind::Atom | Kind::Former | Kind::Role => key,
     }
 }
@@ -185,9 +201,9 @@ pub fn builtin_word(row: Row) -> &'static str
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the gate of the line of [`BUILTIN_GATES`] with the kind of
-///   `row` and its word ([`builtin_word`]), and nothing for a row that the
-///   table does not hold.
+/// - ensures: the gate of the line of [`BUILTIN_GATES`] with the kind of `row`
+///   and its word ([`builtin_word`]), and nothing for a row that the table does
+///   not hold.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -211,7 +227,6 @@ mod tests
     use alloc::vec::Vec;
 
     use gandr_core_term::builtin::Key;
-    use gandr_core_term::builtin::Kind;
     use gandr_core_term::builtin::Row;
     use gandr_surface_grammar::CoreReason;
     use gandr_surface_grammar::RuleGate;
@@ -257,8 +272,7 @@ mod tests
     #[test]
     fn each_builtin_row_has_one_line_and_each_line_a_row()
     {
-        let mut used: Vec<usize> = Vec::new();
-        used.resize(BUILTIN_GATES.len(), 0_usize);
+        let mut used: Vec<usize> = alloc::vec![0_usize; BUILTIN_GATES.len()];
         for row in Row::all() {
             let (kind, word) = (row.kind(), builtin_word(row));
             let lines: Vec<usize> = BUILTIN_GATES
