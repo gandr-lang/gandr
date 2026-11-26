@@ -165,12 +165,11 @@ impl FeatureCensus
     ///   reaches it. Each source is read, laid out after the prelude and the
     ///   sources that it imports, parsed and lowered. Its step holds the
     ///   declaration of the features that the source itself uses. A path that
-    ///   cannot be listed or read, that names no source, that fails to parse
-    ///   or lower, or whose source the lowering refuses whole is a
+    ///   cannot be listed or read, that names no source, that fails to parse or
+    ///   lower, or whose source the lowering refuses whole is a
     ///   [`FeatureStep::Fault`]. Exhaustion is stable.
     /// - provides: the pass that `gandr features` renders.
-    /// - fails: never; each fault is a step, and the census continues past
-    ///   it.
+    /// - fails: never; each fault is a step, and the census continues past it.
     /// - panics: none.
     /// - intension: holds one laid-out source at a time.
     ///

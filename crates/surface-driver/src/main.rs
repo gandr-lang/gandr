@@ -366,8 +366,6 @@ use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::AuthorityError;
 use gandr_surface_dispatcher::Census;
-use gandr_surface_dispatcher::FeatureCensus;
-use gandr_surface_dispatcher::FeatureStep;
 use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::Class;
 use gandr_surface_dispatcher::Composed;
@@ -375,6 +373,8 @@ use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Export;
 use gandr_surface_dispatcher::Exporting;
+use gandr_surface_dispatcher::FeatureCensus;
+use gandr_surface_dispatcher::FeatureStep;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Fusions;
@@ -4467,10 +4467,10 @@ fn kept(
 /// - requires: nothing.
 /// - ensures: each source that the census reads is `<path>: <declaration>` on
 ///   standard output, the declaration rendered as the dispatcher's
-///   `Declaration` renders it, sources in walk order. Each path that the
-///   census cannot read is `gandr: <path>: <fault>` on standard error, and the
-///   census continues past it. The exit is two when a path faulted or a write
-///   failed, and zero otherwise.
+///   `Declaration` renders it, sources in walk order. Each path that the census
+///   cannot read is `gandr: <path>: <fault>` on standard error, and the census
+///   continues past it. The exit is two when a path faulted or a write failed,
+///   and zero otherwise.
 /// - provides: `gandr features`.
 /// - fails: never; each failure is an exit code.
 /// - panics: none.
@@ -4479,8 +4479,7 @@ fn kept(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source of the first twin, a source that uses one
-///   feature and a missing path observe each line on both streams and the
-///   exit.
+///   feature and a missing path observe each line on both streams and the exit.
 /// - witness: `tests::cli::features_prints_the_declaration_of_each_source`
 ///
 /// # Cost

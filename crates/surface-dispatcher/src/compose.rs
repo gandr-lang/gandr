@@ -2248,9 +2248,9 @@ pub enum SourceFeatures<'source>
 /// - requires: `grammar` is the checked grammar; `source` is the text that
 ///   `unit` lays out.
 /// - ensures: the features of the last source of `unit`, as
-///   [`gandr_surface_lowering::gate::used_features`] answers them over the
-///   tree and the attributes of the lowering; or the refusal of the unit as a
-///   whole. `lowerings` advances as [`lower_unit_source`] advances it.
+///   [`gandr_surface_lowering::gate::used_features`] answers them over the tree
+///   and the attributes of the lowering; or the refusal of the unit as a whole.
+///   `lowerings` advances as [`lower_unit_source`] advances it.
 /// - provides: the read of `gandr features` for one source.
 /// - fails: as [`lower_unit_source`].
 /// - panics: none.
