@@ -12268,17 +12268,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   position where a type is quoted or a constructor applied.
     /// - ensures: a spine whose head is a path or bridge type that supplies its
     ///   carrier, `Path[.A = C] a b`, is that type over the spine's operands,
-    ///   as [`Identities::carried_path`] plans it. An application standing
-    ///   where a value is read — an argument of a type-position call — whose
-    ///   head names a constructor of a data family declared strictly earlier
-    ///   stands as that constructor applied to the arguments, as
-    ///   `Native::construct` plans it. Otherwise a head naming a type family,
-    ///   as a component or a member, expands to the family's type over the
-    ///   arguments; a head naming a codata family stands as that family's
-    ///   computation type over the arguments; a head a binder or an earlier
-    ///   declaration answers is read as the static application of that code to
-    ///   the arguments, left to right, or, holding a function where a value is
-    ///   read, as its call; any other head is the type former
+    ///   as [`Identities::carried_path`] plans it. A staged head applied to its
+    ///   element, `View[m] a`, at a view method's result is the integer index
+    ///   of its place. An application standing where a value is read — an
+    ///   argument of a type-position call — whose head names a constructor of a
+    ///   data family declared strictly earlier stands as that constructor
+    ///   applied to the arguments, as `Native::construct` plans it. Otherwise a
+    ///   head naming a type family, as a component or a member, expands to the
+    ///   family's type over the arguments; a head naming a codata family stands
+    ///   as that family's computation type over the arguments; a head a binder
+    ///   or an earlier declaration answers is read as the static application of
+    ///   that code to the arguments, left to right, or, holding a function
+    ///   where a value is read, as its call; any other head is the type former
     ///   [`Self::applied_head`] plans.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
@@ -12305,6 +12306,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     /// - witness: `gandr-surface-lowering::lower::tests::a_forward_member_applied_as_a_type_is_refused_at_its_head`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
     ///
     /// # Cost
     /// - allocation: the plan and the reading it records, durable by the
@@ -12315,7 +12317,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             ret.is_err()
                 || matches!(
                     self.cx().plans.get(site.at.node),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Bundle(_) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Bundle(_) | Plan::Constructor(_) | Plan::Atom(TypeAtom::Integer)))
                 )
         },
     )]
