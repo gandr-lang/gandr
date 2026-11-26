@@ -13,7 +13,7 @@ The values that a program computes from the tree and that the tree does not hold
 
 **What.** `gandr-workflow-outputs` is a workflow library and the `outputs` binary. An output is a value that is a function of the tree and of the tool, such as the recovery record of a corpus source. This crate holds the writer of each kind of output, and a store outside the tree that holds each value by the digest of its tool and its input.
 
-**Why.** A test that compares a value with a file of the tree and the tool that computes the value for a store must write the same value. One writer serves both. A value that the tree does not hold is computed one time for each tool and each source, not one time for each run.
+**Why.** A file of the tree that a program writes conflicts in each pair of changes that move it, and a reader of a change cannot tell an intended difference from the noise. A value in the store conflicts with nothing. The landing compares the values of a change with the values of its base, and refuses a difference that no commit names. A value that the tree does not hold is computed one time for each tool and each input, not one time for each run.
 
 **How.** `Recorder::new` names each mold of a grammar by its rule, its label and its rank. `Recorder::record` parses a source and writes its record: `W`, the count of the obligations, the count of the positions and the fingerprint of the tree, separated by tabs. The fingerprint is the BLAKE3 digest of the significant nodes in preorder, so a change of the grammar that renumbers the molds does not move it.
 

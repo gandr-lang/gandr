@@ -1219,7 +1219,7 @@
     "output": ""
   },
   {
-    "name": "#2756: a change whose parser paths are only the goldens `corpus:goldens` records opens without a surface form",
+    "name": "#2756: a change whose parser paths are only the golden records of the corpus opens without a surface form",
     "input": {
       "branch": "core-9999-corpus",
       "body": "Closes #9999\n\n## Refactoring\n\nno\n",

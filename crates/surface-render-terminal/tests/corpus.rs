@@ -1,15 +1,13 @@
-//! The rendered refusals of the corpus's refusing sources, each pinned as
-//! the text a face prints. The writer of the outputs crate gives each text,
-//! so the goldens and the store of outputs hold one text for a source.
+//! The rendered refusals of the corpus's refusing sources, as the writer of
+//! the outputs crate gives them. The store of outputs holds each text, and a
+//! landing compares it with the text of its base.
 //!
 //! The cases, in a `cfg(test)` module so the crate's lint wall reads them as
 //! test code rather than as shipping code.
 
-use alloc::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
 
-use expect_test::expect_file;
 use gandr_workflow_outputs::refusals::REFUSING;
 use gandr_workflow_outputs::refusals::rendered;
 
@@ -25,76 +23,41 @@ fn repository() -> PathBuf
         .expect("the checkout's root resolves")
 }
 
-/// Every `.txt` file under `dir`, in path order.
-///
-/// # Specification
-/// trivial.
-fn goldens_under(dir: &Path) -> Vec<PathBuf>
-{
-    let mut files = Vec::new();
-    let mut pending = vec![dir.to_owned()];
-    while let Some(next) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&next)
-        else {
-            continue;
-        };
-        for entry in entries {
-            let path = entry.expect("a directory entry reads").path();
-            if path.is_dir() {
-                pending.push(path);
-            }
-            else if path.extension().is_some_and(|held| held == "txt") {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    files
-}
-
-/// Every refusing source's rendered refusals match its golden under
-/// `tests/golden/corpus/`, at its path in the corpus, so the text a reader
-/// is shown for each refusal name is a reviewed public surface. A golden
-/// whose source is gone, or prints nothing, fails the suite;
-/// `UPDATE_EXPECT=1` rewrites the goldens and deletes those.
+/// Every refusing source's rendered refusals are a text that two checkouts
+/// share: it names no path of the checkout, and its last line ends. A text
+/// that named the checkout would differ between two hosts, and the store
+/// would hold a change that no source made.
 #[test]
-fn every_refusing_source_renders_as_its_golden()
+fn every_refusing_source_renders_a_text_that_names_no_checkout()
 {
     let repository = repository();
-    let goldens = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/corpus");
-    let update = std::env::var_os("UPDATE_EXPECT").is_some();
-    let mut expected: BTreeSet<PathBuf> = BTreeSet::new();
     let roots = REFUSING
         .iter()
         .map(|directory| repository.join("corpus").join(directory))
         .collect();
     let refusals = rendered(&repository, roots).expect("every refusing source reads");
-    for (relative, text) in refusals {
-        let golden = goldens.join(relative).with_extension("txt");
-        if update && let Some(parent) = golden.parent() {
-            std::fs::create_dir_all(parent).expect("the golden's directory is created");
-        }
-        expect_file![golden.clone()].assert_eq(&text);
-        let _new = expected.insert(golden);
-    }
     assert!(
-        !expected.is_empty(),
+        !refusals.is_empty(),
         "the refusing sources print their refusals"
     );
-    let orphans: Vec<PathBuf> = goldens_under(&goldens)
-        .into_iter()
-        .filter(|golden| !expected.contains(golden))
+    let checkout = repository.display().to_string();
+    let named: Vec<&PathBuf> = refusals
+        .iter()
+        .filter(|&(_, text)| text.contains(&checkout))
+        .map(|(source, _)| source)
         .collect();
-    if update {
-        for orphan in &orphans {
-            std::fs::remove_file(orphan).expect("an orphaned golden is removed");
-        }
-        return;
-    }
     assert!(
-        orphans.is_empty(),
-        "goldens with no refusing source, to delete or rewrite with `UPDATE_EXPECT=1`: \
-         {orphans:?}"
+        named.is_empty(),
+        "refusals that name the checkout: {named:?}"
+    );
+    let open: Vec<&PathBuf> = refusals
+        .iter()
+        .filter(|&(_, text)| !text.ends_with('\n'))
+        .map(|(source, _)| source)
+        .collect();
+    assert!(
+        open.is_empty(),
+        "refusals whose last line does not end: {open:?}"
     );
 }
 

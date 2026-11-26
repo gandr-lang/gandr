@@ -1,8 +1,0 @@
-error[OutOfFragment.ExportRow]: an export performs no effect: its row is closed and names no interface
-  ╭▸ corpus/ledger/diagnostics/OutOfFragment.ExportRow.gandr:4:3
-  │
-4 │ @[export]
-  │   ━━━━━━ an export whose row is not empty
-  │
-  ├ note: `partial` is refused with OutOfFragment.ExportRow, as its expectation states
-  ╰ help: handle each effect in the body, so the definition states no row

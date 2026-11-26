@@ -1,8 +1,0 @@
-error[FeatureUnused]: the source declares the language feature `modules` and does not use it
-  ╭▸ corpus/ledger/diagnostics/FeatureUnused.gandr:4:14
-  │
-4 │ @![features("modules")]
-  │              ━━━━━━━ a feature that the source does not use
-  │
-  ├ note: `one` is refused with FeatureUnused, as its expectation states
-  ╰ help: remove "modules" from the attribute `features` at the head of the source

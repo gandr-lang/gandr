@@ -2793,6 +2793,7 @@ dependencies = [
  "blake3",
  "clap",
  "gandr-workflow-debt-ledger",
+ "gandr-workflow-outputs",
  "quenchant-shape",
  "serde",
  "serde_json",

@@ -1544,6 +1544,7 @@ path = "crates/workflow-ledger-tasks"
 # the tree and that the tree does not hold.
 # consumers:
 # - surface-render-terminal (dev)
+# - workflow-prose
 [workspace.dependencies.gandr-workflow-outputs]
 path = "crates/workflow-outputs"
 

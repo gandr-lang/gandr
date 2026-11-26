@@ -108,8 +108,8 @@
 #
 # The `spelling:` line gives one of three forms: `sole`, `replaces <old>,
 # refused here`, or `replaces <old>, refused by #n` with an open issue. The
-# owner's rule admits one spelling for each form. A golden record that
-# `corpus:goldens` writes under these paths asks for no subsection.
+# owner's rule admits one spelling for each form. A golden record of the
+# corpus under these paths asks for no subsection.
 # - see: #6876, #2756
 #
 # A closing keyword closes only from the head's keyword lines (#2980): one
@@ -401,9 +401,8 @@ def subsection($name):
     | $rest[:$end]
     end;
 
-# A golden `corpus:goldens` records for the corpus: a headline source's hover
-# golden under `crates/surface-grammar/`. It follows the corpus, not the
-# parser.
+# A golden record of the corpus: a headline source's hover golden under
+# `crates/surface-grammar/`. It follows the corpus, not the parser.
 def golden:
   test("^crates/surface-grammar/tests/highlight/.+\\.hover$");
 

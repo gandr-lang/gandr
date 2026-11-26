@@ -19,6 +19,9 @@ use core::fmt;
 use std::fs;
 use std::path::Path;
 
+use gandr_workflow_outputs::refusals::REFUSING;
+use gandr_workflow_outputs::refusals::rendered;
+
 use crate::error::ProseError;
 
 pub mod hash;
@@ -1264,21 +1267,24 @@ pub struct Gathered
     pub goldens: Vec<Golden>,
 }
 
-/// The directory of the rendered diagnostic goldens.
+/// The directory of the rendered diagnostic goldens of the renderer's tests.
 const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 
 /// Reads every tracked gandr source under `root` and every rendered
-/// diagnostic golden.
+/// diagnostic: the goldens of the renderer's tests, and the refusals of each
+/// refusing source of the corpus.
 ///
 /// # Specification
 /// - requires: `root` is a repository checkout.
 /// - ensures: the passages of every `.gandr` file git tracks under `root`, in
 ///   path order; the goldens of every `.txt` file under the render goldens,
-///   walked in path order. A markdown document is not read here: the documents
-///   reader reads it under the base.
+///   walked in path order; then the refusals of the corpus ([`refusals`]). A
+///   markdown document is not read here: the documents reader reads it under
+///   the base.
 /// - provides: the check's input under the ledger.
 /// - fails: [`ProseError::Io`] naming the directory or file that could not be
-///   read, or the root whose tracked files git could not list.
+///   read, the root whose tracked files git could not list, or the root whose
+///   refusing sources the walk could not read.
 /// - panics: none.
 /// - executable: none — the outcome is the file system's.
 ///
@@ -1290,9 +1296,9 @@ const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a scratch repository with a tracked source outside
-///   `corpus/`, a nested one, an untracked one, a README, a golden and a nested
-///   golden; a file skipped, an untracked one or the README read, or one read
-///   twice or out of order changes the gathered input.
+///   `corpus/`, a nested one, an untracked one, a README and a golden; a file
+///   skipped, an untracked one or the README read, or one read twice or out of
+///   order changes the gathered input.
 /// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 #[inline]
 pub fn gather(root: &Path) -> Result<Gathered, ProseError>
@@ -1317,7 +1323,56 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
             .goldens
             .extend(golden(Text(&key), Text(&read(path)?)));
     }
+    gathered.goldens.extend(refusals(root)?);
     Ok(gathered)
+}
+
+/// The rendered diagnostics of each refusing source of the corpus under
+/// `root`, in the order of the sources.
+///
+/// # Specification
+/// - requires: `root` is a repository checkout.
+/// - ensures: for each source under the pathological twins and the exemplars of
+///   the refusal names that prints a refusal, the goldens of its text as the
+///   writer of `gandr-workflow-outputs` gives it, each at the path of the
+///   source below `root`. A root with no such directory gives none.
+/// - provides: the diagnostics of the corpus, with no file of the tree between
+///   the renderer and the check.
+/// - fails: [`ProseError::Io`] naming the root that could not be resolved, or
+///   whose refusing sources the walk could not read.
+/// - panics: none.
+/// - executable: none — the outcome is the walk's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus of this checkout gives the diagnostic of the
+///   circuit with a cycle at the path of its source; a key that names a file of
+///   the renderer's tests, or a walk that is not made, changes the paths.
+/// - witness: `passage::tests::the_refusals_of_the_corpus_are_read_at_their_sources`
+fn refusals(root: &Path) -> Result<Vec<Golden>, ProseError>
+{
+    let refused = |message: String| ProseError::Io {
+        path: root.to_owned(),
+        message,
+    };
+    let root = fs::canonicalize(root).map_err(|error| refused(error.to_string()))?;
+    let roots: Vec<_> = REFUSING
+        .iter()
+        .map(|directory| root.join("corpus").join(directory))
+        .filter(|directory| directory.is_dir())
+        .collect();
+    if roots.is_empty() {
+        return Ok(Vec::new());
+    }
+    let texts = rendered(&root, roots).map_err(|error| refused(error.to_string()))?;
+    let mut goldens = Vec::new();
+    for (source, text) in &texts {
+        let key = relative(&root, &root.join("corpus").join(source));
+        goldens.extend(golden(Text(&key), Text(text)));
+    }
+    Ok(goldens)
 }
 
 /// The `.gandr` files git tracks under `root`, `/`-separated and relative to
@@ -1446,7 +1501,10 @@ fn walk(
 #[cfg(test)]
 mod tests
 {
+    use std::path::Path;
+
     use super::Advice;
+    use super::BTreeSet;
     use super::Head;
     use super::Limits;
     use super::Line;
@@ -1462,6 +1520,7 @@ mod tests
     use super::document;
     use super::gather;
     use super::golden;
+    use super::refusals;
 
     #[test]
     fn a_comment_run_splits_at_its_blank_lines_and_lists()
@@ -1804,10 +1863,6 @@ mod tests
             "crates/surface-render-terminal/tests/golden/g.txt",
             "error[E]: wrong\nhelp: fix it\n",
         );
-        write(
-            "crates/surface-render-terminal/tests/golden/corpus/p/h.txt",
-            "error[H]: nested\n",
-        );
         let git = |arguments: &[&str]| {
             let status = std::process::Command::new("git")
                 .arg("-C")
@@ -1852,9 +1907,36 @@ mod tests
             .map(|golden| golden.what.path.as_str())
             .collect();
         assert_eq!(goldens, [
-            "crates/surface-render-terminal/tests/golden/corpus/p/h.txt",
             "crates/surface-render-terminal/tests/golden/g.txt"
         ]);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn the_refusals_of_the_corpus_are_read_at_their_sources()
+    {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let goldens = refusals(&root).unwrap();
+        let paths: BTreeSet<&str> = goldens
+            .iter()
+            .map(|golden| golden.what.path.as_str())
+            .collect();
+        assert!(
+            paths.contains("corpus/pathological/circuit/circuit-cyclic-wiring.gandr"),
+            "the circuit with a cycle prints a diagnostic at its source"
+        );
+        let elsewhere: Vec<&&str> = paths
+            .iter()
+            .filter(|path| {
+                !path.starts_with("corpus/")
+                    || Path::new(path)
+                        .extension()
+                        .is_none_or(|extension| extension != "gandr")
+            })
+            .collect();
+        assert!(
+            elsewhere.is_empty(),
+            "each diagnostic of the corpus is at a source of the corpus: {elsewhere:?}"
+        );
     }
 }

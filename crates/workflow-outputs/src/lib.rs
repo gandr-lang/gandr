@@ -20,10 +20,9 @@
 //! - [`gauge`] watches the size of the store and the values that a run computes
 //!   again, each with its bound and its event.
 //!
-//! The golden test of `gandr-surface-render-terminal` compares the refusals
-//! of each refusing source with a file, and takes each text from the writer
-//! of [`refusals`]. So the files and the store cannot hold two different
-//! texts.
+//! No kind has a file in the tree. The tests of the packages that compute a
+//! kind check the properties of its values, and `outputs difference`
+//! compares the values of two trees.
 
 extern crate alloc;
 
