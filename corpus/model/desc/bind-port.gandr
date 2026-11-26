@@ -4,7 +4,7 @@
 //! `T`.
 //!
 //! A swap renames the atom. The atom can escape its binding port.
-//! A `pi+` port binds a variable for substitution. Each `Theory` value stores
+//! A restricted port binds a variable for substitution. Each `Theory` value stores
 //! an abstracting port as an `Abstracted` link. A program reads the link by
 //! `case`.
 //!

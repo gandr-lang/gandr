@@ -58,8 +58,8 @@ const BINDINGS: [&str; 5] = [
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
 
 /// The keywords whose parenthesis lists binders, one space after the keyword:
-/// `fun (x)`, `fork (seat : end)`, `bind (a : Name)`, `pi+ (x : A)`.
-const BINDERS: [&str; 4] = ["fun", "fork", "bind", "pi+"];
+/// `fun (x)`, `fork (seat : end)`, `bind (a : Name)`.
+const BINDERS: [&str; 3] = ["fun", "fork", "bind"];
 
 /// The part a token plays where its text alone does not decide its spacing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -252,7 +252,7 @@ fn word(text: SourceFragment<'_>) -> Wordlike
         .chars()
         .next()
         .is_some_and(|first| first.is_alphanumeric() || first == '_' || first == '\'');
-    if named || matches!(text, "+U" | "-F" | "pi+" | "Type+") {
+    if named || matches!(text, "+U" | "-F" | "Type+") {
         Wordlike::Yes
     }
     else {
@@ -298,8 +298,8 @@ fn applied(left: Token<'_>) -> Wordlike
 ///   it unless it ends a binder; a pipeline field `|>.` touches the method's
 ///   name after it; a prefix operator touches what follows it; a `(` or `[`
 ///   touches the word or hugging bracket before it, unless it opens an operand
-///   or the binders of `fun`, `fork`, `bind` or `pi+`; any other two are one
-///   space apart.
+///   or the binders of `fun`, `fork` or `bind`; any other two are one space
+///   apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.

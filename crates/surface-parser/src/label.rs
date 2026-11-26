@@ -27,7 +27,7 @@
 //!
 //! Code is read in runs. A run ends at whitespace, at a delimiter — `( ) [ ]
 //! { } ; , " . @` — and at a comment's opener. A run the operator table holds
-//! whole is that operator, `->` or `<=>` or `pi+`. Any other run is one name,
+//! whole is that operator, `->` or `<=>` or `Type+`. Any other run is one name,
 //! so `x-y`, `x:` and `x'` are names, as Agda reads them. A `!`, `?` or `~`
 //! that leads a run is a sigil cut from the rest. A digit-led run is a number
 //! only where the whole run is one. Every other run is one word, `-x` and
@@ -718,8 +718,8 @@ pub fn bracket(
 /// - `~>`, the retired rewrite-face arrow, kept so a stale spelling is one tile
 ///   and earns the elaborator's migration decline;
 /// - the single-character tiles, and `?` alone, the hole;
-/// - the bridges `+U` and `-F`, the marked words `pi+` and `Type+`, the grade
-///   `ω` and the wildcard `_`.
+/// - the bridges `+U` and `-F`, the marked word `Type+`, the grade `ω` and the
+///   wildcard `_`.
 ///
 /// `@[` and `@![` are read at the delimiter `@`, and `#`, `//`, `/*`, `"` and
 /// `'` lead a shebang, a comment, a string or a character before
@@ -728,7 +728,7 @@ const OPERATORS: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "↦", "⊸", "<~>", "~~>", "|->", "-o", "~>",
     "->", "<-", "=>", "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", ">!",
     ">?", ":>", "::", "+=", "-=", "*=", "!", "&", "*", "+", "-", ":", "<", "=", ">", "?", "|", "$",
-    "~", "+U", "-F", "pi+", "Type+", "ω", "_",
+    "~", "+U", "-F", "Type+", "ω", "_",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -2706,7 +2706,6 @@ mod tests
                 ("-Foo", Lexeme::LowerWord, 4),
                 ("Type+;", Lexeme::Punct, 5),
                 ("Type+x", Lexeme::UpperWord, 6),
-                ("pi+ ", Lexeme::Punct, 3),
                 ("<=> x", Lexeme::Punct, 3),
                 ("<=>x", Lexeme::LowerWord, 4),
                 ("!=", Lexeme::Punct, 2),
@@ -3053,7 +3052,7 @@ mod tests
             );
         }
         // Written against a name, an operator joins it: the run is one word.
-        for word in ["a-->b", "a<-b", "x-y", "a==b", "a--b", "x:", "pi+x", "pip+"] {
+        for word in ["a-->b", "a<-b", "x-y", "a==b", "a--b", "x:"] {
             assert_eq!(lexed(word), vec![lower(word)], "{word:?}");
         }
         assert_eq!(lexed("Type+Unit"), vec![upper("Type+Unit")]);
@@ -3108,9 +3107,9 @@ mod tests
             punct("@"),
             lower("b"),
         ]);
-        // The bridges, the marked words and `type(` are tiles where their run
+        // The bridges, the marked word and `type(` are tiles where their run
         // ends.
-        assert_eq!(lexed("+U[ω] (A -> -F B) -F(+U) pi+ (x) Type+;"), vec![
+        assert_eq!(lexed("+U[ω] (A -> -F B) -F(+U) Type+;"), vec![
             punct("+U"),
             punct("["),
             punct("ω"),
@@ -3124,10 +3123,6 @@ mod tests
             punct("-F"),
             punct("("),
             punct("+U"),
-            punct(")"),
-            punct("pi+"),
-            punct("("),
-            lower("x"),
             punct(")"),
             punct("Type+"),
             punct(";"),

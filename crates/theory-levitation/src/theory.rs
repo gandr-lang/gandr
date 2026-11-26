@@ -122,7 +122,7 @@
 //! A sort declared `Type+` is representable: it admits context extension, so
 //! a port may bind a variable of it (Kaposi and Xie, _Second-Order Generalised
 //! Algebraic Theories_, FSCD 2024, Definition 3). Such a sort is a
-//! `Representable` member of the sort chain; a port written `t : pi+ (x : S) .
+//! `Representable` member of the sort chain; a port written `t : (x : S) ->
 //! T` is a `Bound` member of its operation's port chain, its binders a chain of
 //! plain `Port`s, outermost first. A binder binds nothing of its own, a sort's
 //! index port binds nothing, and a `Bound` port binds at least one variable, so
@@ -164,9 +164,9 @@
 //! refuses.
 //!
 //! A port written `p : bind (a : Name) . T` abstracts an atom of an atom sort
-//! over its sort: swapping renames the atom, and it may escape, where a `pi+`
-//! binder's variable is instantiated by substitution. Such a port is an
-//! `Abstracted` member of its operation's port chain: its atoms a chain of
+//! over its sort: swapping renames the atom, and it may escape, where a
+//! restricted binder's variable is instantiated by substitution. Such a port is
+//! an `Abstracted` member of its operation's port chain: its atoms a chain of
 //! plain `Port`s, outermost first and outside its binders, then its binder
 //! chain, which may be empty. An `Abstracted` port abstracts at least one atom
 //! and a sort's index port abstracts nothing, so the value of a port has one
@@ -653,9 +653,9 @@ pub struct TheoryPort<N = Name>
     pub sort: N,
     /// The sort's index terms, in order.
     pub indices: Vec<FreeTerm<N>>,
-    /// The `pi+` binders over the port, outermost first, each a variable of a
-    /// representable sort; empty for a first-order port. Only an operation's
-    /// port binds.
+    /// The restricted binders over the port, outermost first, each a variable
+    /// of a representable sort; empty for a first-order port. Only an
+    /// operation's port binds.
     pub bindings: Vec<TheoryBinder<N>>,
     /// The atoms `bind` abstracts over the port, outermost first and outside
     /// its binders, each of an atom sort; empty for a port that abstracts
@@ -663,7 +663,7 @@ pub struct TheoryPort<N = Name>
     pub abstractions: Vec<TheoryBinder<N>>,
 }
 
-/// One `pi+` binder of a port: the bound variable's name and its sort, a
+/// One restricted binder of a port: the bound variable's name and its sort, a
 /// representable sort name over index terms. A binder binds nothing of its
 /// own.
 ///

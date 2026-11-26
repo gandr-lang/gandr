@@ -1,6 +1,6 @@
 //! A rule term can bind a variable in a field.
 //!
-//! A `pi+ (x : S) . T` port accepts `bind x . t`. The variable `x` has the
+//! A `(x : S) -> T` port accepts `bind x . t`. The variable `x` has the
 //! representable sort `S`. Substitution instantiates it.
 //!
 //! A `bind (a : N) . T` port abstracts atom `a`. A swap renames it.

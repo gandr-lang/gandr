@@ -97,17 +97,17 @@ use crate::failure::Failure;
 /// then by a functor application whose argument is juxtaposed, `module A = F
 /// B ;`, then by a lowercase word that heads a type applying as each head
 /// does, then by the type application's second form leaving the grammar
-/// (#5330).
-const BUILT_IN_FINGERPRINT: u64 = 0x0534_be8c_67e0_3b12;
+/// (#5330), then by the port's dotted binder leaving the grammar (#7869).
+const BUILT_IN_FINGERPRINT: u64 = 0xc69b_1b5c_7bf0_22c0;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2959);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2911);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -121,8 +121,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 1),
     ("&&", 1),
     ("&{", 2),
-    ("(", 128),
-    (")", 132),
+    ("(", 120),
+    (")", 124),
     ("*", 2),
     ("*=", 11),
     ("*{", 9),
@@ -137,13 +137,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-=", 11),
     ("->", 13),
     ("-F", 3),
-    (".", 86),
+    (".", 78),
     (".#[", 2),
     (".#{", 1),
     (".*{", 1),
     ("..", 3),
     (".@", 1),
-    (":", 244),
+    (":", 236),
     (":>", 2),
     (";", 108),
     ("<", 17),
@@ -229,7 +229,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("i32", 1),
     ("i64", 1),
     ("i8", 1),
-    ("identifier", 418),
+    ("identifier", 410),
     ("if", 16),
     ("import", 12),
     ("in", 1),
@@ -254,7 +254,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("oper", 9),
     ("pack", 1),
     ("path", 1),
-    ("pi+", 8),
     ("pub", 1),
     ("pure", 5),
     ("rec", 5),

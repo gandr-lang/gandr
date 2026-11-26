@@ -1188,7 +1188,7 @@ fn check_rule_binders(
 
 /// Append a `MisplacedAbstraction` diagnostic for each abstraction of `cell`
 /// that stands where no port abstracts as many atoms, or as many atoms and
-/// variables its `pi+` binders bind.
+/// variables its restricted binders bind.
 ///
 /// # Specification
 /// - ensures: one diagnostic per maximal chain of `bind a . …` that is not an
@@ -1201,8 +1201,8 @@ fn check_rule_binders(
 /// # Adequacy
 /// - hypothesis: L3 — an abstraction at a `bind` port passes, and one at a port
 ///   that abstracts nothing, one at the root and one of the wrong length each
-///   earn one diagnostic; an abstraction of the variable a `pi+` port binds
-///   passes there.
+///   earn one diagnostic; an abstraction of the variable a restricted port
+///   binds passes there.
 /// - witness: `wellformed::tests::an_abstraction_stands_at_a_port_that_abstracts`
 /// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
 ///
@@ -1245,7 +1245,7 @@ fn check_abstractions(
                     format!(
                         "rule abstracts {depth} names at `{body}` where no port abstracts or \
                          binds as many: write `bind a . t` as an argument at a port written \
-                         `bind (a : N) . T` or `pi+ (a : S) . T`",
+                         `bind (a : N) . T` or `(a : S) -> T`",
                         body = body.to_term()
                     ),
                     cell.provenance,
@@ -1277,16 +1277,16 @@ fn check_abstractions(
 ///
 /// # Specification
 /// - ensures: an abstraction at an operation's argument whose port binds as
-///   many names — atoms, then `pi+` variables — binds its name at the sort the
-///   port's binder of the same place states, and any other binds it at no sort;
-///   a metavariable binds its arguments at the sorts of the `pi+` binders of
-///   the port its left side passes it at, or, written as a pattern on the left,
-///   at the sorts of the names it is applied to there. One diagnostic per bound
-///   name, in pre-order on either side, that no enclosing abstraction of it
-///   binds, or that is neither an operation's argument (or an abstraction's
-///   body) at a port of the sort its innermost such abstraction binds it at,
-///   nor an instantiation's argument whose metavariable binds that sort there;
-///   each at the rule's provenance.
+///   many names — atoms, then restricted variables — binds its name at the sort
+///   the port's binder of the same place states, and any other binds it at no
+///   sort; a metavariable binds its arguments at the sorts of the restricted
+///   binders of the port its left side passes it at, or, written as a pattern
+///   on the left, at the sorts of the names it is applied to there. One
+///   diagnostic per bound name, in pre-order on either side, that no enclosing
+///   abstraction of it binds, or that is neither an operation's argument (or an
+///   abstraction's body) at a port of the sort its innermost such abstraction
+///   binds it at, nor an instantiation's argument whose metavariable binds that
+///   sort there; each at the rule's provenance.
 /// - panics: none.
 /// - intension: one worklist pass over each side, the left first; the
 ///   abstractions in scope form a tree of links, each node naming its
@@ -1297,9 +1297,9 @@ fn check_abstractions(
 /// - hypothesis: L3 — the channel a restriction abstracts, named at `out`'s
 ///   channel port, passes; the same atom named at a process port, as a
 ///   constructor's argument, and under no abstraction of it each earn one
-///   diagnostic. A variable a `pi+` port's abstraction binds passes at a port
-///   of its sort and as the argument of a metavariable that binds its sort, and
-///   earns one at a port of another sort.
+///   diagnostic. A variable a restricted port's abstraction binds passes at a
+///   port of its sort and as the argument of a metavariable that binds its
+///   sort, and earns one at a port of another sort.
 /// - witness: `wellformed::tests::an_atom_is_named_at_a_port_of_its_sort`
 /// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
 ///
@@ -2254,7 +2254,7 @@ mod tests
         assert_eq!(
             kinds(&named(Representability::Representable, vec![nu("Name")])),
             [WfKind::NonAtomAbstraction],
-            "a representable sort is bound by `pi+`, never abstracted"
+            "a representable sort is bound by a restricted binder, never abstracted"
         );
     }
 
@@ -2762,7 +2762,7 @@ mod tests
         }
     }
 
-    /// #2115: a variable a `pi+` port's abstraction binds is named at a port
+    /// #2115: a variable a restricted port's abstraction binds is named at a port
     /// of its sort and passed to a metavariable as a pattern, and a move
     /// across its abstraction captures nothing.
     #[test]
@@ -2785,7 +2785,7 @@ mod tests
                 op("get", vec![over("k", "s")]),
             ]
         };
-        // `Nat` representable, as a `pi+` binder's domain must be.
+        // `Nat` representable, as a restricted binder's domain must be.
         let desc = |lhs: FreeTerm, rhs: FreeTerm| {
             nat_with(
                 vec![RuleFace::new(lhs, rhs, Vec::new(), span())],
@@ -2846,7 +2846,7 @@ mod tests
                 var("m")
             ),
             [WfKind::MisplacedAtom],
-            "an atom's abstraction at a `pi+` port binds no atom there: the port binds a variable"
+            "an atom's abstraction at a restricted port binds no atom there: the port binds a variable"
         );
         assert_eq!(
             naming_port(&desc(var("m"), var("m"))),

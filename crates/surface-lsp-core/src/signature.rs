@@ -1136,6 +1136,7 @@ mod tests
                 "lam : (t : (x : Tm) -> Tm) --> Tm",
                 Vec::from(["t : (x : Tm) -> Tm"])
             ),
+            ("t", "t : (x : Tm) -> Tm", Vec::from(["x : Tm"])),
             (
                 "app",
                 "app : (t : Tm, u : Tm) --> Tm",

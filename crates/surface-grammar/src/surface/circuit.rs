@@ -992,8 +992,7 @@ fn parameter() -> Regex
 /// port's binder, so it costs the port no molds. A nominal binder, `p : bind
 /// (a : N) . T`, abstracts one atom of the atom sort `N` over `T`, the code
 /// universe's `⟨a⟩T` (Pitts, _Nominal Sets_, CUP 2013). A telescope nests
-/// outermost first, `(x : S) -> (y : S) -> T`. The dotted `pi+ (x : S) . T` is
-/// read beside the arrow until the corpus moves.
+/// outermost first, `(x : S) -> (y : S) -> T`.
 ///
 /// The nominal binder belongs to the port, not to the type language: a rule
 /// in every type slot would put its parenthesis, name, colon and dot molds
@@ -1001,8 +1000,8 @@ fn parameter() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a named port over zero or more binders, each `pi+` or `bind`, or
-///   a bare type, keeping the unnamed-port sugar separate.
+/// - ensures: a named port over zero or more nominal binders, each `bind`, or a
+///   bare type, keeping the unnamed-port sugar separate.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1015,22 +1014,20 @@ fn parameter() -> Regex
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.get(2).is_some_and(|binders| matches!(binders.shape(), RegexShape::Repeat(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
 fn input_port() -> Regex
 {
-    let binder = |keyword: &'static str| {
-        seq([
-            t(TileLabel(keyword)),
-            t(TileLabel("(")),
-            t(TileLabel("identifier")),
-            t(TileLabel(":")),
-            h(Sort::Type),
-            t(TileLabel(")")),
-            t(TileLabel(".")),
-        ])
-    };
+    let binder = seq([
+        t(TileLabel("bind")),
+        t(TileLabel("(")),
+        t(TileLabel("identifier")),
+        t(TileLabel(":")),
+        h(Sort::Type),
+        t(TileLabel(")")),
+        t(TileLabel(".")),
+    ]);
     alt([
         seq([
             port_name(),
             t(TileLabel(":")),
-            repeat(alt([binder("pi+"), binder("bind")])),
+            repeat(binder),
             h(Sort::Type),
         ]),
         h(Sort::Type),

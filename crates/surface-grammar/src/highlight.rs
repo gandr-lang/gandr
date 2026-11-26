@@ -143,10 +143,10 @@ const KEYWORDS: &[&str] = &[
     "extern", "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob", "handle",
     "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "into", "is", "law",
     "let", "loop", "match", "migrate", "mobile", "module", "node", "obs", "offer", "offers", "on",
-    "op", "oper", "pack", "path", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv",
-    "release", "renaming", "requires", "resume", "return", "rule", "run", "select", "send",
-    "shape", "sort", "tail", "theory", "thunk", "type", "type(", "under", "unwind", "var", "via",
-    "where", "while", "with", "world",
+    "op", "oper", "pack", "path", "postfix", "prefix", "pub", "pure", "rec", "recv", "release",
+    "renaming", "requires", "resume", "return", "rule", "run", "select", "send", "shape", "sort",
+    "tail", "theory", "thunk", "type", "type(", "under", "unwind", "var", "via", "where", "while",
+    "with", "world",
 ];
 
 /// The operators of terms, types, sessions and circuits.

@@ -1551,9 +1551,8 @@ fn a_port_at_a_sort_nothing_declares_is_kept_for_its_scope_8139()
 #[test]
 fn a_binder_over_an_ordinary_sort_is_refused_by_name()
 {
-    let report = described(
-        "theory Bad where { sort Tm : Type; oper lam : (t : pi+ (x : Tm) . Tm) --> Tm; }",
-    );
+    let report =
+        described("theory Bad where { sort Tm : Type; oper lam : (t : (x : Tm) -> Tm) --> Tm; }");
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("one refusal: {:?}", report.diagnostics)
@@ -1598,41 +1597,31 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
     );
     // A binder belongs to an operation's input port: a domain, a result, a
     // sort's index and a circuit's wire bind nothing.
-    for (source, refused, written) in [
+    for (source, written) in [
         (
             "theory Nested where { sort Tm : Type+; oper lam : (t : (x : (y : Tm) -> Tm) -> Tm) --> Tm; }",
-            "Malformed",
             "a binder whose domain binds",
         ),
         (
             "theory Result where { sort Tm : Type+; oper lam : (t : Tm) --> (u : (x : Tm) -> Tm); }",
-            "Malformed",
             "a result that binds",
         ),
         (
             "theory Indexed where { sort Tm : Type+; sort S(i : (x : Tm) -> Tm) : Type; }",
-            "Malformed",
             "an index that binds",
         ),
         (
             "theory Wired where { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : (x : Tm) -> Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
-            "Malformed",
             "a circuit port that binds",
-        ),
-        (
-            "theory Dotted where { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
-            "Repaired",
-            "a result under the dotted binder",
         ),
     ] {
         let report = described(source);
         assert!(
-            report.diagnostics.iter().any(|diagnostic| {
-                (refused == "Repaired"
-                    && matches!(diagnostic.fault, DescriptionFault::Repaired { .. }))
-                    || (refused == "Malformed" && diagnostic.fault == DescriptionFault::Malformed)
-            }),
-            "{written} is refused as {refused}: {:?}",
+            report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.fault == DescriptionFault::Malformed),
+            "{written} is malformed: {:?}",
             report.diagnostics
         );
     }
@@ -2275,7 +2264,7 @@ fn an_applied_left_variable_reads_as_its_instantiation()
     let var = FreeTerm::var;
     assert_eq!(
         faces(
-            "theory Let where { sort Tm : Type+; oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm; rule zeta : let u t <=> t u; }"
+            "theory Let where { sort Tm : Type+; oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm; rule zeta : let u t <=> t u; }"
         ),
         [(
             FreeTerm::op("let", [var("u"), var("t")]),
@@ -2312,7 +2301,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
     let (bound, bind) = (FreeTerm::bound, FreeTerm::lam);
     let get = |k: FreeTerm| FreeTerm::op("get", [k]);
     let pattern = |names: [&str; 2]| FreeTerm::inst("k", names.map(FreeTerm::bound));
-    let state = "sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C;";
+    let state = "sort S : Type+; sort C : Type; oper get : (k : (s : S) -> C) --> C;";
     assert_eq!(
         faces(&format!(
             "theory State where {{ {state} rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s)); }}"

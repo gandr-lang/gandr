@@ -56,7 +56,7 @@ pub enum TermHead<N>
     /// atom sort.
     Atom(N),
     /// A variable of a representable sort bound over its one body,
-    /// `bind x . t`, at a port written `pi+ (x : S) . T`: the binding field.
+    /// `bind x . t`, at a port written `(x : S) -> T`: the binding field.
     Lam(N),
     /// A variable named inside the binding field that binds it.
     Bound(N),
@@ -280,7 +280,7 @@ impl FreeTerm
     }
 
     /// The binding field `bind x . t` of the variable `x` over `body`, at a
-    /// port written `pi+ (x : S) . T`: the variable, of a representable sort,
+    /// port written `(x : S) -> T`: the variable, of a representable sort,
     /// is bound in `body`, and two fields that differ by renaming it to a
     /// variable fresh for the body are one.
     ///
@@ -1262,7 +1262,7 @@ pub enum TermView<'term, N = Name>
     /// The atom `a` named inside an abstraction `bind a . t` that binds it,
     /// at a port of its atom sort.
     Atom(&'term N),
-    /// A binding field `bind x . t` at a port written `pi+ (x : S) . T`: the
+    /// A binding field `bind x . t` at a port written `(x : S) -> T`: the
     /// variable, of a representable sort, is bound in its one argument, the
     /// body.
     Lam

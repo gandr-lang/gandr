@@ -71,8 +71,7 @@
 //! input port may write its sort under restricted binders, `t : (x : S) -> T`,
 //! each binding a variable of a representable sort `S` over `T`, outermost
 //! first (Kaposi and Xie, _Second-Order Generalised Algebraic Theories_, FSCD
-//! 2024, Definition 3). The corpus writes `t : pi+ (x : S) . T` until it moves,
-//! and the reader reads both. The reader codes both in the value — a sort at
+//! 2024, Definition 3). The reader codes it in the value — a sort at
 //! `Representable`, a port at `Bound` with its binder chain — so a block
 //! written as the description's rendering reads back to that description. A
 //! binder over an ordinary sort is the description check's
@@ -81,14 +80,10 @@
 //! the thunked function from its variables, `+U ((x : S) -> -F T)`, and
 //! refuses a law relating a term at the port by name.
 //!
-//! **Choice.** The arrowed binder is the dependent function type itself, read
-//! as a binder where an input port writes it, so it costs the parser nothing.
-//! The dotted `pi+` is a form of the input port, not a type former: a marked
-//! tile, read only where a parameter list writes a named port. A type rule at
-//! every type slot would put its parenthesis, name, colon and dot molds in
-//! every damaged type the parser repairs, and the one-token-drop records
-//! recovered worse at dozens of corpus tokens. `Type+` stays a type atom: one
-//! tile no other form shares. Witnesses:
+//! **Choice.** The restricted binder is the dependent function type itself,
+//! read as a binder where an input port writes it, so it costs the parser
+//! nothing. `Type+` stays a type atom: one tile no other form shares.
+//! Witnesses:
 //! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
 //! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `model::tests::an_underivable_component_keeps_its_fault`.
@@ -104,10 +99,10 @@
 //! An operation's port abstracts atoms of it under `bind`, `p : bind (a :
 //! Name) . Proc`: swapping renames the atom, and it may escape, where a
 //! restricted binder binds a variable that substitution instantiates. The
-//! abstractions stand outside the port's restricted binders, so a `bind` after
-//! a `pi+` is malformed; the reader codes such a port at `Abstracted`, and an
-//! abstraction over a sort that is not an atom sort is the description check's
-//! `NonAtomAbstraction`. Witnesses:
+//! abstractions stand outside the port's restricted binders: the grammar
+//! reads `bind` only before the port's sort. The reader codes such a port at
+//! `Abstracted`, and an abstraction over a sort that is not an atom sort is
+//! the description check's `NonAtomAbstraction`. Witnesses:
 //! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
 //! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `description::theory::tests::an_abstraction_stands_outside_the_binders`.
@@ -391,8 +386,8 @@ struct Side
     names: Vec<Maybe<ByteSpan, port_name::Absent>>,
 }
 
-/// A binder as a port writes it: a restricted binder, `(name : domain) ->` or
-/// `pi+ (name : domain) .`, or an atom abstraction, `bind (name : domain) .`.
+/// A binder as a port writes it: a restricted binder, `(name : domain) ->`,
+/// or an atom abstraction, `bind (name : domain) .`.
 #[derive(Clone, Copy)]
 struct WrittenBinder
 {
@@ -3239,19 +3234,16 @@ impl Reader<'_, '_>
 
 impl Run<'_>
 {
-    /// Read the dotted binders a port's sort is written under, outermost
-    /// first: the atom abstractions, `bind (a : N) .` each, then the
-    /// restricted binders `pi+ (x : S) .` the corpus writes until it moves to
-    /// the arrow [`Reader::arrowed`] reads.
+    /// Read the atom abstractions a port's sort is written under, outermost
+    /// first, `bind (a : N) .` each. The restricted binders are the arrows
+    /// [`Reader::arrowed`] reads.
     ///
     /// # Specification
-    /// - ensures: one binder per `bind` or `pi+` the run continues with, in
-    ///   order, each its name tile, its written domain and whether it is an
-    ///   abstraction; a run that continues with neither reads none and is left
-    ///   where it was.
+    /// - ensures: one abstraction per `bind` the run continues with, in order,
+    ///   each its name tile and its written domain; a run that continues with
+    ///   none reads none and is left where it was.
     /// - fails: a binder short of its opening parenthesis, name, colon, domain,
-    ///   closing parenthesis or dot is malformed, and so is a `bind` after a
-    ///   `pi+`: the abstractions stand outside the binders.
+    ///   closing parenthesis or dot is malformed.
     /// - panics: none.
     /// - executable: none — the binders read are source syntax.
     ///
@@ -3259,28 +3251,13 @@ impl Run<'_>
     /// As stated.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the λ-calculus `lam` port and the identity-return
-    ///   `lam` port read back their one binder, a restriction's `nu` port its
-    ///   one abstraction, and a port with none reads none; a `bind` inside a
-    ///   `pi+` is refused.
+    /// - hypothesis: L3 — a restriction's `nu` port reads back its one
+    ///   abstraction, and a port with none reads none.
     /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
-    /// - witness: `description::theory::tests::an_abstraction_stands_outside_the_binders`
     fn binders(&mut self) -> Result<Vec<WrittenBinder>, DescriptionDiagnostic>
     {
         let mut binders: Vec<WrittenBinder> = Vec::new();
-        loop {
-            let abstracts = if self.eat(Spelling("bind")).0 {
-                if binders.last().is_some_and(|binder| !binder.abstracts) {
-                    return Err(self.fault(DescriptionFault::Malformed));
-                }
-                true
-            }
-            else if self.eat(Spelling("pi+")).0 {
-                false
-            }
-            else {
-                break;
-            };
+        while self.eat(Spelling("bind")).0 {
             if !self.eat(Spelling("(")).0 {
                 return Err(self.fault(DescriptionFault::Malformed));
             }
@@ -3295,7 +3272,7 @@ impl Run<'_>
             binders.push(WrittenBinder {
                 name,
                 domain,
-                abstracts,
+                abstracts: true,
             });
         }
         Ok(binders)

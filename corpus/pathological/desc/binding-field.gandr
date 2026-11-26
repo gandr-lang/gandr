@@ -2,7 +2,7 @@
 // an atom, and the variable a binding field binds is none.
 
 /// Garbage collection over a field, `new(bind x . q) <=> q where x # q`: `x`
-/// is the variable the `pi+` binder binds, which substitution instantiates,
+/// is the variable the restricted binder binds, which substitution instantiates,
 /// not an atom swapping renames, so no abstraction of the rule abstracts it.
 /// The description check refuses the condition as naming an unknown atom, an
 /// ill-formed description. The law without it is

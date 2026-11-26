@@ -44,9 +44,9 @@
 //! carries the fragment of that reading the rest of gandr needs first:
 //!
 //! - **Generation.** A signature marks each sort that may be bound
-//!   ([`Representability`]) and each restricted binder (`pi+`, a port's binder
-//!   telescope), and [`check_desc`] refuses a binder over a sort that is not
-//!   representable. [`first_order()`] folds the signature, once, into its
+//!   ([`Representability`]) and each restricted binder (`(x : S) ->`, a port's
+//!   binder telescope), and [`check_desc`] refuses a binder over a sort that is
+//!   not representable. [`first_order()`] folds the signature, once, into its
 //!   single-substitution first-order model: contexts and substitutions,
 //!   per-sort variables, weakening, single substitution and lifting, the
 //!   substitution laws for each representable sort, and each operation with its

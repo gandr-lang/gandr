@@ -2,7 +2,7 @@
 //!
 //! A `Type+` sort is representable.
 //!
-//! A `pi+` port binds a variable of a representable sort over its result.
+//! A restricted port binds a variable of a representable sort over its result.
 //! Each block is a `Theory` value. A program reads representable sorts and
 //! binding ports by `case`.
 //!
