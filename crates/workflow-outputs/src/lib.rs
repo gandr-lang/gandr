@@ -13,6 +13,8 @@
 //! - [`checkout`] computes the values of a commit by the binary of that commit,
 //!   when its tool is not the tool of the run.
 //! - [`difference`] gives the changes of the values between two trees.
+//! - [`word`] reads the trailer with which a commit names the kinds whose
+//!   values it changes.
 //! - [`gauge`] watches the size of the store and the values that a run computes
 //!   again, each with its bound and its event.
 //!
@@ -30,6 +32,7 @@ pub mod recovery;
 pub mod roles;
 pub mod store;
 pub mod tree;
+pub mod word;
 pub mod workspace;
 
 pub use recovery::RecordError;

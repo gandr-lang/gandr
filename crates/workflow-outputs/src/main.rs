@@ -23,6 +23,10 @@
 //! another tool is computed by the binary of its commit, in a checkout below
 //! the target directory, unless the store holds each of its values.
 //!
+//! `difference` exits with 1 when values differ and no commit between the
+//! base and the head names the kind in a trailer `Changes-output: <kind>`.
+//! With no `--head`, the commits end at `HEAD`.
+//!
 //! `--cost` adds each part of the run with its count and its time.
 
 use core::fmt::Write as _;
@@ -49,6 +53,7 @@ use gandr_workflow_outputs::store::Kind;
 use gandr_workflow_outputs::store::Store;
 use gandr_workflow_outputs::tree::Source;
 use gandr_workflow_outputs::tree::Tree;
+use gandr_workflow_outputs::word;
 use gandr_workflow_outputs::workspace;
 
 /// The workspace root: two directories above this package.
@@ -355,7 +360,7 @@ fn held_values(held: compute::Held) -> Vec<(Source, Vec<u8>)>
 ///
 /// # Errors
 /// The refusal of the command line, of the workspace, of the grammar, of a
-/// tree or of the store, as one line.
+/// tree or of the store, as one line; and a difference that no commit names.
 fn run(arguments: &[String]) -> Result<(), String>
 {
     let asked = asked(arguments)?;
@@ -365,6 +370,7 @@ fn run(arguments: &[String]) -> Result<(), String>
     let mut out = String::new();
     let mut summary = String::new();
     let mut recomputed = None;
+    let mut refusal = None;
     if asked.difference {
         let base = asked.base.as_deref().unwrap_or("HEAD");
         let head = asked.revision.as_deref();
@@ -392,6 +398,14 @@ fn run(arguments: &[String]) -> Result<(), String>
             run.store.root().display()
         );
         recomputed = Some(base_computed);
+        if !changes.is_empty() && !word::named(&run.root, base, head, kind)? {
+            refusal = Some(format!(
+                "{name}: {} sources differ, and no commit of {base}..{} has the trailer `{}: {name}`",
+                changes.len(),
+                head.unwrap_or("HEAD"),
+                word::TRAILER
+            ));
+        }
     }
     else {
         let (tree, tool) = run.tree(asked.revision.as_deref())?;
@@ -463,5 +477,6 @@ fn run(arguments: &[String]) -> Result<(), String>
     std::io::stdout()
         .lock()
         .write_all(out.as_bytes())
-        .map_err(|error| format!("the output: {error}"))
+        .map_err(|error| format!("the output: {error}"))?;
+    refusal.map_or(Ok(()), Err)
 }

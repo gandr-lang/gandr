@@ -30,6 +30,7 @@ The key of a value is the BLAKE3 digest of the tool and the input. The tool is t
 - `compute::values` gives the values of one kind for a tree: each from the store, or computed by the `Writer` of the kind on each core and written to the store. `compute::held` gives the values that the store holds. The kinds are `recovery` and `roles`.
 - `checkout::compute` computes the values of a commit whose tool is not the tool of the run: the `outputs` binary of that commit runs in a detached work tree below `target/`, on the same store.
 - `difference::changes` gives the sources whose values differ between two trees: added, removed or changed.
+- `word::named` tells if a commit of a range names a kind in a trailer `Changes-output: <kind>`. `outputs difference` exits with 1 for a difference that no commit of the range names, so an output does not change without a word.
 - `gauge` reads the size of the store and the count of the values of the base that a run computes again. A gauge past its bound writes one line with the priority `err` and runs the command that `GANDR_OUTPUT_EVENT` names.
 
 ## Expected features
