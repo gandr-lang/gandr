@@ -804,8 +804,8 @@ impl FeatureLedger
     ///   reader's; a row is not one `NULL` or quoted string per column with
     ///   every required column set and a status of the four; a file of rows
     ///   holds not one row, or a row that its name does not name; a file of
-    ///   needs holds no need, or a need of a row that its name does not name;
-    ///   a need names no row; the needs of a row do not end.
+    ///   needs holds no need, or a need of a row that its name does not name; a
+    ///   need names no row; the needs of a row do not end.
     /// - panics: none.
     ///
     /// # Errors
@@ -819,8 +819,8 @@ impl FeatureLedger
     /// # Adequacy
     /// - hypothesis: L3 — the committed ledger reads every row file, a scratch
     ///   ledger with a malformed row is refused naming its line, a file whose
-    ///   row its name does not name is refused, and so is a file of needs of
-    ///   a different row.
+    ///   row its name does not name is refused, and so is a file of needs of a
+    ///   different row.
     /// - witness: `tests::the_committed_ledger_reads_every_row`
     /// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
     /// - witness: `tests::a_row_stands_in_the_file_of_its_id`
@@ -862,10 +862,9 @@ impl FeatureLedger
                 let text = std::fs::read_to_string(&path).map_err(unread(&path))?;
                 let mut needs = Self::parsed(&path, Dump(&text))?.needs;
                 let named = !needs.is_empty()
-                    && needs.iter().all(|need| {
-                        path.file_stem()
-                            .is_some_and(|stem| stem == need.0.as_str())
-                    });
+                    && needs
+                        .iter()
+                        .all(|need| path.file_stem().is_some_and(|stem| stem == need.0.as_str()));
                 if !named {
                     return Err(FeaturesFault::Features {
                         path,
@@ -918,8 +917,8 @@ impl FeatureLedger
     ///
     /// # Specification
     /// - requires: the rows of `tables` are in the byte order of their ids.
-    /// - ensures: each row holds the needs that the lines of `tables` give
-    ///   it, in byte order, and its tier: 1 with no need, and 1 more than the
+    /// - ensures: each row holds the needs that the lines of `tables` give it,
+    ///   in byte order, and its tier: 1 with no need, and 1 more than the
     ///   largest tier of a need.
     /// - fails: a line names an id that no row has, or the needs of a row do
     ///   not end.
@@ -930,8 +929,8 @@ impl FeatureLedger
     /// naming the first row whose needs do not end.
     ///
     /// # Termination
-    /// - reason: each pass over the rows gives a tier to one row or more, or
-    ///   it ends the loop with the refusal of a cycle.
+    /// - reason: each pass over the rows gives a tier to one row or more, or it
+    ///   ends the loop with the refusal of a cycle.
     /// - measure: the rows with no tier.
     ///
     /// # Cost

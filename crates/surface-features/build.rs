@@ -13,9 +13,9 @@ use std::path::PathBuf;
 /// the same order.
 ///
 /// # Specification
-/// - ensures: the text is the two schemas, each row file and each file of
-///   needs of the tree, whole, in the order of their ids; Cargo runs the
-///   script again when a file of the ledger changes.
+/// - ensures: the text is the two schemas, each row file and each file of needs
+///   of the tree, whole, in the order of their ids; Cargo runs the script again
+///   when a file of the ledger changes.
 /// - executable: none — the output is a file that the crate includes.
 ///
 /// # Errors
