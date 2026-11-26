@@ -137,10 +137,11 @@ pub enum RewriteName
     /// ; def x = e ;` and `def x : T = e ;`; the sugared form joins them and
     /// the explicit form writes them apart.
     JoinedDefinition,
-    /// A type application: `F(a, b)` and `F a b`, as a type reads a
-    /// juxtaposition (#5326), with a lowercase, qualified or staged head too:
-    /// `f a b`, `el [<] a`, `M.F a` and `View[m] a`; both forms write the
-    /// juxtaposition, an argument that is no atom in its parentheses.
+    /// A type application: `F a b`, as a type reads a juxtaposition (#5326),
+    /// with a path, bridge, qualified or staged head too: `Path(a, b)` and
+    /// `Path a b`, `M.F(a, b)` and `M.F a b`, `View[m](a)` and `View[m] a`;
+    /// both forms write the juxtaposition, an argument that is no atom in its
+    /// parentheses.
     TypeApplication,
     /// A definition's body after `=`: `def f() -> B { c }` and `def f() -> B
     /// = c ;`, a body of statements in a block after `=`; both forms move it,
@@ -292,7 +293,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 48] = [
+pub const REWRITES: [Rewrite; 46] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -535,22 +536,6 @@ pub const REWRITES: [Rewrite; 48] = [
         mold: MoldName("def_value"),
         from: Spelling("def x : T = e ;"),
         to: Spelling("def x : T ; def x = e ;"),
-        enabled: Enabled::On,
-    },
-    Rewrite {
-        name: RewriteName::TypeApplication,
-        direction: Direction::Sugar,
-        mold: MoldName("type_application"),
-        from: Spelling("F(a, b)"),
-        to: Spelling("F a b"),
-        enabled: Enabled::On,
-    },
-    Rewrite {
-        name: RewriteName::TypeApplication,
-        direction: Direction::Desugar,
-        mold: MoldName("type_application"),
-        from: Spelling("F(a, b)"),
-        to: Spelling("F a b"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -4337,7 +4322,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 44] = [
+const RULES: [MoldName; 43] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4363,7 +4348,6 @@ const RULES: [MoldName; 44] = [
     MoldName("manifest_type"),
     MoldName("manifest_sort"),
     APPLICATION,
-    MoldName("type_application"),
     MoldName("type_application.juxtaposed"),
     MoldName("forget_model_expression"),
     MoldName("path_type"),

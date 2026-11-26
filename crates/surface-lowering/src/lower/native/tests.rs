@@ -3719,7 +3719,7 @@ fn a_constructor_takes_its_slot_as_a_family_argument_421()
     );
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}{families}def tagged = (Tag(1) : Tagged(Color, Integer, Inl(Red)));\n"
+        "{COLOR}{families}def tagged = (Tag(1) : Tagged Color Integer (Inl Red));\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let Some(&Value::Constructor { datatype, .. }) =
@@ -3746,11 +3746,11 @@ fn a_constructor_takes_its_slot_as_a_family_argument_421()
     ));
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
-    // The place's type is `SumOb(Color, Integer)`, so the right summand of a
+    // The place's type is `SumOb Color Integer`, so the right summand of a
     // colour is refused: read in the other order, it would be accepted.
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}{families}def misplaced = (Tag(1) : Tagged(Color, Integer, Inr(Red)));\n"
+        "{COLOR}{families}def misplaced = (Tag(1) : Tagged Color Integer (Inr Red));\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let report = judged(&module, &mut arena);

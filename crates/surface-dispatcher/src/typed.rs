@@ -11434,15 +11434,15 @@ mod tests
 
         let source = SourceText::from(
             "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat } data Both(a : Type, b : \
-             Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } def apart(x : Nat, y : \
-             Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh } def rec fresh(x : Nat, xs : \
+             Type) : Type where { | MkBoth : (x : a, y : b) --> Both a b } def apart(x : Nat, y : \
+             Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh x xs) --> Fresh } def rec fresh(x : Nat, xs : \
              Fresh) -> -F Type { match xs { | FNil => return Unit | FCons(y, ys, q) => { let p = \
              apart x y; let r = fresh[<] x ys; return (Both p r) } } } } rec { data \
-             UD(d : Type) : Type where { | BaseD : UD(d) | PiD : (a : UD(d), b : +U (elD(d, a) -> -F \
-             UD(d))) --> UD(d) } def rec elD(d : Type, u : UD(d)) -> -F Type { match u { | BaseD \
-             => return d | PiD(a, b) => return (+U ((x : elD[<](d, a)) -> -F elD[<](d, b(x)))) \
-             } } } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop(a) ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type { match u { | Base => \
-             return Nat | PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Nat)) } } }",
+             UD(d : Type) : Type where { | BaseD : UD d | PiD : (a : UD d, b : +U (elD d a -> -F \
+             UD d)) --> UD d } def rec elD(d : Type, u : UD d) -> -F Type { match u { | BaseD \
+             => return d | PiD(a, b) => return (+U ((x : elD [<] d a) -> -F elD [<] d (b x))) \
+             } } } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop a ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type { match u { | Base => \
+             return Nat | PiL(a, b) => return (+U ((x : unloop [<] (PiL a b)) -> -F Nat)) } } }",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads =
@@ -11464,9 +11464,9 @@ mod tests
             "the field's decode is the binder, written after its uniform parameter"
         );
         let at = <&str>::from(source)
-            .find("unloop[<](PiL(a, b))")
+            .find("unloop [<] (PiL a b)")
             .expect("the field is passed back")
-            .saturating_add("unloop[<](PiL(a, ".len());
+            .saturating_add("unloop [<] (PiL a ".len());
         let sides: Vec<(&ReadSite, &str)> = reads
             .iter()
             .filter(|read| {

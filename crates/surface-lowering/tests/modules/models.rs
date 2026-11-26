@@ -47,7 +47,7 @@ const SETOIDS: &str = include_str!("models/unformatted/setoids.gandr");
 /// The signature `Model(CatShape)` derives, written out by hand, its laws
 /// stated over the operations of the module `Derived` so the two signatures
 /// name the same constants.
-const WRITTEN: &str = "*{ type Ob : Type[+, 1], type Hom : (a : Ob, b : Ob) -> Type, id : (a : Ob) -> Hom(a, a), comp : (a : Ob, b : Ob, c : Ob, f : Hom(a, b), g : Hom(b, c)) -> Hom(a, c), unitL : (a : Ob, b : Ob, f : Hom(a, b)) -> Path[.A = Hom(a, b)](Derived.comp a a b (Derived.id a) f, f), unitR : (a : Ob, b : Ob, f : Hom(a, b)) -> Path[.A = Hom(a, b)](Derived.comp a b b f (Derived.id b), f), assoc : (a : Ob, b : Ob, c : Ob, d : Ob, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) -> Path[.A = Hom(a, d)](Derived.comp a c d (Derived.comp a b c f g) h, Derived.comp a b d f (Derived.comp b c d g h)) }";
+const WRITTEN: &str = "*{ type Ob : Type[+, 1], type Hom : (a : Ob, b : Ob) -> Type, id : (a : Ob) -> Hom a a, comp : (a : Ob, b : Ob, c : Ob, f : Hom a b, g : Hom b c) -> Hom a c, unitL : (a : Ob, b : Ob, f : Hom a b) -> Path[.A = Hom a b](Derived.comp a a b (Derived.id a) f, f), unitR : (a : Ob, b : Ob, f : Hom a b) -> Path[.A = Hom a b](Derived.comp a b b f (Derived.id b), f), assoc : (a : Ob, b : Ob, c : Ob, d : Ob, f : Hom a b, g : Hom b c, h : Hom c d) -> Path[.A = Hom a d](Derived.comp a c d (Derived.comp a b c f g) h, Derived.comp a b d f (Derived.comp b c d g h)) }";
 
 #[test]
 fn a_derived_signature_states_what_the_written_one_does()
@@ -835,13 +835,13 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
     let left_zero = |statement: &str| {
         format!(
             "{SIGN}module LeftZero : Model(CatShape) where {{\n  type Ob = Type;\n  type Hom(a : Ob, b \
-             : Ob) = Integer;\n  def id(a : Type) -> -F Hom(a, a) {{ return 0 }}\n  def comp(a : \
-             Type, b : Type, c : Type, f : Hom(a, b), g : Hom(b, c)) -> -F Hom(a, c) {{ return f \
-             }}\n  def unitL(a : Type, b : Type, f : Hom(a, b)) -> -F Path[.A = Hom(a, b)](\
-             {statement}) {{ return Path.here f }}\n  def unitR(a : Type, b : Type, f : Hom(a, b)) -> \
-             -F Path[.A = Hom(a, b)](comp a b b f (id b), f) {{ return Path.here f }}\n  def assoc(a : \
-             Type, b : Type, c : Type, d : Type, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) -> \
-             -F Path[.A = Hom(a, d)](comp a c d (comp a b c f g) h, comp a b d f (comp b \
+             : Ob) = Integer;\n  def id(a : Type) -> -F Hom a a {{ return 0 }}\n  def comp(a : \
+             Type, b : Type, c : Type, f : Hom a b, g : Hom b c) -> -F Hom a c {{ return f \
+             }}\n  def unitL(a : Type, b : Type, f : Hom a b) -> -F Path[.A = Hom a b](\
+             {statement}) {{ return Path.here f }}\n  def unitR(a : Type, b : Type, f : Hom a b) -> \
+             -F Path[.A = Hom a b](comp a b b f (id b), f) {{ return Path.here f }}\n  def assoc(a : \
+             Type, b : Type, c : Type, d : Type, f : Hom a b, g : Hom b c, h : Hom c d) -> \
+             -F Path[.A = Hom a d](comp a c d (comp a b c f g) h, comp a b d f (comp b \
              c d g h)) {{ return Path.here f }}\n}}\n"
         )
     };

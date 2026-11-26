@@ -251,13 +251,12 @@ fn juxtaposition_applies_between_operands_4853() -> Result<(), Failure>
 
 /// #5326: a type operand right after a type operand applies it, `Vec A n`,
 /// through one zero-width tile per argument. The band binds tighter than the
-/// returner and the arrow, so `-F Maybe A` returns the application, and the
-/// call form `Vec(A, n)` keeps its reading. A form such as `+U A` is an
-/// argument as it stands. The returner `-F` is a prefix of a looser band, so
-/// it is an argument only in parentheses. A lowercase argument before a
-/// spaced group is an argument as a type name is, `Vec a (Succ n)`, and a
-/// lowercase word that heads its type applies it as a type name does, `m (T)`
-/// and `m n` alike.
+/// returner and the arrow, so `-F Maybe A` returns the application. A form
+/// such as `+U A` is an argument as it stands. The returner `-F` is a prefix
+/// of a looser band, so it is an argument only in parentheses. A lowercase
+/// argument before a spaced group is an argument as a type name is,
+/// `Vec a (Succ n)`, and a lowercase word that heads its type applies it as a
+/// type name does, `m (T)` and `m n` alike.
 #[test]
 fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
 {
@@ -267,22 +266,11 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
         ("def x : Var (Extend g n) n;", 4),
         ("def x : Vec A (Succ n) -> -F B;", 3),
         ("def opt : Type -> Type[-] = fun (A) { -F Maybe A };", 1),
-        ("def x : Maybe(A);", 0),
-        ("def x : Vec(A, n);", 0),
         ("def x : Vec a n;", 2),
         ("def x : Vec a (Succ n);", 3),
         ("def x : Sub d (g);", 2),
         ("def x : Sub D (g);", 2),
-        ("def x : Vec a(n);", 1),
         ("def x : m (T);", 1),
-        ("def x : Vec Integer plus(m, Zero);", 2),
-        ("def x : Vec a plus(m, Zero);", 2),
-        (
-            include_str!("grammar/unformatted/a-call-operand-reads-after-a-line-break-5752.gandr"),
-            2,
-        ),
-        ("def x : m plus(m, k);", 1),
-        ("def x : el[<](a);", 0),
         ("def x : m T;", 1),
         ("def x : (m n : Integer) -> Integer;", 1),
         ("def x : Vec +U Integer;", 1),
@@ -496,16 +484,16 @@ fn a_path_type_reads_its_endpoints_juxtaposed_5750() -> Result<(), Failure>
 
 /// #6093: a packed or forgotten model's type ends its form, and a type operand
 /// after it applies that type, `pack M at Model T`, as a value call applies
-/// its function. The call form `Model(T)` keeps its reading.
+/// its function.
 #[test]
 fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Failure>
 {
     let cases = [
         (
-            "def site : Model(Site) = pack Site at Model Site;",
+            "def site : Model Site = pack Site at Model Site;",
             "pack_model_expression",
             "Model Site",
-            1_usize,
+            2_usize,
         ),
         (
             "def f() -> Integer { pack Site at Model Site }",
@@ -524,12 +512,6 @@ fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Failure>
             "forget_model_expression",
             "Model Counter",
             1,
-        ),
-        (
-            "def site : Model(Site) = pack Site at Model(Site);",
-            "pack_model_expression",
-            "Model(Site)",
-            0,
         ),
     ];
     let grammar = built();

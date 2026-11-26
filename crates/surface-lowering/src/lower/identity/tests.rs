@@ -3531,7 +3531,7 @@ fn a_carrier_written_first_is_an_extra_operand_5024()
             crate::form::TileName::BRIDGE,
         ),
         (
-            "def p : Flow(Integer, 4, 4);\n",
+            "def p : Flow Integer 4 4;\n",
             crate::form::TileName::FLOW_TYPE,
         ),
         ("def p = Path Integer 4 4;\n", crate::form::TileName::PATH),

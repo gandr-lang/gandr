@@ -54,8 +54,6 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
-use crate::RemovalIssue;
-use crate::Replacement;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -84,7 +82,7 @@ use crate::model::Sym;
 ///   aliases and allocation failure are not exhausted.
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 44 && rules.iter().all(|rule| rule.sort() == Sort::Type) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "string.type")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 43 && rules.iter().all(|rule| rule.sort() == Sort::Type) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "string.type")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -115,7 +113,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// # Cost
 /// - allocation: the rules of the type grammar and their adaptation records,
 ///   setup
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 44 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 43 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -516,57 +514,6 @@ fn add_type_rules(
         type_application,
         Regex::seq([tile(TileLabel("Flow")), supplied(Listed::Always)]),
     ));
-    // A type application's head is a type name or a type variable: a
-    // declaration's name is lowercase, so a type operator a declaration binds
-    // is applied under the spelling a type position reads it by, `small` or
-    // `pair_of(A)`, as a static abstraction binds either spelling. A
-    // lowercase head, a definition's name, may carry the descent `[<]`, so a
-    // decoder's arm writes its own recursion in the type it returns,
-    // `el[<](a)`, as its body writes it; the lowering reads it there and
-    // refuses it anywhere else. A capitalised head never carries it, so a
-    // generator's result keeps the `[` its attribute slot opens. The glued
-    // head stands beside the juxtaposed application below until #5330
-    // removes it.
-    let mut glued = rule(
-        RuleName("type_application"),
-        ty,
-        type_application,
-        Regex::seq([
-            Regex::alt([
-                tile(TileLabel("type_identifier")),
-                Regex::seq([
-                    tile(TileLabel("type_variable")),
-                    Regex::optional(Regex::seq([
-                        tile(TileLabel("[")),
-                        tile(TileLabel("<")),
-                        tile(TileLabel("]")),
-                    ])),
-                ]),
-            ]),
-            tile(TileLabel("(")),
-            // An empty list calls a function of no arguments, `empty()`
-            // (#5213).
-            Regex::optional(comma1(Regex::sort(ty))),
-            tile(TileLabel(")")),
-            // A call's result applied once more, `f(a)(b)`: the call returns
-            // a function, which the second list applies (#5213).
-            Regex::optional(Regex::seq([
-                tile(TileLabel("(")),
-                comma1(Regex::sort(ty)),
-                tile(TileLabel(")")),
-            ])),
-        ]),
-    );
-    glued.adaptations.push(Adaptation::superseded(
-        RuleName("type_application"),
-        SurfaceForm("glued_type_application"),
-        AdaptationReason("the glued head `T(a, b)` stays read until the sources move to `T a b`"),
-        (
-            Replacement("type_application.juxtaposed"),
-            RemovalIssue(5330),
-        ),
-    ));
-    rules.push(glued);
     // A type application written by juxtaposition, `Maybe A`, as a value call
     // is written, `f x` (#5326). Its tile is the zero-width application tile,
     // which the melder pushes between two type operands. Its provenance is

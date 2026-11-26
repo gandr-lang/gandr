@@ -2584,8 +2584,8 @@ fn a_manifest_family_component_binds_two_parameters()
         "and checks"
     );
 
-    let applied = "module M : *{ type Pair(a : Type, b : Type) = a * b, p : Pair(Integer, \
-                       String) } where { def p = *{1, \"x\"}; }";
+    let applied = "module M : *{ type Pair(a : Type, b : Type) = a * b, p : Pair Integer \
+                       String } where { def p = *{1, \"x\"}; }";
     let mut lowered = lower(applied);
     assert_eq!(
         lowered

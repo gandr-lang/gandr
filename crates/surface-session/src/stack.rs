@@ -39,9 +39,6 @@ use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SyntaxTree;
 
-/// The rule of a family's application, `List(a)`.
-const APPLICATION: &str = "type_application";
-
 /// A run of entries in one of a form's buffers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Entries
@@ -204,13 +201,9 @@ impl Spines
     ///   types, whose left operands down to its head are applications of its
     ///   own sort: its innermost left operand as its head, the start of its
     ///   first argument as its opening, the end of each argument but the last
-    ///   as a separator, each argument, and its end as its close. One spine per
-    ///   family application that writes an opening `(` among its own tiles: its
-    ///   first child as its head, its own `,` tiles as separators, the children
-    ///   between its brackets as its arguments, and its own `)` as its close,
-    ///   or its end when the parser closed it. Ascending by opening, each
-    ///   naming the innermost spine that holds it; the inner applications of a
-    ///   juxtaposed spine are no spines of their own.
+    ///   as a separator, each argument, and its end as its close. Ascending by
+    ///   opening, each naming the innermost spine that holds it; the inner
+    ///   applications of a juxtaposed spine are no spines of their own.
     /// - provides: the spines the form store keeps with a form's region.
     /// - fails: never.
     /// - panics: none.
@@ -250,12 +243,7 @@ impl Spines
                 pending.extend(walk.parts.iter().map(|&part| (part, holder)));
                 continue;
             }
-            let below = walk.applied(at).map_or(holder, |mut spine| {
-                spine.holder = holder;
-                found.push(spine);
-                Place::last(&found)
-            });
-            pending.extend(tree.children(at).map(|child| (child, below)));
+            pending.extend(tree.children(at).map(|child| (child, holder)));
         }
         if found.is_empty() {
             return None;
@@ -366,90 +354,6 @@ impl Walk<'_, '_>
     ) -> ByteSpan
     {
         ByteSpan::new(self.offset(span.start()), self.offset(span.end())).unwrap_or(span)
-    }
-
-    /// The spine the family application at `at` is, when it writes its
-    /// opening `(`; its separators and arguments are pushed onto the walk's
-    /// buffers.
-    ///
-    /// # Specification
-    /// trivial.
-    fn applied(
-        &mut self,
-        at: NodeIndex,
-    ) -> Option<Spine>
-    {
-        let (grammar, tree) = (self.grammar, self.tree);
-        let node = tree.node(at)?;
-        let NodeLabel::Meld(mold) = node.label()
-        else {
-            return None;
-        };
-        let rule = grammar.rule_of(mold).ok()?.name().0;
-        if rule != APPLICATION {
-            return None;
-        }
-        let (separated, argued) = (
-            Entries::open(&self.separators),
-            Entries::open(&self.arguments),
-        );
-        let mut head = None;
-        let mut open = None;
-        let mut close = node.span().end();
-        for child in tree.children(at) {
-            let Some(held) = tree.node(child)
-            else {
-                continue;
-            };
-            match held.label() {
-                NodeLabel::Tile(tile)
-                    if grammar
-                        .rule_of(tile)
-                        .is_ok_and(|owner| owner.name().0 == rule) =>
-                {
-                    match tree.fragment(child).map(<&str>::from) {
-                        Some("(") if open.is_none() => open = Some(held.span().end()),
-                        Some(",") if open.is_some() => {
-                            let separator = self.offset(held.span().start());
-                            self.separators.push(separator);
-                        },
-                        Some(")") if open.is_some() => close = held.span().start(),
-                        Some(_) | None => {},
-                    }
-                    if head.is_none() {
-                        head = Some(held.span());
-                    }
-                },
-                NodeLabel::Meld(_) | NodeLabel::Tile(_) => {
-                    if head.is_none() {
-                        head = Some(held.span());
-                    }
-                    else if open.is_some() {
-                        let argument = self.span(held.span());
-                        self.arguments.push(argument);
-                    }
-                },
-                NodeLabel::Wald
-                | NodeLabel::Grout { .. }
-                | NodeLabel::GhostClose { .. }
-                | NodeLabel::Space
-                | NodeLabel::Doc => {},
-            }
-        }
-        let (Some(head), Some(open)) = (head, open)
-        else {
-            separated.forget(&mut self.separators);
-            argued.forget(&mut self.arguments);
-            return None;
-        };
-        Some(Spine {
-            head: self.span(head),
-            open: self.offset(open),
-            close: self.offset(close),
-            separators: separated.closed(&self.separators),
-            arguments: argued.closed(&self.arguments),
-            holder: None,
-        })
     }
 
     /// The spine the juxtaposed application at `at` writes, `f x y`, with its

@@ -2942,20 +2942,17 @@ fn a_seam_refusal_stands_at_its_rule_5763()
 }
 
 /// A lowercase word applied by juxtaposition at a sort's index is the
-/// application that the call form writes, in either order of the indices. A
-/// spaced group after a lowercase index is an index of its own, as it is after
-/// a type name.
+/// application of its operation, in either order of the indices. A spaced
+/// group after a lowercase index is an index of its own, as it is after a type
+/// name.
 #[test]
 fn a_lowercase_application_at_a_sort_index_is_the_application_it_spells_6459()
 {
     let ext = FreeTerm::op("ext", [FreeTerm::var("g"), FreeTerm::var("a")]);
     let (d, g) = (FreeTerm::var("d"), FreeTerm::var("g"));
     for (output, indices) in [
-        ("Sub(d, ext(g, a))", [d.clone(), ext.clone()]),
-        ("Sub(d, ext g a)", [d.clone(), ext.clone()]),
         ("Sub (ext g a) d", [ext.clone(), d.clone()]),
-        ("Sub d (ext g a)", [d.clone(), ext.clone()]),
-        ("Sub d (ext(g, a))", [d.clone(), ext]),
+        ("Sub d (ext g a)", [d.clone(), ext]),
         ("Sub d (g)", [d.clone(), g.clone()]),
         ("Sub (d) (g)", [d, g]),
     ] {

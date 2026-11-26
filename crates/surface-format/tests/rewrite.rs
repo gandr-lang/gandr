@@ -717,15 +717,15 @@ fn a_composite_s_cells_are_not_a_tuple_3957()
 /// An arrow written under a thunk inside a type quote is the computation
 /// arrow, and so is its codomain arrow. The explicit form keeps both as
 /// written and braces the product of the two thunks, as the printer does. The
-/// sugared form writes the product back (#5207). Each application is written
-/// juxtaposed, `T A` (#5708).
+/// sugared form writes the product back (#5207). Each application stays
+/// juxtaposed, `T A`.
 #[test]
 fn a_product_of_thunks_in_a_type_quote_is_braced_5207()
 {
     let grammar = grammar();
     let quoted = "type(*{+U (A -> T A), +U (+U (T A) -> +U (A -> T B) -> T B)})";
     let source = "def raw : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) { fun (A) { fun (B) { \
-                  type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } };\n";
+                  type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } } };\n";
     let form = |source: &str, form: Form| {
         let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
         let options = FormatOptions {
@@ -1640,7 +1640,7 @@ fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), [Withdrawal {
         declaration: String::from("Expr"),
-        span: ByteSpan::new(ByteOffset::from(28_usize), ByteOffset::from(161_usize))
+        span: ByteSpan::new(ByteOffset::from(28_usize), ByteOffset::from(176_usize))
             .expect("a span"),
         reason: Withdrawn::Obligations,
     }]);
@@ -2301,35 +2301,21 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 }
 
 /// The formatter writes a type application juxtaposed in either form.
-/// `Parcel(Integer)` writes `Parcel Integer`.
 /// A product argument keeps its parentheses under the sugar.
 /// The explicit form writes its stars.
-/// A variable can precede a parenthesized argument.
-/// `Pair(a, Parcel(Integer))` writes `Pair a (Parcel Integer)`.
-/// A lowercase head is juxtaposed too, in its parentheses as an argument.
-/// `Pair(a, plus(Integer))` writes `Pair a (plus Integer)`.
+/// A lowercase head in an argument keeps its parentheses,
+/// `Pair a (plus Integer)`.
 /// A carrier the grammar spells as a keyword tile is a carrier too.
 /// `Path[.A = Type](a, a)` writes `Path[.A = Type] a a`.
-/// A returner encloses a juxtaposition whose first argument takes parentheses.
-/// The type grammar reads `-F Pair (Parcel Integer) Integer` as the call
-/// `Pair(Parcel Integer)` applied to `Integer` (#5708).
+/// A returner keeps the parentheses around a juxtaposition whose first
+/// argument takes parentheses (#5708).
 #[test]
 fn a_type_application_is_written_juxtaposed_5708()
 {
     let grammar = grammar();
     for (parameter, form, expected) in [
-        ("Parcel(Integer)", Form::Sugared, "Parcel Integer"),
-        ("Parcel(Integer)", Form::Explicit, "Parcel Integer"),
-        (
-            "Parcel(Integer * Integer)",
-            Form::Sugared,
-            "Parcel (Integer * Integer)",
-        ),
-        (
-            "Parcel(Integer * Integer)",
-            Form::Explicit,
-            "Parcel *{Integer, Integer}",
-        ),
+        ("Parcel Integer", Form::Sugared, "Parcel Integer"),
+        ("Parcel Integer", Form::Explicit, "Parcel Integer"),
         (
             "Parcel *{Integer, Integer}",
             Form::Sugared,
@@ -2341,22 +2327,10 @@ fn a_type_application_is_written_juxtaposed_5708()
             "Parcel *{Integer, Integer}",
         ),
         (
-            "Pair(Integer, Parcel(Integer))",
-            Form::Sugared,
-            "Pair Integer (Parcel Integer)",
-        ),
-        (
-            "Pair(a, Parcel(Integer))",
-            Form::Sugared,
-            "Pair a (Parcel Integer)",
-        ),
-        (
-            "Pair(a, plus(Integer))",
+            "Pair a (plus Integer)",
             Form::Sugared,
             "Pair a (plus Integer)",
         ),
-        ("plus(Integer)", Form::Sugared, "plus Integer"),
-        ("plus(Integer)", Form::Explicit, "plus Integer"),
         ("Path(a, a)", Form::Sugared, "Path a a"),
         ("Path(a, a)", Form::Explicit, "Path a a"),
         ("Bridge(a, a)", Form::Sugared, "Bridge a a"),
@@ -2381,12 +2355,7 @@ fn a_type_application_is_written_juxtaposed_5708()
             "Bridge[.A = Type] a a",
         ),
         (
-            "Pair(Parcel(Integer), Integer)",
-            Form::Sugared,
-            "Pair (Parcel Integer) Integer",
-        ),
-        (
-            "+U (Integer -> -F Pair(Parcel(Integer), Integer))",
+            "+U (Integer -> -F (Pair (Parcel Integer) Integer))",
             Form::Explicit,
             "+U (Integer -> -F (Pair (Parcel Integer) Integer))",
         ),
@@ -2420,7 +2389,7 @@ fn a_selected_rewrite_keeps_a_bare_claim()
             parameter = parameter
         )
     };
-    let source = format!("@[checks]\n{}", written("Parcel(Integer)"));
+    let source = format!("@[checks]\n{}", written("Path(a, a)"));
     assert_eq!(
         spelled(
             &grammar,
@@ -2428,29 +2397,27 @@ fn a_selected_rewrite_keeps_a_bare_claim()
             Form::Sugared,
             Selection::Only(&[RewriteName::TypeApplication])
         ),
-        format!("@[checks]\n{}", written("Parcel Integer"))
+        format!("@[checks]\n{}", written("Path a a"))
     );
     assert_eq!(
         spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
-        written("Parcel Integer")
+        written("Path a a")
     );
 }
 
 /// A constructor's result is written juxtaposed in either form, also where
 /// its first argument takes parentheses: `--> Var (Extend gamma a) a` and
-/// `--> Fin (Succ n)` read as the call forms they replace (#5803).
+/// `--> Fin (Succ n)` keep their parentheses (#5803).
 #[test]
 fn a_constructor_result_is_written_juxtaposed_5803()
 {
     let grammar = grammar();
-    let source =
-        include_str!("rewrite/unformatted/a-constructor-result-is-written-juxtaposed-5803.gandr");
     let formatted = include_str!(
         "rewrite/unformatted/a-constructor-result-is-written-juxtaposed-5803-formatted.gandr"
     );
     for form in [Form::Sugared, Form::Explicit] {
         assert_eq!(
-            spelled(&grammar, source, form, Selection::Every),
+            spelled(&grammar, formatted, form, Selection::Every),
             formatted,
             "{form}"
         );

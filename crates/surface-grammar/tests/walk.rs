@@ -96,14 +96,15 @@ use crate::failure::Failure;
 /// own, `el [<] a`, then by the wildcard as a type atom, `Path[.A = A] a _`,
 /// then by a functor application whose argument is juxtaposed, `module A = F
 /// B ;`, then by a lowercase word that heads a type applying as each head
-/// does.
-const BUILT_IN_FINGERPRINT: u64 = 0x7a94_25b4_7e4a_3745;
+/// does, then by the type application's second form leaving the grammar
+/// (#5330).
+const BUILT_IN_FINGERPRINT: u64 = 0x23d6_a1be_26cf_d671;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3194);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3181);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -120,8 +121,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 1),
     ("&&", 1),
     ("&{", 2),
-    ("(", 130),
-    (")", 134),
+    ("(", 128),
+    (")", 132),
     ("*", 2),
     ("*=", 17),
     ("*{", 9),
@@ -130,7 +131,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 17),
     ("+U", 1),
     ("+{", 3),
-    (",", 285),
+    (",", 281),
     ("-", 6),
     ("-->", 31),
     ("-=", 17),
@@ -145,7 +146,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (":", 256),
     (":>", 2),
     (";", 144),
-    ("<", 18),
+    ("<", 17),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
@@ -178,8 +179,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 62),
-    ("]", 80),
+    ("[", 61),
+    ("]", 79),
     ("_", 49),
     ("abort", 1),
     ("access", 1),
@@ -277,8 +278,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 3),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 227),
-    ("type_variable", 91),
+    ("type_identifier", 226),
+    ("type_variable", 90),
     ("typed_number", 2),
     ("u16", 1),
     ("u32", 1),

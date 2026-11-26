@@ -1579,10 +1579,10 @@ fn next_labels<'src>(
 }
 
 /// The forms whose `(` opens a call list only where the source writes it
-/// straight after the head: the call form of a type, `Vec(A, n)`, until #5330
-/// retires it, and the endpoint lists of a path type and a bridge type,
-/// `Path(a, b)`. After a space the `(` opens a group that the head applies.
-const GLUED_CALLS: [&str; 3] = ["type_application", "path_type", "bridge_type"];
+/// straight after the head: the endpoint lists of a path type and a bridge
+/// type, `Path(a, b)`. After a space the `(` opens a group that the head
+/// applies.
+const GLUED_CALLS: [&str; 2] = ["path_type", "bridge_type"];
 
 /// Whether a space stands between a token and the next significant one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4365,8 +4365,6 @@ impl<'pbg> Molder<'pbg>
                     let admitted = self
                         .direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source);
                     let admitted = MoldAdmissibility::from(bool::from(admitted));
-                    let admitted =
-                        self.type_call_head_admits(mold, admitted, tokens, index, source);
                     bool::from(self.descent_admits(mold, admitted, tokens, index, source))
                 },
                 None => bool::from(admitted),
@@ -4561,91 +4559,6 @@ impl<'pbg> Molder<'pbg>
             next_significant(tokens, first_index)
                 .is_some_and(|(_, colon)| AsRef::<str>::as_ref(&colon.text(source)) == ":"),
         )
-    }
-
-    /// Return whether a type-call head keeps its mold before the token after
-    /// it.
-    ///
-    /// The call form's head reads only before a glued opener: `f(x)` is a
-    /// call, and `f (x)` applies `f` to a group. So a head before a spaced
-    /// `(` is refused, and a head before a spaced `[` too: `el [<] a` applies
-    /// `el` to the descent. In `Vec a plus(m, k)` a name follows `a`, and the
-    /// `(` of `plus` stands in the window of `a`. So `a` is refused too, reads
-    /// as an atom, and the melder pushes the application tile after it. A line
-    /// break between `a` and the name keeps that reading, since the printer
-    /// breaks a long application between its operands. A head before any
-    /// other token keeps its admission: a glued `(` or `[`, a symbol, or a
-    /// name with no `(` after it on the name's line in the window. There the
-    /// molder repairs a missing opener, and the repair keeps its one
-    /// obligation at the gap.
-    ///
-    /// # Specification
-    /// - requires: `tokens` labels `source`, and `index` names the current
-    ///   head.
-    /// - ensures: refuses an admitted `type_application` head exactly when the
-    ///   next significant token is a spaced `(` or `[`, or a name with a `(`
-    ///   among the next [`LOOKAHEAD`] significant tokens before a line break
-    ///   after the name. It keeps every other admission.
-    /// - provides: the admission of a type-call head.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a spaced operand, a glued call, a glued descent
-    ///   marker, a spaced descent and a dropped opener distinguish a head from
-    ///   an operand and from a repair.
-    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
-    /// - witness: `tests::grammar::a_descent_is_an_operand_of_its_own`
-    #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
-    fn type_call_head_admits(
-        &self,
-        mold: MoldId,
-        admitted: MoldAdmissibility,
-        tokens: &[Token],
-        index: TokenIndex,
-        source: &SourceFragment<'_>,
-    ) -> MoldAdmissibility
-    {
-        let head = self.pbg.rule_of(mold).is_ok_and(|rule| {
-            rule.name() == RuleName("type_application")
-                && bool::from(self.pbg.mold_is_form_first(mold))
-        });
-        if !head {
-            return admitted;
-        }
-        let Some((_, next)) = next_significant(tokens, index)
-        else {
-            return admitted;
-        };
-        let opener = |token: Token| <&str>::from(token.text(source)) == "(";
-        let refused = if opener(next) || <&str>::from(next.text(source)) == "[" {
-            spacing(tokens, index) == Spacing::Spaced
-        }
-        else if matches!(next.lexeme, Lexeme::LowerWord | Lexeme::UpperWord) {
-            let mut seen = 0_usize;
-            let mut opened = false;
-            for &token in tokens.iter().skip(usize::from(index).saturating_add(1)) {
-                if token.lexeme == Lexeme::Space {
-                    if seen > 0 && <&str>::from(token.text(source)).contains('\n') {
-                        break;
-                    }
-                    continue;
-                }
-                if opener(token) {
-                    opened = true;
-                    break;
-                }
-                seen = seen.saturating_add(1);
-                if seen >= LOOKAHEAD {
-                    break;
-                }
-            }
-            opened
-        }
-        else {
-            false
-        };
-        MoldAdmissibility::from(bool::from(admitted) && !refused)
     }
 
     /// Return whether a `[` keeps its mold as the descent or as a staged
@@ -5356,13 +5269,11 @@ impl<'pbg> Molder<'pbg>
 
     /// Whether a type's mold can stand before a token written after a space
     /// (#5326). A mold that ends a whole type is followed by a token that
-    /// starts a type, since the melder applies the type to it. Until #5330
-    /// retires the call form, only a `(` written straight after a type name
-    /// continues the call form, so the call form's own `(` does not follow
-    /// the mold here. The endpoint list of a path or bridge type is a call
-    /// list alike: `Path (g(a)) (g(a))` applies `Path` to two groups. A type
-    /// variable takes an argument as a type name does: `fam d c` applies
-    /// `fam` to two arguments.
+    /// starts a type, since the melder applies the type to it. The endpoint
+    /// list of a path or bridge type is a call list: `Path (g a) (g a)`
+    /// applies `Path` to two groups, and only a `(` written straight after
+    /// the head opens the list. A type variable takes an argument as a type
+    /// name does: `fam d c` applies `fam` to two arguments.
     ///
     /// # Specification
     /// - requires: `labels` are the labels of a token written after a space.
@@ -5382,12 +5293,10 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — `Vec Integer (Succ Zero)` applies `Vec` to two
     ///   arguments, `Var (Extend g n) n` to two, `Vec a (Succ n)` to two, `-F
-    ///   Maybe A` returns `Maybe A`, `fam d c` applies `fam` to two, `Vec(A,
-    ///   n)` keeps the call form, and `Path (g(a)) (g(a))` applies `Path` to
-    ///   two groups: keeping the call form's `(` reads the group as a call of
-    ///   `Integer` or `a`, keeping the endpoint list's `(` reads the groups as
-    ///   the endpoints, and refuting a whole type before a type reads `Maybe`
-    ///   as the call form's head.
+    ///   Maybe A` returns `Maybe A`, `fam d c` applies `fam` to two, and `Path
+    ///   (g a) (g a)` applies `Path` to two groups: keeping the endpoint list's
+    ///   `(` reads the groups as the endpoints, and refuting a whole type
+    ///   before a type reads `Maybe` as a head that takes no argument.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
     /// - witness: `tests::grammar::a_called_former_keeps_its_own_opener_6121`
     #[cfg_attr(
@@ -5471,9 +5380,9 @@ impl<'pbg> Molder<'pbg>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a type application's name tied with the bare type
-    ///   name before `(` and before `,`, beside a second opener `(` continues,
-    ///   and beside a tile with a successor, and a constructor pattern's name,
+    /// - hypothesis: L3 — a path type's head tied with the bare type name
+    ///   before `(` and before `,`, beside a second opener `(` continues, and
+    ///   beside a tile with a successor, and a constructor pattern's name,
     ///   which can end its form, before `(`: the first and the last return the
     ///   continued opener; dropping the uniqueness check, admitting a tile with
     ///   a successor as complete, or refusing a form-last opener each changes
@@ -5552,11 +5461,11 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a primitive type's two readings before `,`, a
     ///   constructor pattern's name before `=>` and before `(`, the name beside
-    ///   a constructor expression, and a type application's name beside the
-    ///   bare type name: only the alike readings and the lone name before `=>`
-    ///   return the least; ignoring the next token, the sort, or the form-last
-    ///   check each changes one case. The corpus molds to the same trees with
-    ///   the windows the rule skips.
+    ///   a constructor expression, and a path type's head beside the bare type
+    ///   name: only the alike readings and the lone name before `=>` return the
+    ///   least; ignoring the next token, the sort, or the form-last check each
+    ///   changes one case. The corpus molds to the same trees with the windows
+    ///   the rule skips.
     /// - witness: `mold::tests::readings_that_end_alike_keep_the_least`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[cfg_attr(
@@ -6356,8 +6265,9 @@ mod tests
 
     /// The rule of `def f(x, y) …`.
     const DEF: RuleName = RuleName("def_value");
-    /// The rule of `Vec(a, n)`, the call form a type application keeps.
-    const CALL: RuleName = RuleName("type_application");
+    /// The rule of `(a : A, b : B) -> C`, the parenthesized list of a box's
+    /// domain.
+    const LIST: RuleName = RuleName("parenthesized_type");
     /// The comma tile.
     const COMMA: TileLabel = TileLabel(",");
     /// The uppercase-name label a reserved word falls back to.
@@ -6436,13 +6346,13 @@ mod tests
         );
         assert_eq!(molder.follow(parameter_comma, &close), Follow::Refuted);
         assert_eq!(molder.follow(parameter_comma, &nothing), Follow::Refuted);
-        // `Vec(a, n)`: an argument fills the hole after the comma, and an
-        // argument begins with a form's first tile, which a closer never is.
-        let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
+        // `(a, b) -> c`: an entry fills the hole after the comma, and an
+        // entry begins with a form's first tile, which a closer never is.
+        let argument_comma = mold_in(&pbg, LIST, COMMA, RightSide::Hole, &[])?;
         assert_eq!(molder.follow(argument_comma, &identifier), Follow::Possible);
         assert_eq!(molder.follow(argument_comma, &close), Follow::Refuted);
-        // `Vec(a)`: the closer ends its form, so it may end the stream.
-        let call_close = mold_in(&pbg, CALL, TileLabel(")"), RightSide::Closed, &[])?;
+        // `(a)`: the closer ends its form, so it may end the stream.
+        let call_close = mold_in(&pbg, LIST, TileLabel(")"), RightSide::Closed, &[])?;
         assert!(bool::from(pbg.mold_is_form_last(call_close)));
         assert_eq!(molder.follow(call_close, &nothing), Follow::Possible);
         // A token whose labels the grammar does not declare is a token all
@@ -6451,10 +6361,7 @@ mod tests
             molder.follow(call_close, &resolve("absent-label-for-witness")),
             Follow::Refuted
         );
-        // `f(a)(b)` (#5213): a second list may apply a type call's result, so
-        // `(` stands after the first list's closer.
         let open = resolve("(");
-        assert_eq!(molder.follow(call_close, &open), Follow::Possible);
         // `?(P). S` (#1229): the unknown type is a whole type, and no type
         // form goes on with `(` after one, while `.` and `)` stand after a
         // type operand.
@@ -6504,10 +6411,10 @@ mod tests
             RightSide::Closed,
             &[TileLabel("identifier")],
         )?;
-        // A type application's argument comma opens another argument; its
-        // trailing comma is followed by the closer.
-        let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
-        let trailing_comma = mold_in(&pbg, CALL, COMMA, RightSide::Closed, &[TileLabel(")")])?;
+        // A box domain's entry comma opens another entry; its trailing comma
+        // is followed by the closer.
+        let argument_comma = mold_in(&pbg, LIST, COMMA, RightSide::Hole, &[])?;
+        let trailing_comma = mold_in(&pbg, LIST, COMMA, RightSide::Closed, &[TileLabel(")")])?;
         let cases: [(&str, &[MoldId], &[MoldId]); 7] = [
             (", x", &[parameter_comma, field_comma], &[
                 parameter_comma,
@@ -6566,7 +6473,7 @@ mod tests
                 .then_some((mold, twin))
             })
             .ok_or("a definition's parameter names share a class")?;
-        let other = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
+        let other = mold_in(&pbg, LIST, COMMA, RightSide::Hole, &[])?;
         assert_ne!(pbg.least_interchangeable(other), name);
         let mut ascending = [name, variable, other];
         ascending.sort_unstable();
@@ -6587,11 +6494,11 @@ mod tests
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
         let open = TileLabel("(");
-        // `List(T)` against the complete type `List`.
+        // `Path(a, b)` against the complete type `List`.
         let application = mold_in(
             &pbg,
-            RuleName("type_application"),
-            TYPE_IDENTIFIER,
+            RuleName("path_type"),
+            TileLabel("Path"),
             RightSide::Closed,
             &[open],
         )?;
@@ -6696,11 +6603,11 @@ mod tests
             RightSide::Closed,
             &[],
         )?;
-        // `List(T)` against `List`: the application cannot end at its name.
+        // `Path` against `List`: the two end their forms at two bands.
         let application = mold_in(
             &pbg,
-            RuleName("type_application"),
-            TYPE_IDENTIFIER,
+            RuleName("path_type"),
+            TileLabel("Path"),
             RightSide::Closed,
             &[TileLabel("(")],
         )?;
@@ -6746,14 +6653,13 @@ mod tests
     #[test]
     fn a_long_type_application_is_read_whole() -> Result<(), Failure>
     {
-        // Nine tokens follow the name, so a window ends inside the argument
-        // list, where the complete type `Pair` before a parenthesized type
-        // scored better than the unfinished application.
+        // A window can end inside the operands, where the complete type
+        // `Pair` competes with the application that goes on.
         let pbg = built()?;
-        let source = "def pair(x : Integer) -> -F Pair(Integer, String, x, x) { ret x }\n";
+        let source = "def pair(x : Integer) -> -F Pair Integer String x x { ret x }\n";
         let parsed = crate::parse(&pbg, SourceText::from(source))?;
         let tree = parsed.tree();
-        let applied = source.find("Pair(").ok_or("the source applies `Pair`")?;
+        let applied = source.find("Pair ").ok_or("the source applies `Pair`")?;
         let melds: Vec<(RuleName, usize, usize)> = tree
             .positions()
             .filter_map(|position| {
@@ -6770,19 +6676,21 @@ mod tests
                 ))
             })
             .collect();
+        let applications: Vec<&(RuleName, usize, usize)> = melds
+            .iter()
+            .filter(|&&(rule, ..)| rule == RuleName("type_application.juxtaposed"))
+            .collect();
         assert!(
-            melds.contains(&(
-                RuleName("type_application"),
+            applications.contains(&&(
+                RuleName("type_application.juxtaposed"),
                 applied,
-                applied.saturating_add("Pair(Integer, String, x, x)".len())
+                applied.saturating_add("Pair Integer String x x".len())
             )),
-            "the application spans its arguments: {melds:?}"
+            "the application spans its operands: {melds:?}"
         );
         assert!(
-            melds
-                .iter()
-                .all(|&(rule, ..)| rule != RuleName("parenthesized_type")),
-            "no argument list stands alone: {melds:?}"
+            applications.iter().all(|&&(_, start, _)| start == applied),
+            "each application is headed by `Pair`: {melds:?}"
         );
         Ok(())
     }
@@ -6790,14 +6698,14 @@ mod tests
     #[test]
     fn a_window_reads_the_token_after_a_tied_separator() -> Result<(), Failure>
     {
-        // A type application's separator ties the comma that opens another
-        // argument with the trailing one its closer follows. Read alone, the
-        // lesser mold wins and the closer after it becomes a repair; inside a
-        // window the next token is known, and only the trailing comma can
-        // precede it.
+        // A box domain's separator ties the comma that opens another entry
+        // with the trailing one its closer follows. Read alone, the lesser
+        // mold wins and the closer after it becomes a repair; inside a window
+        // the next token is known, and only the trailing comma can precede
+        // it.
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let written = "def x : Pair(Integer, ) ;";
+        let written = "def x : (Integer, ) -> Integer ;";
         let source = SourceText::from(written);
         let tokens = label(SourceFragment::from(written));
         let comma = tokens
@@ -6810,8 +6718,8 @@ mod tests
         for &token in tokens.get(.. comma).ok_or("the comma is in the stream")? {
             molder.mold(&mut state, token, source);
         }
-        let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
-        let trailing_comma = mold_in(&pbg, CALL, COMMA, RightSide::Closed, &[TileLabel(")")])?;
+        let argument_comma = mold_in(&pbg, LIST, COMMA, RightSide::Hole, &[])?;
+        let trailing_comma = mold_in(&pbg, LIST, COMMA, RightSide::Closed, &[TileLabel(")")])?;
         let mut menu = vec![argument_comma, trailing_comma];
         menu.sort_unstable();
         molder.candidates.clone_from(&menu);

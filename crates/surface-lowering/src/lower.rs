@@ -2493,13 +2493,13 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def k : Stack(-F Integer, -F String) ;"),
+            SourceText::from("def k : Stack (-F Integer) (-F String) ;"),
             &mut arena,
         );
         let declared = declared_of(outcomes(&module)[0]);
         let Some(&ValueType::Stack { input, output }) = arena.value_type(declared)
         else {
-            panic!("`Stack(C, D)` is a continuation's type");
+            panic!("`Stack C D` is a continuation's type");
         };
         let returned = |id| match arena.comp_type(id) {
             Some(&CompType::Returner { result, .. }) => arena.value_type(result).cloned(),
@@ -2835,7 +2835,7 @@ mod tests
                 "data U : Type where { | NatC : U | Arrow : (a : U, b : U) --> U } def pick(n : \
                  Integer) -> -F Type { return Integer } def twice(n : Integer) -> -F Type { \
                  let x = pick n; return (x -> x) } def el(u : U) -> -F Type { return Integer \
-                 } def one : el(Arrow(NatC, NatC)) ;",
+                 } def one : el (Arrow NatC NatC) ;",
             ),
             &mut arena,
         );
@@ -2884,7 +2884,7 @@ mod tests
 
         let Some(&ValueType::Element { code, .. }) = arena.value_type(declared_of(lowered[4]))
         else {
-            panic!("`el(…)` in a type is a decode");
+            panic!("`el …` in a type is a decode");
         };
         let Some(&Value::Returned(call)) = arena.value(code)
         else {
@@ -2896,7 +2896,7 @@ mod tests
         };
         let Some(&Value::Constructor { ref fields, .. }) = arena.value(argument)
         else {
-            panic!("to `Arrow(NatC, NatC)`, a constructor value, not a type");
+            panic!("to `Arrow NatC NatC`, a constructor value, not a type");
         };
         assert!(
             fields
@@ -5900,9 +5900,9 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
         assert_eq!(
-            refusal(SourceText::from("def a : Foo(Integer) ;")),
+            refusal(SourceText::from("def a : Foo Integer ;")),
             LoweringRefusal::UnresolvedTypeHead {
-                span: at(8_usize, 20_usize),
+                span: at(8_usize, 19_usize),
                 head: at(8_usize, 11_usize),
                 name: SurfaceName::from("Foo"),
                 arity: HeadArity::Unary,
@@ -5910,9 +5910,9 @@ mod tests
             "a head applied to one argument is looked up among the unary formers"
         );
         assert_eq!(
-            refusal(SourceText::from("def a : Foo(Integer, String) ;")),
+            refusal(SourceText::from("def a : Foo Integer String ;")),
             LoweringRefusal::UnresolvedTypeHead {
-                span: at(8_usize, 28_usize),
+                span: at(8_usize, 26_usize),
                 head: at(8_usize, 11_usize),
                 name: SurfaceName::from("Foo"),
                 arity: HeadArity::Polyadic(OperandCount::from(2_usize)),
@@ -6765,7 +6765,7 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def t : Type -> Type[-, 1] ; def u : Type -> Type -> Type[-, 1] ; def a : +U \
-                 (t(Integer, Integer)) ; def b : +U (u(Integer)) ;",
+                 (t Integer Integer) ; def b : +U (u Integer) ;",
             ),
             &mut arena,
         );
@@ -7116,7 +7116,7 @@ mod tests
     }
 
     /// #3681: a decoder's descent at the carrier of a path type it quotes,
-    /// `Path[.A = el[<](a)](x, y)`, was refused by its sort: the expression
+    /// `Path[.A = el [<] a](x, y)`, was refused by its sort: the expression
     /// grammar molds it as a call whose head is an instantiation, which no
     /// name resolves. It is the descent the type grammar spells, the decode
     /// of its fixpoint's call, as an unmarked call there is (#3573).
@@ -7126,7 +7126,7 @@ mod tests
         let mut arena = CoreArena::new();
         let text = "data U : Type where { | NatU : U | PathU : (a : U, x : Integer, y : Integer) --> U } \
                     def rec el(u : U) -> -F Type { match u { | NatU => return Integer | PathU(a, x, \
-                    y) => return (type(Path[.A = el[<](a)](x, y))) } }";
+                    y) => return (type(Path[.A = el [<] a](x, y))) } }";
         let module = lowered(SourceText::from(text), &mut arena);
         let lowered = outcomes(&module);
         assert!(
@@ -7134,7 +7134,7 @@ mod tests
             "the decoder lowers: {:?}",
             lowered[1]
         );
-        let at = text.find("el[<](a)").expect("the carrier is written");
+        let at = text.find("el [<] a").expect("the carrier is written");
         let carrier = module
             .origins()
             .value_types()
@@ -7238,15 +7238,15 @@ mod tests
 
     /// #6787: the bare name of a definition of no input, at a family's
     /// argument inside a type, runs it: the force of its constant, which
-    /// answers at the name. Its value is what that force returns, in the call
-    /// form and in the juxtaposed form. A plan of the call over an empty
+    /// answers at the name. Its value is what that force returns, after a
+    /// type parameter and after a type name. A plan of the call over an empty
     /// stretch fails the postcondition of `Plan::Called`.
     #[test]
     fn a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787()
     {
         for text in [
             "data Pair(a : Type, b : Type) : Type where { | Mk : (x : a, y : b) --> Pair a b } def \
-             plus() -> -F Type { return Integer } def called(a : Type, x : Pair(a, plus)) -> -F \
+             plus() -> -F Type { return Integer } def called(a : Type, x : Pair a plus) -> -F \
              Integer { return 1 }",
             "data Pair(a : Type, b : Type) : Type where { | Mk : (x : a, y : b) --> Pair a b } def \
              plus() -> -F Type { return Integer } def called(a : Type, x : Pair Integer plus) -> \
@@ -7265,8 +7265,8 @@ mod tests
                 Some(&ValueType::Thunk(arrow)) => arrow,
                 other => panic!("a function's type is a thunk: {other:?}"),
             };
-            // The rest names `a` in the call form, and no type names it in the
-            // juxtaposed form.
+            // The rest names `a` in the first text, and no type names it in the
+            // second.
             let Some(&(CompType::Pi { codomain, .. } | CompType::Arrow { codomain, .. })) =
                 arena.comp_type(arrow)
             else {
@@ -8060,9 +8060,6 @@ mod tests
         let unopened = include_str!(
             "lower/unformatted/a-bracket-the-layout-misplaces-is-refused-where-it-was-written-2242-unopened.gandr"
         );
-        let quoted = include_str!(
-            "lower/unformatted/a-bracket-the-layout-misplaces-is-refused-where-it-was-written-2242-quoted.gandr"
-        );
         let after = |source: &str, written: &str| {
             source
                 .find(written)
@@ -8100,13 +8097,6 @@ mod tests
                 FormFault::MissingOpen(ClosingClass::Brace),
                 "a `}` beginning a line deeper than every waiting `{` answers one left out at \
                  the end of the line at its indentation",
-            ),
-            (
-                quoted,
-                at(after(quoted, "List"), after(quoted, "List(")),
-                "type_application",
-                FormFault::ExtraOpen(ClosingClass::Paren),
-                "a doubled `(` is refused at the first of the pair",
             ),
         ] {
             let tree = repaired(&pbg, SourceText::from(source));
@@ -10004,7 +9994,7 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def apply : (Type -> Type) -> Type -> Type ; def apply = fun (F) { fun (X) { F X } \
-                 } ; def pairs : apply(fun (Y) { type(Y * Y) }, Integer) ; def id : +U (Integer -> \
+                 } ; def pairs : apply (fun (Y) { type(Y * Y) }) Integer ; def id : +U (Integer -> \
                  -F Integer) ; def id = thunk { fun (x) { return x } } ; def two : Type -> Type -> \
                  Type ; def two = fun (A, B) { A } ; def held : Type -> Type ; def held = fun (A) { \
                  let x = A ; x } ;",
@@ -10872,7 +10862,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "data Both(a : Type, b : Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } \
+                "data Both(a : Type, b : Type) : Type where { | MkBoth : (x : a, y : b) --> Both a b } \
                  def same(a : Type) -> -F Type { return a } def pairSame(a : Type) -> -F Type { \
                  return (Both (same a) a) }",
             ),
@@ -10903,7 +10893,7 @@ mod tests
         };
         assert!(
             matches!(arena.value(called), Some(&Value::Returned(_))),
-            "`same(a)` as `Both`'s argument is the value it returns: {:?}",
+            "`same a` as `Both`'s argument is the value it returns: {:?}",
             arena.value(called)
         );
         assert_eq!(
@@ -10928,8 +10918,8 @@ mod tests
             SourceText::from(
                 "def idf(d : Type, c : Type, x : d) -> -F d { return x } def fam(d : Type, c : \
                  Type, f : +U (d -> -F d)) -> -F Type { return d } def k10(d : Type, c : Type, w \
-                 : d, v : fam(d, c, thunk { fun (a) { idf d c w } })) -> -F Unit { return *{} \
-                 } def k11(d : Type, c : Type, w : d, v : fam(d, c, thunk { fun (a) { return w } \
+                 : d, v : fam d c (thunk { fun (a) { idf d c w } })) -> -F Unit { return *{} \
+                 } def k11(d : Type, c : Type, w : d, v : fam d c (thunk { fun (a) { return w } \
                  })) -> -F Unit { return *{} }",
             ),
             &mut arena,
@@ -11018,9 +11008,9 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "data Sig(a : Type, b : +U (a -> -F Type)) : Type where { | MkSig : (x : a, y : b(x)) --> Sig(a, b) } data IR(d : Type) : Type[+, 1] where { | Iota : (e : d) --> IR(d) | SigmaC : (a : Type, f : +U (a -> -F IR(d))) --> IR(d) } def rec argsU(c : IR(Unit)) -> \
+                "data Sig(a : Type, b : +U (a -> -F Type)) : Type where { | MkSig : (x : a, y : b x) --> Sig a b } data IR(d : Type) : Type[+, 1] where { | Iota : (e : d) --> IR d | SigmaC : (a : Type, f : +U (a -> -F IR d)) --> IR d } def rec argsU(c : IR Unit) -> \
                  -F Type { match c { | Iota(e) => return Unit | SigmaC(a, f) => return (Sig a (thunk \
-                 { fun (y) { argsU[<] (f y) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
+                 { fun (y) { argsU[<] (f y) } })) } } def rec argsD(d : Type, c : IR d) -> -F Type \
                  { match c { | Iota(e) => return Unit | SigmaC(a, f) => return (Sig a (thunk { fun (y) \
                  { argsD[<] d (f y) } })) } }",
             ),
