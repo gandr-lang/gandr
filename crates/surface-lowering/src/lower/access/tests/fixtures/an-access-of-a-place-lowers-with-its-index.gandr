@@ -1,5 +1,5 @@
-def pair : List Integer;
-def pair = cons 1 (cons 2 nil);
+def pair : List Integer
+def pair = cons 1 (cons 2 nil)
 def second() -> Integer = {
   var xs = pair
   access xs.#[1] as v { resume v (v + 1) }

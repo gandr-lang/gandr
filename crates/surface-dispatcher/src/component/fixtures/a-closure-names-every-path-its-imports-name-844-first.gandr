@@ -1,3 +1,3 @@
-import "./second.gandr";
-import "./missing.gandr";
+import "./second.gandr"
+import "./missing.gandr"
 def one : Integer = 1;

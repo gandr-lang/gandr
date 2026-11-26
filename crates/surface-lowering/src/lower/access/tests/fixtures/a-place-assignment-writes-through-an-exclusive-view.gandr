@@ -1,5 +1,5 @@
-def pair : List Integer;
-def pair = cons 1 (cons 2 nil);
+def pair : List Integer
+def pair = cons 1 (cons 2 nil)
 def written() -> Integer = {
   var n = 1
   n = n + 1

@@ -1,4 +1,4 @@
-def kept(i : Bool ≅ Integer) -> Bool ≅ Integer = i;
+def kept(i : Bool ≅ Integer) -> Bool ≅ Integer = i
 def made(i : Bool ≅ Integer) -> Bool ≃ Integer =
   match i { | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}} }
 def forwardOf(i : Bool ≅ Integer) -> Bool -> Integer = {

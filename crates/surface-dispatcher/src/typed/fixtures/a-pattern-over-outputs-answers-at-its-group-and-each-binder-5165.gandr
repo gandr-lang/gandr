@@ -1,4 +1,4 @@
-def pair(m : Integer, n : Bool) -> (quot : Integer, rem : Bool) = (m, n);
+def pair(m : Integer, n : Bool) -> (quot : Integer, rem : Bool) = (m, n)
 
 def placed() -> Integer = {
   let (a, b) = pair 1 true

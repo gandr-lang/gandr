@@ -1,4 +1,4 @@
-import "./kit.gandr";
+import "./kit.gandr"
 module Seen : Model(Kit.Shown) where {
   def label : String;
   def label = "seen";

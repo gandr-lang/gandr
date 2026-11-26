@@ -6,7 +6,7 @@ def join(
   z : A,
   p : Path[.A = A] x y,
   q : Path[.A = A] y z
-) -> Path[.A = A] x z = Path.step p q;
+) -> Path[.A = A] x z = Path.step p q
 /// The composite of two cells, one cell at a time.
 def composedCells(
   A : Type,
@@ -27,7 +27,7 @@ def selfFill(
 ) -> Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step f g) = fill[5, 7]
   (chain 2)
   (composedCells A x y z)
-  (Path.here f, g);
+  (Path.here f, g)
 /// That reflexivity, one cell at a time: a generator whose body is a fill.
 def selfFillOver(
   A : Type,
@@ -52,7 +52,7 @@ def liftRight(
 ) -> Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step fp g) = Path.walk
   (fun (c) { type(Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step c g)) })
   fa
-  (Path.here (Path.step fm g));
+  (Path.here (Path.step fm g))
 /// The outer fill, its generator's body a fill.
 def nestedFill(
   A : Type,
@@ -67,7 +67,7 @@ def nestedFill(
   (selfFill A x y z fm g)
   (liftRight A x y z fm fp fa g)) (Path.step
   (liftRight A x y z fm fp fa g)
-  (selfFill A x y z fp g)) = fill[5, 7] (chain 2) (selfFillOver A x y z) (fa, g);
+  (selfFill A x y z fp g)) = fill[5, 7] (chain 2) (selfFillOver A x y z) (fa, g)
 /// The nested fill at reflexivities.
 def nestedAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = A] x x] (Path.step
   (Path.here x)

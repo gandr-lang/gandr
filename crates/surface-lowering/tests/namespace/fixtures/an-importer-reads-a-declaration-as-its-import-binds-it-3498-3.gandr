@@ -1,2 +1,2 @@
-import "./base.gandr" : Older via downgrade;
+import "./base.gandr" : Older via downgrade
 def relayed = answer;

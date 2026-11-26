@@ -1,6 +1,6 @@
 /// A function's action on a path.
 def ap(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A] x y) -> Path[.A = B] (F x) (F
-  y) = Path.ap F p;
+  y) = Path.ap F p
 /// The left whisker: the action of the composite with `f`.
 def whiskerLeft(
   A : Type,
@@ -17,7 +17,7 @@ def whiskerLeft(
   (fun (q : Path[.A = A] y z) { Path.step f q } : Path[.A = A] y z -> Path[.A = A] x z)
   g1
   g2
-  b;
+  b
 /// The right whisker: the action of the composite with `g`.
 def whiskerRight(
   A : Type,
@@ -34,7 +34,7 @@ def whiskerRight(
   (fun (q : Path[.A = A] x y) { Path.step q g } : Path[.A = A] x y -> Path[.A = A] x z)
   f1
   f2
-  a;
+  a
 /// The associator, by conversion.
 def assoc(
   A : Type,
@@ -47,7 +47,7 @@ def assoc(
   h : Path[.A = A] z w
 ) -> Path[.A = Path[.A = A] x w] (Path.step (Path.step f g) h) (Path.step
   f
-  (Path.step g h)) = Path.here (Path.step (Path.step f g) h);
+  (Path.step g h)) = Path.here (Path.step (Path.step f g) h)
 /// A whisker, an associator read back and a whisker, at reflexivities.
 def whiskered(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A] x x] (Path.here x) (Path.here
   x)] (Path.step

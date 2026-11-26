@@ -5,9 +5,9 @@ data Either : Type where { | Count : (m : Nat) --> Either | Mark : (f : Flag) --
 @[reads(*{Either, Nat})]
 def side(n : Nat, e : Either) -> Nat = match e -> -F Nat { | Count(_m) => n | Mark(_f) => n };
 @[reads(*{side, Nat, Flag, Either})]
-def marked() -> Nat = side (Succ Zero) (Mark On);
-def answer : Integer;
+def marked() -> Nat = side (Succ Zero) (Mark On)
+def answer : Integer
 @[reads(())]
-def answer = 42;
+def answer = 42
 @[reads(Either)]
 def short(x : Nat) -> Nat = x;

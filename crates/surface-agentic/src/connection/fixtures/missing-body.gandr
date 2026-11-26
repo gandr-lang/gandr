@@ -1,2 +1,2 @@
-def f : Integer;
+def f : Integer
 def f = missing;

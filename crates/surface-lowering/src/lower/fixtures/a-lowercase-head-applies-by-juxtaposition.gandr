@@ -6,7 +6,7 @@ def both : Type -> Type -> Type = fun (A) { fun (B) { type(A * B) } };
 
 def once(n : Integer) -> twice Integer = *{n, n};
 
-def deep(p : apply twice Integer) -> Integer = 1;
+def deep(p : apply twice Integer) -> Integer = 1
 
 def mixed(n : Integer) -> both Integer (twice Integer) = *{n, *{n, n}};
 

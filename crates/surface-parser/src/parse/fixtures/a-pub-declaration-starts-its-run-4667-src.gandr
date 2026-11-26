@@ -1,4 +1,4 @@
-import "base.gandr";
+import "base.gandr"
 pub def one : Nat = Zero
 
 /// Two.

@@ -6,18 +6,18 @@
 //! - see: corpus/model/interop/thir/example.gandr — the bodies written by hand
 
 // `Item`, the specifications and the proofs over the bodies written by hand.
-import "../../../../../corpus/model/interop/thir/example.gandr";
+import "../../../../../corpus/model/interop/thir/example.gandr"
 
 // The values, the expressions and the transformers.
-import std.thir (Value, Expr, wpFn);
+import std.thir (Value, Expr, wpFn)
 
 /// `identity`'s body, staged from the crate.
 @[thir(("example.rs", "identity"))]
-pub def stagedIdentity : Expr Item;
+pub def stagedIdentity : Expr Item
 
 /// `example`'s body, staged from the crate.
 @[thir(("example.rs", "example"))]
-pub def stagedExample : Expr Item;
+pub def stagedExample : Expr Item
 
 /// The staged `identity` meets its specification under every table, by the
 /// proof of the body written by hand.
@@ -26,7 +26,7 @@ pub def stagedIdentityMeets(
   v : Value,
   k : Value -> Type,
   h : identitySpec Identity v k
-) -> wpFn Item spec stagedIdentity v k = identityMeets spec v k h;
+) -> wpFn Item spec stagedIdentity v k = identityMeets spec v k h
 
 /// The staged `example` meets its specification at every value and
 /// postcondition, by the proof of the body written by hand.

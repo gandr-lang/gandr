@@ -1,2 +1,2 @@
-def funext(x : Integer, y : Integer) -> Integer = x;
+def funext(x : Integer, y : Integer) -> Integer = x
 def call() -> Integer = become funext 1 2;

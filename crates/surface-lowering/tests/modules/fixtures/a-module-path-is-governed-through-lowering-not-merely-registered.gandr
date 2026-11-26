@@ -3,7 +3,7 @@ module Facts : *{total : Integer} where {
   def total = 2;
   module inner where { def answer = 3; }
 }
-def total_used = Facts.total;
-def hidden_used = Facts.hidden;
-def inner_used = Facts.inner;
+def total_used = Facts.total
+def hidden_used = Facts.hidden
+def inner_used = Facts.inner
 def never_used = Facts.never;

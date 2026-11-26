@@ -5,7 +5,7 @@ pub data Bit : Type where {
   rule : Not High <=> Low;
 }
 
-def low : Bit = Not High;
+def low : Bit = Not High
 
 def flip(b : Bit) -> Bit =
   match b where

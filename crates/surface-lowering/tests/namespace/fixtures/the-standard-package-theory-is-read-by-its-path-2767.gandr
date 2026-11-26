@@ -1,4 +1,4 @@
-import "./package.gandr";
+import "./package.gandr"
 module Package : Model(Gandr.Package) where {
   def name : String;
   def name = "probe";

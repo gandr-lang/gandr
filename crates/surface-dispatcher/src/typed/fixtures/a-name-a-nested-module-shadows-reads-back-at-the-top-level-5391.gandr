@@ -1,5 +1,5 @@
-def fam(_n : Integer) -> Type = return Integer;
-def top(x : fam 1) -> fam 1 = x;
+def fam(_n : Integer) -> Type = return Integer
+def top(x : fam 1) -> fam 1 = x
 module Outer where
   def fam(_n : Integer) -> Type = return Bool;
   def g(x : fam 1) -> fam 1 = x;

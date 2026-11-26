@@ -18,6 +18,6 @@ module Flips : Model(ResetCounter) where {
   def read(c : Bool) -> Integer = match c { | true => 1 | false => 0 };
   def reset(c : Bool) -> Bool = false;
 }
-def stepped[s : Model Counter](c : s.C) -> Integer = s.read (s.incr c);
-def counted() -> Integer = stepped 4;
+def stepped[s : Model Counter](c : s.C) -> Integer = s.read (s.incr c)
+def counted() -> Integer = stepped 4
 def flipped() -> Integer = stepped (false : Bool);

@@ -1,2 +1,2 @@
-import "./wide.gandr";
+import "./wide.gandr"
 def far : Band = wide;

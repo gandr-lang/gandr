@@ -1,2 +1,2 @@
-import "./base.gandr" as base;
+import "./base.gandr" as base
 def relayed = base.reply;

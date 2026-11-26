@@ -1,2 +1,2 @@
-def answer = 43;
+def answer = 43
 def again = answer;

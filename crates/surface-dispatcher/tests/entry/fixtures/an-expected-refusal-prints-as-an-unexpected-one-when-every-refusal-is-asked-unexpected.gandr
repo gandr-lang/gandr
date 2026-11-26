@@ -1,2 +1,2 @@
-def good = 1;
+def good = 1
 def bad = missing;

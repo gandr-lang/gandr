@@ -1,4 +1,4 @@
-import "./base.gandr";
+import "./base.gandr"
 
-def t : Integer;
+def t : Integer
 def t = Seat.task;

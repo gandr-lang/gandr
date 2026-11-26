@@ -16,7 +16,7 @@ def keep(e : +{Unit}) -> +{Unit} =
   e
 
 /// The degree telescope of the magma at degree one.
-type Tel = Unit * (+{Unit} * Bool);
+type Tel = Unit * (+{Unit} * Bool)
 
 /// The swap at the binary corolla, as a path of the degree telescopes. The
 /// statement stands inside a function body, so the bridge reads its native

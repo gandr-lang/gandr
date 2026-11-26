@@ -1,4 +1,4 @@
-import "./magma.gandr" as magma;
+import "./magma.gandr" as magma
 theory Aliased where {
   include Mag;
 }

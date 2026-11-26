@@ -1,4 +1,4 @@
-import std.rand;
+import std.rand
 @[distributes(("1/4 0", "1/2 1", "1/4 2"))]
 def pair() -> [std.rand.Eff] Integer =
   let first = std.rand.draw 1

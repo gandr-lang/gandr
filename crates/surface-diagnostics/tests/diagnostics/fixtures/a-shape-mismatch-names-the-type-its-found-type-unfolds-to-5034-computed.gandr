@@ -13,15 +13,15 @@ data Ctx : Type where {
   | Extend : (g : Ctx, a : Ty) --> Ctx
 }
 
-def prodOf(a : Type, b : Type) -> Type = return type(a * b);
+def prodOf(a : Type, b : Type) -> Type = return type(a * b)
 
 def paired(u : Integer, s : Bool) -> prodOf Integer Bool = *{u, s};
 
-def first(v : prodOf Integer Bool) -> Integer = v.0;
+def first(v : prodOf Integer Bool) -> Integer = v.0
 
-def second(v : prodOf Integer Bool) -> Bool = v.1;
+def second(v : prodOf Integer Bool) -> Bool = v.1
 
-def pairOf(a : Type, b : Type) -> Type = return type(*{x : a, y : b});
+def pairOf(a : Type, b : Type) -> Type = return type(*{x : a, y : b})
 
 def literal(u : Integer, s : Bool) -> pairOf Integer Bool = *{.x = u, .y = s};
 
@@ -33,7 +33,7 @@ def rec tower(n : Nat) -> Type =
 
 def towered(u : Integer, w : Integer) -> tower (Succ Zero) = *{u, w};
 
-def towerFirst(v : tower (Succ Zero)) -> Integer = v.0;
+def towerFirst(v : tower (Succ Zero)) -> Integer = v.0
 
 def sem(a : Ty, _d : Ctx) -> Type =
   match a {
@@ -47,6 +47,6 @@ def rec env(g : Ctx, d : Ctx) -> Type =
     | Extend(h, a) => return type((env [<] h d) * (sem a d))
   }
 
-def lookup(d : Ctx, v : env (Extend Empty Base) d) -> Integer = v.1;
+def lookup(d : Ctx, v : env (Extend Empty Base) d) -> Integer = v.1
 
 def single(d : Ctx, n : Integer) -> env (Extend Empty Base) d = *{*{}, n};

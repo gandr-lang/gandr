@@ -1,11 +1,11 @@
-import "./base.gandr";
-def g : Integer;
-def g = secret;
-def h : Hid;
-def h = 1;
-def i = H;
-def j : Integer;
-def j = Shut.y;
+import "./base.gandr"
+def g : Integer
+def g = secret
+def h : Hid
+def h = 1
+def i = H
+def j : Integer
+def j = Shut.y
 module Closing : Model(Closed) where {
   type Q = Integer;
   def qt() -> -F Integer = return 0;

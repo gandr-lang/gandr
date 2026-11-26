@@ -1,6 +1,6 @@
-import std.rand;
-pub world desk;
-pub world far requires [std.rand.Eff];
+import std.rand
+pub world desk
+pub world far requires [std.rand.Eff]
 @[distributes("1 0")]
 def rooted() -> [std.rand.Eff] Integer =
   std.rand.draw 0

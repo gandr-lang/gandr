@@ -2,7 +2,7 @@
 @[checks]
 def twice(x : Integer) -> -F Integer =
   return x
-def answer = 42;
+def answer = 42
 @[checks]
 data Color : Type where { | Red : Color }
 module Outer where

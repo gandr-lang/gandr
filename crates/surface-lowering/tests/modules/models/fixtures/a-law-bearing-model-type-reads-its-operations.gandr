@@ -4,7 +4,7 @@ theory Unital where {
   oper mul : (x : M, y : M) --> M;
   rule unitL : mul e x ==> x;
 }
-def derived : Model Unital;
+def derived : Model Unital
 def written : *{
   m : Type,
   e : m,

@@ -3,5 +3,5 @@ data Maybe(a : Type) : Type where {
   | Some : (x : a) --> Maybe a
 }
 module Loose where { type R(a : Type) = Maybe a; }
-type Top(a : Type) = Maybe a;
+type Top(a : Type) = Maybe a
 def g(a : Type, m : Maybe a) -> Integer = 0;

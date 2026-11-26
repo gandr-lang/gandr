@@ -1,4 +1,4 @@
-def two = 20;
+def two = 20
 module Counting where {
   def two = 2;
   def four = 4;

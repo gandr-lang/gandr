@@ -9,5 +9,5 @@ def toNew(old : Old) -> New =
     | *{name, age} => *{age, name}
 
 /// The translator defines the schema flow.
-def upgrade : Flow[.A = Type](Old, New);
+def upgrade : Flow[.A = Type](Old, New)
 def upgrade = Flow.into toNew;

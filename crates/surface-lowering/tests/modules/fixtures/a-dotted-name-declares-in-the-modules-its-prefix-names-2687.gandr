@@ -9,5 +9,5 @@ module Shaped : Model(Gandr.Shape) where {
   def label : String;
   def label = "shaped";
 }
-def asked : Integer;
+def asked : Integer
 def asked = Gandr.Tools.answer;

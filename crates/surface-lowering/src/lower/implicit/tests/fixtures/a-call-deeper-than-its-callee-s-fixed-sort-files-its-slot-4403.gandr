@@ -10,7 +10,7 @@ module Up : Model(Counter) where {
   def incr(c : Integer) -> Integer = c + 1;
   def read(c : Integer) -> Integer = c;
 }
-def fromZero[s : Model Counter with sort C = Integer]() -> Integer = s.read (s.incr s.zero);
+def fromZero[s : Model Counter with sort C = Integer]() -> Integer = s.read (s.incr s.zero)
 def deeper() -> Integer = {
   let a = 1
   let b = a

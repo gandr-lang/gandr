@@ -1,5 +1,5 @@
 module M where {
   type T = Integer;
 }
-def a = Integer;
+def a = Integer
 def b = M.T;

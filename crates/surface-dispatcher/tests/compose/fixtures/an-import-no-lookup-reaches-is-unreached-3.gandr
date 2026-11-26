@@ -1,2 +1,2 @@
-import "./eight.gandr";
+import "./eight.gandr"
 def broken : Integer = nowhere;

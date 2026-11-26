@@ -1,6 +1,6 @@
 /// See [b], [M.x], [M], [Red], [b] again and [y].
-def a = 1;
-def b = 2;
+def a = 1
+def b = 2
 module M where {
   /// Inner [x] and [b].
   def x = 3;

@@ -1,2 +1,2 @@
-def a : Integer;
+def a : Integer
 def a = 1;

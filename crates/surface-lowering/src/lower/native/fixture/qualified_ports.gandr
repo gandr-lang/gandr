@@ -2,9 +2,9 @@ data Expr : Type where
   | Lit : (n : Integer) --> Expr
   | Share : (e : Expr) --> (left : Expr, right : Expr)
 
-def port : Expr = (Expr.Share (Expr.Lit 1)).right;
+def port : Expr = (Expr.Share (Expr.Lit 1)).right
 
-def ports : *{left : Expr, right : Expr} = Expr.Share (Expr.Lit 1);
+def ports : *{left : Expr, right : Expr} = Expr.Share (Expr.Lit 1)
 
 def rec size(e : Expr) -> Integer =
   match e where

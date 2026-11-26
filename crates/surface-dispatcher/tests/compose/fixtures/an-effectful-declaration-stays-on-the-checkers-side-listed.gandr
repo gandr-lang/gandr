@@ -1,4 +1,4 @@
-def peek(c : Cap { read }) -> [std.fs.Eff] String = c.read "notes";
+def peek(c : Cap { read }) -> [std.fs.Eff] String = c.read "notes"
 def quit() -> Unit = effect c : std.process.Exit.Eff {
   c.exit 1
 } handle { | pure(x) => pure x | oper exit(code, k) => k *{} };

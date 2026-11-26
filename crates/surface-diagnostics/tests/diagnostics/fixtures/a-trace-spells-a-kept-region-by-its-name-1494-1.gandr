@@ -1,4 +1,4 @@
-import std.process;
+import std.process
 def traced() -> Integer = {
   var s = 3
   effect c : std.process.Exit.Eff {

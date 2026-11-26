@@ -1,10 +1,10 @@
-pub def shown : Integer = 2;
-def hidden : Integer;
-pub def hidden = 1;
-pub def checked : Integer = 4;
+pub def shown : Integer = 2
+def hidden : Integer
+pub def hidden = 1
+pub def checked : Integer = 4
 pub @[checks]
-def early : Integer = 5;
-def secret = 3;
+def early : Integer = 5
+def secret = 3
 pub data Bit : Type where { | O : Bit }
 data Hid : Type where { | H : Hid }
 pub theory Pointed where {

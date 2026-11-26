@@ -1,5 +1,5 @@
 /// The answer.
-pub def answer = 42;
+pub def answer = 42
 /// A point.
 pub data Point : Type where { | P : Point }
 /// First.

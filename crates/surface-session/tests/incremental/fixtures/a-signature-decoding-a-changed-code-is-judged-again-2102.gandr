@@ -1,2 +1,2 @@
-def code : Type = String;
+def code : Type = String
 def three : code = 3;

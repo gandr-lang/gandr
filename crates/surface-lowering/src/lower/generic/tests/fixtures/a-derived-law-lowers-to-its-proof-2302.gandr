@@ -1,5 +1,5 @@
-def reflPoint = Eq.generic.refl Point;
-def symPoint = Eq.generic.sym Point;
+def reflPoint = Eq.generic.refl Point
+def symPoint = Eq.generic.sym Point
 module EqPoint : Model(Eq) with sort Carrier = Point where {
   def eq = Eq.generic Point;
   def refl = Eq.generic.refl Point;

@@ -9,5 +9,5 @@ def pick(n : Nat, m : Nat) -> -F Nat = {
     | Succ(p) => n
   }
 };
-def id : Nat -> Nat;
+def id : Nat -> Nat
 def id = thunk { fun (y) { Zero } };

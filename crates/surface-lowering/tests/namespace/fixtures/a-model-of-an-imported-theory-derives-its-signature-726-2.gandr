@@ -1,4 +1,4 @@
-import "./base.gandr";
+import "./base.gandr"
 module Counting : Model(Nat) where {
   type Nat = Integer;
   def zero() -> -F Integer = return 0;

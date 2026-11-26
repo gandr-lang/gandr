@@ -1,2 +1,2 @@
-def here : Integer;
+def here : Integer
 def here = faraway;

@@ -1,4 +1,4 @@
-import "./base.gandr";
+import "./base.gandr"
 def moved() -> -F Unit = {
   let ring = fork (kernel : P.Moving) {
     let held = recv kernel

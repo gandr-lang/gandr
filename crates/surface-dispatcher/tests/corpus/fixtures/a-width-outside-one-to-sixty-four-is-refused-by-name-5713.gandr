@@ -3,11 +3,11 @@
 // width outside 1 to 64 by name, and answers a narrower draw.
 
 // The seeded generator, a model of the host interface of randomness.
-import std.rand (lcg);
+import std.rand (lcg)
 // The multiplier of the multiply-shift family.
-import std.hash (multiplier);
+import std.hash (multiplier)
 // The key of the one-time pad.
-import std.crypto (key);
+import std.crypto (key)
 
 /// A draw of no bits under the generator.
 @[distributes("1 0")]

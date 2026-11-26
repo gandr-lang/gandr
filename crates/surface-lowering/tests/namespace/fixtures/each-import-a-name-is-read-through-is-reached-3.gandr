@@ -1,2 +1,2 @@
-import "./base.gandr";
+import "./base.gandr"
 def made = One;

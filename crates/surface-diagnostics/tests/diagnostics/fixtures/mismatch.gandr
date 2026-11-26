@@ -1,2 +1,2 @@
-def wrong : Integer;
+def wrong : Integer
 def wrong = "text";

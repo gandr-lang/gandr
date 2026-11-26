@@ -1,10 +1,10 @@
 pub data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat = f x;
-def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> Nat = applyAt[.i = k] f x;
+pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat = f x
+def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> Nat = applyAt[.i = k] f x
 def crossed[s : Region, r : Region](
   k : (() -> Integer) at r,
   j : (() -> Integer) at s
-) -> Integer = force k;
+) -> Integer = force k
 pub theory Counter where {
   sort C : Type;
   oper zero : C;
@@ -17,8 +17,8 @@ pub module Up : Model(Counter) where {
   def incr(c : Integer) -> Integer = c + 1;
   def read(c : Integer) -> Integer = c;
 }
-pub def stepped[s : Model Counter](c : s.C) -> Integer = s.read (s.incr (c));
-def omitted() -> Integer = stepped 4;
+pub def stepped[s : Model Counter](c : s.C) -> Integer = s.read (s.incr (c))
+def omitted() -> Integer = stepped 4
 pub theory StatePutLaws where {
   sort S : Type+;
   sort C : Type;

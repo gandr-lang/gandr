@@ -1,4 +1,4 @@
-import "./magma.gandr";
+import "./magma.gandr"
 theory Pointed where {
   include Mag;
   oper one : M;

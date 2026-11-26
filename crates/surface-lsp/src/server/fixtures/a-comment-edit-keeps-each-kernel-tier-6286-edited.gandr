@@ -1,5 +1,5 @@
 // A comment changes no declaration.
-def a : Integer;
-def a = 3;
-def b : Integer;
+def a : Integer
+def a = 3
+def b : Integer
 def b = 2;

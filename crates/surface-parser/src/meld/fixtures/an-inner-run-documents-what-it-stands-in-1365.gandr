@@ -1,7 +1,7 @@
 //! s
 //! t
 /// a
-def x = 1;
+def x = 1
 //! u
 def f(x : Integer) -> -F Integer {
   //! inner

@@ -5,5 +5,5 @@ theory Open where {
   oper low : Term bit;
   oper same : (x : Term w) --> Term w;
 }
-def openWidth(w : Terms Open Width) -> Terms Open Width = w;
+def openWidth(w : Terms Open Width) -> Terms Open Width = w
 def kept : Terms Open Term Open.bit = Open.low;

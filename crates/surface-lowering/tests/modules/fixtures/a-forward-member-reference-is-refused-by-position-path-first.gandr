@@ -1,2 +1,2 @@
-def a = M.x;
+def a = M.x
 module M where { def x = 1; }

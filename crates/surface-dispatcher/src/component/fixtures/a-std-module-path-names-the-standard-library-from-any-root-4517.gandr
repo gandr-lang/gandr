@@ -1,2 +1,2 @@
-import std;
+import std
 def two = 2;

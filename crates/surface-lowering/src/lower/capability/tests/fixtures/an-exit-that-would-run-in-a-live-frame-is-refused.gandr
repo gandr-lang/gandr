@@ -1,4 +1,4 @@
-def one() -> Integer = 1;
+def one() -> Integer = 1
 def became() -> -F Integer = effect c : std.process.Exit.Eff {
   become one
 } handle { | pure(x) => pure x | oper exit(code, k) => k *{} };

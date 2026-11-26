@@ -1,2 +1,2 @@
-import "./base.gandr";
+import "./base.gandr"
 data Other : Type where { | O : Other }

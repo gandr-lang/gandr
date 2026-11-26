@@ -1,2 +1,2 @@
-def owed : Integer;
+def owed : Integer
 def reads = owed;

@@ -1,5 +1,5 @@
-world here;
-world there;
+world here
+world there
 
 def tick(n : Integer) -> Unit =
   *{}

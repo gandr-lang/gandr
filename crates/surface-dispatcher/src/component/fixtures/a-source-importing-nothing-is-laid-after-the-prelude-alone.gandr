@@ -1,2 +1,2 @@
-def important : Integer;
+def important : Integer
 def important = 1;

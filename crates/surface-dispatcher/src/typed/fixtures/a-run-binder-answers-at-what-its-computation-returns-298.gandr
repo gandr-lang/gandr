@@ -16,7 +16,7 @@ def first(n : Nat) -> Nat = {
   Succ k
 };
 
-def same(n : Nat) -> Nat = n;
+def same(n : Nat) -> Nat = n
 
 def unused(n : Nat) -> Nat = {
   let u = same n

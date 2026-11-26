@@ -5,7 +5,7 @@ def composite(
   z : A,
   f : Path[.A = A] x y,
   g : Path[.A = A] y z
-) -> Path[.A = A] x z = Path.step f g;
+) -> Path[.A = A] x z = Path.step f g
 def composedCells(
   A : Type,
   x : A,
@@ -28,7 +28,7 @@ def cellsTwo(
 ) -> Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step p q) = fill[5, 7]
   (chain 2)
   (composedCells A x y z)
-  (a, b);
+  (a, b)
 def cellsAgain(
   A : Type,
   x : A,
@@ -43,7 +43,7 @@ def cellsAgain(
 ) -> Path[.A = Path[.A = A] x z] (Path.step f g) (Path.step p q) = fill[5, 7]
   (chain 2)
   (composedCells A x y z)
-  (a, b);
+  (a, b)
 def sitesConvert(
   A : Type,
   x : A,

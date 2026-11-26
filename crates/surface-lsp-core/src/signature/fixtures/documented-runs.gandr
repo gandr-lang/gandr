@@ -15,7 +15,7 @@ def apply(
   /// The pair.
   p : (a : Nat, b : Nat),
   y : Nat
-) -> -F Nat = y;
+) -> -F Nat = y
 def use(
   h : (
     /// The index.

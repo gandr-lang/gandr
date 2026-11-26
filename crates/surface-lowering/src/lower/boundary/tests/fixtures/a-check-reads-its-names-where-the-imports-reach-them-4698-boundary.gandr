@@ -1,4 +1,4 @@
-import "./layout.gandr";
+import "./layout.gandr"
 pub data Code : Type where { | Plain : (s : Scalar) --> Code }
 pub data Coded : Type where {
   | NoCoded : Coded

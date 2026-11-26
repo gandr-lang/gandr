@@ -1,9 +1,9 @@
-import "./base.gandr";
-def appliedAgain[k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> Nat = applyAt[.i = k] f x;
-def crossedAgain[r : Region](k : (() -> Integer) at r) -> Integer = force k;
+import "./base.gandr"
+def appliedAgain[k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> Nat = applyAt[.i = k] f x
+def crossedAgain[r : Region](k : (() -> Integer) at r) -> Integer = force k
 def fixed[s : Model Counter with sort C = Integer](c : Integer) -> Integer = s.read
-  (s.incr (c + s.zero));
-def omittedAgain() -> Integer = stepped 5;
+  (s.incr (c + s.zero))
+def omittedAgain() -> Integer = stepped 5
 def forgetfulAgain() -> Integer = effect st : StatePutLaws with sort S = Integer {
   st.put 2
   st.get

@@ -1,4 +1,4 @@
-import "./shared.gandr";
+import "./shared.gandr"
 module Seat where {
   def other : Integer;
   def other = 2;

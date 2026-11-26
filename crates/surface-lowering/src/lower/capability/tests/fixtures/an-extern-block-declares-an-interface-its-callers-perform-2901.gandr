@@ -4,5 +4,5 @@ extern "rust" from "boundary" as Boundary {
 }
 extern "rust" from "idle" as Idle { def peek(x : u64) -> u64; }
 def twice(x : u32) -> [Boundary] u32 = { let y = Boundary.add x x; Boundary.add y y };
-def flipped(x : i64) -> [Boundary] i64 = Boundary.negate x;
+def flipped(x : i64) -> [Boundary] i64 = Boundary.negate x
 def missing(x : u32) -> -F [Boundary] u32 = Boundary.sub x x;

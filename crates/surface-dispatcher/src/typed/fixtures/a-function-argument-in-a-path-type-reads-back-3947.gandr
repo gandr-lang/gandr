@@ -6,7 +6,7 @@ def pass(
   b : Type,
   s : *{x : b, y : b} -> b,
   e : Path[.A = *{x : b, y : b} -> b] s s
-) -> Path[.A = *{x : b, y : b} -> b] s s = e;
+) -> Path[.A = *{x : b, y : b} -> b] s s = e
 
 def user(
   b : Type,

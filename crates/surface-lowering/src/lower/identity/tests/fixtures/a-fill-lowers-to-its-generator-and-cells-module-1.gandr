@@ -5,7 +5,7 @@ def composite(
   z : A,
   f : Path[.A = A] x y,
   g : Path[.A = A] y z
-) -> Path[.A = A] x z = Path.step f g;
+) -> Path[.A = A] x z = Path.step f g
 def selfComposite(
   A : Type,
   x : A,
@@ -28,7 +28,7 @@ def rightWhisker(
 ) -> Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step fp g) = Path.walk
   (fun (a) { type(Path[.A = Path[.A = A] x z] (Path.step fm g) (Path.step a g)) })
   fa
-  (Path.here (Path.step fm g));
+  (Path.here (Path.step fm g))
 def firstLifted(
   A : Type,
   x : A,
