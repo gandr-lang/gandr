@@ -10,4 +10,4 @@ module Bumped where {
 
 @[refuses("OutOfFragment.Held")]
 def unheld(n : Integer) -> Unit =
-  n.bump ()
+  n.bump

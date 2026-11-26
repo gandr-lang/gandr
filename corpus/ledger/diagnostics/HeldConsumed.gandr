@@ -14,5 +14,5 @@ module Taken where {
 @[refuses("HeldConsumed")]
 def readAfterTaken() -> Integer =
   var n = 3
-  let m = n.take ()
-  n.look ()
+  let m = n.take
+  n.look

@@ -11,5 +11,5 @@ module Places where {
 }
 def raised() -> List Integer =
   var xs = pair
-  (xs.first ()) as w { resume w 2 }
+  (xs.first) as w { resume w 2 }
   pure xs
