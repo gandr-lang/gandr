@@ -1972,7 +1972,7 @@ fn an_unlocated_report_claims_no_span()
 #[test]
 fn a_return_position_failure_points_at_the_returned_value()
 {
-    let text = "def g(v : Integer) -> -F String { return v }\n";
+    let text = "def g(v : Integer) -> -F String = return v;\n";
     let diagnostic = only(Path::new("returned.gandr"), SourceText::from(text));
     assert_eq!(
         diagnostic.span,

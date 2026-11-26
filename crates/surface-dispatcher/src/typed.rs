@@ -8937,7 +8937,7 @@ mod tests
     #[test]
     fn a_negated_literal_s_number_answers_at_its_own_span_4958()
     {
-        let written = "def integerOrder() -> Bool { - 4 < 9 }\n";
+        let written = "def integerOrder() -> Bool = - 4 < 9;\n";
         let source = SourceText::from(written);
         let table = table(source);
         let start = written.find("- 4").expect("the negated literal is written");
@@ -9283,9 +9283,9 @@ mod tests
     {
         let module = |name: &str| {
             format!(
-                "module {name} : Model(Fam) where\n  type Con = Type;\n  def base() -> Type {{ return \
-                 Unit }}\n  def first(g : Type, a : g -> Type, z : *{{x : g, y : a x}}) -> g {{ z.0 \
-                 }}\n  def second(g : Type, a : g -> Type) -> (z : *{{x : g, y : a x}}) -> a (first \
+                "module {name} : Model(Fam) where\n  type Con = Type;\n  def base() -> Type = return \
+                 Unit;\n  def first(g : Type, a : g -> Type, z : *{{x : g, y : a x}}) -> g = z.0;\n  def \
+                 second(g : Type, a : g -> Type) -> (z : *{{x : g, y : a x}}) -> a (first \
                  g a z) =\n    return fun (z) {{ z.1 }}\n"
             )
         };

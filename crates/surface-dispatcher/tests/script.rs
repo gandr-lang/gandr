@@ -19,7 +19,7 @@ fn each_kind_of_source_has_its_status()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let rows = [
-        (r#"def main() -> -F Integer { return 0 }"#, RunStatus::Value),
+        (r#"def main() -> -F Integer = return 0;"#, RunStatus::Value),
         (
             r#"def later : +U (-F Integer) ; def main : +U (-F Integer) ; def main = thunk { become force later } ;"#,
             RunStatus::Failed,
@@ -102,7 +102,7 @@ fn a_source_declaring_main_runs_its_entry_1881()
     );
     let (_composed, ran) = run_source::<Evaluator>(
         &grammar,
-        SourceText::from("def main() -> -F Integer { ? }\n"),
+        SourceText::from("def main() -> -F Integer = ?;\n"),
         &mut lowerings,
         &mut Streams::Captured(&mut Captured::default()),
     )

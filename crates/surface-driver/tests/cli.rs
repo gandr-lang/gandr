@@ -1013,8 +1013,8 @@ fn a_list_type_needs_its_listing_from_std_list_4520()
 fn a_host_interface_needs_the_import_of_its_module_4523()
 {
     let scratch = Scratch::new(Path::new("host-home"));
-    let body = "def peek(c : Cap { read, print }) -> [std.io.Console.Eff, std.fs.Eff] String {\n  \
-                c.read \"notes\"\n}\n";
+    let body = "def peek(c : Cap { read, print }) -> [std.io.Console.Eff, std.fs.Eff] String =\n  \
+                c.read \"notes\"\n";
     let imported_text = format!("import std.fs;\nimport std.io;\n{body}");
     let imported = scratch.file(
         Path::new("imported.gandr"),
@@ -1057,14 +1057,14 @@ fn a_run_spells_its_value_by_its_own_type_past_a_namesake_3125()
         Path::new("b.gandr"),
         Text::from(
             "import \"./d.gandr\";\npub data P : Type where {\n  | Deref : P\n  | Field : P\n}\n@[ \
-             runs(\"Field\") ]\ndef first() -> P {\n  Field\n}\n",
+             runs(\"Field\") ]\ndef first() -> P =\n  Field\n",
         ),
     );
     let own = scratch.file(
         Path::new("a.gandr"),
         Text::from(
             "import \"./d.gandr\";\npub data P : Type where {\n  | Inside : P\n  | OnHeap : P\n}\n@[ \
-             runs(\"OnHeap\") ]\ndef second() -> P {\n  OnHeap\n}\n",
+             runs(\"OnHeap\") ]\ndef second() -> P =\n  OnHeap\n",
         ),
     );
     for (before, after) in [(&other, &own), (&own, &other)] {
@@ -1281,9 +1281,9 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
         Path::new("six.gandr"),
         Text::from(
             "pub theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
-             oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  match b {\n    \
-             | true => +{.1 = *{}}\n    | false => +{.0 = *{}}\n  }\n}\n\npub def keep(e : +{Unit}) \
-             -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6] Magma Magma (*{.mul = exchange, .one = \
+             oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool =\n  match b {\n    \
+             | true => +{.1 = *{}}\n    | false => +{.0 = *{}}\n  }\n\npub def keep(e : +{Unit}) \
+             -> +{Unit} =\n  e\n\ndef six = ua[6, 6] Magma Magma (*{.mul = exchange, .one = \
              keep}) (*{.mul = exchange, .one = keep});\n",
         ),
     );
@@ -1327,8 +1327,8 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
 fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
 {
     let scratch = Scratch::new(Path::new("lint"));
-    let elided = "def kept(n : Integer) -> -F Integer { n }\ndef called(n : Integer) -> -F \
-                      Integer { kept n }\n";
+    let elided = "def kept(n : Integer) -> -F Integer = n\ndef called(n : Integer) -> -F \
+                      Integer = kept n;\n";
     let source = scratch.file(Path::new("exits.gandr"), Text::from(elided));
     let check = Path::new("check");
     let lint = [check, Path::new("--lint"), Path::new("explicit-exits")];
@@ -1382,8 +1382,8 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
     }
     assert_eq!(
         fixed,
-        "def kept(n : Integer) -> -F Integer { return n }\ndef called(n : Integer) -> -F \
-             Integer { become kept n }\n"
+        "def kept(n : Integer) -> -F Integer = return n\ndef called(n : Integer) -> -F \
+             Integer = become kept n;\n"
     );
     std::fs::write(&source, &fixed).expect("the fixed source is written");
     let again = ran(gandr(&[lint[0], lint[1], lint[2], &source]));
@@ -1403,7 +1403,7 @@ fn check_measures_the_speculation_each_width_runs_under_3476()
     let _source = scratch.file(
         Path::new("one.gandr"),
         Text::from(
-            "def one(n : Integer) -> -F Integer { n }\ndef two(n : Integer) -> -F Integer { one n }\n",
+            "def one(n : Integer) -> -F Integer = n\ndef two(n : Integer) -> -F Integer = one n;\n",
         ),
     );
     let home = scratch.0.join("configuration");
@@ -1464,11 +1464,11 @@ fn check_measures_each_declaration_a_source_writes()
     let scratch = Scratch::new(Path::new("measure"));
     let _base = scratch.file(
         Path::new("base.gandr"),
-        Text::from("pub def one(n : Integer) -> -F Integer { n }\n"),
+        Text::from("pub def one(n : Integer) -> -F Integer = n;\n"),
     );
     let _top = scratch.file(
         Path::new("top.gandr"),
-        Text::from("import \"./base.gandr\" ;\ndef two(n : Integer) -> -F Integer { one n }\n"),
+        Text::from("import \"./base.gandr\" ;\ndef two(n : Integer) -> -F Integer = one n;\n"),
     );
     // A key and a verdict cache of the test's own: the shared ones hold the
     // receipts other tests leave, so a first run would recall `one`.
@@ -1896,8 +1896,8 @@ fn check_reports_each_cell_a_source_discharges_4112()
             "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
              Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n}\ndata One : \
              Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  \
-             def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort \
-             Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+             def same(a : One, b : One) -> Bool = true\n}\nmodule Parts : Model(Same) with sort \
+             Carrier = One where {\n  def same(a : One, b : One) -> Bool = false\n}\n",
         ),
     );
     let cells = |output: &Output| -> Vec<String> {
@@ -1935,8 +1935,8 @@ fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
     let source = scratch.file(
         Path::new("runs.gandr"),
         Text::from(
-            "def id(n : Integer) -> -F Integer { n }\ndef twice(n : Integer) -> -F Integer { \
-                 id (id n) }\n",
+            "def id(n : Integer) -> -F Integer = n\ndef twice(n : Integer) -> -F Integer = \
+                 id (id n);\n",
         ),
     );
     let check = Path::new("check");
@@ -2091,7 +2091,7 @@ fn fmt_rewrites_what_check_reports()
     let scratch = Scratch::new(Path::new("fmt"));
     let loose = scratch.file(
         Path::new("loose.gandr"),
-        Text::from("def answer() -> Integer {\n  let x = 42;\n  x\n}\n"),
+        Text::from("def answer() -> Integer = {\n  let x = 42;\n  x\n};\n"),
     );
     let tidy = scratch.file(Path::new("tidy.gandr"), Text::from("def copy = 1;\n"));
     let absent = scratch.0.join("absent.gandr");
@@ -2112,7 +2112,7 @@ fn fmt_rewrites_what_check_reports()
     );
     assert_eq!(
         std::fs::read_to_string(&loose).expect("the source is readable"),
-        "def answer() -> Integer {\n  let x = 42;\n  x\n}\n",
+        "def answer() -> Integer = {\n  let x = 42;\n  x\n};\n",
         "the check writes nothing"
     );
 
@@ -2129,7 +2129,7 @@ fn fmt_rewrites_what_check_reports()
     assert_eq!(stdout(&rewritten), format!("{}\n", loose.display()));
     assert_eq!(
         std::fs::read_to_string(&loose).expect("the source is readable"),
-        "def answer() -> Integer {\n  let x = 42\n  x\n}\n"
+        "def answer() -> Integer = {\n  let x = 42\n  x\n};\n"
     );
     assert_eq!(
         std::fs::read_to_string(&tidy).expect("the source is readable"),
@@ -3429,8 +3429,8 @@ fn the_generic_render_writes_each_package_line_the_manifest_writes_6046()
         Path::new("hello/package.gandr"),
         Text::from(
             format!(
-                "{STD_PACKAGE}{LIBRARY}@[ inert ]\n@[ runs({:?}) ]\ndef rendered() -> String {{ \
-                 render Package }}\n",
+                "{STD_PACKAGE}{LIBRARY}@[ inert ]\n@[ runs({:?}) ]\ndef rendered() -> String = \
+                 render Package;\n",
                 format!("{rendered:?}")
             )
             .as_str(),
@@ -6988,7 +6988,7 @@ fn a_script_that_runs_its_main_leaves_successfully()
         &scratch,
         Path::new("main.gandr"),
         Text::from(
-            "import std.io ;\ndef answer = 42 ;\ndef main() -> [std.io.Console.Eff] Unit {\n  std.io.Console.print \"42\"\n}\n",
+            "import std.io ;\ndef answer = 42 ;\ndef main() -> [std.io.Console.Eff] Unit =\n  std.io.Console.print \"42\"\n",
         ),
     );
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
@@ -7007,20 +7007,20 @@ fn a_script_that_runs_its_main_leaves_successfully()
 fn a_program_leaves_with_its_entry_s_status_1881()
 {
     let scratch = Scratch::new(Path::new("program-entry"));
-    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match \
+    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer =\n  match \
                    xs {\n    | #[] => 0\n    \
-                   | #[x, ..rest] => { let n = count[<] rest; n + 1 }\n  }\n}\ndef main(args : \
-                   List(String)) -> -F Integer { become count args }\n";
+                   | #[x, ..rest] => { let n = count[<] rest; n + 1 }\n  }\ndef main(args : \
+                   List(String)) -> -F Integer = become count args;\n";
     for (name, text, arguments, status) in [
         (
             "returned.gandr",
-            "def main() -> -F Integer { return 3 }\ndef later = 1 ;\n",
+            "def main() -> -F Integer = return 3\ndef later = 1 ;\n",
             &[][..],
             3_i32,
         ),
         (
             "exited.gandr",
-            "import std.process ;\ndef proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer { proc.exit 7 ; return 0 }\n",
+            "import std.process ;\ndef proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer = { proc.exit 7 ; return 0 };\n",
             &[][..],
             7_i32,
         ),
@@ -7032,7 +7032,7 @@ fn a_program_leaves_with_its_entry_s_status_1881()
         ),
         (
             "wrapped.gandr",
-            "def main() -> -F Integer { return 257 }\n",
+            "def main() -> -F Integer = return 257;\n",
             &[][..],
             1_i32,
         ),
@@ -7061,8 +7061,8 @@ fn a_run_past_its_memory_bound_names_the_region_that_asked_6324()
             "data Nat : Type where\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n\ndef build(k : \
              Integer) -> [Partial] Nat =\n  var acc = Zero\n  var left = k\n  while left > 0 {\n    \
              access acc as a { resume a (Succ a) };\n    access left as v { resume v (v - 1) }\n  \
-             };\n  pure acc\n\ndef rec depth(n : Nat) -> -F Integer {\n  match n {\n    | Zero => \
-             0\n    | Succ(m) => { let d = depth[<] m; d + 1 }\n  }\n}\n\ndef main() -> [Partial] \
+             };\n  pure acc\n\ndef rec depth(n : Nat) -> -F Integer =\n  match n {\n    | Zero => \
+             0\n    | Succ(m) => { let d = depth[<] m; d + 1 }\n  }\n\ndef main() -> [Partial] \
              Integer =\n  let n = build 20000\n  let d = depth n\n  pure 0\n",
         ),
     );
@@ -7254,7 +7254,7 @@ fn a_program_prints_hello_world_2279()
     let scratch = Scratch::new(Path::new("program-unprovided"));
     let unprovided = scratch.file(
         Path::new("unprovided.gandr"),
-        Text::from("def main() -> -F [Clock] Unit {\n  Clock.print \"hello, world!\"\n}\n"),
+        Text::from("def main() -> -F [Clock] Unit =\n  Clock.print \"hello, world!\"\n"),
     );
     let output = ran(gandr(&[Path::new("run"), unprovided.as_path()]));
     assert_eq!(
@@ -7419,7 +7419,7 @@ fn a_script_with_no_program_is_refused()
         let complaint = stderr(&output);
         assert!(
             complaint.starts_with(&format!("gandr: {}: ", path.display()))
-                && complaint.contains("`def main() -> Unit { … }`")
+                && complaint.contains("`def main() -> Unit = …`")
                 && complaint.contains("`gandr check`")
                 && complaint.contains("`gandr test`"),
             "{name}: the refusal names `main` and the verbs for declarations: {complaint}"
@@ -7439,7 +7439,7 @@ fn a_bare_dash_is_a_path_not_standard_input()
     assert!(stderr(&output).starts_with("gandr: -: "));
     let _path = scratch.file(
         Path::new("-"),
-        Text::from("import std.io ;\ndef main() -> [std.io.Console.Eff] Unit { std.io.Console.print \"17\" }"),
+        Text::from("import std.io ;\ndef main() -> [std.io.Console.Eff] Unit = std.io.Console.print \"17\";"),
     );
     let mut present = gandr(&["run", "-"]);
     present.current_dir(&scratch.0);
@@ -7485,7 +7485,7 @@ fn a_failed_diagnostic_stream_stops_later_output()
     let scratch = Scratch::new(Path::new("failed-diagnostic-stream"));
     let source = scratch.file(
         Path::new("value.gandr"),
-        Text::from("import std.io ;\ndef unused : Integer ; def main() -> [std.io.Console.Eff] Unit { std.io.Console.print \"9\" }"),
+        Text::from("import std.io ;\ndef unused : Integer ; def main() -> [std.io.Console.Eff] Unit = std.io.Console.print \"9\";"),
     );
     let control = ran(gandr(&[Path::new("run"), &source]));
     assert_eq!(code(&control), Code(0));

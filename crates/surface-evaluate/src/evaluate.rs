@@ -3920,9 +3920,9 @@ mod tests
         format!(
             "data Depth : Type where {{\n  | Zero : Depth\n  | Succ : (p : Depth) --> Depth\n}}\n\
              data Tree : Type where {{\n  | Leaf : (n : Integer) --> Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n}}\n\
-             def rec full(d : Depth) -> Tree {{ match d {{ | Zero => Leaf 1 | Succ(p) => {{ let l = full[<] p; let r = full[<] p; Node l r }} }} }}\n\
-             def rec sum(t : Tree) -> Integer {{ match t {{ | Leaf(n) => n | Node(l, r) => {{ let a = sum[<] l; let b = sum[<] r; a + b }} }} }}\n\
-             def half(d : Depth) -> Integer {{ let t = full d; sum t }}\n\
+             def rec full(d : Depth) -> Tree = match d {{ | Zero => Leaf 1 | Succ(p) => {{ let l = full[<] p; let r = full[<] p; Node l r }} }};\n\
+             def rec sum(t : Tree) -> Integer = match t {{ | Leaf(n) => n | Node(l, r) => {{ let a = sum[<] l; let b = sum[<] r; a + b }} }};\n\
+             def half(d : Depth) -> Integer = {{ let t = full d; sum t }};\n\
              def left : +U (-F Integer) ;\ndef left = thunk {{ half ({depth}) }} ;\n\
              def right : +U (-F Integer) ;\ndef right = thunk {{ half ({depth}) }} ;\n\
              def both : +U (-F Integer) ;\ndef both = thunk {{ let a = half ({depth}); let b = half ({depth}); a + b }} ;\n"

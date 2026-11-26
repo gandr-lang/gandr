@@ -36,7 +36,7 @@ fn the_entry_is_the_main_of_the_source_run_1881()
 {
     for (source, wanted) in [
         (
-            "def main() -> -F Integer { return 0 }\n",
+            "def main() -> -F Integer = return 0;\n",
             Maybe::Present(Entry {
                 constant: ConstantIndex::from(0_usize),
                 arguments: Arguments::Unread,
@@ -54,7 +54,7 @@ fn the_entry_is_the_main_of_the_source_run_1881()
             Maybe::Absent(program_entry::Absent::Undeclared),
         ),
         (
-            "module Tool where { def main() -> -F Integer { return 0 } }\n",
+            "module Tool where { def main() -> -F Integer = return 0; }\n",
             Maybe::Absent(program_entry::Absent::Undeclared),
         ),
         (
@@ -78,7 +78,7 @@ fn an_entry_runs_to_its_exit_status_1881()
 {
     let arguments = [String::from("a"), String::from("b"), String::from("c")];
     for (source, wanted) in [
-        ("def main() -> -F Integer { return 3 }\n", 3_u8),
+        ("def main() -> -F Integer = return 3;\n", 3_u8),
         (
             include_str!("tests/fixtures/an-entry-runs-to-its-exit-status-1881-1.gandr"),
             3_u8,
@@ -105,7 +105,7 @@ fn an_entry_runs_to_its_exit_status_1881()
             "{source}"
         );
     }
-    let mut goal = program("def main() -> -F Integer { ? }\n");
+    let mut goal = program("def main() -> -F Integer = ?;\n");
     let Maybe::Present(entry) = goal.entry()
     else {
         panic!("a goal's `main` is an entry");

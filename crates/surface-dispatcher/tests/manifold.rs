@@ -258,11 +258,11 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
 const KEPT: &str = "pub theory Kept where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key \
                     : V, k : pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) \
                     --> C;\n}\npub module Echo : Model(Kept) with sort V = String where {\n  type C = \
-                    String;\n  def get(key : String, k : String -> String) -> String { k key \
-                    }\n  def put(key : String, value : String, k : String) -> String { k }\n}\npub \
+                    String;\n  def get(key : String, k : String -> String) -> String = k \
+                    key;\n  def put(key : String, value : String, k : String) -> String = k;\n}\npub \
                     module Counted : Model(Kept) with sort V = Integer where {\n  type C = Integer;\n  \
-                    def get(key : Integer, k : Integer -> Integer) -> Integer { k key }\n  def \
-                    put(key : Integer, value : Integer, k : Integer) -> Integer { k }\n}\n";
+                    def get(key : Integer, k : Integer -> Integer) -> Integer = k key;\n  def \
+                    put(key : Integer, value : Integer, k : Integer) -> Integer = k;\n}\n";
 
 #[test]
 fn a_world_s_row_is_judged_against_its_site_s_offer_3523()

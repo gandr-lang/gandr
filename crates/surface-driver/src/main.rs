@@ -6247,7 +6247,7 @@ fn script(
                 Ran::NoProgram => writeln!(
                     stderr,
                     "gandr: {path}: declares no `main` to run; a program runs its `def main() -> \
-                     Unit {{ … }}`, and a source of declarations alone is checked by `gandr \
+                     Unit = …`, and a source of declarations alone is checked by `gandr \
                      check` or tested by `gandr test`"
                 )?,
                 Ran::Hosted(Hosted::Answered(_)) => {},

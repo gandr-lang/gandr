@@ -2973,7 +2973,7 @@ mod tests
                 (0_usize, 0_usize),
             ),
             (
-                r#"@[ checks ] def f(x : Integer) -> -F Integer { return x }"#,
+                r#"@[ checks ] def f(x : Integer) -> -F Integer = return x;"#,
                 Settlement::Settled,
                 (0_usize, 0_usize),
             ),
@@ -4340,7 +4340,7 @@ data NatUnits : Type where {{
     {
         let rows = [
             (
-                r#"def g : +U (Bool -> -F Integer) ; @[ refuses("TypeMismatch") ] def g(x : Bool) -> Integer { "s" }"#,
+                r#"def g : +U (Bool -> -F Integer) ; @[ refuses("TypeMismatch") ] def g(x : Bool) -> Integer = "s";"#,
                 RefusalName::TypeMismatch,
             ),
             (
@@ -4388,7 +4388,7 @@ data NatUnits : Type where {{
     #[test]
     fn a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840()
     {
-        let source = r#"def g : +U (Bool -> -F Integer) ; @[ refuses("TypeMismatch") ] def g(x : Bool) -> Bool { 1 }"#;
+        let source = r#"def g : +U (Bool -> -F Integer) ; @[ refuses("TypeMismatch") ] def g(x : Bool) -> Bool = 1;"#;
         let report = settled(CorpusRoot::Fixture, SourceText::from(source));
         let fixtures: Vec<_> = report
             .declarations()

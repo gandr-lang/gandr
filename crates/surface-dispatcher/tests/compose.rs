@@ -746,7 +746,7 @@ fn a_refusal_at_a_declaration_form_is_unstatable()
 fn a_tail_without_a_result_type_lowers_unsigned()
 {
     let grammar = grammar();
-    let source = SourceText::from("def f(x : Integer) { return x }");
+    let source = SourceText::from("def f(x : Integer) = return x;");
     let tree = parse(&grammar, source).expect("parses").into_tree();
     let mut arena = CoreArena::new();
     let module = lower_module(
