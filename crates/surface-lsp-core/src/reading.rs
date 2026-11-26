@@ -222,9 +222,9 @@ fn tiles(
 /// The head of the form at `at` declaring `symbol`: from the form's own start
 /// to the first `where` or brace among its own tiles outside its own square
 /// brackets, or to the symbol's end when the form has neither. A tile reads as
-/// [`Braces::spelled`] gives it. A `=` whose body is a layout block, which
-/// opens with the zero-width `{` that the layout pass writes, ends the head as
-/// a written `{` does (#5196). A brace inside the form's brackets, as an
+/// [`Braces::spelled`] gives it. A `=` whose body is a block, written `{` or
+/// the zero-width `{` that the layout pass writes, ends the head as a `{` of
+/// the form's own does (#5196). A brace inside the form's brackets, as an
 /// offer's `renaming { … }` writes it, opens no body, so the head runs past it
 /// (#5469).
 ///
@@ -238,8 +238,8 @@ fn head(
     symbol: &DocumentSymbol,
 ) -> Range
 {
-    // Whether the form at `form` opens with a zero-width `{`.
-    let laid = |form: NodeIndex| {
+    // Whether the form at `form` opens with a `{`, written or laid.
+    let opened = |form: NodeIndex| {
         tree.node(form).is_some_and(|outer| {
             tree.children(form).any(|child| {
                 tree.node(child).is_some_and(|node| {
@@ -248,7 +248,6 @@ fn head(
                         return false;
                     };
                     node.span().start() == outer.span().start()
-                        && node.span().start() == node.span().end()
                         && braces.spelled(grammar, tree, child, mold).map(<&str>::from) == Some("{")
                 })
             })
@@ -283,7 +282,7 @@ fn head(
                 false
             },
             Some("where" | "{") => bracketed == 0,
-            Some("=") => bracketed == 0 && own.peek().is_some_and(|&next| laid(next)),
+            Some("=") => bracketed == 0 && own.peek().is_some_and(|&next| opened(next)),
             Some(_) | None => false,
         };
         if ends {

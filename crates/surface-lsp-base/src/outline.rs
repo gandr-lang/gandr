@@ -1016,7 +1016,8 @@ impl Braces
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`runs`], and a layout body's zero-width `{` ends
-    ///   its declaration's head after the `=` as a written `{` does (#5196).
+    ///   its declaration's head after the `=` as a written `{` there does
+    ///   (#5196).
     /// - witness: `gandr-surface-lsp-core::reading::tests::a_layout_block_holds_its_members_4853`
     /// - witness: `gandr-surface-lsp-core::hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
     #[inline]

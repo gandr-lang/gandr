@@ -3383,7 +3383,8 @@ mod tests
     /// (#1265) — followed by the declaration's hover with its refusal; a tile
     /// of a source refused as a whole answers its rule and that refusal. The
     /// refused body is a layout block after `=`, which keeps its names as a
-    /// braced body does (#5196). None names a tracking issue.
+    /// block written in braces after `=` does (#5196). None names a tracking
+    /// issue.
     #[test]
     fn a_refused_declaration_hovers_what_the_lowering_kept_1201()
     {
