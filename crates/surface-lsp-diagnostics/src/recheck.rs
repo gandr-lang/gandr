@@ -2369,7 +2369,7 @@ mod tests
     fn related_information_is_the_annotations_then_the_located_contexts()
     {
         let uri = DocumentUri::from("file:///strict/returned.gandr");
-        let text = "def g(v : Integer) -> -F String { return v }\n";
+        let text = "def g(v : Integer) -> -F String = return v;\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2391,7 +2391,7 @@ mod tests
                 (range(Span(0, 25, 0, 31)), "the type it is checked against"),
                 (range(Span(0, 10, 0, 17)), "the type it synthesises"),
                 (
-                    range(Span(0, 0, 0, 44)),
+                    range(Span(0, 0, 0, 43)),
                     "checked against `Integer -> String`; while checking the body of this \
                      thunk"
                 ),

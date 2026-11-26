@@ -332,7 +332,7 @@ fn multi_line_forms_and_documentation_fold()
         answered,
         [
             (0, 1, Some("comment"), None),
-            (2, 4, None, shown("def f(x : Integer) -> -F Integer { … }")),
+            (2, 4, None, shown("def f(x : Integer) -> -F Integer = …;")),
             (6, 7, Some("comment"), None),
             (9, 16, None, shown("theory T where { … }")),
             (11, 13, None, shown("  boundary Square { … }")),

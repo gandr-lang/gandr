@@ -2426,7 +2426,7 @@ mod tests
     fn the_defect_rows_answer_as_wanted()
     {
         let tools = tools();
-        let body = "def f(x : Integer) -> -F Integer {";
+        let body = "def f(x : Integer) -> -F Integer = {";
         // The body's closer is written, on the cursor's line or the next: the
         // body's contents are what is missing, and no `}` is repeated.
         for after in [
@@ -2498,7 +2498,11 @@ mod tests
         for (before, after, first) in [
             ("def x = thunk { return", " }", " ${1:value}"),
             ("def x = thunk {", " }", " ${1:computation}"),
-            ("def f(x : Nat) -> -F Nat { let y = ", "", "${1:value}; \\}"),
+            (
+                "def f(x : Nat) -> -F Nat = { let y = ",
+                "",
+                "${1:value}; \\}",
+            ),
             ("def g :", "", " ${1:type};"),
             ("def g : Integer ≃", "", " ${1:type};"),
             ("def g : Integer <~>", "", " ${1:type};"),
@@ -2618,7 +2622,7 @@ mod tests
         let mut rendered = String::new();
         for (before, after) in [
             (
-                "def f(x : Integer) -> -F Integer {",
+                "def f(x : Integer) -> -F Integer = {",
                 include_str!("inline/unformatted/the-defect-rows-answer-as-wanted.gandr"),
             ),
             ("def f(x : Integer", ""),

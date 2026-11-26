@@ -391,7 +391,7 @@ fn constructor_change_is_one_replace()
 #[test]
 fn comp_constructor_change_is_one_replace()
 {
-    let function = "def f(x : Integer) -> -F Integer { return x }\n";
+    let function = "def f(x : Integer) -> -F Integer = return x;\n";
     let base = snapshot(&format!("{function}def v = thunk {{ return 1 }} ;\n"));
     let edited = snapshot(&format!(
         "{function}def v = thunk {{ become (force f)(1) }} ;\n"

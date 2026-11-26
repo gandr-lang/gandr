@@ -2492,27 +2492,27 @@ mod tests
             ),
             (
                 "a binder",
-                "def f($0x : Integer) -> -F Integer { return x }\n",
+                "def f($0x : Integer) -> -F Integer = return x;\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
                 "a use",
-                "def f(x : Integer) -> -F Integer { return $0x }\n",
+                "def f(x : Integer) -> -F Integer = return $0x;\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
                 "a literal",
-                "def f(x : Integer) -> -F Integer { return 4$02 }\n",
+                "def f(x : Integer) -> -F Integer = return 4$02;\n",
                 Ok(fenced(SourceText::from("Integer"))),
             ),
             (
                 "the keyword introducing a function",
-                "d$0ef f(x : Integer) -> -F Integer { return x }\n",
+                "d$0ef f(x : Integer) -> -F Integer = return x;\n",
                 Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
-                "the brace closing a function's body",
-                "def f(x : Integer) -> -F Integer { return x $0}\n",
+                "the semicolon ending a function",
+                "def f(x : Integer) -> -F Integer = return x$0;\n",
                 Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
@@ -2529,12 +2529,12 @@ mod tests
             ),
             (
                 "a written computation type",
-                "def f(x : Integer) -> -$0F Integer { return x }\n",
+                "def f(x : Integer) -> -$0F Integer = return x;\n",
                 Ok(fenced(SourceText::from("-F Integer : Type[-]"))),
             ),
             (
                 "a keyword opening a term",
-                "def f(x : Integer) -> -F Integer { ret$0urn x }\n",
+                "def f(x : Integer) -> -F Integer = ret$0urn x;\n",
                 Ok(fenced(SourceText::from("-F Integer"))),
             ),
             (
@@ -2556,7 +2556,7 @@ mod tests
             ),
             (
                 "a term past a refusal in its body",
-                "def g(x : Integer) -> -F Integer { let y = force 1 ; return $0x }\n",
+                "def g(x : Integer) -> -F Integer = { let y = force 1 ; return $0x };\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
@@ -3030,7 +3030,7 @@ mod tests
             "the name in its editor colour, the sugared type in its roles, `>` escaped"
         );
         let (text, at) = marker(SourceText::from(
-            "def f($0x : Integer) -> -F Integer { return x }\n",
+            "def f($0x : Integer) -> -F Integer = return x;\n",
         ));
         assert_eq!(
             styled(SourceText::from(text.as_str()), at, html),

@@ -5041,7 +5041,7 @@ mod tests
             include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-4.gandr"),
             // The tail return the lowering inserts spans the value it returns:
             // a tie the descent breaks by depth.
-            "def g(x : Integer) -> -F Integer { x }\n",
+            "def g(x : Integer) -> -F Integer = x;\n",
         ];
         for source in sources {
             let snapshot = snapshot_of(SourceText::from(source));

@@ -449,7 +449,7 @@ fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
     let mut session = session(SourceRoot::Strict);
     let refused = submit(
         &mut session,
-        "def f(x : NoSuchType) -> -F Integer { return 1 }",
+        "def f(x : NoSuchType) -> -F Integer = return 1;",
     );
     let Composed::Settled { ref report, .. } = *refused.composed()
     else {
@@ -462,10 +462,7 @@ fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
         ),
         "an undeclared type name in a signature is refused by its name: {report:?}"
     );
-    let accepted = submit(
-        &mut session,
-        "def f(x : Integer) -> -F Integer { return 1 }",
-    );
+    let accepted = submit(&mut session, "def f(x : Integer) -> -F Integer = return 1;");
     assert_eq!(
         rows(accepted.composed()),
         vec![("f".to_owned(), checks(), Settlement::Settled)],
@@ -1046,7 +1043,7 @@ fn comparison_operators_type_check_and_evaluate()
 fn a_dependent_signature_is_an_abstention_not_a_refusal()
 {
     let mut session = session(SourceRoot::Strict);
-    let submission = submit(&mut session, "def id(a : Type, x : a) -> -F a { return x }");
+    let submission = submit(&mut session, "def id(a : Type, x : a) -> -F a = return x;");
     assert_eq!(rows(submission.composed()), vec![(
         "id".to_owned(),
         checks(),

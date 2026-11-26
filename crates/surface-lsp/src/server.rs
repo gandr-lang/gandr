@@ -13556,7 +13556,7 @@ mod tests
     #[test]
     fn a_traced_hover_shows_the_node_at_the_cursor_and_its_ancestors_6295()
     {
-        let text = "def f(a : Integer, b : Integer) -> -F Integer { return a + b }\n";
+        let text = "def f(a : Integer, b : Integer) -> -F Integer = return a + b;\n";
         let hovered = |subscription: crate::instrument::Subscription, uri: &str| {
             let mut connected = initialized();
             connected.server.subscription = subscription;
@@ -14167,7 +14167,7 @@ mod tests
         };
         for (main, at, stacked) in [
             (
-                "def main() -> -F Integer { f 1 (g 2 (h ?)) }\n",
+                "def main() -> -F Integer = f 1 (g 2 (h ?));\n",
                 "?",
                 Vec::from([
                     row("h", (0, 1), Some("Integer")),
@@ -14176,7 +14176,7 @@ mod tests
                 ]),
             ),
             (
-                "def main() -> -F Integer { f 1 (g 2 (h \n",
+                "def main() -> -F Integer = f 1 (g 2 (h \n",
                 "2 (h",
                 Vec::from([row("g", (0, 2), None), row("f", (1, 2), None)]),
             ),
@@ -14328,32 +14328,32 @@ mod tests
             )
         };
         assert_eq!(
-            spaced("def main() -> -F Integer { f }\n", "{ f "),
+            spaced("def main() -> -F Integer = f ;\n", "= f "),
             Some(Vec::from([head("f", 0)])),
             "a space after a head opens its first slot"
         );
         assert_eq!(
-            spaced("def main() -> -F Integer { f 1 }\n", "f 1 "),
+            spaced("def main() -> -F Integer = f 1 ;\n", "f 1 "),
             Some(Vec::from([head("f", 1)])),
             "a space after an argument the head still owes opens the next slot"
         );
         assert_eq!(
-            spaced("def main() -> -F Integer { f 1 2 }\n", "f 1 2 "),
+            spaced("def main() -> -F Integer = f 1 2 ;\n", "f 1 2 "),
             None,
             "a space after a saturated call opens nothing"
         );
         assert_eq!(
-            spaced("def main() -> -F Integer { g 1 (f ) }\n", "(f "),
+            spaced("def main() -> -F Integer = g 1 (f );\n", "(f "),
             Some(Vec::from([head("f", 0), head("g", 1)])),
             "in a nested call the innermost spine is active and the outer ones follow it"
         );
         assert_eq!(
-            spaced("def main() -> -F Integer { f  (h 2) }\n", "{ f "),
+            spaced("def main() -> -F Integer = f  (h 2);\n", "= f "),
             Some(Vec::from([head("f", 0)])),
             "a space typed back inside a spine answers the slot it fills"
         );
         assert_eq!(
-            spaced("def main() -> -F Integer { return 1 }\n", "return "),
+            spaced("def main() -> -F Integer = return 1;\n", "return "),
             None,
             "a space after no head opens nothing"
         );
@@ -16377,7 +16377,7 @@ mod tests
         assert_eq!(
             folds(r#"{"textDocument":{"foldingRange":{"foldingRange":{"collapsedText":true}}}}"#),
             wire(Json(
-                r#"[{"startLine":0,"endLine":2,"collapsedText":"def f(x : Integer) -> -F Integer { … }"}]"#
+                r#"[{"startLine":0,"endLine":2,"collapsedText":"def f(x : Integer) -> -F Integer = …;"}]"#
             )),
             "a client that takes collapsed text is shown the function's head"
         );
@@ -16783,12 +16783,12 @@ mod tests
             );
             send(server, Json(&request))
         };
-        // The edit keeps the text's last newline, after `}`, and drops the two
+        // The edit keeps the text's last newline, after `};`, and drops the two
         // blank lines before it.
         let canonical = wire(Json(
             r#"[{"jsonrpc":"2.0","id":7,"result":[{
-                "range":{"start":{"line":0,"character":29},"end":{"line":6,"character":0}},
-                "newText":"\n  match n {\n    | Zero => n\n  }\n}"}]}]"#,
+                "range":{"start":{"line":0,"character":31},"end":{"line":6,"character":0}},
+                "newText":"\n  match n {\n    | Zero => n\n  }\n};"}]}]"#,
         ));
         assert_eq!(
             format(
@@ -16826,7 +16826,7 @@ mod tests
             open(
                 &mut server,
                 "file:///tmp/unused.gandr",
-                "def f(n : Integer, m : Integer, _k : Integer) -> -F Integer { return n }\n"
+                "def f(n : Integer, m : Integer, _k : Integer) -> -F Integer = return n;\n"
             ),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{

@@ -1348,8 +1348,8 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
         2_usize,
         "{findings}"
     );
-    assert!(findings.contains("{ return n }"), "{findings}");
-    assert!(findings.contains("{ become kept n }"), "{findings}");
+    assert!(findings.contains("= return n"), "{findings}");
+    assert!(findings.contains("= become kept n"), "{findings}");
 
     let json = ran(gandr(&[
         lint[0],
@@ -1949,7 +1949,7 @@ fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
         1_usize,
         "{findings}"
     );
-    assert!(findings.contains("{ id (run id n) }"), "{findings}");
+    assert!(findings.contains("= id (run id n)"), "{findings}");
     let effects = ran(gandr(&[
         check,
         lint,

@@ -358,7 +358,7 @@ fn a_layout_word_is_a_keyword() -> Result<(), Failure>
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
     let source = SourceText::from(
-        "def f(b : Bool, n : Integer) -> Integer {\n  while n > 0 do\n    g n\n  if b then\n    g n\n  else\n    g 0\n  match b where\n    | true => n\n    | false => 0\n}\n",
+        "def f(b : Bool, n : Integer) -> Integer = {\n  while n > 0 do\n    g n\n  if b then\n    g n\n  else\n    g 0\n  match b where\n    | true => n\n    | false => 0\n};\n",
     );
     let parsed = parse(&pbg, source)?;
     let spans = table.highlight(parsed.tree())?;

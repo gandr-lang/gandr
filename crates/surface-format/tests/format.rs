@@ -717,11 +717,11 @@ fn a_call_in_call_form_keeps_its_group_before_a_postfix_form_5665()
 fn a_broken_spine_s_head_breaks_a_bracket_past_the_page_5528()
 {
     let grammar = grammar();
-    let source = "def twiceRun() -> Integer { twice[.m = Integer, .combine = Adding.plus] 3 }\n";
+    let source = "def twiceRun() -> Integer = { twice[.m = Integer, .combine = Adding.plus] 3 };\n";
     let laid = text(&grammar, source, NARROW);
     assert_eq!(
         laid,
-        "def twiceRun() -> Integer {\n  twice[\n    .m = Integer,\n    .combine = Adding.plus\n  ]\n    3\n}\n",
+        "def twiceRun() -> Integer = {\n  twice[\n    .m = Integer,\n    .combine = Adding.plus\n  ]\n    3\n};\n",
         "the head's bracket breaks one field a line, and the operand stands deeper"
     );
     assert_eq!(
@@ -773,7 +773,7 @@ fn the_source_line_ending_is_kept()
     let source = include_str!("format/unformatted/the-source-line-ending-is-kept.gandr");
     assert_eq!(
         text(&grammar, source, NARROW),
-        "def f() -> -F Integer {\r\n  return 1\r\n}\r\n",
+        "def f() -> -F Integer =\r\n  return 1\r\n",
         "carriage returns stay with their line feeds"
     );
 }

@@ -1,2 +1,2 @@
-def f(x : Nat) -> -F Nat {
+def f(x : Nat) -> -F Nat = {
   match x {

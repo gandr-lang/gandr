@@ -1,8 +1,8 @@
 /// One.
 /// Two.
-def f(x : Integer) -> -F Integer {
+def f(x : Integer) -> -F Integer = {
   return x
-}
+};
 def g = 1 ;
 /* a
    block */

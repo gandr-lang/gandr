@@ -853,7 +853,7 @@ mod tests
     fn every_enclosing_spine_answers_outward()
     {
         // `main` nests three spines; the open call below it closes none.
-        let closed = "def main() -> -F Integer { f 1 (g 2 (h ?)) }\n";
+        let closed = "def main() -> -F Integer = f 1 (g 2 (h ?));\n";
         let framed =
             |text: &str, marker: &str| frames(SourceText::from(text), SourceFragment::from(marker));
         let frame = |head: &str, slot: usize, argument: Option<&str>| {
@@ -881,7 +881,7 @@ mod tests
             [],
             "the outermost head stands in no spine"
         );
-        let open = "def main() -> -F Integer { f 1 (g 2 (h \n";
+        let open = "def main() -> -F Integer = f 1 (g 2 (h \n";
         let at = |marker: &str| {
             framed(open, marker)
                 .into_iter()

@@ -49,7 +49,7 @@ fn color_pick<'arms>(arms: impl Into<Text<'arms>>) -> Written
 {
     let Text(arms) = arms.into();
     Written::new(
-        &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ {arms} }} }}\n"),
+        &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer = match c {{ {arms} }};\n"),
         "pick",
     )
 }
@@ -504,7 +504,7 @@ fn the_eliminator_still_fires_on_a_hole_payload()
 fn a_missing_constructor_is_reported_by_name()
 {
     let unfinished = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ | Red => return 0 | Green => return 1 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer = match c {{ | Red => return 0 | Green => return 1 }};\n"
     );
     assert!(
         matches!(

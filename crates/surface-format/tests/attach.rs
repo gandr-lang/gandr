@@ -231,7 +231,7 @@ fn a_layout_that_breaks_or_joins_a_group_keeps_each_comment_with_its_owner()
             "at {width} columns each comment keeps its owner and role:\n{once}"
         );
     }
-    let joined = "def g(x : Integer) -> -F Integer { let y = inc x ; /* kept */ y }\n";
+    let joined = "def g(x : Integer) -> -F Integer = { let y = inc x ; /* kept */ y };\n";
     let broken = laid(&grammar, joined, 24_u32);
     assert!(
         broken.lines().nth(1).is_some(),

@@ -1805,8 +1805,8 @@ mod tests
         let socket = scratch.socket();
         let hub = hub(&socket);
         let mut editor = Client::new(&socket);
-        let heads = "def g(a : Integer, b : Integer) -> -F Integer { return a + b }\ndef f(a : Integer, b : Integer) -> -F Integer { return a + b }\n";
-        let opened = |main: &str| format!("{heads}def main() -> -F Integer {{ {main} }}\n");
+        let heads = "def g(a : Integer, b : Integer) -> -F Integer = return a + b;\ndef f(a : Integer, b : Integer) -> -F Integer = return a + b;\n";
+        let opened = |main: &str| format!("{heads}def main() -> -F Integer = {main};\n");
         let text = opened("f 1 (g 2 3)");
         editor.send(Json(
             &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
@@ -1823,7 +1823,7 @@ mod tests
         let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
         let (_line, _greeting) = next_frame(&mut reading);
         // The cursor stands before `2`, in the first slot of `g`.
-        let character = "def main() -> -F Integer { f 1 (g ".len();
+        let character = "def main() -> -F Integer = f 1 (g ".len();
         editor.send(Json(
             &serde_json::json!({"jsonrpc": "2.0", "id": 2_i32,
                 "method": "textDocument/signatureHelp",
@@ -1928,7 +1928,7 @@ mod tests
         let mut editor = Client::new(&socket);
         let opened = |g: &str, main: &str| {
             format!(
-                "def f(a : Integer, b : Integer) -> -F Integer {{ return a + b }}\ndef g(a : Integer, b : Integer) -> -F Integer {{ return {g} }}\ndef main() -> -F Integer {{ {main} }}\n"
+                "def f(a : Integer, b : Integer) -> -F Integer = return a + b;\ndef g(a : Integer, b : Integer) -> -F Integer = return {g};\ndef main() -> -F Integer = {main};\n"
             )
         };
         let uri = "file:///tmp/derivation.gandr";
@@ -1950,7 +1950,7 @@ mod tests
             ));
             while editor.receive().get("id") != Some(&serde_json::json!(id)) {}
         };
-        let inside = "def main() -> -F Integer { f 1 (g ".len();
+        let inside = "def main() -> -F Integer = f 1 (g ".len();
         help(&mut editor, 2_i32, 2_i32, inside);
         let mut view = UnixStream::connect(&socket).expect("the hub accepts");
         view.set_read_timeout(Some(OWED))
@@ -2106,13 +2106,13 @@ mod tests
             &mut editor,
             3_i32,
             2_i32,
-            "def main() -> -F Integer { f ".len(),
+            "def main() -> -F Integer = f ".len(),
         );
         help(
             &mut editor,
             4_i32,
             1_i32,
-            "def g(a : Integer, b : Integer) -> -F Integer { return b".len(),
+            "def g(a : Integer, b : Integer) -> -F Integer = return b".len(),
         );
         let (_scope, g) = derived(&mut reading);
         assert_eq!(

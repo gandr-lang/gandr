@@ -1647,7 +1647,7 @@ fn signature_help_reads_a_sibling_s_head()
     let document = directory.join("document.gandr");
     std::fs::write(
         &base,
-        "/// Picks the first.\npub def pick(a : Integer, b : Integer) -> -F Integer { return a }\n",
+        "/// Picks the first.\npub def pick(a : Integer, b : Integer) -> -F Integer = return a;\n",
     )
     .expect("the sibling is written");
     std::fs::write(&document, "").expect("the document is written");
