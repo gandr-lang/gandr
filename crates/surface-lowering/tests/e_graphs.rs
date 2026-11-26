@@ -33,13 +33,19 @@ use gandr_theory_e_graphs::EGraph;
 use gandr_theory_e_graphs::Outcome;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermView;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Sweep;
 
 use crate::lawvere::presented;
+use crate::squier::Kept;
 use crate::squier::Reading;
 use crate::squier::certified;
-use crate::squier::corpus;
 use crate::squier::each_block;
 use crate::squier::rules_of;
+use crate::squier::swept;
 
 /// The largest seed of a block, in nodes: five, so a binary operation's
 /// seeds reach two applications nested both ways.
@@ -225,18 +231,24 @@ fn closed(
     }
 }
 
-/// The findings of each reading of each corpus block that `keep` admits,
-/// with its rules and its theory.
+/// The findings of each reading of each block that `keep` admits, with its
+/// rules and its theory, of the sources that `sweep` asks for under `sample`,
+/// and `kept` in the fixed set of a sampled run.
 ///
 /// # Specification
 /// trivial.
-fn findings<Keep>(mut keep: Keep) -> Vec<Finding>
+fn findings<Keep>(
+    sweep: &Sweep,
+    sample: Sample,
+    kept: Kept,
+    mut keep: Keep,
+) -> Vec<Finding>
 where
     Keep: FnMut(&[(FreeTerm, FreeTerm)], &mut LawvereTheory) -> Option<Vec<TermPlace>>,
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let mut found = Vec::new();
-    for path in corpus() {
+    for path in swept(sweep, sample, &[kept]) {
         let text = std::fs::read_to_string(&path).expect("a corpus source reads");
         let source = SourceText::from(text.as_str());
         let _lowering = each_block(&grammar, source, |cells| {
@@ -265,32 +277,74 @@ where
     found
 }
 
-#[test]
-fn each_ground_block_joins_exactly_what_completion_joins()
+/// The source of a ground block that each sampled run reads.
+const GROUND: &str = "model/desc/rule-keeps-count.gandr";
+
+/// The source of a first-order block with a constant that each sampled run
+/// reads.
+const FIRST_ORDER: &str = "model/include/monoid.gandr";
+
+/// The sample of the ground blocks: thirty-two sources, ranked by their
+/// BLAKE3 digest under this name, beside [`GROUND`]. The whole corpus took
+/// 3.4 s plain and 19 s enforcing on a hosted runner.
+const GROUND_BLOCKS: Sample = Sample {
+    name: SampleName("each_ground_block_joins_exactly_what_completion_joins"),
+    size: SampleSize(32),
+};
+
+/// The sample of the first-order blocks: thirty-two sources, ranked by their
+/// BLAKE3 digest under this name, beside [`FIRST_ORDER`]. The whole corpus
+/// took 3.9 s plain and 19 s enforcing on a hosted runner.
+const FIRST_ORDER_BLOCKS: Sample = Sample {
+    name: SampleName("each_first_order_block_saturates_to_its_normal_forms"),
+    size: SampleSize(32),
+};
+
+/// Each ground block of the sources that `sweep` asks for saturates, and
+/// joins exactly the terms that have one normal form.
+///
+/// # Specification
+/// trivial.
+fn ground_blocks_join(sweep: &Sweep)
 {
     // The table of a ground block holds the terms of its rules with each of
     // their arguments, and no other term.
-    let found = findings(|rules, theory| {
+    let found = findings(sweep, GROUND_BLOCKS, Kept(GROUND), |rules, theory| {
         (rules_kind(rules) == Rules::Ground).then(|| theory.table().issued().collect())
     });
-    assert!(!found.is_empty(), "the corpus holds ground blocks");
+    assert!(
+        sweep.portion() == Portion::Changed || !found.is_empty(),
+        "the corpus holds ground blocks"
+    );
     for finding in &found {
         assert_eq!(finding.outcome, Outcome::Saturated, "{}", finding.name);
     }
 }
 
-#[test]
-fn each_first_order_block_saturates_to_its_normal_forms()
+/// Each first-order block with a constant of the sources that `sweep` asks
+/// for saturates within its budget from its seeds.
+///
+/// # Specification
+/// trivial.
+fn first_order_blocks_saturate(sweep: &Sweep)
 {
-    let found = findings(|rules, theory| {
-        let open = rules_kind(rules) == Rules::Open;
-        let constant = theory
-            .arities()
-            .iter()
-            .any(|&arity| usize::from(arity) == 0);
-        (open && constant).then(|| seeds(theory))
-    });
-    assert!(!found.is_empty(), "the corpus holds first-order blocks");
+    let found = findings(
+        sweep,
+        FIRST_ORDER_BLOCKS,
+        Kept(FIRST_ORDER),
+        |rules, theory| {
+            let open = rules_kind(rules) == Rules::Open;
+            let constant = theory
+                .arities()
+                .iter()
+                .any(|&arity| usize::from(arity) == 0);
+            (open && constant).then(|| seeds(theory))
+        },
+    );
+    assert!(
+        sweep.portion() == Portion::Changed || !found.is_empty(),
+        "the corpus holds first-order blocks"
+    );
     let exhausted: Vec<&str> = found
         .iter()
         .filter(|finding| finding.outcome == Outcome::Exhausted)
@@ -300,4 +354,39 @@ fn each_first_order_block_saturates_to_its_normal_forms()
         exhausted.is_empty(),
         "saturation passes its budget on {exhausted:?}"
     );
+}
+
+/// A pull request reads the sample, and the nightly reads the corpus whole.
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::first_order_blocks_saturate;
+    use super::ground_blocks_join;
+
+    #[test]
+    fn each_ground_block_joins_exactly_what_completion_joins()
+    {
+        ground_blocks_join(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    #[test]
+    fn each_ground_block_joins_exactly_what_completion_joins_changed()
+    {
+        ground_blocks_join(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    #[test]
+    fn each_first_order_block_saturates_to_its_normal_forms()
+    {
+        first_order_blocks_saturate(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    #[test]
+    fn each_first_order_block_saturates_to_its_normal_forms_changed()
+    {
+        first_order_blocks_saturate(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
 }

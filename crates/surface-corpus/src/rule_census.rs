@@ -482,11 +482,27 @@ mod sweeps
     use std::path::Path;
 
     use gandr_surface_grammar::built_in;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
+    use gandr_workflow_sweep::Text;
 
     use super::Form;
     use super::Refused;
     use super::refused;
     use super::sources;
+
+    /// The sample of the sources that write a rule: thirty-two, ranked by the
+    /// BLAKE3 digest of their text under this name, beside each source of a
+    /// row of [`CENSUS`], so each run reads each row. The sample looks for a
+    /// refusal that the census does not hold. Each source runs the pipeline,
+    /// and the whole set took 4.4 s plain and 16 s enforcing on a hosted
+    /// runner. The `sweeps` and `nightly` profiles read each source.
+    const UNCENSUSED: Sample = Sample {
+        name: SampleName("each_refused_rule_has_its_row_in_the_census"),
+        size: SampleSize(32),
+    };
 
     /// Each rule that the check refuses in a source of `corpus/` or of the
     /// crates: the source, the declaration, the refusal, the rule in the
@@ -842,19 +858,37 @@ mod sweeps
     {
         let pbg = built_in().expect("the built-in grammar builds");
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let shown = |path: &Path| {
+            path.strip_prefix(&repository)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .into_owned()
+        };
+        let mut texts = Vec::new();
+        for root in ["corpus", "crates"] {
+            texts.extend(sources(&repository.join(root)));
+        }
+        let rows: Vec<Text<'_>> = texts.iter().map(|&(_, ref text)| Text(text)).collect();
+        let mut visited: BTreeSet<usize> = Sweep::asked()
+            .expect("the run's sweep resolves")
+            .visit_rows(UNCENSUSED, &rows)
+            .into_iter()
+            .map(|row| row.0)
+            .collect();
+        let censused: BTreeSet<&str> = CENSUS.iter().map(|&(source, ..)| source).collect();
+        visited.extend(
+            texts
+                .iter()
+                .enumerate()
+                .filter(|&(_, &(ref path, _))| censused.contains(shown(path).as_str()))
+                .map(|(at, _)| at),
+        );
         let mut found: BTreeSet<(String, Refused)> = BTreeSet::new();
         let mut read = 0_usize;
-        for root in ["corpus", "crates"] {
-            for (path, text) in sources(&repository.join(root)) {
-                read = read.saturating_add(1);
-                let shown = path
-                    .strip_prefix(&repository)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .into_owned();
-                for row in refused(&pbg, &path, &text) {
-                    let _fresh = found.insert((shown.clone(), row));
-                }
+        for &(ref path, ref text) in visited.iter().filter_map(|&at| texts.get(at)) {
+            read = read.saturating_add(1);
+            for row in refused(&pbg, path, text) {
+                let _fresh = found.insert((shown(path), row));
             }
         }
         let known: BTreeSet<(String, Refused)> = CENSUS
