@@ -147,6 +147,10 @@ pub enum RewriteName
     /// `handle`; both forms write `effect … handle`, the one spelling of a
     /// handler.
     HandlerWords,
+    /// A restricted binder of an input port: `k : pi+ (x : S) . T` and `k :
+    /// (x : S) -> T`; both forms write the arrow, the one spelling of the
+    /// binder.
+    PortArrow,
 }
 
 impl RewriteName
@@ -171,6 +175,7 @@ impl RewriteName
         Self::JoinedDefinition,
         Self::TypeApplication,
         Self::HandlerWords,
+        Self::PortArrow,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -200,6 +205,7 @@ impl RewriteName
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
             Self::HandlerWords => "handler-words",
+            Self::PortArrow => "port-arrow",
         }
     }
 
@@ -286,7 +292,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 40] = [
+pub const REWRITES: [Rewrite; 44] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -609,6 +615,38 @@ pub const REWRITES: [Rewrite; 40] = [
         mold: HANDLER,
         from: Spelling("handle c : I { M } with { … }"),
         to: Spelling("effect c : I { M } handle { … }"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PortArrow,
+        direction: Direction::Sugar,
+        mold: MoldName("theory_declaration"),
+        from: Spelling("k : pi+ (x : S) . T"),
+        to: Spelling("k : (x : S) -> T"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PortArrow,
+        direction: Direction::Sugar,
+        mold: MoldName("circuit_declaration"),
+        from: Spelling("k : pi+ (x : S) . T"),
+        to: Spelling("k : (x : S) -> T"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PortArrow,
+        direction: Direction::Desugar,
+        mold: MoldName("theory_declaration"),
+        from: Spelling("k : pi+ (x : S) . T"),
+        to: Spelling("k : (x : S) -> T"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PortArrow,
+        direction: Direction::Desugar,
+        mold: MoldName("circuit_declaration"),
+        from: Spelling("k : pi+ (x : S) . T"),
+        to: Spelling("k : (x : S) -> T"),
         enabled: Enabled::On,
     },
 ];
@@ -2497,6 +2535,10 @@ impl<'source> Respelling<'_, 'source>
             (RewriteName::HandlerWords, Direction::Sugar | Direction::Desugar) => {
                 return self.handler_words(parts, extent);
             },
+            (RewriteName::PortArrow, Direction::Sugar | Direction::Desugar) => {
+                let rule = self.rule(at)?;
+                return self.port_arrow(rule, parts, extent);
+            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -3262,6 +3304,103 @@ impl<'source> Respelling<'_, 'source>
             }
             else if Some(leaf.span) == answer {
                 out.token(Spelling("handle"));
+            }
+            else {
+                out.leaves.push(leaf);
+            }
+        }
+        self.changed = Changed::Yes;
+        Some(Spelled {
+            leaves: out.leaves,
+            rewritten: Changed::Yes,
+            ..kept
+        })
+    }
+
+    /// The theory or circuit declaration spanning `extent` whose parts are
+    /// `parts`, each restricted binder of its input ports written with the
+    /// arrow: `pi+ (x : S) . T` as `(x : S) -> T`. Nothing when the form
+    /// writes no `pi+`.
+    ///
+    /// # Specification
+    /// - requires: `parts` are the parts of a form of the rule `rule`, in
+    ///   source order.
+    /// - ensures: `None` unless an own `pi+` stands among the parts and the
+    ///   fifth own tile after each is a `.`; otherwise the form as written, but
+    ///   for each such `pi+` left out and its `.` written `->`. Each comment
+    ///   stays.
+    /// - panics: none.
+    /// - executable: none — the clause names the roles of the form's parts,
+    ///   which no predicate on the arguments and the result states more simply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — binders of a theory and of a circuit declaration, one
+    ///   telescope of two, a nominal binder kept, and a comment kept.
+    /// - witness: `tests::rewrite::a_restricted_binder_is_written_with_the_arrow_7869`
+    ///
+    /// # Cost
+    /// - allocation: the binders' tiles and the written leaves, growth within
+    ///   the form's parts
+    fn port_arrow(
+        &mut self,
+        rule: MoldName,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Spelled<'source>>
+    {
+        let tile = |part: &Part<'source>| {
+            part.leaves
+                .iter()
+                .find(|leaf| leaf.material == Material::Token)
+                .map(|leaf| leaf.span)
+        };
+        let own: Vec<(&str, &Part<'source>)> = parts
+            .iter()
+            .filter_map(|part| {
+                if let Role::Own(tile) = part.role {
+                    Some((<&str>::from(tile), part))
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        // A binder's own tiles are `pi+ ( x : ) .`: its type is an operand.
+        let mut left_out = Vec::new();
+        let mut arrows = Vec::new();
+        for (at, &(text, part)) in own.iter().enumerate() {
+            if text != "pi+" {
+                continue;
+            }
+            let &(dot, dotted) = own.get(at.saturating_add(5))?;
+            if dot != "." {
+                return None;
+            }
+            left_out.push(tile(part)?);
+            arrows.push(tile(dotted)?);
+        }
+        if left_out.is_empty() {
+            return None;
+        }
+        let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            Commented::Yes
+        }
+        else {
+            Commented::No
+        };
+        let kept = self.kept(rule, parts, extent, (commented, Open::Yes));
+        let mut out = Builder {
+            leaves: Vec::with_capacity(kept.leaves.len()),
+            position: ByteSpan::new(extent.start(), extent.start()).unwrap_or(extent),
+            form: extent,
+            owner: Owner::Form(self.form),
+        };
+        let token = |leaf: &Leaf<'source>, spans: &[ByteSpan]| {
+            leaf.material == Material::Token && spans.contains(&leaf.span)
+        };
+        for &leaf in kept.leaves.iter().filter(|leaf| !token(leaf, &left_out)) {
+            if token(&leaf, &arrows) {
+                out.token(Spelling("->"));
             }
             else {
                 out.leaves.push(leaf);
@@ -4142,7 +4281,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 43] = [
+const RULES: [MoldName; 45] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4186,6 +4325,8 @@ const RULES: [MoldName; 43] = [
     MoldName("module_definition_member"),
     MoldName("attributed_module_member"),
     HANDLER,
+    MoldName("theory_declaration"),
+    MoldName("circuit_declaration"),
 ];
 
 /// A capability scope: `effect c : I { M } handle { … }`.

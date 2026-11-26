@@ -1594,6 +1594,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "joined-definition",
             "type-application",
             "handler-words",
+            "port-arrow",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2606,6 +2607,45 @@ fn a_handler_is_written_effect_then_handle()
             spelled(&grammar, source, form, only),
             moved,
             "{form}: the words move alike"
+        );
+        assert_eq!(
+            spelled(&grammar, moved.as_str(), form, only),
+            moved,
+            "{form}: a second pass changes nothing"
+        );
+    }
+}
+
+/// A restricted binder of an input port is written with the arrow in either
+/// form and alone in a selection: `pi+ (x : S) . T` is `(x : S) -> T`. A
+/// telescope of two binders nests, a nominal binder `bind (a : N) . T` stays,
+/// a port written with the arrow stays, and a comment keeps its place. A
+/// second pass changes nothing.
+#[test]
+fn a_restricted_binder_is_written_with_the_arrow_7869()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/a-restricted-binder-is-written-with-the-arrow-7869.gandr"
+    );
+    let only = Selection::Only(&[RewriteName::PortArrow]);
+    let moved = spelled(&grammar, source, Form::Sugared, only);
+    expect![[r#"
+        theory Binders where
+          sort Tm : Type+
+          sort Name : Atom
+          // a body under one variable
+          oper lam : (t : (x : Tm) -> Tm) --> Tm
+          oper let2 : (u : Tm, t : (x : Tm) -> (y : Tm) -> Tm) --> Tm
+          oper nu : (p : bind (a : Name). Tm) --> Tm
+          oper app : (f : (x : Tm) -> Tm, a : Tm) --> Tm
+    "#]]
+    .assert_eq(&moved);
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, only),
+            moved,
+            "{form}: the binders move alike"
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, only),

@@ -1,0 +1,8 @@
+theory Binders where
+  sort Tm : Type+
+  sort Name : Atom
+  // a body under one variable
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm
+  oper let2 : (u : Tm, t : pi+ (x : Tm). pi+ (y : Tm). Tm) --> Tm
+  oper nu : (p : bind (a : Name). Tm) --> Tm
+  oper app : (f : (x : Tm) -> Tm, a : Tm) --> Tm
