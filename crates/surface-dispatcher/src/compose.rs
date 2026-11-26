@@ -2230,6 +2230,81 @@ pub fn lower_unit_source<'source>(
     lower_parsed_unit(grammar, parsed, unit, lowerings, &mut Decisions::none())
 }
 
+/// What the lowering answers for the language features of the last source
+/// of a unit.
+#[derive(Clone, Debug)]
+pub enum SourceFeatures<'source>
+{
+    /// The id of each language feature that the source uses, in byte order.
+    Used(Vec<&'static str>),
+    /// The lowering refused the unit as a whole.
+    Refused(LoweringRefusal<'source>),
+}
+
+/// Parse and lower the sources `unit` lays end to end in `source`, and read
+/// the language features that the last of them uses.
+///
+/// # Specification
+/// - requires: `grammar` is the checked grammar; `source` is the text that
+///   `unit` lays out.
+/// - ensures: the features of the last source of `unit`, as
+///   [`gandr_surface_lowering::gate::used_features`] answers them over the
+///   tree and the attributes of the lowering; or the refusal of the unit as a
+///   whole. `lowerings` advances as [`lower_unit_source`] advances it.
+/// - provides: the read of `gandr features` for one source.
+/// - fails: as [`lower_unit_source`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`lower_unit_source`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`crate::FeatureCensus::step`].
+/// - witness: `gandr-surface-driver::tests::cli::features_prints_the_declaration_of_each_source`
+///
+/// # Cost
+/// - allocation: the tree, the arena and the lowered module, growth within the
+///   source; the ids, one for each feature
+#[inline]
+pub fn unit_source_features<'source>(
+    grammar: &Pbg,
+    source: SourceText<'source>,
+    unit: &Unit,
+    lowerings: &mut LoweringCount,
+) -> Result<SourceFeatures<'source>, ComposeFault<'source>>
+{
+    let parsed = parse(grammar, source).map_err(|fault| ComposeFault::Parse(Shared::new(fault)))?;
+    let tree = parsed.into_tree();
+    let mut arena = CoreArena::new();
+    let lowered = lowering::lower(
+        grammar,
+        &tree,
+        unit,
+        &mut arena,
+        lowerings,
+        &mut Decisions::none(),
+    );
+    let module = match lowered {
+        Ok(module) => module,
+        Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+            return Err(ComposeFault::Lowering(Shared::new(refusal)));
+        },
+        Err(refusal) => return Ok(SourceFeatures::Refused(refusal)),
+    };
+    let own = unit.last();
+    let start = unit.sources().get(usize::from(own)).map_or_else(
+        || gandr_surface_syntax::ByteOffset::from(0_usize),
+        gandr_surface_lowering::UnitSource::start,
+    );
+    let used = gandr_surface_lowering::gate::used_features(
+        (grammar, &tree),
+        (module.attributes(), &arena),
+        own,
+        &(start .. gandr_surface_syntax::ByteOffset::from(usize::MAX)),
+    );
+    Ok(SourceFeatures::Used(used.into_keys().collect()))
+}
+
 /// Lower the sources `unit` lays end to end in the tree `parsed` committed:
 /// [`lower_unit_source`] past its parse, each rule block decided through
 /// `decisions`.

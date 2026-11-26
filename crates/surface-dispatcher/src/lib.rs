@@ -171,6 +171,7 @@ mod component;
 mod compose;
 mod engine;
 mod entry;
+mod features;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 mod format;
@@ -226,6 +227,9 @@ pub use crate::cells::FusionVerdict;
 pub use crate::cells::Fusions;
 pub use crate::cells::HoleCount;
 pub use crate::cells::OverBudget;
+pub use crate::features::Declaration;
+pub use crate::features::FeatureCensus;
+pub use crate::features::FeatureStep;
 pub use crate::component::Freshness;
 pub use crate::component::ImportBase;
 pub use crate::component::ImportPath;

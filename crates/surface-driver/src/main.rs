@@ -366,6 +366,8 @@ use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::AuthorityError;
 use gandr_surface_dispatcher::Census;
+use gandr_surface_dispatcher::FeatureCensus;
+use gandr_surface_dispatcher::FeatureStep;
 use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::Class;
 use gandr_surface_dispatcher::Composed;
@@ -1014,6 +1016,22 @@ enum Command
         /// quantale.
         #[arg(long)]
         fusions: bool,
+        /// Source files, and directories searched for `.gandr` sources.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
+    /// Print the declaration of the language features of each source under
+    /// each path, one line for each source.
+    ///
+    /// A line is the path, then the attribute that the source writes at its
+    /// head: `@![features("modules")]`, or `@![features(("modules",
+    /// "records"))]` for more than one feature. The attribute states each
+    /// feature whose form, attribute or builtin the source uses, and no other.
+    /// The line of a source that uses none is `tier zero`. Nothing is checked.
+    /// Exits 0 when every path was read, and 2 when a path cannot be read,
+    /// names no source, or holds a source the lowering cannot read.
+    Features
+    {
         /// Source files, and directories searched for `.gandr` sources.
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -2286,6 +2304,7 @@ fn main() -> ExitCode
             },
             Verbosity::User,
         ),
+        Some(Command::Features { paths }) => return features(FeatureCensus::new(paths)),
         Some(Command::Doc {
             out,
             markdown,
@@ -4439,6 +4458,58 @@ fn kept(
         writeln!(stderr, "gandr: {}:{declaration}", path.display())?;
     }
     Ok(())
+}
+
+/// Step `census`, printing the declaration of each source on a line, and
+/// choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each source that the census reads is `<path>: <declaration>` on
+///   standard output, the declaration rendered as the dispatcher's
+///   `Declaration` renders it, sources in walk order. Each path that the
+///   census cannot read is `gandr: <path>: <fault>` on standard error, and the
+///   census continues past it. The exit is two when a path faulted or a write
+///   failed, and zero otherwise.
+/// - provides: `gandr features`.
+/// - fails: never; each failure is an exit code.
+/// - panics: none.
+/// - executable: none — the lines are on the standard streams, which the CLI
+///   witness reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source of the first twin, a source that uses one
+///   feature and a missing path observe each line on both streams and the
+///   exit.
+/// - witness: `tests::cli::features_prints_the_declaration_of_each_source`
+///
+/// # Cost
+/// - allocation: the text of each line, diagnostic
+fn features(mut census: FeatureCensus) -> ExitCode
+{
+    let mut stdout = std::io::stdout().lock();
+    let mut stderr = std::io::stderr().lock();
+    let mut faulted = false;
+    while let Maybe::Present(step) = census.step() {
+        let written = match step {
+            FeatureStep::Source { path, declaration } => {
+                writeln!(stdout, "{}: {declaration}", path.display())
+            },
+            FeatureStep::Fault { path, fault } => {
+                faulted = true;
+                writeln!(stderr, "gandr: {}: {fault}", path.display())
+            },
+        };
+        if written.is_err() {
+            return ExitCode::from(FAULTED);
+        }
+    }
+    if faulted {
+        ExitCode::from(FAULTED)
+    }
+    else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// Step `census`, printing each cell of each source on a line, then each

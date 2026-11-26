@@ -78,7 +78,7 @@ use crate::walk::Reached;
 use crate::walk::Traversal;
 use crate::walk::walk_step;
 
-/// Why a path's cells could not be read.
+/// Why a census could not read a path.
 #[derive(Debug)]
 pub enum CensusFault<'census>
 {

@@ -2296,6 +2296,46 @@ fn cells_reports_each_hole_s_count()
     );
 }
 
+/// `gandr features` prints the declaration of each source: `tier zero` for a
+/// source of the first twin, and the attribute for a source that uses a
+/// feature, whatever the source declares. A path that names no source is a
+/// fault on standard error, and exits two once the census has read each other
+/// path.
+#[test]
+fn features_prints_the_declaration_of_each_source()
+{
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+    let twin = corpus.join("model/programs/export-add.gandr");
+    let undeclared = corpus.join("ledger/diagnostics/FeatureUndeclared.gandr");
+    let scratch = Scratch::new(Path::new("features"));
+    let absent = scratch.0.join("absent.gandr");
+    let features = Path::new("features");
+
+    let read = ran(gandr(&[features, &twin, &undeclared]));
+    assert_eq!(code(&read), Code(0_i32), "{}", stderr(&read));
+    assert_eq!(
+        stdout(&read),
+        format!(
+            "{}: tier zero\n{}: @![features(\"deprecation\")]\n",
+            twin.display(),
+            undeclared.display()
+        )
+    );
+
+    let faulted = ran(gandr(&[features, &absent, &twin]));
+    assert_eq!(code(&faulted), Code(2_i32), "{}", stderr(&faulted));
+    assert!(
+        stderr(&faulted).starts_with(&format!("gandr: {}: ", absent.display())),
+        "{}",
+        stderr(&faulted)
+    );
+    assert_eq!(
+        stdout(&faulted),
+        format!("{}: tier zero\n", twin.display()),
+        "the census continued past the fault"
+    );
+}
+
 /// #4906: `gandr doc` writes a page for each source of a package, an
 /// importer's beside the sibling it imports, and an index naming each page by
 /// its source and the first sentence of its own documentation; a path naming
