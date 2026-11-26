@@ -5463,8 +5463,8 @@ mod tests
                  def one_braced(b : Bool) -> Integer = {\n  if b { 1 } else { 2 }\n};\n\
                  def chain_laid(a : Bool, b : Bool) -> Integer =\n  if a then\n    2\n  \
                  else if b then\n    1\n  else\n    0\n\
-                 def chain_braced(a : Bool, b : Bool) -> Integer {\n  \
-                 if a { 2 } else if b { 1 } else { 0 }\n}\n",
+                 def chain_braced(a : Bool, b : Bool) -> Integer = {\n  \
+                 if a { 2 } else if b { 1 } else { 0 }\n};\n",
             ),
             &mut arena,
         );

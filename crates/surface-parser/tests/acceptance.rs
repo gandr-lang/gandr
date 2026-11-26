@@ -3008,7 +3008,9 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Failure>
             "def g() -> -F Integer = { run f x; pure 0 };",
             [true].as_slice(),
         ),
-        ("def g() -> -F Integer = { let v = run f x; pure v };", &[true]),
+        ("def g() -> -F Integer = { let v = run f x; pure v };", &[
+            true,
+        ]),
         (
             "def g() -> -F Integer = { let r = f (run h x); pure g (run f r) r };",
             &[true, true],

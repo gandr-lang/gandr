@@ -292,7 +292,7 @@ impl Head
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum Ending
 {
-    /// It ends the item, as the `}` of a brace body after a head does.
+    /// It ends the item, as the `}` of a declaration body after `where` does.
     #[default]
     Ends,
     /// It continues the item, as the `}` of a block expression after `=`
@@ -551,7 +551,7 @@ impl Plan<'_>
             // An arm list closes inside an expression, and so does a block
             // that an expression opens, so neither close ends a declaration.
             Prev::Closed(sep) => declaration && sep != Sep::Arms && self.ending == Ending::Ends,
-            // A `}` ends a declaration, as a brace body after its head does.
+            // A `}` ends a declaration, as the `}` of a body after `where` does.
             // It ends no statement: the statement ends at its line end, as
             // after any other token (#8326).
             Prev::Written(lexeme, spelled) => {
@@ -2324,10 +2324,10 @@ mod tests
         );
         // A `{` right after `=` opens a block expression, whose `}` ends no
         // item: the `def` takes its `;` at the next item, in a source and in a
-        // statement block. A brace body after a head ends its item.
+        // statement block.
         assert_eq!(
-            marked("def f(x : A) -> A = { x }\ndef g(x : A) -> A { x }\ndef h(x : A) -> A = x;\n"),
-            "def f(x : A) -> A = { x }⟪;⟫\ndef g(x : A) -> A { x }\ndef h(x : A) -> A = x;\n"
+            marked("def f(x : A) -> A = { x }\ndef h(x : A) -> A = x;\n"),
+            "def f(x : A) -> A = { x }⟪;⟫\ndef h(x : A) -> A = x;\n"
         );
         assert_eq!(
             marked("def f(x : A) -> A = {\n  let y = { x }\n  y\n};\n"),

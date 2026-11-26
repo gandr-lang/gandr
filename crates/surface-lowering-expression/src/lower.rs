@@ -7534,8 +7534,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(matches!(ahead.peek(), Maybe::Absent(_)).then_some(one))
     }
 
-    /// Classify a function tail, `def f(x: A, …) -> B { … }` or `def f(x: A,
-    /// …) -> B = e ;`.
+    /// Classify a function tail, `def f(x: A, …) -> B = e ;`.
     ///
     /// # Specification
     /// - requires: `site` is a declaration form read as a function, whose tail
@@ -7552,9 +7551,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   scrutinises; the result, when written, is read at the result position
     ///   under the last parameter's frame, as the block is, and recorded as the
     ///   answer of the block's last computation and of every statement whose
-    ///   local ends continue the block; the block, or the one expression after
-    ///   `=` read as a block of no statement, is read as a body a path runs
-    ///   through; the form is planned as the function's declared type and body.
+    ///   local ends continue the block; the one expression after `=`, read as a
+    ///   block of no statement, is read as a body a path runs through; the form
+    ///   is planned as the function's declared type and body.
     /// - provides: the function tail, lowered once at the declaration form for
     ///   both halves it writes.
     /// - fails: yields the unadmitted refusal for a parameter spelled as a type
@@ -7911,12 +7910,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
             ),
         };
-        let block = if let Maybe::Present(_) = cursor.at(TileName::EQUALS) {
-            self.expression_body(function, &mut cursor, body)?
-        }
-        else {
-            self.block(function, &mut cursor, body)?
-        };
+        let block = self.expression_body(function, &mut cursor, body)?;
         if let Some(element) = viewed {
             Capability::new(self.host()).view_body(function, block, element)?;
         }
@@ -8236,8 +8230,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// The body's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a body after `=` lowers as the braced block of its
-    ///   one expression does.
+    /// - hypothesis: L3 — a body after `=` lowers as the block of its one
+    ///   expression does.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_body_after_equals_is_its_block_4853`
     #[spec(
         captures: before = frame,
@@ -15388,6 +15382,16 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 .classifiers
                 .iter()
                 .filter(|&(constructor, _)| owns(constructor))
+                .map(|(_, &stated)| stated),
+        );
+        // A model a block opens reads its stated type, and the sweep below
+        // reaches a block after `=` before the parameter types of its
+        // function.
+        manifests.extend(
+            self.cx()
+                .opened_models
+                .iter()
+                .filter(|&(opened, _)| owns(opened))
                 .map(|(_, &stated)| stated),
         );
         // A constructor answering a definition's application reads the
