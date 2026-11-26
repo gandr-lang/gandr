@@ -17,13 +17,13 @@
 //!   is spelled with in ASCII; a rule holding a glyph tile holds two, one per
 //!   spelling;
 //! - its tree holds a tile molded by its rule, or, for an attribute, the source
-//!   lowers, no declaration is refused and the attribute is filed on one, or
-//!   on the source for an attribute that stands at the head of a source. The
-//!   `doc` attribute is filed as documentation, so its exemplar's declaration
-//!   must carry documentation beyond the opening comment's lines. The source
-//!   lowers alone, so an import names no source it holds: a declaration that
-//!   import refuses is read past, and `check:exemplars` settles it under its
-//!   root, the library among what it reads;
+//!   lowers, no declaration is refused and the attribute is filed on one, or on
+//!   the source for an attribute that stands at the head of a source. The `doc`
+//!   attribute is filed as documentation, so its exemplar's declaration must
+//!   carry documentation beyond the opening comment's lines. The source lowers
+//!   alone, so an import names no source it holds: a declaration that import
+//!   refuses is read past, and `check:exemplars` settles it under its root, the
+//!   library among what it reads;
 //! - a glyph rule's exemplar writes each spelling the spelling table gives: a
 //!   tile of the rule written as the glyph, and one written as its ASCII token,
 //!   or, for a glyph the table pairs with a head, a call of the head. The table
@@ -981,9 +981,9 @@ struct Header
 ///   of its declarations but for an unresolved import or an unanswered `thir`
 ///   mark, and files `attribute` on one of them: in the attribute table, at the
 ///   declaration or at a member of the theory it is, or, for `doc`, as
-///   documentation holding more lines than `header`; or files it on the
-///   source, for an attribute at the head of the source. The source lowers alone,
-///   so its imports resolve to nothing here and its `thir` marks stage nothing,
+///   documentation holding more lines than `header`; or files it on the source,
+///   for an attribute at the head of the source. The source lowers alone, so
+///   its imports resolve to nothing here and its `thir` marks stage nothing,
 ///   and `check:exemplars` settles what they bind under the fixture root. A
 ///   `builtin` exemplar lowers as a module of `std`, the one place its mark
 ///   stands.

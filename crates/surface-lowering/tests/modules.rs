@@ -2010,7 +2010,7 @@ fn a_source_declares_its_features_at_its_head()
     else {
         panic!("the source is kept one time: {:?}", table.sources());
     };
-    let [entry] = table.entries(source)
+    let [ref entry] = *table.entries(source)
     else {
         panic!(
             "the source holds its one attribute: {:?}",
@@ -2039,14 +2039,18 @@ fn a_source_declares_its_features_at_its_head()
     let misplaced = "@[features(\"attributes\")] def one() -> Integer = 1;";
     let lowered = lower(misplaced);
     assert!(
-        lowered.module.declarations().iter().any(|declaration| matches!(
-            declaration.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::MisplacedAttribute {
-                place: gandr_surface_lowering::AttributePlace::Declaration,
-                takes,
-                ..
-            }) if takes == gandr_surface_lowering::AttributePlaces::SOURCE
-        )),
+        lowered
+            .module
+            .declarations()
+            .iter()
+            .any(|declaration| matches!(
+                declaration.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::MisplacedAttribute {
+                    place: gandr_surface_lowering::AttributePlace::Declaration,
+                    takes,
+                    ..
+                }) if takes == gandr_surface_lowering::AttributePlaces::SOURCE
+            )),
         "before a declaration the attribute is refused with its place: {:?}",
         lowered.module.declarations()
     );

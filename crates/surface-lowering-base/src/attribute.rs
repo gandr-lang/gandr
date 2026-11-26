@@ -2320,8 +2320,8 @@ impl AttributeTable
     /// Keep `key` as the key of a source with an attribute at its head.
     ///
     /// # Specification
-    /// - requires: `key` is the key of the first inner block of a source of
-    ///   the unit, and an entry of that source is filed under it.
+    /// - requires: `key` is the key of the first inner block of a source of the
+    ///   unit, and an entry of that source is filed under it.
     /// - ensures: [`Self::sources`] holds `key` one time, after each key kept
     ///   before it.
     /// - fails: never.
@@ -2771,7 +2771,10 @@ mod tests
             Maybe::Absent(super::placed::Absent::Taken),
             "an attribute of a declaration stands at the head of a source"
         );
-        for places in [super::AttributePlaces::CONSTRUCTOR, super::AttributePlaces::SORT] {
+        for places in [
+            super::AttributePlaces::CONSTRUCTOR,
+            super::AttributePlaces::SORT,
+        ] {
             assert_eq!(
                 places.refusing(AttributePlace::Source),
                 Maybe::Present(places),
