@@ -351,32 +351,6 @@ fn comment_runs_wrap_at_eighty_columns_3589()
         "a table row stays unchanged"
     );
 }
-#[test]
-fn corpus_and_std_comment_words_keep_their_sequence_3589()
-{
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let paths = [
-        root.join("corpus/classifier"),
-        root.join("corpus/fragment"),
-        root.join("corpus/model"),
-        root.join("corpus/pathological"),
-        root.join("corpus/pending"),
-        root.join("corpus/surface"),
-        root.join("library/std"),
-    ];
-    let roots: Vec<&Path> = paths.iter().map(std::path::PathBuf::as_path).collect();
-    let grammar = grammar();
-    for path in sources_below(&roots) {
-        let source = std::fs::read_to_string(&path).expect("a corpus source is readable");
-        let laid = text(&grammar, source.as_str(), WIDE);
-        assert_eq!(
-            comment_words(SourceText::from(source.as_str())),
-            comment_words(SourceText::from(laid.as_str())),
-            "{} keeps its comment word sequence",
-            path.display()
-        );
-    }
-}
 
 #[test]
 fn a_rule_s_freshness_conditions_stay_on_its_line()
@@ -922,20 +896,76 @@ fn an_explicit_source_keeps_its_explicit_spelling()
     );
 }
 
-/// The formatter's sweep: every corpus source keeps its meaning and
-/// formats once at three page widths.
+/// The formatter's sweeps: every corpus source keeps its meaning and formats
+/// once at three page widths, and the comment words of the corpus and of the
+/// standard library keep their sequence.
 mod sweeps
 {
+    use std::path::Path;
+
+    use gandr_surface_syntax::SourceText;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
     use gandr_workflow_sweep::Sweep;
+    use gandr_workflow_sweep::Text;
     use gandr_workflow_sweep::corpus;
 
     use super::NARROW;
     use super::WIDE;
+    use super::comment_words;
     use super::grammar;
+    use super::sources_below;
     use super::text;
+
+    /// The sample of the comment words: sixty-four sources of the corpus and
+    /// of the standard library, ranked by the BLAKE3 digest of their text
+    /// under this name. The whole set took 3.6 s plain and 8.2 s enforcing on
+    /// a hosted runner. The `sweeps` and `nightly` profiles read each source.
+    const COMMENT_WORDS: Sample = Sample {
+        name: SampleName("corpus_and_std_comment_words_keep_their_sequence_3589"),
+        size: SampleSize(64),
+    };
+
+    #[test]
+    fn corpus_and_std_comment_words_keep_their_sequence_3589()
+    {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let paths = [
+            root.join("corpus/classifier"),
+            root.join("corpus/fragment"),
+            root.join("corpus/model"),
+            root.join("corpus/pathological"),
+            root.join("corpus/pending"),
+            root.join("corpus/surface"),
+            root.join("library/std"),
+        ];
+        let roots: Vec<&Path> = paths.iter().map(std::path::PathBuf::as_path).collect();
+        let grammar = grammar();
+        let sources: Vec<(std::path::PathBuf, String)> = sources_below(&roots)
+            .into_iter()
+            .map(|path| {
+                let source = std::fs::read_to_string(&path).expect("a corpus source is readable");
+                (path, source)
+            })
+            .collect();
+        let rows: Vec<Text<'_>> = sources
+            .iter()
+            .map(|&(_, ref source)| Text(source))
+            .collect();
+        let visited = Sweep::asked()
+            .expect("the run's sweep resolves")
+            .visit_rows(COMMENT_WORDS, &rows);
+        for &(ref path, ref source) in visited.iter().filter_map(|row| sources.get(row.0)) {
+            let laid = text(&grammar, source.as_str(), WIDE);
+            assert_eq!(
+                comment_words(SourceText::from(source.as_str())),
+                comment_words(SourceText::from(laid.as_str())),
+                "{} keeps its comment word sequence",
+                path.display()
+            );
+        }
+    }
 
     /// The sample: sixty-four sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class — `strict` and
