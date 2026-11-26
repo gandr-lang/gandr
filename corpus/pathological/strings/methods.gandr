@@ -14,15 +14,15 @@ import "../../model/strings/methods.gandr"
 @[refuses("HeldConsumed")]
 def readAfterTaken() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
-  let bs = s.bytes ()
-  s.len ()
+  let bs = s.bytes
+  s.len
 
 /// A read of the held string inside a thunk forced later: the thunk captures
 /// the hold, which it may run other than once.
 @[refuses("HeldCaptured")]
 def readInThunk() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
-  let k : () -> Integer = thunk { s.len () }
+  let k : () -> Integer = thunk { s.len }
   force k
 
 /// A push onto a string no var holds: nothing would keep what it writes back.
@@ -34,7 +34,7 @@ def pushedUnheld(t : Repr) -> Unit =
 @[refuses("HeldLent")]
 def readWhileLent() -> Unit =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
-  access s as v { let n = s.len (); resume v v }
+  access s as v { let n = s.len; resume v v }
 
 /// A push onto a string a read lends: the push would write the string the
 /// read's view still reads.
@@ -49,9 +49,9 @@ def pushedWhileRead() -> Integer =
 def readAfterTakenInOneArm(t : Repr) -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   let xs = match t -> -F List Integer where
-    | Inline(bs) => s.bytes ()
+    | Inline(bs) => s.bytes
     | Shared(n, bs) => pure bs
-  s.len ()
+  s.len
 
 /// A mode written on a parameter that is no receiver.
 @[refuses("StrayReceiverMode")]
@@ -65,4 +65,4 @@ def pushBound() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   let f = Str.push
   f s 33
-  s.len ()
+  s.len

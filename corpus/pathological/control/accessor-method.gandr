@@ -35,13 +35,13 @@ module Misplaced where {
 @[refuses("ViewOfNoPlace")]
 def sized() -> Integer =
   var xs = pair
-  (xs.size ()) as w { pure w }
+  (xs.size) as w { pure w }
 
 /// A view block on a list no var holds: nothing keeps what an exclusive
 /// view would write back.
 @[refuses("OutOfFragment.Held")]
 def unheld(ys : List Integer) -> Integer =
-  (ys.first ()) as w { pure w }
+  (ys.first) as w { pure w }
 
 /// The same block through the method's path: the path changes no rule of
 /// the receiver.
@@ -53,7 +53,7 @@ def unheldByPath(ys : List Integer) -> Integer =
 @[refuses("HeldLent")]
 def raisedWhileRead() -> Integer =
   var xs = pair
-  access shared xs as v { (xs.first ()) as w { resume w 3 }; pure 0 }
+  access shared xs as v { (xs.first) as w { resume w 3 }; pure 0 }
 
 /// A method that answers a place, named as a value. No function value carries
 /// the hold that the place needs.
