@@ -65,29 +65,29 @@ pub theory Llvm where
   oper rmw_or : AtomicOp
   oper rmw_xor : AtomicOp
   /// `%c = llvm.mlir.constant(1 : i32) : i32`
-  oper constant : (t : Ty, value : Integer, rest : pi+ (c : Val t). Body) --> Body
+  oper constant : (t : Ty, value : Integer, rest : (c : Val t) -> Body) --> Body
   /// `%x = llvm.add %a, %b : i32`. Each integer operation of two operands of
   /// one type has this form.
-  oper add : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper sub : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper mul : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper udiv : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper sdiv : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper urem : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper srem : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper and : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper or : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper xor : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper shl : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper lshr : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
-  oper ashr : (t : Ty, left : Val t, right : Val t, rest : pi+ (x : Val t). Body) --> Body
+  oper add : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper sub : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper mul : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper udiv : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper sdiv : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper urem : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper srem : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper and : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper or : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper xor : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper shl : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper lshr : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
+  oper ashr : (t : Ty, left : Val t, right : Val t, rest : (x : Val t) -> Body) --> Body
   /// `%b = llvm.icmp "ult" %a, %b : i32`
   oper icmp : (
     t : Ty,
     predicate : Predicate,
     left : Val t,
     right : Val t,
-    rest : pi+ (b : Val int1). Body
+    rest : (b : Val int1) -> Body
   ) --> Body
   /// `%x = llvm.select %b, %a, %c : i1, i32`
   oper choose : (
@@ -95,15 +95,15 @@ pub theory Llvm where
     condition : Val int1,
     yes : Val t,
     no : Val t,
-    rest : pi+ (x : Val t). Body
+    rest : (x : Val t) -> Body
   ) --> Body
   /// `%w = llvm.zext %v : i8 to i64`. Each cast between two integer types has
   /// this form.
-  oper zext : (from : Ty, to : Ty, value : Val from, rest : pi+ (x : Val to). Body) --> Body
-  oper sext : (from : Ty, to : Ty, value : Val from, rest : pi+ (x : Val to). Body) --> Body
-  oper trunc : (from : Ty, to : Ty, value : Val from, rest : pi+ (x : Val to). Body) --> Body
+  oper zext : (from : Ty, to : Ty, value : Val from, rest : (x : Val to) -> Body) --> Body
+  oper sext : (from : Ty, to : Ty, value : Val from, rest : (x : Val to) -> Body) --> Body
+  oper trunc : (from : Ty, to : Ty, value : Val from, rest : (x : Val to) -> Body) --> Body
   /// `%p = llvm.inttoptr %a : i64 to !llvm.ptr`
-  oper inttoptr : (from : Ty, value : Val from, rest : pi+ (p : Val ptr). Body) --> Body
+  oper inttoptr : (from : Ty, value : Val from, rest : (p : Val ptr) -> Body) --> Body
   /// The address `%p` at `%offset` elements of the type `element` after
   /// `%base`:
   /// `llvm.getelementptr %base[%offset] : (!llvm.ptr, i64) -> !llvm.ptr, i8`
@@ -111,14 +111,14 @@ pub theory Llvm where
     element : Ty,
     base : Val ptr,
     offset : Val int64,
-    rest : pi+ (p : Val ptr). Body
+    rest : (p : Val ptr) -> Body
   ) --> Body
   /// `%x = llvm.load %p {alignment = 4 : i64} : !llvm.ptr -> i32`
   oper load : (
     t : Ty,
     address : Val ptr,
     alignment : Integer,
-    rest : pi+ (x : Val t). Body
+    rest : (x : Val t) -> Body
   ) --> Body
   /// `llvm.store %v, %p {alignment = 4 : i64} : i32, !llvm.ptr`
   oper store : (
@@ -135,7 +135,7 @@ pub theory Llvm where
     order : Ordering,
     address : Val ptr,
     alignment : Integer,
-    rest : pi+ (x : Val t). Body
+    rest : (x : Val t) -> Body
   ) --> Body
   /// `llvm.store %v, %p atomic release {alignment = 4 : i64} : i32, !llvm.ptr`
   oper store_atomic : (
@@ -153,7 +153,7 @@ pub theory Llvm where
     address : Val ptr,
     value : Val t,
     order : Ordering,
-    rest : pi+ (old : Val t). Body
+    rest : (old : Val t) -> Body
   ) --> Body
   /// An inline assembly of one to seven operands of `i64`, with a result of
   /// `i64`: `%r = llvm.inline_asm has_side_effects "syscall", "…" %a, …`
@@ -161,14 +161,14 @@ pub theory Llvm where
     text : String,
     constraints : String,
     a : Val int64,
-    rest : pi+ (r : Val int64). Body
+    rest : (r : Val int64) -> Body
   ) --> Body
   oper inline_asm2 : (
     text : String,
     constraints : String,
     a : Val int64,
     b : Val int64,
-    rest : pi+ (r : Val int64). Body
+    rest : (r : Val int64) -> Body
   ) --> Body
   oper inline_asm3 : (
     text : String,
@@ -176,7 +176,7 @@ pub theory Llvm where
     a : Val int64,
     b : Val int64,
     c : Val int64,
-    rest : pi+ (r : Val int64). Body
+    rest : (r : Val int64) -> Body
   ) --> Body
   oper inline_asm4 : (
     text : String,
@@ -185,7 +185,7 @@ pub theory Llvm where
     b : Val int64,
     c : Val int64,
     d : Val int64,
-    rest : pi+ (r : Val int64). Body
+    rest : (r : Val int64) -> Body
   ) --> Body
   oper inline_asm5 : (
     text : String,
@@ -195,7 +195,7 @@ pub theory Llvm where
     c : Val int64,
     d : Val int64,
     e : Val int64,
-    rest : pi+ (r : Val int64). Body
+    rest : (r : Val int64) -> Body
   ) --> Body
   oper inline_asm6 : (
     text : String,
@@ -206,7 +206,7 @@ pub theory Llvm where
     d : Val int64,
     e : Val int64,
     f : Val int64,
-    rest : pi+ (r : Val int64). Body
+    rest : (r : Val int64) -> Body
   ) --> Body
   oper inline_asm7 : (
     text : String,
@@ -218,7 +218,7 @@ pub theory Llvm where
     e : Val int64,
     f : Val int64,
     g : Val int64,
-    rest : pi+ (r : Val int64). Body
+    rest : (r : Val int64) -> Body
   ) --> Body
   /// A tail call of one operand:
   /// `%r = llvm.call tailcc musttail @next(%s) : (!llvm.ptr) -> i64`
@@ -227,7 +227,7 @@ pub theory Llvm where
     result : Ty,
     callee : String,
     a : Val argument,
-    rest : pi+ (r : Val result). Body
+    rest : (r : Val result) -> Body
   ) --> Body
   /// `llvm.return %v : i32`
   oper ret : (t : Ty, value : Val t) --> Body

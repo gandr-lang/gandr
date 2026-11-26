@@ -92,11 +92,11 @@ pub theory Thir.Wp where
   /// The precondition `t` or `f` that the value `v` picks.
   oper branch : (v : Val, t : Pre, f : Pre) --> Pre
   /// What `e` needs at the parameter `x` to end in `k` or return into `r`.
-  oper vexpr : (e : Exp, x : Val, k : pi+ (v : Val). Pre, r : pi+ (v : Val). Pre) --> Pre
+  oper vexpr : (e : Exp, x : Val, k : (v : Val) -> Pre, r : (v : Val) -> Pre) --> Pre
   /// What a call of `g` at the argument `v` needs to continue in `k`.
-  oper wpfn : (g : Fun, v : Val, k : pi+ (w : Val). Pre) --> Pre
+  oper wpfn : (g : Fun, v : Val, k : (w : Val) -> Pre) --> Pre
   /// What the function body `e` needs at the argument `v` to answer `k`.
-  oper body : (e : Exp, v : Val, k : pi+ (w : Val). Pre) --> Pre
+  oper body : (e : Exp, v : Val, k : (w : Val) -> Pre) --> Pre
   /// A literal ends at its integer.
   rule literal : vexpr (lit n) x k r ==> k (int n)
   /// Reading the parameter ends at its value.

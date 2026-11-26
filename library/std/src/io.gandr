@@ -61,11 +61,11 @@ pub theory Io.Eff where
   /// The carrier, the answer of the handler.
   sort C : Type
   /// Read from `file` into the start of `buffer`, at most its length.
-  oper read : (file : F, buffer : B, k : pi+ (done : D). C) --> C
+  oper read : (file : F, buffer : B, k : (done : D) -> C) --> C
   /// Write the first `count` bytes of `buffer` to `file`.
-  oper write : (file : F, buffer : B, count : N, k : pi+ (done : D). C) --> C
+  oper write : (file : F, buffer : B, count : N, k : (done : D) -> C) --> C
   /// Close `file`.
-  oper close_file : (file : F, k : pi+ (done : E). C) --> C
+  oper close_file : (file : F, k : (done : E) -> C) --> C
 
 /// The completion of a read or a write under `Scripted`, as the program holds
 /// it: it gives the count, then the buffer back, and it ends.

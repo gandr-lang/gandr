@@ -38,13 +38,13 @@ pub theory Ptr.Eff where
   /// The carrier, the answer of the handler.
   sort C : Type
   /// The byte at `address`.
-  oper load8 : (address : A, k : pi+ (word : W8). C) --> C
+  oper load8 : (address : A, k : (word : W8) -> C) --> C
   /// The word of 16 bits at `address`.
-  oper load16 : (address : A, k : pi+ (word : W16). C) --> C
+  oper load16 : (address : A, k : (word : W16) -> C) --> C
   /// The word of 32 bits at `address`.
-  oper load32 : (address : A, k : pi+ (word : W32). C) --> C
+  oper load32 : (address : A, k : (word : W32) -> C) --> C
   /// The word of 64 bits at `address`.
-  oper load64 : (address : A, k : pi+ (word : W64). C) --> C
+  oper load64 : (address : A, k : (word : W64) -> C) --> C
   /// Put the byte `word` at `address`.
   oper store8 : (address : A, word : W8, k : C) --> C
   /// Put the word `word` of 16 bits at `address`.
@@ -54,9 +54,9 @@ pub theory Ptr.Eff where
   /// Put the word `word` of 64 bits at `address`.
   oper store64 : (address : A, word : W64, k : C) --> C
   /// The address `distance` bytes after `address`.
-  oper offset : (address : A, distance : W32, k : pi+ (place : A). C) --> C
+  oper offset : (address : A, distance : W32, k : (place : A) -> C) --> C
   /// The word of 64 bits whose low byte is `byte`, with zeros above it.
-  oper byte_word : (byte : W8, k : pi+ (word : W64). C) --> C
+  oper byte_word : (byte : W8, k : (word : W64) -> C) --> C
 
 /// The memory of `Extent`: the address of its first byte, and its bytes.
 pub data Memory : Type where
