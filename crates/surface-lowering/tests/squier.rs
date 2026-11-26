@@ -868,8 +868,8 @@ pub struct Presentation
 {
     /// The rules, each left side then right side.
     pub rules: Vec<(FreeTerm, FreeTerm)>,
-    /// The symmetries of the terms reading, each left side then right side.
-    /// A symmetry forms peaks and rewrites nothing, so it is no rule.
+    /// The symmetries, each left side then right side. A symmetry forms peaks
+    /// and rewrites nothing, so it is no rule.
     pub symmetries: Vec<(FreeTerm, FreeTerm)>,
     /// The rule that each cell fires. The cell of a symmetry fires no rule.
     pub index: BTreeMap<CellId, RuleIndex>,
@@ -934,8 +934,13 @@ pub fn readings(
                 .and_then(|stored| faces.get(&stored))
                 .and_then(|&face| cells.oriented.get(face));
             if let Some(rule) = face {
-                let _previous = read.index.insert(id, RuleIndex(read.rules.len()));
-                read.rules.push((rule.lhs.clone(), rule.rhs.clone()));
+                if rule.reading() == RuleReading::Symmetry {
+                    read.symmetries.push((rule.lhs.clone(), rule.rhs.clone()));
+                }
+                else {
+                    let _previous = read.index.insert(id, RuleIndex(read.rules.len()));
+                    read.rules.push((rule.lhs.clone(), rule.rhs.clone()));
+                }
             }
             else if stored.is_some_and(|stored| !eta.contains(&stored)) {
                 // A frame cell: it moves a command and keeps the term.
