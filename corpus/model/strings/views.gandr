@@ -17,13 +17,13 @@
 
 // This source imports declarations for lists, bytes, ownership, locations and
 // writes.
-import "../data/data-base.gandr";
-import "./string-base.gandr";
-import "./nul-terminated.gandr";
-import "./small-string.gandr";
-import "./copy-on-write.gandr";
+import "../data/data-base.gandr"
+import "./string-base.gandr"
+import "./nul-terminated.gandr"
+import "./small-string.gandr"
+import "./copy-on-write.gandr"
 // This import provides the host interface for early exit.
-import std.process;
+import std.process
 
 /// This test reads `hi` through a view.
 

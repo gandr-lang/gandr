@@ -12,9 +12,9 @@
 //! - see: corpus/model/identity/funext.gandr
 
 /// The imports give negation, the path along negation and the two toggles.
-import "./funext.gandr";
-import "./transport-list.gandr";
-import "./structure-operations.gandr";
+import "./funext.gandr"
+import "./transport-list.gandr"
+import "./structure-operations.gandr"
 
 /// The `Toggle` theory has a carrier, a start, a step and a reading.
 theory Toggle where
@@ -24,10 +24,10 @@ theory Toggle where
   oper read : (t : T) --> Bool;
 
 /// The plain model starts false and reads its state.
-def plainModel : Model Toggle = plainToggle;
+def plainModel : Model Toggle = plainToggle
 
 /// The flipped model starts true and reads the negation of its state.
-def flippedModel : Model Toggle = flippedToggle;
+def flippedModel : Model Toggle = flippedToggle
 
 /// The model path carries each carrier and operation along negation.
 def oneModel : Path plainModel flippedModel = *{

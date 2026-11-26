@@ -19,10 +19,10 @@
 //! - see: `../../../library/std/src/io.gandr` — `Io.Eff` and `Scripted`
 
 // The bytes of a buffer and of a tape.
-import std.list (List);
+import std.list (List)
 // The IO of a program, its model with no kernel, and the receive of a
 // completion.
-import std.io (Io, Returned, Shut, Tape, Scripted, returned);
+import std.io (Io, Returned, Shut, Tape, Scripted, returned)
 
 /// A bound of passes.
 data Passes : Type where
@@ -58,12 +58,12 @@ def copied(input : List u8, buffer : List u8, passes : Passes) -> Tape =
   program (Tape input #[])
 
 /// Five passes.
-def five : Passes = Pass (Pass (Pass (Pass (Pass Spent))));
+def five : Passes = Pass (Pass (Pass (Pass (Pass Spent))))
 
 /// Five bytes through a buffer of two: three passes write two, two and one
 /// byte, and the fourth read ends the copy.
 @[runs("Tape nil (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 (cons 5u8 nil)))))")]
-def through_a_small_buffer() -> Tape = copied #[1u8, 2u8, 3u8, 4u8, 5u8] #[0u8, 0u8] five;
+def through_a_small_buffer() -> Tape = copied #[1u8, 2u8, 3u8, 4u8, 5u8] #[0u8, 0u8] five
 
 /// Three bytes through a buffer of eight: one pass writes them all.
 @[runs("Tape nil (cons 7u8 (cons 8u8 (cons 9u8 nil)))")]
@@ -72,7 +72,7 @@ def through_a_large_buffer() -> Tape =
 
 /// An empty input: the first read ends the copy, and the output is empty.
 @[runs("Tape nil nil")]
-def from_no_input() -> Tape = copied #[] #[0u8, 0u8] five;
+def from_no_input() -> Tape = copied #[] #[0u8, 0u8] five
 
 /// A bound of two passes over five bytes through a buffer of two: the copy
 /// ends after four bytes, and the fifth stays in the input.

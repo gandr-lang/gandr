@@ -26,15 +26,15 @@ theory Lamp where
   rule bothLit : both lit x <=> x;
 
 /// The dark lamp under a name.
-def unlit : Terms Lamp = Lamp.dark;
+def unlit : Terms Lamp = Lamp.dark
 
 /// The name `unlit` under a second name.
-def dim : Terms Lamp = unlit;
+def dim : Terms Lamp = unlit
 
 /// The rule meets the constant under one definition.
 ///
 /// - see: #8283
-def absorbUnlit(x : Terms Lamp) -> Path (Lamp.both unlit x) Lamp.dark = Path.here Lamp.dark;
+def absorbUnlit(x : Terms Lamp) -> Path (Lamp.both unlit x) Lamp.dark = Path.here Lamp.dark
 
 /// The rule meets the constant under two definitions.
 ///

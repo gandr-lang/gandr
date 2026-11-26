@@ -7,7 +7,7 @@
 // that holds all of their holes.
 //
 // - see: #2395
-import "./model-resolution-tally.gandr";
+import "./model-resolution-tally.gandr"
 
 /// `Tag0` is carrier zero.
 data Tag0 : Type where

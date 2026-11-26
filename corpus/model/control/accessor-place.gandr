@@ -13,12 +13,12 @@
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// `pair` supplies the list for each access.
 /// Its declaration states the list type, which the checker never infers.
 @[runs("cons 1 (cons 2 nil)")]
-pub def pair : List Integer = cons 1 (cons 2 nil);
+pub def pair : List Integer = cons 1 (cons 2 nil)
 
 /// `second` reads the indexed element through a shared view.
 @[runs("2")]

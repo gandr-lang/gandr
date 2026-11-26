@@ -10,7 +10,7 @@
 //! The test makes a green light and reads its colour.
 //!
 //! - see: #2665
-import std.list (List);
+import std.list (List)
 
 /// A colour is red or green.
 data Colour : Type where

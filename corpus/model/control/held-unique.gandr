@@ -14,7 +14,7 @@
 //! [Orchard-2019-quantitative_program_reasoning_graded_modal_types]: https://doi.org/10.1145/3341714 "Orchard, Liepelt and Eades, Quantitative Program Reasoning with Graded Modal Types"
 
 // The successor, a call whose type synthesises where a statement binds it.
-import "./accessor-counter.gandr";
+import "./accessor-counter.gandr"
 
 /// `counted` creates a grade-one count.
 /// Its exclusive view moves the count and writes its successor back.

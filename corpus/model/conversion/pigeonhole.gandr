@@ -16,10 +16,10 @@
 //! [Boespflug-2011-full_reduction_at_full_throttle]: https://doi.org/10.1007/978-3-642-25379-9_26 "Boespflug, Dénès and Grégoire, Full Reduction at Full Throttle"
 
 // The free naturals and the numerals two and three.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The numeral four.
-import "./conversion-base.gandr";
+import "./conversion-base.gandr"
 
 /// A propositional formula over numbered variables.
 data Formula : Type where
@@ -83,7 +83,7 @@ def pigeons : Formula = Not
         (Not (And (Atom (Succ Zero)) (Atom three)))
         (And
           (Not (And (Atom (Succ Zero)) (Atom (Succ four))))
-          (Not (And (Atom three) (Atom (Succ four))))))));
+          (Not (And (Atom three) (Atom (Succ four))))))))
 
 /// No assignment places every pigeon in a hole of its own.
 def pigeonsDoNotFit() -> Path (tautology (Succ (Succ four)) pigeons Unset) true =

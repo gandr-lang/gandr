@@ -12,10 +12,10 @@
 // - see: #3604 — the sharing-equality check this row measures
 
 // The free naturals.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The numeral twelve.
-import "./conversion-base.gandr";
+import "./conversion-base.gandr"
 
 /// Binary trees with unlabelled leaves, each half under a wrapper.
 data Tree : Type where

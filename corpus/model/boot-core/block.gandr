@@ -20,11 +20,11 @@
 //! - see: `../../../crates/boot-core/src/block.rs` — the Rust functions
 
 // The bytes of a memory of `Extent`.
-import std.list (List);
+import std.list (List)
 // The interface of memory, and its model in the source.
-import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent);
+import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent)
 // The ranges, and the lists of bytes of a run.
-import "./ranges.gandr";
+import "./ranges.gandr"
 
 /// The answer of a copy and of a move, as the `Result` of `boot-core`.
 pub data Written : Type where
@@ -243,7 +243,7 @@ def within(start : Integer, count : List u8) -> Range = Range
   (counted count)
 
 /// The empty range at the address 0, the null address of the Rust tests.
-def nowhere : Range = Range 0u64 Zero;
+def nowhere : Range = Range 0u64 Zero
 
 /// A copy from `from` to `to` over the extent `bytes` at the address 4096.
 def copy_in(bytes : List u8, to : Range, from : Range) -> Shown =

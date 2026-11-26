@@ -17,7 +17,7 @@
 //! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // This import supplies the magma and its translators.
-import "./magma-base.gandr";
+import "./magma-base.gandr"
 
 /// `ByHand` holds derived and hand-written corolla paths.
 module ByHand where {

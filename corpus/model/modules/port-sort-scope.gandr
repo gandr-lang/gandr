@@ -11,7 +11,7 @@
 // - see: pathological/modules/port-sort-scope.gandr
 
 /// `Integer` names the strings in this source alone.
-type Integer = String;
+type Integer = String
 
 /// `Shout` says a word of this source's `Integer`.
 pub theory Shout where

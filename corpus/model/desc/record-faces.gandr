@@ -63,72 +63,72 @@ def secured_stated : Config.#{
 
 /// `local` stands at the secure port by the coercion in. Its port and its
 /// `tls` convert with the values that the reader fixes.
-def secured_local : Config.#{.port = 443, .tls = true} = local;
+def secured_local : Config.#{.port = 443, .tls = true} = local
 
 /// The host a configuration fixes to a name.
-def home : String = "localhost";
+def home : String = "localhost"
 
 /// The port of a configuration whose host is the name `home`.
-def home_port(c : Config.#{.host = home}) -> Integer = c.port;
+def home_port(c : Config.#{.host = home}) -> Integer = c.port
 
 /// The coercion gives `local` the host `home`. The kernel reads the name
 /// `home` as its value when it replays the coercion.
 ///
 /// - see: #5683
 @[runs("443")]
-def local_port : Integer = home_port (local);
+def local_port : Integer = home_port (local)
 
 /// The same configuration by its face.
 def faced : Config.#{secure ↦ *{.port = 443, .tls = true}} = *{.host = "localhost"};
 
 /// The port a configuration on the secure port fixes: 443.
-def port_of(c : Config.#{.port = 443, .tls = true}) -> Integer = c.port;
+def port_of(c : Config.#{.port = 443, .tls = true}) -> Integer = c.port
 
 /// The host of a configuration on the secure face, written in ASCII.
-def host_of(c : Config.#{secure |-> *{.port = 443, .tls = true}}) -> String = c.host;
+def host_of(c : Config.#{secure |-> *{.port = 443, .tls = true}}) -> String = c.host
 
 /// The port of the configuration by its fields.
-def secured_port : Integer = port_of (secured);
+def secured_port : Integer = port_of (secured)
 
 /// The host of `local`, coerced in where the call reads it.
-def local_host : String = host_of (local);
+def local_host : String = host_of (local)
 
 /// The port of any configuration.
-def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer = c.port;
+def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer = c.port
 
 /// `secured` stands at `Config` as its whole record, which holds the fixed
 /// port.
 @[runs("443")]
-def secured_at_base : Integer = any_port (secured);
+def secured_at_base : Integer = any_port (secured)
 
 /// `secured` as a definition at `Config`. Its run builds the whole record.
 @[runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}")]
-def secured_whole : Config = secured;
+def secured_whole : Config = secured
 
 /// The port a configuration fixes to a name.
-def default_port : Integer = 443;
+def default_port : Integer = 443
 
 /// A selection of a fixed field reads the name the reader fixes.
-def named_port(c : Config.#{.port = default_port}) -> Integer = c.port;
+def named_port(c : Config.#{.port = default_port}) -> Integer = c.port
 
 /// A configuration on the default port, by its free fields.
 def defaulted : Config.#{.port = default_port} = *{.host = "localhost", .tls = true};
 
 /// The port of `defaulted`: the value of `default_port`.
 @[runs("443")]
-def defaulted_port : Integer = named_port (defaulted);
+def defaulted_port : Integer = named_port (defaulted)
 
 /// Both faces in one system: they meet at the port and agree there, so the
 /// system fixes every field of `Config`.
 def both_port(c : Config.#{
   secure ↦ *{.port = 443, .tls = true},
   addr ↦ *{.host = "localhost", .port = 443}
-}) -> Integer = c.port;
+}) -> Integer = c.port
 
 /// `local` stands at the system by the coercion in: each of its fields
 /// converts with the value that the system fixes.
 @[runs("443")]
-def local_both_port : Integer = both_port (local);
+def local_both_port : Integer = both_port (local)
 
 /// A reader that fixes every field has one element, the record of no fields:
 /// `*{}`. Its host is the name `local_host`.
@@ -145,11 +145,11 @@ def fixed_faces : Config.#{
 /// `fixed_faces` at `Config`. Its run builds the whole record from the values
 /// that the system fixes.
 @[runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}")]
-def fixed_faces_whole : Config = fixed_faces;
+def fixed_faces_whole : Config = fixed_faces
 
 /// The port of `fixed_faces`, read where `both_port` takes the system.
 @[runs("443")]
-def fixed_faces_port : Integer = both_port (fixed_faces);
+def fixed_faces_port : Integer = both_port (fixed_faces)
 
 /// `fixed_fields` at `Config`.
 @[runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}")]

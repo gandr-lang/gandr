@@ -7,11 +7,11 @@
 //! - see: #640
 
 // This source imports naturals, syntax, congruences and lookup lemmas.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
-import "./congruence.gandr";
-import "./shift-lookup.gandr";
-import "./lookup-weaken.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
+import "./congruence.gandr"
+import "./shift-lookup.gandr"
+import "./lookup-weaken.gandr"
 
 /// This function applies `wk` to the hypothesis at `m`.
 def weakenedVariable(

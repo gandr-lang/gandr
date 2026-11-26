@@ -10,7 +10,7 @@
 // - see: `pathological/builtins/list-patterns.gandr` — unmatched and mixed patterns
 
 // This import provides native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// `Grade` records a rubric grade.
 data Grade : Type where

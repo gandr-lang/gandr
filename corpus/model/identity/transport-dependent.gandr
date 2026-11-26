@@ -11,7 +11,7 @@
 //! - see: #1886 — `backUnit`
 
 // The free naturals.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// Transport along reflexivity at zero returns the element given.
 def reduced : Path[.A = Nat] (Path.walk
@@ -19,7 +19,7 @@ def reduced : Path[.A = Nat] (Path.walk
   (Path.here Zero)
   (Path.here Zero)
   (Path.here (Path.here Zero))
-  (Succ Zero)) (Succ Zero) = Path.here (Succ Zero);
+  (Succ Zero)) (Succ Zero) = Path.here (Succ Zero)
 
 /// The unit type's evidence between its point and itself, a closed path
 /// that is no reflexivity.
@@ -32,7 +32,7 @@ def carriedUnit : Path[.A = Nat] (Path.walk
   unitPath
   (Path.here (*{}))
   (Path.here unitPath)
-  (Succ Zero)) (Succ Zero) = Path.here (Succ Zero);
+  (Succ Zero)) (Succ Zero) = Path.here (Succ Zero)
 
 /// Transport along that evidence in the family of paths back to the point
 /// returns the unit, the one inhabitant of the unit fibre.
@@ -41,7 +41,7 @@ def backUnit : Path[.A = Path[.A = Unit] *{} *{}] (Path.walk
   unitPath
   (Path.here (*{}))
   (Path.here unitPath)
-  (Path.here (*{}))) *{} = Path.here (*{});
+  (Path.here (*{}))) *{} = Path.here (*{})
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.

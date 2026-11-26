@@ -60,10 +60,10 @@ module Down : Model(Counter) where {
 }
 
 /// The `upModel` value packs the `Up` model.
-pub def upModel : Model Counter = pack Up at Model Counter;
+pub def upModel : Model Counter = pack Up at Model Counter
 
 /// The `downModel` value packs the `Down` model.
-pub def downModel : Model Counter = pack Down at Model Counter;
+pub def downModel : Model Counter = pack Down at Model Counter
 
 /// The `negateCount` function keeps zero and exchanges one with two.
 def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
@@ -75,13 +75,13 @@ def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
 /// The `countsNegated` path makes negation its own inverse.
 pub def countsNegated : Path[.A = Type] (Unit + (Unit + Unit)) (Unit + (Unit + Unit)) = equiv
   negateCount
-  negateCount;
+  negateCount
 
 /// The `stepNegated` path maps the up step to the down step.
 def stepNegated : Path (Path.walk
   (fun (t) { t -> t })
   countsNegated
-  Up.incr) Down.incr = Path.funext (Path.walk (fun (t) { t -> t }) countsNegated Up.incr) Down.incr;
+  Up.incr) Down.incr = Path.funext (Path.walk (fun (t) { t -> t }) countsNegated Up.incr) Down.incr
 
 /// The `readNegated` path maps the up reading to the down reading.
 def readNegated : Path (Path.walk
@@ -89,7 +89,7 @@ def readNegated : Path (Path.walk
   countsNegated
   Up.read) Down.read = Path.funext
   (Path.walk (fun (t) { t -> Integer }) countsNegated Up.read)
-  Down.read;
+  Down.read
 
 /// The `oneCounter` path relates the packed counter models.
 pub def oneCounter : Path upModel downModel = *{
@@ -104,11 +104,11 @@ pub def observe(m : Model Counter) -> Integer =
 
 /// The consumer reads the upward counter.
 @[runs("1")]
-def observedUp() -> Integer = observe upModel;
+def observedUp() -> Integer = observe upModel
 
 /// The consumer reads the downward counter.
 @[runs("1")]
-def observedDown() -> Integer = observe downModel;
+def observedDown() -> Integer = observe downModel
 
 /// The consumer gives equal readings for related models.
 def observedAlike() -> Path (observe upModel) (observe downModel) =

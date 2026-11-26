@@ -16,7 +16,7 @@
 // - see: `crates/surface-dispatcher/tests/boundary.rs` — the Rust caller
 
 // `Boundary` and `quadrupled`.
-import "./round-trip.gandr";
+import "./round-trip.gandr"
 
 /// Sixteen times its argument: `quadrupled`, then two adds of the sum to
 /// itself.

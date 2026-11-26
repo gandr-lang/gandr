@@ -14,24 +14,24 @@
 
 /// This declaration owes a code to name later.
 @[owes(1)]
-def code : Type;
+def code : Type
 
 /// This declaration owes the comparison of `Integer` with `code`.
 @[owes(1)]
-def three : code = 3;
+def three : code = 3
 
 /// This declaration waits on the hole that `three` owes.
 @[owes(1)]
-def again : code = three;
+def again : code = three
 
 /// This declaration checks without a hole.
-def four : Integer = 4;
+def four : Integer = 4
 
 /// This declaration fills a code with the integer type.
-def filled : Type = Integer;
+def filled : Type = Integer
 
 /// This declaration resumes at the filled code.
-def threeFilled : filled = 3;
+def threeFilled : filled = 3
 
 /// This declaration reads the resumed code.
 def againFilled : filled = threeFilled;

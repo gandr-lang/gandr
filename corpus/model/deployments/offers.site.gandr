@@ -12,11 +12,11 @@
 // - see: `offers.manifold.gandr` — the manifold placing `far` here
 
 // The site theory.
-import std.manifold (Site);
+import std.manifold (Site)
 // `Authority`, which the site grants the console from.
-import std.authority (Authority);
+import std.authority (Authority)
 // The console's host interface.
-import std.io;
+import std.io
 
 /// What the site keeps: values by key.
 pub theory Kept where

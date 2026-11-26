@@ -14,7 +14,7 @@
 //! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
 // The import gives StateLaws.
-import "../effects/state.gandr";
+import "../effects/state.gandr"
 
 /// This increment reads the counter, stores one more and returns unit.
 /// The scope returns the increment's predicate transformer.

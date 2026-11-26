@@ -12,9 +12,9 @@
 //! manifold resolves `far` against the worlds of the program.
 //!
 //! - see: `two-processes.gandr`
-import std.manifold (Site, Manifold, Placement, At);
-import "./two-processes.site.gandr" as far;
-import std.list (List);
+import std.manifold (Site, Manifold, Placement, At)
+import "./two-processes.site.gandr" as far
+import std.list (List)
 
 /// The program this manifold deploys.
 pub module Manifold : Model(Manifold) where

@@ -12,9 +12,9 @@
 // - see: Rust `compact_str` — inline 24-byte representation
 
 // This source imports declarations for lists, bytes and ownership.
-import "../data/data-base.gandr";
-import "./string-base.gandr";
-import "./nul-terminated.gandr";
+import "../data/data-base.gandr"
+import "./string-base.gandr"
+import "./nul-terminated.gandr"
 
 /// `Place` records string byte storage.
 pub data Place : Type where
@@ -58,7 +58,7 @@ pub def repeatOnto(c : Integer, n : Integer, onto : List Integer) -> [Partial] L
 
 /// This test keeps `hi` inline.
 @[runs("Inside")]
-def hiPlace() -> Place = place (own (Cons 104 (Cons 105 Nil) : List Integer));
+def hiPlace() -> Place = place (own (Cons 104 (Cons 105 Nil) : List Integer))
 
 /// This test keeps a twenty-three-byte string inline.
 @[runs("Inside")]
@@ -74,7 +74,7 @@ def spilledPlace() -> [Partial] Place =
 
 /// This test reads a string as its owned bytes.
 @[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
-def hiBytes() -> List Integer = bytes (own (Cons 104 (Cons 105 Nil) : List Integer));
+def hiBytes() -> List Integer = bytes (own (Cons 104 (Cons 105 Nil) : List Integer))
 
 /// This test counts a spilled string and its final zero.
 @[runs("25")]

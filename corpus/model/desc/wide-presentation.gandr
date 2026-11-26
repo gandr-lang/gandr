@@ -13,7 +13,7 @@
 //
 // - see: #6046 — `modelType`
 // - see: #6181
-import std.build (modelType, Entry, Ended);
+import std.build (modelType, Entry, Ended)
 
 /// A theory of 64 names.
 theory Named where {
@@ -248,7 +248,7 @@ theory Flags where {
 }
 
 /// The entries of a model of `Named`.
-def namedEntries(m : Model Named) -> modelType Named = Entry m.n0 (Entry m.n1 (Entry m.n2 (Entry m.n3 (Entry m.n4 (Entry m.n5 (Entry m.n6 (Entry m.n7 (Entry m.n8 (Entry m.n9 (Entry m.n10 (Entry m.n11 (Entry m.n12 (Entry m.n13 (Entry m.n14 (Entry m.n15 (Entry m.n16 (Entry m.n17 (Entry m.n18 (Entry m.n19 (Entry m.n20 (Entry m.n21 (Entry m.n22 (Entry m.n23 (Entry m.n24 (Entry m.n25 (Entry m.n26 (Entry m.n27 (Entry m.n28 (Entry m.n29 (Entry m.n30 (Entry m.n31 (Entry m.n32 (Entry m.n33 (Entry m.n34 (Entry m.n35 (Entry m.n36 (Entry m.n37 (Entry m.n38 (Entry m.n39 (Entry m.n40 (Entry m.n41 (Entry m.n42 (Entry m.n43 (Entry m.n44 (Entry m.n45 (Entry m.n46 (Entry m.n47 (Entry m.n48 (Entry m.n49 (Entry m.n50 (Entry m.n51 (Entry m.n52 (Entry m.n53 (Entry m.n54 (Entry m.n55 (Entry m.n56 (Entry m.n57 (Entry m.n58 (Entry m.n59 (Entry m.n60 (Entry m.n61 (Entry m.n62 (Entry m.n63 Ended)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))));
+def namedEntries(m : Model Named) -> modelType Named = Entry m.n0 (Entry m.n1 (Entry m.n2 (Entry m.n3 (Entry m.n4 (Entry m.n5 (Entry m.n6 (Entry m.n7 (Entry m.n8 (Entry m.n9 (Entry m.n10 (Entry m.n11 (Entry m.n12 (Entry m.n13 (Entry m.n14 (Entry m.n15 (Entry m.n16 (Entry m.n17 (Entry m.n18 (Entry m.n19 (Entry m.n20 (Entry m.n21 (Entry m.n22 (Entry m.n23 (Entry m.n24 (Entry m.n25 (Entry m.n26 (Entry m.n27 (Entry m.n28 (Entry m.n29 (Entry m.n30 (Entry m.n31 (Entry m.n32 (Entry m.n33 (Entry m.n34 (Entry m.n35 (Entry m.n36 (Entry m.n37 (Entry m.n38 (Entry m.n39 (Entry m.n40 (Entry m.n41 (Entry m.n42 (Entry m.n43 (Entry m.n44 (Entry m.n45 (Entry m.n46 (Entry m.n47 (Entry m.n48 (Entry m.n49 (Entry m.n50 (Entry m.n51 (Entry m.n52 (Entry m.n53 (Entry m.n54 (Entry m.n55 (Entry m.n56 (Entry m.n57 (Entry m.n58 (Entry m.n59 (Entry m.n60 (Entry m.n61 (Entry m.n62 (Entry m.n63 Ended)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 /// The entries of a model of `Flags`.
 def flagEntries(m : Model Flags) -> modelType Flags = Entry

@@ -56,29 +56,29 @@ def isWord(w : Terms Frag Width) -> Bool =
     | Frag.word => true
 
 /// The word one.
-def wordOne() -> Terms Frag Term Frag.word = Frag.one;
+def wordOne() -> Terms Frag Term Frag.word = Frag.one
 
 /// A choice under the high bit.
-def pickedWord() -> Terms Frag Term Frag.word = Frag.choose Frag.high Frag.one Frag.zero;
+def pickedWord() -> Terms Frag Term Frag.word = Frag.choose Frag.high Frag.one Frag.zero
 
 /// A choice under the high bit is its first word.
 ///
 /// - see: #8358
-def pickedIsOne : Path[.A = Terms Frag Term Frag.word] pickedWord wordOne = Path.here wordOne;
+def pickedIsOne : Path[.A = Terms Frag Term Frag.word] pickedWord wordOne = Path.here wordOne
 
 /// A choice below a word that takes a bit.
-def narrowWord() -> Terms Frag Term Frag.word = Frag.choose Frag.low Frag.one (Frag.zext Frag.high);
+def narrowWord() -> Terms Frag Term Frag.word = Frag.choose Frag.low Frag.one (Frag.zext Frag.high)
 
 /// The word of the high bit.
-def lifted() -> Terms Frag Term Frag.word = Frag.zext Frag.high;
+def lifted() -> Terms Frag Term Frag.word = Frag.zext Frag.high
 
 /// A choice under the low bit is its second word.
 ///
 /// - see: #8358
-def second : Path[.A = Terms Frag Term Frag.word] narrowWord lifted = Path.here lifted;
+def second : Path[.A = Terms Frag Term Frag.word] narrowWord lifted = Path.here lifted
 
 /// A term at a width that the caller gives.
-def sameWidth(w : Terms Frag Width, t : Terms Frag Term w) -> Terms Frag Term w = t;
+def sameWidth(w : Terms Frag Width, t : Terms Frag Term w) -> Terms Frag Term w = t
 
 /// A term at a bit, given at its width.
 def keptBit() -> Terms Frag Term Frag.bit = sameWidth Frag.bit Frag.low;

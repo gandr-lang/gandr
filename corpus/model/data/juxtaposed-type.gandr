@@ -18,7 +18,7 @@
 //! - see: #5330 — the juxtaposed type at a mode variable
 
 /// Optional values, `None` and `Some x`.
-import "./data-maybe.gandr";
+import "./data-maybe.gandr"
 
 /// This type holds a value of each of two types. Its constructor has the
 /// name of the type.

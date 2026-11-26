@@ -12,7 +12,7 @@
 //! - see: #440 — `sameComposite`, `sameAfterLetter`
 
 // The circle.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The composite of two loops at the point.
 def comp(

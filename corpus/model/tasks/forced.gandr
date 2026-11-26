@@ -9,7 +9,7 @@
 //! - see: `independent.gandr` — two tasks whose plays do not order each other
 //! - see: #3338 — the run trace and the web a source states for a channel
 // The import gives the task protocols.
-import "./task-base.gandr";
+import "./task-base.gandr"
 
 /// A parent sends its task a request and reads the reply.
 @[

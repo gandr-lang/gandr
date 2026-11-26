@@ -11,7 +11,7 @@
 //! letter at a time.
 //!
 //! - see: #6309
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The type with one element is cctt's `Top`.
 pub data Top : Type where
@@ -31,19 +31,19 @@ pub def rec natTimes(x : Nat, y : Nat) -> Nat =
     | Succ(k) => natPlus y (natTimes[<] k y)
 
 /// Ten is cctt's `n10`.
-pub def n10 : Nat = Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))))));
+pub def n10 : Nat = Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))))))
 
 /// A hundred is cctt's `n100`.
-pub def n100 : Nat = natTimes n10 n10;
+pub def n100 : Nat = natTimes n10 n10
 
 /// A thousand is cctt's `n1k`.
-pub def n1k : Nat = natTimes n10 n100;
+pub def n1k : Nat = natTimes n10 n100
 
 /// Ten thousand is cctt's `n10k`.
-pub def n10k : Nat = natTimes n10 n1k;
+pub def n10k : Nat = natTimes n10 n1k
 
 /// A hundred thousand is cctt's `n100k`.
-pub def n100k : Nat = natTimes n10 n10k;
+pub def n100k : Nat = natTimes n10 n10k
 
 /// The function reads an integer to its last constructor and gives `Tt`.
 /// Each cancellation rule keeps the result, so the function respects the

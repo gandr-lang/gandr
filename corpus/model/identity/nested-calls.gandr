@@ -12,7 +12,7 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // This import supplies free naturals and integers with `up` and `down` steps.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The `doubleNat` recursion doubles free naturals.
 def rec doubleNat(n : Nat) -> Nat =
@@ -23,16 +23,16 @@ def rec doubleNat(n : Nat) -> Nat =
 /// The outer `doubleNat` call waits for the inner call.
 /// The checker unfolds the inner call.
 def quadrupled : Path[.A = Nat] (doubleNat (doubleNat (Succ Zero))) (Succ
-  (Succ (Succ (Succ Zero)))) = Path.here (Succ (Succ (Succ (Succ Zero))));
+  (Succ (Succ (Succ Zero)))) = Path.here (Succ (Succ (Succ (Succ Zero))))
 
 /// The nested call's value is four, not three.
 @[refuses("EndpointMismatch")]
 def miscounted : Path[.A = Nat] (doubleNat (doubleNat (Succ Zero))) (Succ
-  (Succ (Succ Zero))) = Path.here (Succ (Succ (Succ Zero)));
+  (Succ (Succ Zero))) = Path.here (Succ (Succ (Succ Zero)))
 
 /// The checker reads `up(down(Z))` as `S(P(Z))`.
 /// The rules reduce this form to `Z`.
-def turned_back : Path[.A = Int] (up (down Z)) Z = Path.here Z;
+def turned_back : Path[.A = Int] (up (down Z)) Z = Path.here Z
 
 /// The checker cancels the nested call at every integer.
 /// The inner call has a variable argument.
@@ -42,7 +42,7 @@ def turn_unturn(n : Int) -> Path[.A = Int] (up (down n)) n =
 /// The checker reads the inner call.
 /// The rules cancel one step.
 @[refuses("EndpointMismatch")]
-def overturned : Path[.A = Int] (up (down Z)) (S Z) = Path.here (S Z);
+def overturned : Path[.A = Int] (up (down Z)) (S Z) = Path.here (S Z)
 
 /// The `bound` function returns a function from a call.
 def bound(k : Integer -> (Integer -> Integer), s : Integer) -> Integer =
@@ -50,7 +50,7 @@ def bound(k : Integer -> (Integer -> Integer), s : Integer) -> Integer =
   f s
 
 /// The `apply` function calls a function argument.
-def apply(f : Integer -> Integer, x : Integer) -> Integer = f x;
+def apply(f : Integer -> Integer, x : Integer) -> Integer = f x
 
 /// The `bound` and `apply` forms give the same result.
 /// Conversion reads each form as a bind over the call.

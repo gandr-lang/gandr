@@ -7,9 +7,9 @@
 // - see: `state-model.gandr` — `Passing`
 
 // The theory `State.Eff`.
-import "./state.gandr";
+import "./state.gandr"
 // `Passing`, the state-passing model of `State.Eff`.
-import "./state-model.gandr";
+import "./state-model.gandr"
 
 /// `constant` returns four for every read. It ignores every store.
 @[runs("9")]

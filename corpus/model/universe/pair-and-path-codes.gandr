@@ -12,13 +12,13 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The naturals.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The dependent pairs.
-import "ir-codes.gandr";
+import "ir-codes.gandr"
 
 // The pairs of two types.
-import "fresh-lists.gandr";
+import "fresh-lists.gandr"
 
 /// The codes: the naturals and the pairs of two coded types.
 @[checks, form(explicit)]

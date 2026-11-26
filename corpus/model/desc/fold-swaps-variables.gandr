@@ -52,27 +52,27 @@ def rec tipped(t : Terms Purse) -> Terms Purse =
     | Purse.two(x, y) => Purse.two (tipped[<] y) (tipped[<] x)
 
 /// A purse with the copper coin before the silver coin.
-def copperFirst() -> Terms Purse = Purse.two Purse.copper Purse.silver;
+def copperFirst() -> Terms Purse = Purse.two Purse.copper Purse.silver
 
 /// A purse with the silver coin before the copper coin.
-def silverFirst() -> Terms Purse = Purse.two Purse.silver Purse.copper;
+def silverFirst() -> Terms Purse = Purse.two Purse.silver Purse.copper
 
 /// The fold that keeps each field in its place gives the same purse.
 ///
 /// - see: #8367
-def refilled : Path[.A = Terms Purse] (refill copperFirst) copperFirst = Path.here copperFirst;
+def refilled : Path[.A = Terms Purse] (refill copperFirst) copperFirst = Path.here copperFirst
 
 /// The fold that turns the two fields gives the purse in the other order.
 ///
 /// - see: #8367
-def turnedOver : Path[.A = Terms Purse] (tipped copperFirst) silverFirst = Path.here silverFirst;
+def turnedOver : Path[.A = Terms Purse] (tipped copperFirst) silverFirst = Path.here silverFirst
 
 /// The purse in one order is the purse in the other order, through two calls.
-def eitherOrder : Path[.A = Terms Purse] copperFirst silverFirst = Path.here silverFirst;
+def eitherOrder : Path[.A = Terms Purse] copperFirst silverFirst = Path.here silverFirst
 
 /// The fold that keeps each field in its place gives the purse in the other
 /// order also.
-def refilledOver : Path[.A = Terms Purse] (refill copperFirst) silverFirst = Path.here silverFirst;
+def refilledOver : Path[.A = Terms Purse] (refill copperFirst) silverFirst = Path.here silverFirst
 
 /// The fold that turns the two fields gives the same purse also.
 def turnedBack : Path[.A = Terms Purse] (tipped copperFirst) copperFirst = Path.here copperFirst;

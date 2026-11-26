@@ -6,7 +6,7 @@
 //!
 //! - see: #1492
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// `kept` forces a view inside the handler region that holds its value.
 def kept() -> Integer =

@@ -17,9 +17,9 @@
 /// - see: #520 — `uaEta`
 /// - see: #656 — `univalence`
 // The circle, the presented integers, the winding number and spinning.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // The equivalence of the loops at the point with the integers, `winding`.
-import "./circle.gandr";
+import "./circle.gandr"
 
 /// The `fwdAlong` transport applies a path to a value.
 pub def fwdAlong(a : Type, b : Type, p : Path[.A = Type] a b, x : a) -> b =
@@ -101,10 +101,10 @@ def uaLiteral(
   ua (*{t, *{*{g, s}, *{h, r}}})
 
 /// The `winding` record makes the stated path from circle loops to integers.
-pub def loopsAreIntegers : Path[.A = Type] (Path[.A = Circle] Base Base) Int = ua winding;
+pub def loopsAreIntegers : Path[.A = Type] (Path[.A = Circle] Base Base) Int = ua winding
 
 /// The wildcard end of `ua(winding)` resolves to integers.
-def loopsAreTheirWinding : Path[.A = Type] (Path[.A = Circle] Base Base) Int = (ua winding : Path[.A = Type] (Path[.A = Circle] Base Base) _);
+def loopsAreTheirWinding : Path[.A = Type] (Path[.A = Circle] Base Base) Int = (ua winding : Path[.A = Type] (Path[.A = Circle] Base Base) _)
 
 /// Transport along `ua` applies its record map by conversion.
 def uaBeta(
@@ -121,7 +121,7 @@ def uaBeta(
 
 /// The `uaBetaRun` run applies the `winding` map to the loop.
 @[runs("S Z")]
-def uaBetaRun() -> Int = Path.walk (fun (X) { X }) (ua winding) (loop);
+def uaBetaRun() -> Int = Path.walk (fun (X) { X }) (ua winding) (loop)
 
 /// Transport to the integers converts each loop to its winding number.
 def windingBeta(x : Path[.A = Circle] Base Base) -> Path[.A = Int] (
@@ -131,18 +131,18 @@ def windingBeta(x : Path[.A = Circle] Base Base) -> Path[.A = Int] (
 
 /// The loop run returns its winding number.
 @[runs("S Z")]
-def windingRun() -> Int = Path.walk (fun (X) { X }) loopsAreIntegers (loop);
+def windingRun() -> Int = Path.walk (fun (X) { X }) loopsAreIntegers (loop)
 
 /// No conversion proves `ua` after `idtoequiv`, so `uaEta` owes a law.
 @[owes(1)]
 def uaEta : (a : Type, b : Type, p : Path[.A = Type] a b) -> Path[.A = Path[.A = Type] a b]
   (ua (idtoequiv a b p))
-  p;
+  p
 
 /// The model owes `idtoequivUa` because this corpus does not prove
 /// bi-invertibility is a proposition.
 @[owes(1)]
-def idtoequivUa : (a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b] (idtoequiv a b (ua e)) e;
+def idtoequivUa : (a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b] (idtoequiv a b (ua e)) e
 
 /// The `idtoequiv` and `ua` maps form a quasi-inverse with two
 /// owed round trips.

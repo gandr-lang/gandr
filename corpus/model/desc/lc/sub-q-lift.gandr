@@ -8,8 +8,8 @@
 //! - see: #640
 
 // This source imports naturals and substitution syntax.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
 
 /// A lifted substitution at the newest variable is that variable.
 pub def subQLift(s : Env) -> Path (subst (Ix Z) (Lift s)) (Ix Z) =

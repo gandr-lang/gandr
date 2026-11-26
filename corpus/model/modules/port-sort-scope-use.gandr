@@ -11,7 +11,7 @@
 // - see: model/modules/port-sort-scope.gandr
 // - see: pathological/modules/port-sort-scope.gandr
 
-import "./port-sort-scope.gandr";
+import "./port-sort-scope.gandr"
 
 /// `Loud` says the same word of each flag.
 module Loud : Model(Shout) where

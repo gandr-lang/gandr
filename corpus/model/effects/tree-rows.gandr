@@ -7,7 +7,7 @@
 // - see: #2512 — `handled`
 
 // `Either`, `StateOp` and `Prog`.
-import "./tree.gandr";
+import "./tree.gandr"
 
 /// `ExnOp` raises an integer code.
 pub data ExnOp : Type where
@@ -52,24 +52,24 @@ pub def guarded : Prog (Either ExnOp (Either StateOp Void)) Integer = Op (Right 
       (Done (b * 10) : Prog (Either ExnOp (Either StateOp Void)) Integer)
     }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
   }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
-});
+})
 
 /// `raising` reads state and raises the value it reads.
 def raising : Prog (Either ExnOp (Either StateOp Void)) Integer = Op (Right (Left Get)) (fun (a) {
   (Op (Left (Raise a)) (fun (_r) {
     (Done 0 : Prog (Either ExnOp (Either StateOp Void)) Integer)
   }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
-});
+})
 
 /// `quiet` reads state from a state-only row.
 def quiet : Prog (Either StateOp Void) Integer = Op (Left Get) (fun (a) {
   (Done a : Prog (Either StateOp Void) Integer)
-});
+})
 
 /// `failing` raises four from an exception-only row.
 def failing : Prog (Either ExnOp Void) Integer = Op (Left (Raise 4)) (fun (_r) {
   (Done 0 : Prog (Either ExnOp Void) Integer)
-});
+})
 
 /// `handled` removes exceptions and state from `guarded`.
 @[runs("Returned 50")]

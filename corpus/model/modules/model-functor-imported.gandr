@@ -5,10 +5,10 @@
 // The checker resolves the imported module through an unqualified import.
 //
 // - see: #1993
-import "./model-functor.gandr";
+import "./model-functor.gandr"
 
 /// `ImportedSquared` applies `Squaring` to `Times`.
-module ImportedSquared = Squaring Times;
+module ImportedSquared = Squaring Times
 
 /// `sixteen` squares four through `ImportedSquared`.
 @[runs("16")]

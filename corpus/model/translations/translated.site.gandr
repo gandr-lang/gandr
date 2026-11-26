@@ -13,9 +13,9 @@
 // - see: `translated.manifold.gandr` — the manifold placing `far` here
 
 // The site theory.
-import std.manifold (Site);
+import std.manifold (Site)
 // The newer store, and the flow to the older one.
-import "./translated.versions.gandr" (Newer, downgrade);
+import "./translated.versions.gandr" (Newer, downgrade)
 
 /// Every key holds its own name, and a write keeps nothing.
 pub module Echo : Model(Newer) with sort V = String where

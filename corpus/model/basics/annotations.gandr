@@ -14,10 +14,10 @@
 // - see: #2168 — `injected`, `falsity`
 
 /// `three` declares an integer by annotation alone.
-def three = (3 : Integer);
+def three = (3 : Integer)
 
 /// A pair the annotation states the product of.
-def paired = (*{3, "three"} : Integer * String);
+def paired = (*{3, "three"} : Integer * String)
 
 /// A value run as an annotated `pure`, then annotated where the body ends.
 def ran() -> Integer =
@@ -34,7 +34,7 @@ def tailed(n : Integer) -> Integer =
 def pair = *{(3 : Integer), 1};
 
 /// An annotation beside the signature it agrees with.
-def signed : Integer = (3 : Integer);
+def signed : Integer = (3 : Integer)
 
 /// This match annotates its scrutinee with the sum type.
 def chosen(b : Bool) -> Integer =
@@ -64,15 +64,15 @@ def falsity() -> Integer =
   n
 
 /// `doubled` accepts an annotated argument.
-def doubled(n : Integer) -> Integer = n + n;
+def doubled(n : Integer) -> Integer = n + n
 
 /// An argument annotated with the parameter's type.
 @[runs("6")]
-def called() -> Integer = doubled (3 : Integer);
+def called() -> Integer = doubled (3 : Integer)
 
 /// The function an application forces, annotated with its type at the head.
 @[runs("6")]
-def headed() -> Integer = (doubled : Integer -> Integer) 3;
+def headed() -> Integer = (doubled : Integer -> Integer) 3
 
 /// This bind runs a pair.
 /// Its annotated pattern binds both names under the product type.

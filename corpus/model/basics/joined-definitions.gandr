@@ -9,20 +9,20 @@
 // - see: #2228
 
 /// Three, its type and value in one item.
-def joinedThree : Integer = 3;
+def joinedThree : Integer = 3
 
 /// Four, apart: the comment between its halves keeps them so.
-def apartFour : Integer;
+def apartFour : Integer
 // The value follows the comment.
-def apartFour = 4;
+def apartFour = 4
 
 /// Five, apart: the item between its halves keeps them so.
-def apartFive : Integer;
+def apartFive : Integer
 
 /// `joinedSix` sits between the parts of `apartFive`.
-def joinedSix : Integer = 6;
+def joinedSix : Integer = 6
 /// Five's value, after the item between.
-def apartFive = 5;
+def apartFive = 5
 
 /// The checker reads each joined or separate value where it expects a value.
 @[runs("18")]

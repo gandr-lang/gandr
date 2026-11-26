@@ -12,15 +12,15 @@
 
 /// `fnv_step` mixes one byte into a hash: an exclusive or, then
 /// a wrapping product.
-def fnv_step(hash : u64, byte : u64) -> u64 = u64.wrapping_mul (u64.xor hash byte) 1099511628211u64;
+def fnv_step(hash : u64, byte : u64) -> u64 = u64.wrapping_mul (u64.xor hash byte) 1099511628211u64
 
 /// The offset basis with the byte 97 gives the published hash of `a`.
 @[runs("12638187200555641996u64")]
-def offset_with_a() -> u64 = fnv_step 14695981039346656037u64 97u64;
+def offset_with_a() -> u64 = fnv_step 14695981039346656037u64 97u64
 
 /// The offset basis with the byte 0 gives the product of the basis.
 @[runs("12638153115695167455u64")]
-def offset_with_zero() -> u64 = fnv_step 14695981039346656037u64 0u64;
+def offset_with_zero() -> u64 = fnv_step 14695981039346656037u64 0u64
 
 /// The greatest hash with the byte 0 wraps to the negation of the prime.
 @[runs("18446742974197923405u64")]

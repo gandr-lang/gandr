@@ -10,7 +10,7 @@
 //! [Augustsson-1985-compiling_pattern_matching]: https://doi.org/10.1007/3-540-15975-4_48 "Augustsson, Compiling pattern matching"
 
 // The three colours.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// Red apart from the rest: one arm, then a wildcard for the others.
 def notRed(c : Color) -> Integer =
@@ -43,7 +43,7 @@ def depth(m : Outer) -> Integer =
     | None => 0
 
 /// An inner value, annotated with its type.
-def inner = (Yes 41 : Inner);
+def inner = (Yes 41 : Inner)
 
 /// This source wraps the inner value once more.
 def answer = (Some inner : Outer);

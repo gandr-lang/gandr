@@ -10,13 +10,13 @@
 /// - see: corpus/model/identity/loop-winding.gandr
 
 // The presented integers.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // The loop's words, one inverse loop more and one loop more.
-import "./loop-words.gandr";
+import "./loop-words.gandr"
 // The circle's shape and its model over the presented integers.
-import "./loop-shape.gandr";
+import "./loop-shape.gandr"
 // The winding number.
-import "./loop-winding.gandr";
+import "./loop-winding.gandr"
 
 /// The `spinWords` function maps an integer count to loop words.
 pub def rec spinWords(n : Int) -> Words =
@@ -27,36 +27,36 @@ pub def rec spinWords(n : Int) -> Words =
 
 /// The sample spins two successors to two loops.
 @[runs("Loop (Loop Nil)")]
-def spun() -> Words = spinWords (S (S Z));
+def spun() -> Words = spinWords (S (S Z))
 
 /// Conversion spins two successors to two loops.
 def spun_twice : Path[.A = Words] (spinWords (S (S Z))) (Loop (Loop Nil)) = Path.here
-  (Loop (Loop Nil));
+  (Loop (Loop Nil))
 
 /// A cancelled count spins to the empty word.
-def spun_back : Path[.A = Words] (spinWords (S (P Z))) Nil = Path.here Nil;
+def spun_back : Path[.A = Words] (spinWords (S (P Z))) Nil = Path.here Nil
 
 /// A predecessor spins to one inverse loop.
-def spun_under : Path[.A = Words] (spinWords (P Z)) (Unloop Nil) = Path.here (Unloop Nil);
+def spun_under : Path[.A = Words] (spinWords (P Z)) (Unloop Nil) = Path.here (Unloop Nil)
 
 /// The first closed round trip returns a loop word.
 def spun_wound : Path[.A = Words] (spinWords (windWords (Loop Nil))) (Loop Nil) = Path.here
-  (Loop Nil);
+  (Loop Nil)
 
 /// The second closed round trip returns an integer count.
-def wound_spun : Path[.A = Int] (windWords (spinWords (S (S Z)))) (S (S Z)) = Path.here (S (S Z));
+def wound_spun : Path[.A = Int] (windWords (spinWords (S (S Z)))) (S (S Z)) = Path.here (S (S Z))
 
 /// A closed round trip returns the word normal form.
 def spun_wound_cancelled : Path[.A = Words] (spinWords (windWords (Loop (Unloop (Loop Nil))))) (Loop
-  Nil) = Path.here (Loop Nil);
+  Nil) = Path.here (Loop Nil)
 
 /// A respelled count returns its integer normal form.
 def wound_spun_respelled : Path[.A = Int] (windWords (spinWords (S (P (P Z))))) (P Z) = Path.here
-  (P Z);
+  (P Z)
 
 /// The loop round trip does not return the empty word.
 @[refuses("EndpointMismatch")]
-def spun_wound_lost : Path[.A = Words] (spinWords (windWords (Loop Nil))) Nil = Path.here Nil;
+def spun_wound_lost : Path[.A = Words] (spinWords (windWords (Loop Nil))) Nil = Path.here Nil
 
 /// The `unaround` function adds an inverse loop.
 def unaround(c : Words) -> Words =

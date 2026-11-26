@@ -8,7 +8,7 @@
 // - see: `dotted-nested.gandr`
 
 /// `seed` gives the shared base value.
-def seed = 40;
+def seed = 40
 
 /// `Facts` exports `inner.answer` and `total`.
 module Facts : *{inner : *{answer : Integer}, total : Integer} where {
@@ -33,7 +33,7 @@ module Facts : *{inner : *{answer : Integer}, total : Integer} where {
 
 /// `after` tests an unsynthesised exported total.
 @[refuses("NotSynthesisable")]
-def after = Facts.total + 1;
+def after = Facts.total + 1
 
 /// `gathered` tests a record that names refused `after`.
 @[refuses("UnknownConstant")]

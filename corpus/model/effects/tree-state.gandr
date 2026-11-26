@@ -7,7 +7,7 @@
 // - see: `state-handler.gandr` — native handlers
 
 // `Either`, `StateOp` and `Prog`.
-import "./tree.gandr";
+import "./tree.gandr"
 
 /// `constantTree` reads, stores and reads before it returns a sum.
 def constantTree : Prog (Either StateOp Void) Integer = Op (Left Get) (fun (a) {
@@ -16,7 +16,7 @@ def constantTree : Prog (Either StateOp Void) Integer = Op (Left Get) (fun (a) {
       (Done (a + b + 1) : Prog (Either StateOp Void) Integer)
     }) : Prog (Either StateOp Void) Integer)
   }) : Prog (Either StateOp Void) Integer)
-});
+})
 
 /// `answeringFour` gives four to each read.
 def rec answeringFour(p : Prog (Either StateOp Void) Integer) -> Integer =
@@ -29,7 +29,7 @@ def rec answeringFour(p : Prog (Either StateOp Void) Integer) -> Integer =
 
 /// `constantByFold` runs `answeringFour`.
 @[runs("9")]
-def constantByFold() -> Integer = answeringFour constantTree;
+def constantByFold() -> Integer = answeringFour constantTree
 
 /// `passingTree` stores four and reads state twice.
 def passingTree : Prog (Either StateOp Void) Integer = Op (Left (Put 4)) (fun (_u) {
@@ -38,7 +38,7 @@ def passingTree : Prog (Either StateOp Void) Integer = Op (Left (Put 4)) (fun (_
       (Done (a * 10 + b) : Prog (Either StateOp Void) Integer)
     }) : Prog (Either StateOp Void) Integer)
   }) : Prog (Either StateOp Void) Integer)
-});
+})
 
 /// `passingState` threads state through a program tree.
 def rec passingState(p : Prog (Either StateOp Void) Integer, s : Integer) -> Integer =
@@ -51,7 +51,7 @@ def rec passingState(p : Prog (Either StateOp Void) Integer, s : Integer) -> Int
 
 /// `passingByFold` runs `passingState` from zero.
 @[runs("44")]
-def passingByFold() -> Integer = passingState passingTree 0;
+def passingByFold() -> Integer = passingState passingTree 0
 
 /// `StateModel` holds a result, read or write continuation.
 data StateModel(a : Type) : Type where
@@ -64,7 +64,7 @@ def constantProgram : StateModel Integer = Read (*{}) (fun (a) {
   (Write a (fun (_u) {
     (Read (*{}) (fun (b) { (Answer (a + b + 1) : StateModel Integer) }) : StateModel Integer)
   }) : StateModel Integer)
-});
+})
 
 /// `constantFold` answers reads with four and writes with unit.
 def rec constantFold(p : StateModel Integer) -> Integer =

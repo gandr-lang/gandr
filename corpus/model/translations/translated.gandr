@@ -19,17 +19,17 @@
 //   under `Path`, refused at its member
 
 // The older store.
-import "./translated.versions.gandr" (Older);
+import "./translated.versions.gandr" (Older)
 
 /// The world the entry runs at.
-pub world near;
+pub world near
 
 /// The world the work runs at: two stores of strings, `store` and `cache`, at
 /// the older signature.
 pub world far requires [
   store : Older with sort V = String,
   cache : Older with sort V = String
-];
+]
 
 /// `far` computes forty-two and returns it.
 @[entry(*{near, far}), runs("42")]

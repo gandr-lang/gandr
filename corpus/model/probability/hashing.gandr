@@ -15,9 +15,9 @@
 // - see: #5713
 
 // The host interface of randomness.
-import std.rand;
+import std.rand
 // The multiply-shift family and its multiplier.
-import std.hash (multiplyShift, multiplier);
+import std.hash (multiplyShift, multiplier)
 
 /// 1 when the keys `x` and `y` of 8 bits have one hash of 2 bits under the
 /// multiplier `a`, else 0.

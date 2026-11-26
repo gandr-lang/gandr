@@ -23,10 +23,10 @@ def fourth(x : Integer) -> Integer =
 
 // A value marked bare, stating neither the version nor the note.
 @[deprecated]
-def legacy = 1;
+def legacy = 1
 
 // A use of the bare-marked value: it checks, and the use is reported.
-def current = legacy;
+def current = legacy
 
 // A module whose member is marked.
 module Shapes where {

@@ -14,11 +14,11 @@
 
 // This source imports declarations for lists, bytes, ownership, locations and
 // writes.
-import "../data/data-base.gandr";
-import "./string-base.gandr";
-import "./nul-terminated.gandr";
-import "./small-string.gandr";
-import "./copy-on-write.gandr";
+import "../data/data-base.gandr"
+import "./string-base.gandr"
+import "./nul-terminated.gandr"
+import "./small-string.gandr"
+import "./copy-on-write.gandr"
 
 /// `pushInPlace` appends `b` and skips the holder count.
 /// It writes inline or heap bytes in place.

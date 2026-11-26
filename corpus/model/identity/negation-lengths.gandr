@@ -11,19 +11,19 @@
 /// - see: #6309
 /// - see: #6325 — the fuel budget at 10⁶
 // The natural numbers.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // The numerals of the benchmark lengths.
-import "./ladder-base.gandr";
+import "./ladder-base.gandr"
 // The negation composite and its transport `negVal`.
-import "./negation-composite.gandr";
+import "./negation-composite.gandr"
 
 /// A hundred and one negations move `true` to `false`.
 @[runs("+{.1 = *{}}")]
-def negated100() -> Bool = negVal n100;
+def negated100() -> Bool = negVal n100
 
 /// A thousand and one negations move `true` to `false`.
 @[runs("+{.1 = *{}}")]
-def negated1000() -> Bool = negVal n1k;
+def negated1000() -> Bool = negVal n1k
 
 /// A hundred thousand and one negations move `true` to `false`.
 @[runs("+{.1 = *{}}")]

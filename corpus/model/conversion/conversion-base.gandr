@@ -12,7 +12,7 @@
 // - see: #2282 — the benchmark set these sources form
 
 // The free naturals, their addition and the numerals two and three.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 /// Multiplication by recursion on the second argument.
 pub def rec times(n : Nat, m : Nat) -> Nat =
@@ -30,13 +30,13 @@ pub def rec monus(n : Nat, m : Nat) -> Nat =
 
 /// Four.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]
-pub def four : Nat = Succ three;
+pub def four : Nat = Succ three
 
 /// Eight.
-pub def eight : Nat = Succ (Succ (Succ (Succ four)));
+pub def eight : Nat = Succ (Succ (Succ (Succ four)))
 
 /// Twelve.
-pub def twelve : Nat = Succ (Succ (Succ (Succ eight)));
+pub def twelve : Nat = Succ (Succ (Succ (Succ eight)))
 
 /// Sixteen.
 pub def sixteen : Nat = Succ (Succ (Succ (Succ twelve)));

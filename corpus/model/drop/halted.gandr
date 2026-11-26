@@ -11,9 +11,9 @@
 //! - see: `unwound.gandr` — the cleanup after `abandon k`
 
 // The import provides native finite lists.
-import std.list (List);
+import std.list (List)
 // The import provides the early-exit host interface.
-import std.process;
+import std.process
 
 /// A halt with a code, which no handler resumes.
 theory Halt.Eff where
@@ -26,7 +26,7 @@ theory Halt.Eff where
 
 /// A run reports blame when it calls the owed `afterHalt` declaration.
 @[owes(1)]
-def afterHalt : Integer -> Unit;
+def afterHalt : Integer -> Unit
 
 /// Halt with the code 1. The site stands at `Integer`, the type that it is
 /// checked against.

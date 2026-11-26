@@ -11,9 +11,9 @@
 // The manifest theories.
 //
 // - see: #2687
-import std.build (Gandr);
+import std.build (Gandr)
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// What the members share: the version each states. Each member reads what it
 /// asks of the toolchain here unless it asks more.

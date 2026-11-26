@@ -12,12 +12,12 @@
 //! - see: HoTT Book Definition 3.1.1
 
 // This import supplies the circle and integers with their steps.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // This import supplies integer sum and its left unit.
 // It also supplies successor and predecessor rules on the left.
-import "./int-sum.gandr";
+import "./int-sum.gandr"
 // The loop's words and one loop more.
-import "./loop-words.gandr";
+import "./loop-words.gandr"
 
 /// The `flipS` path reverses `plusS`.
 def flipS(x : Int, a : Int) -> Path[.A = Int] (S (plus x a)) (plus (S x) a) =

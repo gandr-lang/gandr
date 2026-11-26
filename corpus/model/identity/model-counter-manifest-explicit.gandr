@@ -7,8 +7,8 @@
 /// The explicit forms all evaluate to the same observation.
 ///
 /// - see: #2130
-import "./model-counter.gandr";
-import "./model-counter-manifest.gandr";
+import "./model-counter.gandr"
+import "./model-counter-manifest.gandr"
 
 /// The explicit map restores the `C` sort for `upManifest`.
 @[runs("1"), form(explicit)]

@@ -12,7 +12,7 @@
 
 // The bits and the answers, their univalence `codes`, and the protocols
 // `Ask.Coded` and `Ask.Decoded` that hear them.
-import "./run-transport.gandr";
+import "./run-transport.gandr"
 
 /// The two protocols are one type along the univalence, which pays
 /// the one pair of payloads that differ.

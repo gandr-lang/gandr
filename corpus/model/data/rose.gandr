@@ -22,10 +22,10 @@
 
 // The naturals the measures count in, their addition, and the lists the
 // direct form nests through.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 // The lists' `map`, which the direct form's measures recurse through.
-import "./recursive-lists.gandr";
+import "./recursive-lists.gandr"
 
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter.
@@ -33,10 +33,10 @@ data Bush : Type where
   | Sprout : (kids : List Bush) --> Bush
 
 /// A node without children, written directly.
-def sprig : Bush = Sprout (Nil : List Bush);
+def sprig : Bush = Sprout (Nil : List Bush)
 
 /// A node over two childless nodes, written directly.
-def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List Bush) : List Bush) : List Bush);
+def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List Bush) : List Bush) : List Bush)
 
 /// This function sums a list of numbers.
 def rec sum(xs : List Nat) -> Nat =
@@ -58,12 +58,12 @@ def rec grow(t : Bush) -> Bush =
 
 /// The check expects three nodes in `shrub`.
 @[runs("Succ (Succ (Succ Zero))")]
-def shrub_nodes : () -> Nat = nodes shrub;
+def shrub_nodes : () -> Nat = nodes shrub
 
 /// The check counts `shrub` after it grows to six nodes.
 /// Its root and each child gain a childless node.
 @[runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))")]
-def grown_nodes : () -> Nat = nodes (grow shrub);
+def grown_nodes : () -> Nat = nodes (grow shrub)
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.
@@ -96,18 +96,18 @@ rec {
 }
 
 /// A node without children.
-def leaf : Rose = Node Empty;
+def leaf : Rose = Node Empty
 
 /// A node over two leaves.
-def sapling : Rose = Node (More leaf (More leaf Empty));
+def sapling : Rose = Node (More leaf (More leaf Empty))
 
 /// The sapling's three nodes.
 @[runs("Succ (Succ (Succ Zero))")]
-def sapling_nodes : () -> Nat = treeSize sapling;
+def sapling_nodes : () -> Nat = treeSize sapling
 
 /// A forest of a sapling and a leaf: four nodes.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]
-def forested : () -> Nat = forestSize (More sapling (More leaf Empty));
+def forested : () -> Nat = forestSize (More sapling (More leaf Empty))
 
 /// These measures keep the weight `k` through mutual calls.
 /// Each measure descends on its first parameter.
@@ -128,7 +128,7 @@ rec {
 
 /// The check weighs the three sapling nodes by two.
 @[runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))")]
-def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));
+def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero))
 
 /// Two members that rebuild a tree and its forest, one block. Each member
 /// returns its own family, so the joint's goal differs from member to
@@ -152,7 +152,7 @@ rec {
 
 /// The sapling's copy keeps its three nodes.
 @[runs("Succ (Succ (Succ Zero))")]
-def rebuilt_nodes : () -> Nat = treeSize (bumpTree sapling);
+def rebuilt_nodes : () -> Nat = treeSize (bumpTree sapling)
 
 /// The copy of a forest of a sapling and a leaf keeps its four nodes.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]

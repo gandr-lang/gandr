@@ -11,7 +11,7 @@
 //! [Altenkirch-2018-quotient_inductive_inductive_types]: https://doi.org/10.1007/978-3-319-89366-2_16 "Altenkirch et al., Quotient inductive-inductive types"
 
 // The presented integers.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// `dbl` repeats each successor and predecessor.
 def rec dbl(n : Int) -> Int =
@@ -29,7 +29,7 @@ def rec neg(n : Int) -> Int =
 
 /// This example evaluates double two.
 @[runs("S (S (S (S Z)))")]
-def doubled : () -> Int = dbl (S (S Z));
+def doubled : () -> Int = dbl (S (S Z))
 
 /// This example evaluates the negation of two.
 @[runs("P (P Z)")]

@@ -19,17 +19,17 @@
 /// - see: `corpus/model/package/nix/hello.drv.json`
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// An output of a derivation: its name, then the store path it is built at.
-pub type Output = String * String;
+pub type Output = String * String
 
 /// A derivation a derivation depends on: its store path, then the
 /// outputs it reads.
-pub type InputDerivation = String * List String;
+pub type InputDerivation = String * List String
 
 /// One variable of a builder's environment: its name, then its value.
-pub type Variable = String * String;
+pub type Variable = String * String
 
 /// A derivation, as format version 4 of `nix derivation show` prints one.
 pub type Derivation = *{

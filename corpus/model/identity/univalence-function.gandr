@@ -12,9 +12,9 @@
 //! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
 
 // This import supplies the circle, integers, winding and spin.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // The loops at the point as the integers, `loopsAreIntegers`.
-import "./univalence.gandr";
+import "./univalence.gandr"
 
 /// The transport maps a loop function to an integer function by `spin`,
 /// `f` and `wind`.

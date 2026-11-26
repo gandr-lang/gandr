@@ -17,7 +17,7 @@
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
 // The naturals, the de Bruijn indices.
-import "../model-in-source.gandr";
+import "../model-in-source.gandr"
 
 /// `LC` is the pure lambda calculus with single substitution. No order of
 /// paths orients law 3, so the checker refuses the rules, but the block still

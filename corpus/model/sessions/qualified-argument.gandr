@@ -9,10 +9,10 @@
 // - see: #1126
 
 // The seat's protocol and its messages.
-import "./seat-base.gandr";
+import "./seat-base.gandr"
 
 /// The seat's protocol simulates itself, both sides named through the module.
-def itself : Flow[.A = Type](Seat.SeatEnd, Seat.SeatEnd) = Flow.sim Seat.SeatEnd Seat.SeatEnd;
+def itself : Flow[.A = Type](Seat.SeatEnd, Seat.SeatEnd) = Flow.sim Seat.SeatEnd Seat.SeatEnd
 
 /// The stationary flow at the seat's protocol, named through the module.
 def kept : Flow[.A = Type](Seat.SeatEnd, Seat.SeatEnd) = Flow.stay Seat.SeatEnd;

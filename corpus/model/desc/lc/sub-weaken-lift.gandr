@@ -9,11 +9,11 @@
 //! - see: #640
 
 // This source imports syntax and weakening lemmas.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
-import "./lookup-weaken.gandr";
-import "./subst-subst.gandr";
-import "./subst-as-rename.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
+import "./lookup-weaken.gandr"
+import "./subst-subst.gandr"
+import "./subst-as-rename.gandr"
 
 /// A lookup under one binder is the lookup after substitution by shift one.
 def lookShiftedOnce(

@@ -26,7 +26,7 @@ def flip(p : Parity) -> Parity =
 
 /// A call as the definition's own value.
 @[runs("Odd")]
-def odd : Parity = flip Even;
+def odd : Parity = flip Even
 
 /// This definition value pairs two calls.
 /// Each call runs before the pair.

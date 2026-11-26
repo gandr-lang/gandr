@@ -42,7 +42,7 @@ def callsAtZero(f : Unit -> Unary) -> Type =
     | S(m) => return Unary
 
 /// A holder at a function type.
-def heldLambda : Holder (Unit -> Unary) = MkHolder (fun (u) { Z });
+def heldLambda : Holder (Unit -> Unary) = MkHolder (fun (u) { Z })
 
 /// A pair whose first field is a lambda, at a family that ignores it.
 def lambdaPaired : Pair (Unit -> Unary) (fun (r) { return Unit }) = MkPair (fun (u) { Z }) *{};

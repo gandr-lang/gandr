@@ -10,8 +10,8 @@
 // - see: #879
 
 // This source imports naturals, terms and lookup.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
 
 /// `liftOf` constructs `Lift`.
 def liftOf(s : Env) -> Env =

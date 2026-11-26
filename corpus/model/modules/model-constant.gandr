@@ -34,7 +34,7 @@ module Sevens : Model(Based) where
 
 /// `seven` reads `Sevens.base`.
 @[runs("7")]
-def seven() -> Integer = Sevens.base;
+def seven() -> Integer = Sevens.base
 
 /// `Unital` states a unit, a product and a law.
 theory Unital where

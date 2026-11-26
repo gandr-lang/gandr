@@ -19,10 +19,10 @@ module M where
   def one : Box = B 1;
 
 /// `two` uses `M.B`.
-def two : M.Box = M.B 2;
+def two : M.Box = M.B 2
 
 /// `three` uses `M.Box.B`.
-def three : M.Box = M.Box.B 3;
+def three : M.Box = M.Box.B 3
 
 /// `open` matches a box through `M.B`.
 def open(b : M.Box) -> Integer =

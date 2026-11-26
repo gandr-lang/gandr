@@ -40,7 +40,7 @@ module EqCode : Model(Eq) with sort Carrier = Code where
   def sym(a : Code, b : Code) -> Path[.A = Bool] (eq a b) (eq b a) = Path.here true;
 
 /// The comparison as a path endpoint.
-def pathed : Path[.A = Code] (ofFlag (Yes == No)) Yes = Path.here Yes;
+def pathed : Path[.A = Code] (ofFlag (Yes == No)) Yes = Path.here Yes
 
 /// The comparison in a stated type that the checker decodes.
 def written : decoded (ofFlag (Yes == No)) = "x";

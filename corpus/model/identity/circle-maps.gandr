@@ -12,7 +12,7 @@
 /// - see: #6477 — `apEmpty`
 
 // The circle, every point's loop and the multiplication.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The identity case maps the circle loop to its own name.
 def circleId(a : Circle) -> Circle =
@@ -69,7 +69,7 @@ def unitRight(b : Circle) -> Path[.A = Circle] (mul b Base) b =
 /// `Path.ap` of a map on reflexivity at `Base` is that reflexivity, the empty
 /// word of the loop's words.
 def apEmpty : Path[.A = Path[.A = Circle] Base Base] (Path.ap circleId (Path.here Base)) (Path.here
-  Base) = Path.here (Path.here Base);
+  Base) = Path.here (Path.here Base)
 
 /// The image of reflexivity is the empty word, so it is not the loop.
 @[refuses("EndpointMismatch")]

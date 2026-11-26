@@ -13,7 +13,7 @@
 //! - owes: #520 — `univalence`'s two laws
 
 // Univalence over the user universe: `fwdAlong`, `bwdAlong`, `idtoequiv`.
-import "./univalence.gandr";
+import "./univalence.gandr"
 
 /// `ua` after `idtoequiv` transports forward as the path does: one function,
 /// at every path.

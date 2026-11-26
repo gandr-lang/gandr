@@ -19,7 +19,7 @@
 //   requires nothing
 
 // The console's host interface.
-import std.io;
+import std.io
 
 /// What a role at `far` reads and writes: values held by key. Each operation
 /// hands what it reads to what runs after, so a model answers it.
@@ -34,11 +34,11 @@ pub theory Store where
   oper put : (key : V, value : V, k : C) --> C;
 
 /// The world the entry runs at.
-pub world near;
+pub world near
 
 /// The world the work runs at: the console, and a store of strings under
 /// `store`.
-pub world far requires [std.io.Console.Eff, store : Store with sort V = String];
+pub world far requires [std.io.Console.Eff, store : Store with sort V = String]
 
 /// `far` prints its name, computes forty-two and returns it.
 @[entry(*{near, far}), runs("far\n42")]

@@ -11,7 +11,7 @@ def base = *{.name = "gandr", .stars = 1};
 
 /// `extended` inserts `kind` into `base`.
 @[refuses("OutOfFragment.projection_expression")]
-def extended = record.insert base "kind" "language";
+def extended = record.insert base "kind" "language"
 
 /// `kind` reads the inserted field from `extended`.
 @[refuses("OutOfFragment.projection_expression")]

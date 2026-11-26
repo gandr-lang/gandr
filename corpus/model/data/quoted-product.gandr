@@ -10,10 +10,10 @@
 // - see: #5060
 
 // The naturals and the numerals two and three.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// The product of two types.
-def prodOf(a : Type, b : Type) -> Type = return type(a * b);
+def prodOf(a : Type, b : Type) -> Type = return type(a * b)
 
 /// One integer for each step of `n`, the next step's tower beside it.
 def rec tower(n : Nat) -> Type =

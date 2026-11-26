@@ -14,7 +14,7 @@ data ProcTree(a : Type) : Type where
   | Exit : (code : Integer, k : Unit -> ProcTree a) --> ProcTree a
 
 /// `exitThenOne` exits with five and then returns one.
-def exitThenOne : ProcTree Integer = Exit 5 (fun (_u) { (Return 1 : ProcTree Integer) });
+def exitThenOne : ProcTree Integer = Exit 5 (fun (_u) { (Return 1 : ProcTree Integer) })
 
 /// `resuming` adds one hundred and resumes the continuation.
 def rec resuming(p : ProcTree Integer) -> Integer =
@@ -24,7 +24,7 @@ def rec resuming(p : ProcTree Integer) -> Integer =
 
 /// `resumedByFold` runs `resuming`.
 @[runs("101")]
-def resumedByFold() -> Integer = resuming exitThenOne;
+def resumedByFold() -> Integer = resuming exitThenOne
 
 /// `discarding` returns nine and drops the continuation.
 def rec discarding(p : ProcTree Integer) -> Integer =

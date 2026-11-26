@@ -22,13 +22,13 @@
 //   counters of a machine
 
 // The console's host interface.
-import std.io;
+import std.io
 // The exact reals' host interface.
-import std.reals;
+import std.reals
 // The native list type.
-import std.list (List);
+import std.list (List)
 // The subject's shared declarations: `witnessed` and `belowThreeHalves`.
-import "./reals-base.gandr";
+import "./reals-base.gandr"
 
 /// Whether two lists of counters are equal, place by place.
 pub def rec equal(first : List Integer, second : List Integer) -> Bool =

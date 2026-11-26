@@ -10,7 +10,7 @@
 // - see: `../../pathological/data/curry.gandr`
 
 // This source uses naturals for lengths and `Two` for test results.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// `Chain` links each chain to its predecessor.
 /// Its test receives `Chain` at a lower stage.
@@ -22,7 +22,7 @@ data Chain : Type where
 def linked(c : Chain) -> Two = match c -> -F Two { | Start => L | Link(p, t) => R };
 
 /// Two links over the start, each holding `linked`.
-def twice : Chain = Link (Link Start linked) linked;
+def twice : Chain = Link (Link Start linked) linked
 
 /// The test a link holds, applied to the chain before it: the chain stands
 /// at the stage the test takes.
@@ -39,7 +39,7 @@ def rec chainLength(c : Chain) -> Nat =
 
 /// The outer link's test of the inner link.
 @[runs("R")]
-def judged : () -> Two = judge twice;
+def judged : () -> Two = judge twice
 
 /// The chain's two links.
 @[runs("Succ (Succ Zero)")]

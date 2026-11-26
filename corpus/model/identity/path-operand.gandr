@@ -13,7 +13,7 @@
 /// - see: #546 — `mappedOver`, `mappedInto`
 
 // The circle and the free naturals.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The `next` function adds one successor.
 def next(n : Nat) -> Nat =
@@ -51,7 +51,7 @@ def unthrice(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Bas
 
 /// The `stay` declaration gives a path at a natural number.
 @[owes(1)]
-def stay : (a : Nat) -> Path[.A = Nat] a a;
+def stay : (a : Nat) -> Path[.A = Nat] a a
 
 /// The `stayUp` proof reads the result of the `stay` declaration.
 def stayUp(a : Nat) -> Path[.A = Nat] (Succ a) (Succ a) =

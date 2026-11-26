@@ -10,13 +10,13 @@
 // port of `Val`, and the type of such terms is refused (#4150).
 //
 // - see: `../../../library/std/src/llvm.gandr` — the block
-import std.llvm (Llvm);
+import std.llvm (Llvm)
 
 /// The type of a byte.
-def byte : Terms Llvm Ty = Llvm.int8;
+def byte : Terms Llvm Ty = Llvm.int8
 
 /// The ordering of an atomic load that acquires.
-def acquiring : Terms Llvm Ordering = Llvm.order_acquire;
+def acquiring : Terms Llvm Ordering = Llvm.order_acquire
 
 /// The width in bits of a type of an integer, and 0 for the pointer.
 def width(t : Terms Llvm Ty) -> Integer =

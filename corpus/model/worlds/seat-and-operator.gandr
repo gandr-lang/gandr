@@ -18,13 +18,13 @@
 
 // The seat protocol defines the mobile report. Its signature seals the
 // messages.
-import "../sessions/seat-base.gandr";
+import "../sessions/seat-base.gandr"
 
 /// The world the operator stands at.
-pub world operator;
+pub world operator
 
 /// The world a seat works at.
-pub world seat;
+pub world seat
 
 /// The operator holds one capability to the seat, runs the seat's work there
 /// and takes the report back. The migration spends the capability and carries

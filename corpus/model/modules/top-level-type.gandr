@@ -19,37 +19,37 @@ pub def width(band : Band) -> Integer =
 
 /// `setWidth` reads the set band width.
 @[runs("600000")]
-def setWidth() -> Integer = width setBand;
+def setWidth() -> Integer = width setBand
 
 /// `Twice` names a pair family.
-pub type Twice(a : Type) = a * a;
+pub type Twice(a : Type) = a * a
 
 /// `bounds` gives the set bounds.
 def bounds : Twice Integer = *{200000, 800000};
 
 /// `Reading` names an integer returner.
-pub type Reading = -F Integer;
+pub type Reading = -F Integer
 
 /// `readWidth` returns the set width.
 @[runs("600000")]
-def readWidth() -> Reading = width setBand;
+def readWidth() -> Reading = width setBand
 
 /// `RepeatedReading` aliases `Reading`.
-pub type RepeatedReading = Reading;
+pub type RepeatedReading = Reading
 
 /// `readAgain` returns the repeated type.
 @[runs("600000")]
-def readAgain() -> RepeatedReading = width setBand;
+def readAgain() -> RepeatedReading = width setBand
 
 /// `Returning` names a parameterized returner family.
-pub type Returning(a : Type) = -F a;
+pub type Returning(a : Type) = -F a
 
 /// `low` returns the low bound.
 @[runs("200000")]
-def low() -> Returning Integer = 200000;
+def low() -> Returning Integer = 200000
 
 /// `IntegerReturning` applies `Returning`.
-pub type IntegerReturning = Returning Integer;
+pub type IntegerReturning = Returning Integer
 
 /// `returnedLow` returns the low bound.
 @[runs("200000")]

@@ -18,9 +18,9 @@
 // - see: #5713
 
 // The host interface of randomness.
-import std.rand;
+import std.rand
 // The one-time pad and its key.
-import std.crypto (key, pad, unpad);
+import std.crypto (key, pad, unpad)
 
 /// `pad` sends the message 3 under the key 1 to 0. `unpad` with the same key
 /// gives 3 again.

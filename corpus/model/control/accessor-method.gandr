@@ -15,9 +15,9 @@
 //! [Azman-2021-deducing_this]: https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r7.html "Ažman, Brand, Deane and Revzin, Deducing this"
 
 // The list each call below holds.
-import "./accessor-place.gandr";
+import "./accessor-place.gandr"
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// A list's places, each at the mode its call asks.
 pub module Places where {

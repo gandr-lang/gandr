@@ -21,7 +21,7 @@
 /// - see: corpus/model/identity/sphere-maps.gandr
 
 // The 2-sphere.
-import "./sphere.gandr";
+import "./sphere.gandr"
 
 /// One point, one loop and one 2-cell at the point's reflexivity.
 pub data LoopCell : Type where

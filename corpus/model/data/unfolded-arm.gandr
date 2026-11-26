@@ -14,7 +14,7 @@
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
 // The naturals the recursion takes apart.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// Two successors over a natural.
 pub def plusTwo(n : Nat) -> Nat =
@@ -28,7 +28,7 @@ pub def rec double(n : Nat) -> Nat =
 
 /// Two doubled.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]
-def doubledTwo : () -> Nat = double two;
+def doubledTwo : () -> Nat = double two
 
 /// `doubleStep` states `double` with the `plusTwo` call.
 def doubleStep(n : Nat) -> Path (double (Succ n)) (plusTwo (double n)) =

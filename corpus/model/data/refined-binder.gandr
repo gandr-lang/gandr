@@ -17,10 +17,10 @@
 /// - see: `../universe/decoded-descent.gandr`
 
 // The naturals and the lists.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 // The universe of the naturals, the lists and the functions, and its decoder.
-import "../universe/decoded-descent.gandr";
+import "../universe/decoded-descent.gandr"
 
 /// The family that is `Nat` at zero and `Unit` past it.
 pub def natOr(n : Nat) -> Type =
@@ -54,7 +54,7 @@ pub def occupied(c : UL) -> (elL c) -> Nat =
     | PiL(_a, _b) => fun (_f) { Zero }
 
 /// The list that holds two.
-def twoAlone : List Nat = Cons two Nil;
+def twoAlone : List Nat = Cons two Nil
 
 /// The list that holds two has an entry, so the count is one.
 @[runs("Succ Zero")]

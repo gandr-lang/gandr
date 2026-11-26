@@ -9,7 +9,7 @@
 // - see: #879 — `walkTwice`
 
 // The naturals the recursion takes apart.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// One successor over a natural.
 pub def succ(n : Nat) -> Nat =
@@ -25,7 +25,7 @@ pub def rec walk(t : Nat, c : Nat) -> Nat =
 /// `walkedTwo` evaluates two steps from zero.
 /// It applies `succ` to its accumulator at each step.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]
-def walkedTwo : () -> Nat = walk two Zero;
+def walkedTwo : () -> Nat = walk two Zero
 
 /// One step at a variable.
 def walkOnce(b : Nat, c : Nat) -> Path (walk (Succ b) c) (Succ (walk b (succ c))) =

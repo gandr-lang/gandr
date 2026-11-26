@@ -30,13 +30,13 @@
 //! - see: `../../../crates/boot-core/src/check.rs` — the Rust functions
 
 // The bytes of a memory of `Extent`.
-import std.list (List);
+import std.list (List)
 // The interface of memory, and its model in the source.
-import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent);
+import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent)
 // The ranges, the answer of a search, and the lists of bytes of a run.
-import "./ranges.gandr";
+import "./ranges.gandr"
 // The search of a byte.
-import "./search.gandr";
+import "./search.gandr"
 
 /// The answer of the check of UTF-8, as `Utf8` of `boot-core`.
 pub data Utf8 : Type where
@@ -68,7 +68,7 @@ def low_of_four(lead : Integer) -> Integer = if lead == 240 { pure 144 } else { 
 def high_of_four(lead : Integer) -> Integer = if lead == 244 { pure 143 } else { pure 191 };
 
 /// The address `distance` bytes after `address`.
-def beyond(address : u64, distance : u64) -> u64 = u64.wrapping_add address distance;
+def beyond(address : u64, distance : u64) -> u64 = u64.wrapping_add address distance
 
 /// The check of the `left` bytes from `base + index` on, where the bytes
 /// before `index` are valid UTF-8.
@@ -166,7 +166,7 @@ pub def check_utf8(range : Range) -> [
 /// included.
 pub def find_zero(range : Range) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
-] Found = find_byte range 0u8;
+] Found = find_byte range 0u8
 
 /// The answer of a run under `Extent`.
 data Checked : Type where
@@ -178,10 +178,10 @@ data Checked : Type where
   | Stopped : (member : String, address : u64) --> Checked
 
 /// The word with each bit set: the word of `Valid` and of `Absent`.
-def each_bit : u64 = u64.not 0u64;
+def each_bit : u64 = u64.not 0u64
 
 /// `true` when `word` is the word with each bit set.
-def is_each_bit(word : u64) -> Bool = u64.to_integer word == u64.to_integer each_bit;
+def is_each_bit(word : u64) -> Bool = u64.to_integer word == u64.to_integer each_bit
 
 /// The word that a run gives for `utf8`: the position of the fault, or the
 /// word with each bit set for `Valid`.

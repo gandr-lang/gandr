@@ -36,11 +36,11 @@ module Counting where {
 
 /// `twoDoubled` calls `Counting.double`.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]
-def twoDoubled : () -> Nat = Counting.double (Succ (Succ Zero));
+def twoDoubled : () -> Nat = Counting.double (Succ (Succ Zero))
 
 /// `halved` calls `Counting.half`.
 @[runs("Succ (Succ Zero)")]
-def halved : () -> Nat = Counting.half (Succ (Succ (Succ (Succ Zero))));
+def halved : () -> Nat = Counting.half (Succ (Succ (Succ (Succ Zero))))
 
 /// `Stepping` states a carrier and a step.
 theory Stepping where
@@ -66,7 +66,7 @@ module Up : Model(Stepping) where
   def step(x : Integer) -> Integer = x + 1;
 
 /// `UpIterated` applies `Iterating` to `Up`.
-module UpIterated = Iterating Up;
+module UpIterated = Iterating Up
 
 /// `threeStepsUp` iterates the step three times.
 @[runs("7")]

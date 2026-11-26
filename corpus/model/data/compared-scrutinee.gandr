@@ -8,7 +8,7 @@
 // - see: #1141
 
 /// The naturals, their addition and the numeral two.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// This case scrutinises the comparison where it occurs.
 @[runs("1")]

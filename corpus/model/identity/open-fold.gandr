@@ -12,13 +12,13 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // This import supplies integers and free naturals.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // The loop's words.
-import "./loop-words.gandr";
+import "./loop-words.gandr"
 // The winding number into the integers.
-import "./loop-winding.gandr";
+import "./loop-winding.gandr"
 // This import supplies the map from integers to loop words.
-import "./loop-space.gandr";
+import "./loop-space.gandr"
 
 /// The `Loop` arm maps `windWords(x)` to `S(windWords(x))`.
 def wind_unfolded(x : Words) -> Path[.A = Int] (windWords (Loop x)) (S (windWords x)) =

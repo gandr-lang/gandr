@@ -54,7 +54,7 @@
 // `x: Option<Box<u32>>`, `w` answers a `u64`, and `k` takes no `n`.
 
 // `Nat`.
-import "../../data/data-base.gandr";
+import "../../data/data-base.gandr"
 
 // The row, the codes and admission.
 import std.boundary (
@@ -73,41 +73,41 @@ import std.boundary (
   Declared,
   Admission,
   admit
-);
+)
 // The scalars and the fields a code is laid out from.
-import std.layout (U32, Ref, Done, Field, NoVariant, Variant);
+import std.layout (U32, Ref, Done, Field, NoVariant, Variant)
 
 // `Heap`, `vOpt`, `vInt`, `keptOpt`, `derefOrWp`, `derefOrMeets`.
-import "../../specification/niche-realizability.gandr";
+import "../../specification/niche-realizability.gandr"
 
 /// `Option<&u32>`.
-pub def optRef : Code = Sum (Variant "Some" (Field "0" Ref Done) (Variant "None" Done NoVariant));
+pub def optRef : Code = Sum (Variant "Some" (Field "0" Ref Done) (Variant "None" Done NoVariant))
 
 /// `u32`.
-pub def u32 : Code = Plain U32;
+pub def u32 : Code = Plain U32
 
 /// `Option<&u32>`'s record: one word, as rustc prints it.
 @[runs("Witness 8 8 8 Bitwise")]
-def optRefSummary() -> Witness = summary optRef;
+def optRefSummary() -> Witness = summary optRef
 
 /// `u32`'s record.
 @[runs("Witness 4 4 4 Bitwise")]
-def u32Summary() -> Witness = summary (u32);
+def u32Summary() -> Witness = summary (u32)
 
 /// `Option<&u32>`'s discriminant is the reference's null, so its realisers
 /// are the null niche's.
 @[runs("+{.0 = *{}}")]
-def optRefNiched() -> Bool = niched optRef;
+def optRefNiched() -> Bool = niched optRef
 
 /// `f`'s row: `Option<&u32>` and `u32` to `u32`.
-pub def fRow : Row = Row (Arg optRef (Arg (u32) NoCode)) (u32);
+pub def fRow : Row = Row (Arg optRef (Arg (u32) NoCode)) (u32)
 
 /// `Option<&u32>` as rustc printed it: one word, its discriminant in the
 /// reference's niche.
-def printedOptRef : Printed = Printed 8 8 true false;
+def printedOptRef : Printed = Printed 8 8 true false
 
 /// `u32` as rustc lays it out.
-def printedU32 : Printed = Printed 4 4 false false;
+def printedU32 : Printed = Printed 4 4 false false
 
 /// `f` as rustc built it.
 @[runs("Admitted")]

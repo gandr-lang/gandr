@@ -8,7 +8,7 @@
 // - see: `../../pathological/effects/state-laws.gandr` — unlawful handlers
 
 // The theories `StatePutLaws`, `StateGetGet` and `StatePutPut`.
-import "./state.gandr";
+import "./state.gandr"
 
 /// `counter` passes state through reads and stores.
 def counter() -> (Integer -> Integer) =

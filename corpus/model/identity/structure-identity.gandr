@@ -13,7 +13,7 @@
 /// [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
 // The booleans' path to themselves by negation, `negation`.
-import "./transport-list.gandr";
+import "./transport-list.gandr"
 
 /// A pair path has one path for each component.
 def corners : Path[.A = Integer * Integer] *{2, 3} *{2, 3} = *{Path.here 2, Path.here 3};

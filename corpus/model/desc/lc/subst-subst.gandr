@@ -10,11 +10,11 @@
 //! - see: #640
 
 // This source imports syntax and lemmas for lifted substitutions.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
-import "./congruence.gandr";
-import "./lookup-weaken.gandr";
-import "./subst-rename.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
+import "./congruence.gandr"
+import "./lookup-weaken.gandr"
+import "./subst-rename.gandr"
 
 /// Two substitutions at an abstraction are the abstraction of the body
 /// under both lifts, by conversion.

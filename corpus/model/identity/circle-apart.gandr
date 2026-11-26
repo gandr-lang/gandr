@@ -13,7 +13,7 @@
 /// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 // The empty type and the circle.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The loop is not the empty word.
 pub def loop_apart(e : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base)) -> Empty =

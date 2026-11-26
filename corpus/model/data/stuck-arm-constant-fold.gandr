@@ -9,7 +9,7 @@
 ///
 /// - see: #3090
 /// - see: #2831
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// A program either reads, branches into a first part and its rest, or stops.
 data E : Type where
@@ -40,10 +40,10 @@ def rec wp(e : E, k : Out -> Type) -> Type =
 def post : Out -> Type = fun (_o) { return Unit };
 
 /// This constant names the rest of `body`, another step of the fold.
-def arm : E = Br Get Stop;
+def arm : E = Br Get Stop
 
 /// This program reaches its rest through the constant `arm`.
-def body : E = Br Get arm;
+def body : E = Br Get arm
 
 /// This proof meets the rest's precondition.
 def afterRead(u : Unit) -> wp arm post =

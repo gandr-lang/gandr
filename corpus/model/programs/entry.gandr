@@ -13,7 +13,7 @@
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// The function counts strings in a list.
 pub def rec count(xs : List String) -> Integer =

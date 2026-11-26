@@ -10,7 +10,7 @@
 /// - see: #427 — `plusComm`
 
 // The integers, one successor more and one predecessor more.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The `plus` function adds two integers by recursion on its second argument.
 pub def rec plus(a : Int, b : Int) -> Int =

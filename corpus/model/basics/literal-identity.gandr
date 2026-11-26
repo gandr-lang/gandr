@@ -35,26 +35,26 @@ def decoded(c : Code) -> Type =
     | No => return Unit
 
 /// Two equal texts compare equal in a path.
-def texts_same : Path[.A = Bool] ("a" == "a") true = Path.here true;
+def texts_same : Path[.A = Bool] ("a" == "a") true = Path.here true
 
 /// Two different texts compare unequal.
-def texts_apart : Path[.A = Bool] ("a" == "ab") false = Path.here false;
+def texts_apart : Path[.A = Bool] ("a" == "ab") false = Path.here false
 
 /// Two equal integers compare equal.
-def integers_same : Path[.A = Bool] (7 == 7) true = Path.here true;
+def integers_same : Path[.A = Bool] (7 == 7) true = Path.here true
 
 /// Two different integers are unequal.
-def integers_different : Path[.A = Bool] (7 != 8) true = Path.here true;
+def integers_different : Path[.A = Bool] (7 != 8) true = Path.here true
 
 /// The code of a text comparison decodes in a type.
-def decoded_flag : decoded (ofFlag ("a" == "a")) = "x";
+def decoded_flag : decoded (ofFlag ("a" == "a")) = "x"
 
 /// The code of an integer inequality decodes in a type.
-def decoded_unequal : decoded (ofFlag (7 != 8)) = "x";
+def decoded_unequal : decoded (ofFlag (7 != 8)) = "x"
 
 /// The wrong answer is refused.
 @[refuses("EndpointMismatch")]
-def texts_wrong : Path[.A = Bool] ("a" == "a") false = Path.here false;
+def texts_wrong : Path[.A = Bool] ("a" == "a") false = Path.here false
 
 /// A test over a parameter stays a call.
 @[refuses("EndpointMismatch")]

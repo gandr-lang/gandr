@@ -31,7 +31,7 @@ pub theory Monoid where
   rule assoc : mul (mul x y) z <=> mul x (mul y z);
 
 /// The derived four-term associator holds in every monoid.
-rule Monoid.assoc4 : mul (mul (mul a b) c) d <=> mul a (mul b (mul c d));
+rule Monoid.assoc4 : mul (mul (mul a b) c) d <=> mul a (mul b (mul c d))
 
 /// A sign.
 pub data Sign : Type where
@@ -78,7 +78,7 @@ module Signs : Model(Monoid) where {
 }
 
 /// The `signs` value is the monoid model.
-def signs : Model Monoid = pack Signs at Model Monoid;
+def signs : Model Monoid = pack Signs at Model Monoid
 
 /// The derived associator gives a path from minus to minus.
 def assoc4Signs() -> Path Minus Minus =

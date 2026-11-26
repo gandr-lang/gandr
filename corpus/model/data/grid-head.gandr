@@ -11,7 +11,7 @@
 // - see: #3402
 
 // The naturals the dimensions count in.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// Grids of integers, indexed by their rows and their columns.
 pub data Grid : (r : Nat, c : Nat) --> Type where
@@ -46,7 +46,7 @@ def corner() -> Grid (Succ Zero) (Succ Zero) =
 
 /// The last cell of the corner as a row.
 @[runs("4")]
-def cornerRow() -> Integer = rowCell Zero (Succ Zero) corner;
+def cornerRow() -> Integer = rowCell Zero (Succ Zero) corner
 
 /// The last cell of the corner as a column.
 @[runs("4")]

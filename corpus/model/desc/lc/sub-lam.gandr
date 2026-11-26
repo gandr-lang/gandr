@@ -8,7 +8,7 @@
 //! - see: #640
 
 // The syntax and its substitution.
-import "./syntax.gandr";
+import "./syntax.gandr"
 
 /// A substitution applied to an abstraction is the abstraction of its body
 /// under the lifted substitution.

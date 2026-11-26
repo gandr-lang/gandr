@@ -9,13 +9,13 @@
 // - see: `float64` — floating-point operations.
 
 /// A suffix types the number.
-def half = 0.5f64;
+def half = 0.5f64
 
 /// So does an annotation: the low bound of a rubric's band.
-def low = (0.2 : f64);
+def low = (0.2 : f64)
 
 /// An annotation types a number written without a fraction.
-def trio = (3 : f64);
+def trio = (3 : f64)
 
 /// The exponential of a half, the same double on every host.
 @[runs("1.6487212707001282f64")]

@@ -8,7 +8,7 @@
 // - see: `greeting`, `shown` — definition lookup.
 
 /// A string, named.
-def greeting = "the value zone";
+def greeting = "the value zone"
 
 /// The named value, named again.
 @[runs("\"the value zone\"")]

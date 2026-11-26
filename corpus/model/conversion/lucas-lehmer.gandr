@@ -15,10 +15,10 @@
 //! [Boespflug-2011-full_reduction_at_full_throttle]: https://doi.org/10.1007/978-3-642-25379-9_26 "Boespflug, Dénès and Grégoire, Full Reduction at Full Throttle"
 
 // The free naturals and the numeral two.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The products, truncated subtraction and the numeral four.
-import "./conversion-base.gandr";
+import "./conversion-base.gandr"
 
 /// Two to the power `p`.
 def rec power(p : Nat) -> Nat =

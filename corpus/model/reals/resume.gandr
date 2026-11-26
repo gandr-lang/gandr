@@ -17,13 +17,13 @@
 //   scheduler
 
 // The console's host interface.
-import std.io;
+import std.io
 // The exact reals' host interface.
-import std.reals;
+import std.reals
 // The native list type.
-import std.list (List);
+import std.list (List)
 // The subject's shared declarations: `belowThreeHalves`.
-import "./reals-base.gandr";
+import "./reals-base.gandr"
 
 /// Step `machine` once for each element of `fuel` until it is no longer
 /// `exhausted`, and reply its last verdict.
@@ -37,7 +37,7 @@ pub def rec settle(machine : Integer, fuel : List Integer) -> [std.reals.Eff] St
     }
 
 /// Sixteen quanta of fuel.
-pub def sixteen : List Integer = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+pub def sixteen : List Integer = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 /// Whether two reports agree on their first three counters, place by place:
 /// the quanta, the obligations and the steps of the certificate.

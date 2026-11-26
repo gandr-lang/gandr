@@ -8,9 +8,9 @@
 // - see: #762 — `ixShiftAddsAtSum`
 
 // This source imports naturals, syntax and congruences.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
-import "./congruence.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
+import "./congruence.gandr"
 
 /// A shift by `k` sends `n` to `n + k`.
 pub def shiftAdds(n : N, k : N) -> Path (rlook n (RShift k)) (plus n k) =

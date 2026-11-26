@@ -16,7 +16,7 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The naturals and the lists.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// This function writes its `run` at the call and returns the list length.
 pub def rec length(a : Type, xs : List a) -> Nat =

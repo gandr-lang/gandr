@@ -8,7 +8,7 @@
 // - see: #726
 
 // The naturals' signature, `theory Nat`.
-import "./second-order-signatures.gandr";
+import "./second-order-signatures.gandr"
 
 /// A counting model of the imported naturals: the carrier is the integers,
 /// zero is `0` and the successor adds one.

@@ -5,7 +5,7 @@
 // The checker can select this model from a Boolean argument.
 //
 // - see: #739
-import "./model-resolution-tally.gandr";
+import "./model-resolution-tally.gandr"
 
 /// `Flips` toggles and resets a Boolean tally.
 module Flips : Model(ResetCount) where

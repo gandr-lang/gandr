@@ -13,7 +13,7 @@
 //! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
 // This source imports declarations for lists.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 /// `Repr` records where a string stores its bytes.
 /// It stores inline bytes or a shared heap buffer with a holder count.

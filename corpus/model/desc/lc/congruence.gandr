@@ -9,8 +9,8 @@
 //! - see: #640
 
 // This source imports naturals and syntax.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
 
 /// The successor, as a function `Path.ap` can take.
 pub def succOf(n : N) -> N =

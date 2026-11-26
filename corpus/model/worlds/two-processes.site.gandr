@@ -12,7 +12,7 @@
 //!
 //! - see: `two-processes.manifold.gandr`
 
-import std.manifold (Site);
+import std.manifold (Site)
 
 /// The far site, on a loopback socket.
 pub module Site : Model(Site) where

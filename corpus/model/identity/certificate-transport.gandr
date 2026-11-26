@@ -14,7 +14,7 @@
 /// [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]: https://doi.org/10.4204/EPTCS.372.23 "Behr and Kock, Tracelet Hopf Algebras and Decomposition Spaces"
 
 // The presented integers and `up`.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The root rule gives a certificate from `S(P(S x))` to `S x`.
 def atRoot(x : Int) -> Path[.A = Int] (S (P (S x))) (S x) =

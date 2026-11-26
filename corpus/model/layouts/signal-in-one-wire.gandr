@@ -13,7 +13,7 @@
 //! - see: #8333
 
 // `Signal` and `Wire`.
-import "../desc/rule-keeps-count.gandr";
+import "../desc/rule-keeps-count.gandr"
 
 /// The layout of a signal in one wire. Its carrier is the terms of `Wire`.
 @[form(explicit)]
@@ -45,8 +45,8 @@ pub def encodeSignal(s : Terms Signal) -> Terms Wire =
 
 /// The amber lamp runs to the low level.
 @[runs("Wire.low")]
-def amberEncoded() -> Terms Wire = encodeSignal Signal.amber;
+def amberEncoded() -> Terms Wire = encodeSignal Signal.amber
 
 /// The encoder gives the two joined lamps one level.
-def encodedAlike : Path[.A = Terms Wire] (encodeSignal Signal.amber) (encodeSignal Signal.green);
+def encodedAlike : Path[.A = Terms Wire] (encodeSignal Signal.amber) (encodeSignal Signal.green)
 def encodedAlike = Path.here Wire.low;

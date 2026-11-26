@@ -7,7 +7,7 @@
 // - see: `../../pathological/effects/rows.gandr` — row refusals
 
 // The theory `State.Eff`.
-import "./state.gandr";
+import "./state.gandr"
 
 /// `Sink` discards written computations.
 pub theory Sink where

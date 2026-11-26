@@ -9,7 +9,7 @@
 //! - see: #1224
 
 // The source imports the semigroup and monoid theories.
-import "./monoid.gandr";
+import "./monoid.gandr"
 
 /// `PointedMonoid` adds a chosen element to `Monoid`.
 theory PointedMonoid where

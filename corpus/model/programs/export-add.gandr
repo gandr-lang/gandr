@@ -8,7 +8,7 @@
 
 /// `add` gives the wrapping sum of two words.
 @[export]
-def add(a : u64, b : u64) -> u64 = u64.wrapping_add a b;
+def add(a : u64, b : u64) -> u64 = u64.wrapping_add a b
 
 /// The sum of two words that fit.
 @[runs("5u64")]

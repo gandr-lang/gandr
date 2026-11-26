@@ -21,13 +21,13 @@
 //   quantifier
 
 // The console's host interface.
-import std.io;
+import std.io
 // The lists of the reals' machine state, which the handler's stack names.
-import std.list;
+import std.list
 // The exact reals' host interface.
-import std.reals;
+import std.reals
 // The subject's shared declarations: `witnessed` and `decided`.
-import "./reals-base.gandr";
+import "./reals-base.gandr"
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.

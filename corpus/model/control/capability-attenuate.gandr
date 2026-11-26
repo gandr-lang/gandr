@@ -14,7 +14,7 @@
 //! [Dennis-1966-programming_semantics_for_multiprogrammed_computations]: https://doi.org/10.1145/365230.365252 "Dennis and Van Horn, Programming Semantics for Multiprogrammed Computations"
 
 // The filesystem's host interface.
-import std.fs;
+import std.fs
 
 /// `fs` gives the host read and write authority.
 @[owes(1)]

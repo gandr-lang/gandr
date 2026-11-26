@@ -8,8 +8,8 @@
 //! - see: #640
 
 // This source imports naturals and substitution syntax.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
 
 /// At the newest variable, the substitution of `b` is `b`.
 pub def subQSingle(b : Term) -> Path (subst (Ix Z) (Cons b (Shift Z))) b =

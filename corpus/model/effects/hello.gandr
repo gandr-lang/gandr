@@ -12,9 +12,9 @@
 // - see: #2970 — `std.authority`, `std.io`
 
 // `main` gets `Authority`. It opens a console.
-import std.authority (Authority, console);
+import std.authority (Authority, console)
 // `print` sends output through the console.
-import std.io (print);
+import std.io (print)
 
 /// `main` opens its console and prints a greeting.
 def main(authority : Authority) -> [std.io.Console.Eff] Unit =

@@ -23,7 +23,7 @@ module Metrics : *{type Ratio = Integer, base : Integer, double : Integer, scale
 
 /// `visible` tests an unsynthesised exported sum.
 @[refuses("NotSynthesisable")]
-def visible = Metrics.base + Metrics.double + Metrics.scale;
+def visible = Metrics.base + Metrics.double + Metrics.scale
 
 /// `wrapped` tests a record that names refused `visible`.
 @[refuses("UnknownConstant")]

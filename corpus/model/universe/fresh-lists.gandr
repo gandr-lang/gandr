@@ -11,10 +11,10 @@
 // - see: the Agda standard library, `Data.List.Fresh`
 
 // The naturals.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The type with no element.
-import "../data/empty.gandr";
+import "../data/empty.gandr"
 
 /// The pairs of two types, as data.
 @[checks, form(explicit)]
@@ -56,11 +56,11 @@ rec {
 
 /// The fresh list of one. Each natural is fresh for the empty list.
 @[checks]
-pub def freshOne : Fresh;
+pub def freshOne : Fresh
 def freshOne = FCons (Succ Zero) FNil *{};
 
 /// The fresh list of zero, then one. Its evidence is a pair at the type the
 /// freshness computes for the tail.
 @[checks]
-def freshZeroOne : Fresh;
+def freshZeroOne : Fresh
 def freshZeroOne = FCons Zero freshOne (MkBoth *{} *{});

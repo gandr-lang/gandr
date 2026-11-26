@@ -19,7 +19,7 @@
 // - see: #5713
 
 // The seeded generator, a model of the host interface of randomness.
-import std.rand (lcg);
+import std.rand (lcg)
 
 /// A word of four bits: two draws of two bits, the first draw high.
 @[distributes((

@@ -8,10 +8,10 @@
 //! writes the same lifetime in `fn pass<'a>(k: &'a T) -> &'a T`.
 //!
 //! - see: corpus/pathological/regions/outlived.gandr — a result past its region
-import std.process;
+import std.process
 
 /// `pass` returns its thunk at the same region.
-pub def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) = pure k;
+pub def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) = pure k
 
 /// `passed` forces the thunk that `pass` returns.
 @[runs("4")]

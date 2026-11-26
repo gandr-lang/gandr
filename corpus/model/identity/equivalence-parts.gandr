@@ -7,7 +7,7 @@
 /// A label pattern uses a fresh name when no variable name occurs.
 ///
 /// - see: corpus/model/identity/equivalence.gandr
-import "./equivalence.gandr";
+import "./equivalence.gandr"
 
 /// The `backOf` match reads the quasi-inverse backward map.
 def backOf(a : Type, b : Type, i : a ≅ b) -> b -> a =

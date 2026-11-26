@@ -11,10 +11,10 @@
 //   nineteen, past the step budget
 
 // The free naturals and their addition.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The numeral twelve.
-import "./conversion-base.gandr";
+import "./conversion-base.gandr"
 
 /// Fibonacci, the doubly recursive definition.
 def rec fib(n : Nat) -> Nat =

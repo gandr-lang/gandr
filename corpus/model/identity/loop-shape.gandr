@@ -11,7 +11,7 @@
 /// - see: corpus/model/identity/loop-winding.gandr
 
 // The presented integers.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The `CircleShape` theory gives the circle point and its loop operations.
 theory CircleShape where
@@ -38,7 +38,7 @@ def law_count(presented : Theory) -> Integer =
 
 /// The `shape_laws` run counts the two circle laws.
 @[runs("2")]
-def shape_laws() -> Integer = law_count CircleShape;
+def shape_laws() -> Integer = law_count CircleShape
 
 /// The `Winding` model interprets the circle shape with presented integers.
 pub module Winding : Model(CircleShape) where {

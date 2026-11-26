@@ -31,17 +31,17 @@ data Mark : Type where
   | Mark : (count : Peano, place : Point, shown : Bool, label : String) --> Mark
 
 /// The derivation compares point fields.
-def eqPoint = Eq.generic Point;
+def eqPoint = Eq.generic Point
 
 /// Every point is equal to itself under `eqPoint`.
-def reflPoint = Eq.generic.refl Point;
+def reflPoint = Eq.generic.refl Point
 
 /// The derivation compares naturals structurally at its stated type.
-def eqPeano : (Peano, Peano) -> Bool = Eq.generic Peano;
+def eqPeano : (Peano, Peano) -> Bool = Eq.generic Peano
 
 /// The derivation compares mark fields.
 /// It uses the count and point equalities.
-def eqMark = Eq.generic Mark;
+def eqMark = Eq.generic Mark
 
 /// `EqPoint` derives every member for `Point`.
 module EqPoint : Model(Eq) with sort Carrier = Point where {
@@ -58,19 +58,19 @@ module EqPoint : Model(Eq) with sort Carrier = Point where {
 
 /// One point is itself.
 @[runs("+{.0 = *{}}")]
-def samePoint() -> Bool = eqPoint (Point 1 2) (Point 1 2);
+def samePoint() -> Bool = eqPoint (Point 1 2) (Point 1 2)
 
 /// Two points with their coordinates swapped differ.
 @[runs("+{.1 = *{}}")]
-def swappedPoint() -> Bool = eqPoint (Point 1 2) (Point 2 1);
+def swappedPoint() -> Bool = eqPoint (Point 1 2) (Point 2 1)
 
 /// Two is two.
 @[runs("+{.0 = *{}}")]
-def samePeano() -> Bool = eqPeano (Next (Next Nought)) (Next (Next Nought));
+def samePeano() -> Bool = eqPeano (Next (Next Nought)) (Next (Next Nought))
 
 /// One is not two: the recursion reaches the nought on one side only.
 @[runs("+{.1 = *{}}")]
-def shorterPeano() -> Bool = eqPeano (Next Nought) (Next (Next Nought));
+def shorterPeano() -> Bool = eqPeano (Next Nought) (Next (Next Nought))
 
 /// Two marks alike in every field.
 @[runs("+{.0 = *{}}")]
@@ -102,7 +102,7 @@ def relabelledMark() -> Bool =
 
 /// One point is itself under `==`.
 @[runs("+{.0 = *{}}")]
-def samePointUnderEq() -> Bool = Point 1 2 == Point 1 2;
+def samePointUnderEq() -> Bool = Point 1 2 == Point 1 2
 
 /// Two points apart in one coordinate under `==`.
 @[runs("+{.1 = *{}}")]

@@ -14,10 +14,10 @@
 //! - see: Aczel's hierarchy
 
 // The type with no element.
-import "../data/empty.gandr";
+import "../data/empty.gandr"
 
 // The naturals and the two branches of a pair.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 /// A set has a member type and a member function.
 @[checks, form(explicit)]
@@ -53,12 +53,12 @@ def absurdSet(e : Empty) -> -F Vinf =
 
 /// The `none` function has no member to select.
 @[checks]
-def none(x : Empty) -> -F Vinf = absurdSet x;
+def none(x : Empty) -> -F Vinf = absurdSet x
 
 /// The `zero` definition is the empty set.
 @[checks]
-def zero : Vinf;
-def zero = Sup Empty none;
+def zero : Vinf
+def zero = Sup Empty none
 
 /// The `single` function defines a one-member set.
 @[checks]

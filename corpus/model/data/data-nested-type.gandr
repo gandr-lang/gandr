@@ -6,9 +6,9 @@
 //
 // - see: #1544 — `sum_first`
 
-import "./data-maybe.gandr";
+import "./data-maybe.gandr"
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// `sum_first` binds a list of optional integers and returns seven.
 /// Its list annotation gives each element type `Maybe(Integer)`.

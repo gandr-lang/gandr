@@ -7,7 +7,7 @@
 //!
 //! - see: entry.gandr — the program entry definition
 
-import "./entry.gandr";
+import "./entry.gandr"
 
 /// `draft` counts no arguments, then reaches the `rest` hole.
 @[runs("reached a hole")]

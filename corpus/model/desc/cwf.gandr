@@ -128,7 +128,7 @@ pub module Standard : Model(CwF) where
     fun (z) { *{s z, t z} }
 
 /// A family over the integers that is `Bool` at every point.
-def flags(_n : Integer) -> Type = return Bool;
+def flags(_n : Integer) -> Type = return Bool
 
 /// The newest variable reads the second point of a pair.
 @[runs("+{.0 = *{}}")]

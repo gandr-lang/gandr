@@ -14,10 +14,10 @@
 //! [Gregoire-2002-a_compiled_implementation_of_strong_reduction]: https://doi.org/10.1145/581478.581501 "Grégoire and Leroy, A compiled implementation of strong reduction"
 
 // The free naturals and their addition.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The products and the numerals eight and sixteen.
-import "./conversion-base.gandr";
+import "./conversion-base.gandr"
 
 /// Apply `s` to `z` as many times as `n` counts.
 def rec iterate(n : Nat, s : Nat -> Nat, z : Nat) -> Nat =

@@ -9,7 +9,7 @@
 //! - see: `forced.gandr` — a task whose reply waits on its request
 //! - see: #3338 — the run trace and the web a source states for a channel
 // The import gives the task protocols.
-import "./task-base.gandr";
+import "./task-base.gandr"
 
 /// A parent joins two tasks in reverse fork order.
 @[runs("*{}"), traces(primes scout 0), traces(primes scribe 0)]

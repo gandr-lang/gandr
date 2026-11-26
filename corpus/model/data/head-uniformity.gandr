@@ -11,7 +11,7 @@
 // - see: #3404
 
 // The naturals the lengths count in.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// Lists of a type at a length, whose empty list holds integers only.
 data Fixed : (a : Type, n : Nat) --> Type[+, 1] where

@@ -8,7 +8,7 @@
 ///
 /// - see: corpus/model/identity/compose-chain.gandr
 /// - see: corpus/model/identity/then.gandr
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The right nesting of three paths equals their unbiased composite.
 def rightNested(

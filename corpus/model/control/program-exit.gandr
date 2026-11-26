@@ -7,7 +7,7 @@
 // - see: IEEE Std 1003.1-2017, `exit`
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// The process capability, owed by the host that grants it.
 @[owes(1)]

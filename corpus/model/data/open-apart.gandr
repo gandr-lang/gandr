@@ -11,7 +11,7 @@
 //! [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory]: https://doi.org/10.1017/S095679681800014X "Cockx and Devriese, Proof-relevant unification: dependent pattern matching with only the axioms of your type theory"
 
 // The free naturals.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// Zero is no successor, whatever `n` is: the endpoints differ at their heads.
 def zeroNotSucc(n : Nat, e : Path Zero (Succ n)) -> Nat =

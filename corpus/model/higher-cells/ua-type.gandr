@@ -12,9 +12,9 @@
 // - owes: #520 — the path between the two paths
 
 // The magma, the swap and the unit's identity.
-import "./magma-base.gandr";
+import "./magma-base.gandr"
 // Univalence over the user universe: `idtoequiv`, `univalence`.
-import "../identity/univalence.gandr";
+import "../identity/univalence.gandr"
 
 /// `AtStratum` records the magma degree telescope and its swap path.
 pub module AtStratum where

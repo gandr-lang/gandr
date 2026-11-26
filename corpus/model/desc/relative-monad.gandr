@@ -17,7 +17,7 @@
 //! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]: https://doi.org/10.1145/3720434 "Jiang, Xue and New, Notions of Stack-Manipulating Computation and Relative Monads"
 
 // This source imports values from the option monad.
-import "../data/data-maybe.gandr";
+import "../data/data-maybe.gandr"
 
 /// The left-unit rule passes a returned value to its continuation.
 theory MonadLeftUnit where
@@ -47,7 +47,7 @@ pub theory RelativeMonad where
   rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
 
 /// `ret` returns a present option value.
-def ret(A : Type, a : A) -> Maybe A = Some a;
+def ret(A : Type, a : A) -> Maybe A = Some a
 
 /// `ext` runs its computation once, first. It then passes a present value to
 /// its continuation and keeps an absent value.

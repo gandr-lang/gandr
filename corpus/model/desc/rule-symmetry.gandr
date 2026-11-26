@@ -80,7 +80,7 @@ pub def rec poll(t : Terms Tally) -> Terms Vote =
 
 /// A meet whose left side is the full tally runs to its right side.
 @[runs("Vote.aye")]
-def polled() -> Terms Vote = poll (Tally.meet Tally.all Tally.all);
+def polled() -> Terms Vote = poll (Tally.meet Tally.all Tally.all)
 
 /// A rule that rewrites still decides a path beside the symmetry.
 def absorbed : Path (Tally.meet Tally.none Tally.all) Tally.none = Path.here Tally.none;

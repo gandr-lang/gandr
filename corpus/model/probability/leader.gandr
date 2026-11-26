@@ -19,19 +19,19 @@
 //   operations offered to the run's host
 
 // The host interface of randomness.
-import std.rand;
+import std.rand
 
 /// The world the caller stands at.
-pub world desk;
+pub world desk
 
 /// The first world that draws.
-pub world east requires [std.rand.Eff];
+pub world east requires [std.rand.Eff]
 
 /// The second world that draws.
-pub world south requires [std.rand.Eff];
+pub world south requires [std.rand.Eff]
 
 /// The third world that draws.
-pub world west requires [std.rand.Eff];
+pub world west requires [std.rand.Eff]
 
 /// The number of the world with the greatest draw, from 1 to 3. Two draws that
 /// tie for the greatest give 0.

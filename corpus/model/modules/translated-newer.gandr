@@ -22,10 +22,10 @@ pub theory Newer where
   oper count : Integer;
 
 /// The newer version's reply.
-pub def reply : Integer = 42;
+pub def reply : Integer = 42
 
 /// How many replies the newer version keeps count of.
-pub def count : Integer = 3;
+pub def count : Integer = 3
 
 /// The newer version read at the older signature: the answer is the reply.
 pub flow downgrade : Newer ~~> Older where

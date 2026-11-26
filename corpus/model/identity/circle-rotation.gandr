@@ -10,12 +10,12 @@
 /// `invS¹Path` need univalence as well.
 ///
 /// - see: corpus/model/identity/circle-group.gandr
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // The loop is not the empty word.
-import "./circle-apart.gandr";
+import "./circle-apart.gandr"
 
 /// The square of the unit has reflexivity at the circle point.
-def unitSquared : Path (mul Base Base) (mul Base Base) = Path.here Base;
+def unitSquared : Path (mul Base Base) (mul Base Base) = Path.here Base
 
 /// The `rotInv1` cases prove rotation by `b` then its inverse returns `a`.
 /// The proof owes no square of the two loops, because the circle's paths are

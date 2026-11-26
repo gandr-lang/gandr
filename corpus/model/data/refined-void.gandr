@@ -14,7 +14,7 @@
 /// - see: `refined-binder.gandr`
 
 // The naturals.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// The family that is `Void` at zero and `Unit` past it.
 pub def isVoid(n : Nat) -> Type =

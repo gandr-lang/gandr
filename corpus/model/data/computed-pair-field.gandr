@@ -44,7 +44,7 @@ def nestedTwin(k : Count) -> twinType Z =
   MkTwin Z (MkTwin Z *{})
 
 /// The same pair, written as a signature and a definition.
-def signedTwin : twinType Z = MkTwin Z (MkTwin Z *{});
+def signedTwin : twinType Z = MkTwin Z (MkTwin Z *{})
 
 /// The inner pair at its written type.
 def ascribedTwin(k : Count) -> twinType Z =
@@ -73,7 +73,7 @@ def rec spineType(spine : Spine) -> Type =
     | Done => return Unit
 
 /// A value two steps deep.
-def spineTwo : spineType (More (More Done)) = MkLayer "x" (MkLayer "y" *{});
+def spineTwo : spineType (More (More Done)) = MkLayer "x" (MkLayer "y" *{})
 
 /// A value three steps deep.
 def spineThree : spineType (More (More (More Done))) = MkLayer "x" (MkLayer "y" (MkLayer "z" *{}));

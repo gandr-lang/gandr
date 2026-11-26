@@ -24,12 +24,12 @@ module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
 
 /// The literal read in a body, which runs the reader's call.
 @[runs("Lit 5")]
-def body() -> Expr = 5;
+def body() -> Expr = 5
 
 /// The literal as the definition's own value, which stands as what the
 /// reader's call returns.
 @[runs("Lit 5")]
-def leaf : Expr = 5;
+def leaf : Expr = 5
 
 /// This body reads `leaf` and runs its reader call again.
 @[runs("Lit 5")]

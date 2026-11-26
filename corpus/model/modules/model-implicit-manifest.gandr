@@ -46,7 +46,7 @@ def flipOnce[s : Model Dial with sort C = Bool]() -> Integer =
 
 /// `turnedUp` selects `Up`.
 @[runs("1")]
-def turnedUp() -> Integer = upOnce;
+def turnedUp() -> Integer = upOnce
 
 /// `turnedOver` selects `Flips`.
 @[runs("1")]

@@ -8,10 +8,10 @@
 ///
 /// - see: #3045
 /// - see: #2831
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 // The heaps and `emp`, the type of evidence that a heap is empty.
-import "./stuck-arm-call.gandr";
+import "./stuck-arm-call.gandr"
 
 /// The record type over a call that pairs a natural with evidence that
 /// `h` is empty.

@@ -52,17 +52,17 @@ def conj(a : Terms Truth, b : Terms Truth) -> Terms Truth =
 /// - see: #8278
 def unitWritten(b : Terms Truth) -> Path (encode
   b) (BitWord.band BitWord.one (encode b)) = Path.here
-  (encode b);
+  (encode b)
 
 /// The same path, where the point is the term that the rule reads.
 def unitAtTheTerm(b : Terms Truth) -> Path (encode
   b) (BitWord.band BitWord.one (encode b)) = Path.here
-  (BitWord.band BitWord.one (encode b));
+  (BitWord.band BitWord.one (encode b))
 
 /// The unit rule answers a stuck call, where the unit is the result of a call.
 def unitCalled(b : Terms Truth) -> Path (encode
   b) (BitWord.band (encode Truth.yes) (encode b)) = Path.here
-  (encode b);
+  (encode b)
 
 /// The encoder carries a conjunction to `band`, by the rules alone.
 def homomorphism(a : Terms Truth, b : Terms Truth) -> Path (encode (conj a b)) (

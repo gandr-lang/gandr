@@ -13,7 +13,7 @@
 // - see: `cat-shape.gandr` — the same theory with its associator a rule
 
 // `assoc` is the associator of path composition.
-import std.math.path (assoc);
+import std.math.path (assoc)
 
 /// `Circle` has one point and one loop.
 data Circle : Type where

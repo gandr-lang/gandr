@@ -18,14 +18,14 @@
 //! - see: `../../../crates/boot-core/src/search.rs` — the Rust functions
 
 // The bytes of a memory of `Extent`.
-import std.list (List);
+import std.list (List)
 // The interface of memory, and its model in the source.
-import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent);
+import std.ptr (Ptr, Memory, Ended, Gave, Kept, Outside, Extent)
 // The ranges, the answer of a search, and the lists of bytes of a run.
-import "./ranges.gandr";
+import "./ranges.gandr"
 
 /// `true` when the byte `left` is the byte `right`.
-def same(left : u8, right : u8) -> Bool = u8.to_integer left == u8.to_integer right;
+def same(left : u8, right : u8) -> Bool = u8.to_integer left == u8.to_integer right
 
 /// The position of the first byte `byte` in the `left` bytes from `here` on,
 /// counted from `position`.

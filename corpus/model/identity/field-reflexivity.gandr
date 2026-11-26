@@ -29,7 +29,7 @@ def rec twofold(n : Count) -> Count =
 /// The field holds reflexivity at the path type that `twofold Z` computes.
 def reflField : Held Unit (fun (u) { return (type(Path[.A = Count] (twofold Z) Z)) }) = MkHeld
   *{}
-  (Path.here Z);
+  (Path.here Z)
 
 /// The written path type holds the same reflexivity.
 def reflWritten : Path[.A = Count] (twofold Z) Z = Path.here Z;

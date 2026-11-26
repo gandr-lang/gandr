@@ -90,10 +90,10 @@ pub def there(t : Terms Truth) -> Path (decode (encode t)) t =
 
 /// A conjunction of bits whose left side is one runs to its right side.
 @[runs("Truth.yes")]
-def decoded() -> Terms Truth = decode (Bit.band Bit.one Bit.one);
+def decoded() -> Terms Truth = decode (Bit.band Bit.one Bit.one)
 
 /// Two bit terms that a rule joins are one value.
-def joined : Path (Bit.band Bit.one Bit.zero) Bit.zero = Path.here Bit.zero;
+def joined : Path (Bit.band Bit.one Bit.zero) Bit.zero = Path.here Bit.zero
 
 /// The encoder carries a conjunction of truth values to `band`. Each arm
 /// holds by the rules of `Bit` alone.

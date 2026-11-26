@@ -17,11 +17,11 @@
 ///   dimension one
 
 // The 2-sphere and the 3-sphere.
-import "./sphere.gandr";
+import "./sphere.gandr"
 // The identity of the 3-sphere by cases.
-import "./sphere-maps.gandr";
+import "./sphere-maps.gandr"
 // The integers and the circle.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// A case with no arm at the 3-cell sends the 3-cell to reflexivity.
 def flat3(x : S3) -> S3 =
@@ -42,14 +42,14 @@ pub def rec wind3(
 /// The degree of the identity is one.
 ///
 /// - see: #6807 — the run of `wind3 (Path.ap sphereId3 surf3)` to `S Z`
-def xiId3 : Path[.A = Int] (wind3 (Path.ap sphereId3 surf3)) (S Z) = Path.here (S Z);
+def xiId3 : Path[.A = Int] (wind3 (Path.ap sphereId3 surf3)) (S Z) = Path.here (S Z)
 
 /// The degree of a map with no arm at the 3-cell is zero.
-def xiFlat3 : Path[.A = Int] (wind3 (Path.ap flat3 surf3)) Z = Path.here Z;
+def xiFlat3 : Path[.A = Int] (wind3 (Path.ap flat3 surf3)) Z = Path.here Z
 
 /// The degree of the identity is not zero.
 @[refuses("EndpointMismatch")]
-def xiIdZero : Path[.A = Int] (wind3 (Path.ap sphereId3 surf3)) Z = Path.here Z;
+def xiIdZero : Path[.A = Int] (wind3 (Path.ap sphereId3 surf3)) Z = Path.here Z
 
 /// `xi m` is the degree of the pointed map `m`. The transport along the
 /// pointing carries the image of the 3-cell to the 3-cells at the point.
@@ -65,10 +65,10 @@ pub def xi(m : *{f : S3 -> S3, p : Path[.A = S3] (f Base3) Base3}) -> Int =
         (Path.ap f surf3))
 
 /// The identity, pointed by reflexivity, has degree one.
-def xiPointedId3 : Path[.A = Int] (xi *{sphereId3, Path.here Base3}) (S Z) = Path.here (S Z);
+def xiPointedId3 : Path[.A = Int] (xi *{sphereId3, Path.here Base3}) (S Z) = Path.here (S Z)
 
 /// The flat map, pointed by reflexivity, has degree zero.
-def xiPointedFlat3 : Path[.A = Int] (xi *{flat3, Path.here Base3}) Z = Path.here Z;
+def xiPointedFlat3 : Path[.A = Int] (xi *{flat3, Path.here Base3}) Z = Path.here Z
 
 /// The identity, pointed by reflexivity, does not have degree zero.
 @[refuses("EndpointMismatch")]

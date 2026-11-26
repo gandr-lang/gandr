@@ -13,7 +13,7 @@
 //! - see: #8330
 
 // `Hollow`.
-import "rule-symmetry-apart.gandr";
+import "rule-symmetry-apart.gandr"
 
 /// A signal of three lamps, where the amber lamp and the green lamp are one.
 pub theory Signal where
@@ -40,7 +40,7 @@ pub theory Wire where
 /// The two joined lamps are one term.
 ///
 /// - see: #8330
-def joined : Path[.A = Terms Signal] Signal.amber Signal.green = Path.here Signal.green;
+def joined : Path[.A = Terms Signal] Signal.amber Signal.green = Path.here Signal.green
 
 /// The level of each lamp. The two joined lamps have one level, so the case
 /// respects the rule.
@@ -52,7 +52,7 @@ pub def level(s : Terms Signal) -> Terms Wire =
 
 /// The amber lamp runs to the low level.
 @[runs("Wire.low")]
-def amberLevel() -> Terms Wire = level Signal.amber;
+def amberLevel() -> Terms Wire = level Signal.amber
 
 /// The red lamp and the green lamp are apart: no rule joins them.
 def redApart(e : Path[.A = Terms Signal] Signal.red Signal.green) -> Hollow =

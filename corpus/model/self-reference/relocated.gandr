@@ -9,7 +9,7 @@
 //!
 //! A polled Rust future cannot make this move.
 //! - see: #1183 — `relocated`
-import std.process;
+import std.process
 
 /// `relocated` resumes a captured access from a higher stack frame.
 @[runs("112")]

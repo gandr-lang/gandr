@@ -25,7 +25,7 @@
 //   kernel's memo on the pair that the kernel builds.
 
 /// Level 0: the pair's base.
-pub type T0 = Unit;
+pub type T0 = Unit
 
 /// Level 1: two fields of level 0.
 pub type T1 = *{l : T0, r : T0};

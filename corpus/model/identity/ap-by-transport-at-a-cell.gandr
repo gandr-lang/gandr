@@ -14,7 +14,7 @@
 // - see: #5481 — `alongFlipped`, `alongKept`
 
 // The circle and its flip, `invLooper`.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// A map's action on a path by transport, with its carriers and its endpoints
 /// as parameters.
@@ -37,7 +37,7 @@ def alongFlipped : Path[.A = Path[.A = Circle] Base Base] (carry
   invLooper
   Base
   Base
-  loop) (Path.back loop) = Path.here (Path.back loop);
+  loop) (Path.back loop) = Path.here (Path.back loop)
 
 /// The transport and the native action agree at the loop.
 def alongFlippedNative : Path[.A = Path[.A = Circle] Base Base] (carry
@@ -46,7 +46,7 @@ def alongFlippedNative : Path[.A = Path[.A = Circle] Base Base] (carry
   invLooper
   Base
   Base
-  loop) (Path.ap invLooper loop) = Path.here (Path.ap invLooper loop);
+  loop) (Path.ap invLooper loop) = Path.here (Path.ap invLooper loop)
 
 /// The same agreement at a map whose loop arm is the loop's name.
 def alongKept : Path[.A = Path[.A = Circle] Base Base] (carry
@@ -55,7 +55,7 @@ def alongKept : Path[.A = Path[.A = Circle] Base Base] (carry
   keepLoop
   Base
   Base
-  loop) (Path.ap keepLoop loop) = Path.here (Path.ap keepLoop loop);
+  loop) (Path.ap keepLoop loop) = Path.here (Path.ap keepLoop loop)
 
 /// Over a path parameter the transport and the native action agree, as before.
 def alongParameter(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (

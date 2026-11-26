@@ -18,10 +18,10 @@
 //! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
 // `Nat`.
-import "../../data/data-base.gandr";
+import "../../data/data-base.gandr"
 
 // `Maybe`.
-import "../../data/data-maybe.gandr";
+import "../../data/data-maybe.gandr"
 
 /// A Rust value as a forest, and the fields of a tree.
 rec {
@@ -277,14 +277,14 @@ pub def someArm : MemExpr = Seq
   (Assign
     (Index (Field (Deref (Succ Zero)) (Succ Zero)) (Succ (Succ Zero)))
     (Read (Field (Index (Field (Deref (Succ Zero)) Zero) Zero) Zero)))
-  (SomeE (Var Zero));
+  (SomeE (Var Zero))
 
 /// `pop`'s body, its locals `self` then `order`, and `b` inside the arm
 /// that binds it.
 pub def popBody : MemExpr = MatchOpt
   (Read (Index (Field (Deref Zero) (Succ Zero)) (Succ Zero)))
   NoneE
-  someArm;
+  someArm
 
 /// The receiver: the blocks, then the heads.
 pub def buddy(blocks : Vals, heads : Vals) -> Val =

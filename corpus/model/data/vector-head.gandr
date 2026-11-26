@@ -16,10 +16,10 @@
 //! [Cockx-2016-unifiers_as_equivalences]: https://doi.org/10.1145/2951913.2951917 "Cockx, Devriese and Piessens, Unifiers as equivalences"
 
 // The naturals the lengths count in.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 // The vectors and the vector two long.
-import "./vectors.gandr";
+import "./vectors.gandr"
 
 /// `vhead` reads a vector at least one element long.
 /// It omits `VNil` because zero is apart from `Succ(n)`.

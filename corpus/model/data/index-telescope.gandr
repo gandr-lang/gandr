@@ -8,7 +8,7 @@
 /// Type` is the same telescope with no names.
 ///
 /// - see: #4022
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// The types of a simply typed object language.
 data ObjTy : Type where

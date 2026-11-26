@@ -17,9 +17,9 @@
 //! [Fiore-2010-second_order_equational_logic]: https://doi.org/10.1007/978-3-642-15205-4_26 "Fiore and Hur, Second-Order Equational Logic"
 
 // The theories `State.Eff` and `StatePutPut`.
-import "./state.gandr";
+import "./state.gandr"
 // The counts, three states, and their negation, a path between types.
-import "../identity/model-counter.gandr";
+import "../identity/model-counter.gandr"
 
 /// `Passing` uses the current integer as its state.
 module Passing : Model(State.Eff) with sort S = Integer where
@@ -76,7 +76,7 @@ def negated : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (
     type(Model State.Eff with sort S = x with sort C = (x -> Integer))
   })
   countsNegated
-  passing;
+  passing
 
 /// `putGet` runs a model that stores and reads a count.
 def putGet(
@@ -93,7 +93,7 @@ def putGet(
 
 /// `direct` runs `putGet` through `passing`.
 @[runs("11")]
-def direct() -> Integer = putGet passing;
+def direct() -> Integer = putGet passing
 
 /// `carried` runs `putGet` through `negated`.
 def carried() -> Integer = putGet negated;

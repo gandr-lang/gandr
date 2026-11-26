@@ -11,9 +11,9 @@
 //! [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs]: https://doi.org/10.1017/S0956796820000076 "Allais et al., A type- and scope-safe universe of syntaxes with binding: their semantics and proofs"
 
 // This source imports naturals, syntax and congruences.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
-import "./congruence.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
+import "./congruence.gandr"
 
 /// The lifts preserve pointwise agreement of `a1`, `a2` and `a3`.
 def renameRenameLift(

@@ -9,8 +9,8 @@
 ///
 /// - see: #3042
 /// - see: #2832
-import "./data-base.gandr";
-import "./stuck-arm-call.gandr";
+import "./data-base.gandr"
+import "./stuck-arm-call.gandr"
 
 /// This function gives the heap past the first cell, or the empty heap.
 def tailOf(h : Heap) -> Heap =

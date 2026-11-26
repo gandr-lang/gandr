@@ -9,7 +9,7 @@
 //! - see: `../../../crates/boot-core/src/lib.rs` — the Rust types
 
 // The bytes of a memory of `Extent`.
-import std.list (List);
+import std.list (List)
 
 /// The length of a range: one step for each byte.
 pub data Length : Type where

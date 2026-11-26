@@ -19,15 +19,15 @@
 //   quantifier
 
 // The console's host interface.
-import std.io;
+import std.io
 // The exact reals' host interface.
-import std.reals;
+import std.reals
 // The subject's shared declarations: `decided`.
-import "./reals-base.gandr";
+import "./reals-base.gandr"
 
 /// The canonical bytes of the plan of `∀ x ∈ [0, 1] (x · x < 2)` in
 /// lowercase hexadecimal: 6 nodes in 110 bytes, the magic `GXRP` first.
-pub def covered : String = "4758525001000600000000000000200001000000000000000000000000000100000000010000000000000001000101000000010200000001000000000501000000010000000201000000010000000000000001120200000003000000160000000004000000020000000101000000";
+pub def covered : String = "4758525001000600000000000000200001000000000000000000000000000100000000010000000000000001000101000000010200000001000000000501000000010000000201000000010000000000000001120200000003000000160000000004000000020000000101000000"
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.

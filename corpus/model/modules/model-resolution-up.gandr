@@ -5,7 +5,7 @@
 // The checker can select this model from an integer argument.
 //
 // - see: #739
-import "./model-resolution-tally.gandr";
+import "./model-resolution-tally.gandr"
 
 /// `Up` counts integers by one.
 module Up : Model(Count) where

@@ -17,9 +17,9 @@ module Desk where
   type Ask = Integer >? end;
 
 /// The seat's side of a one-number report, named at the top level.
-type Tell = Integer >! end;
+type Tell = Integer >! end
 /// `Report` names the seat's side as `Tell` does.
-type Report = Tell;
+type Report = Tell
 
 /// A desk that hears one number on the endpoint a module's protocol names.
 def hearsOne(operator : Desk.Ask) -> Integer =

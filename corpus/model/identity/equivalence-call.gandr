@@ -7,7 +7,7 @@
 /// The `run` binder requires no written type.
 ///
 /// - see: #656 — `keptToEquiv`, `madeAgain`
-import "./equivalence.gandr";
+import "./equivalence.gandr"
 
 /// The `kept` function returns its quasi-inverse unchanged.
 def kept(a : Type, b : Type, i : a ≅ b) -> a ≅ b =

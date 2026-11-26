@@ -15,10 +15,10 @@
 //! - see: `crates/surface-driver/tests/net.rs`
 
 /// The world the entry runs at.
-pub world near;
+pub world near
 
 /// The world the work runs at, in the process that its binding names.
-pub world far;
+pub world far
 
 /// `far` computes forty-two and holds it. A second migration reads it there
 /// again.

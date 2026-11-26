@@ -12,12 +12,12 @@
 //! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
 
 // This source imports declarations for lists, bytes, ownership and writes.
-import "../data/data-base.gandr";
-import "./string-base.gandr";
-import "./nul-terminated.gandr";
-import "./small-string.gandr";
-import "./copy-on-write.gandr";
-import "./unique-write.gandr";
+import "../data/data-base.gandr"
+import "./string-base.gandr"
+import "./nul-terminated.gandr"
+import "./small-string.gandr"
+import "./copy-on-write.gandr"
+import "./unique-write.gandr"
 
 /// `Str` groups one method for each receiver mode.
 pub module Str where

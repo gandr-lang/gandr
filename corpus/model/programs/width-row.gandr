@@ -12,10 +12,10 @@
 // - see: #8300 — the wasm driver runs a width row
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// `wrapped` adds 3 to the greatest `u32` and wraps the sum.
-def wrapped() -> u32 = u32.wrapping_add 4294967295u32 3u32;
+def wrapped() -> u32 = u32.wrapping_add 4294967295u32 3u32
 
 /// `main` returns the wrapped sum as its exit code.
 def main(args : List String) -> Integer =

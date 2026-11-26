@@ -12,7 +12,7 @@
 // - see: `compose-chain.gandr` — unbiased composition of a chain
 
 // The circle, its point and its loop.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
 def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A] x y) -> Path[.A = Path[.A = A] x y] f f =

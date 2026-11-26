@@ -15,14 +15,14 @@
 //! [Gay-2005-subtyping_session_types_pi_calculus]: https://doi.org/10.1007/s00236-005-0177-z "Gay and Hole, Subtyping for Session Types in the Pi Calculus"
 
 // The native session formers.
-import std.session (Prefix);
+import std.session (Prefix)
 
 // The seat's protocol, its messages and the widening.
-import "./seat-evolution.gandr";
+import "./seat-evolution.gandr"
 
 // The open play `reporting` has the task and report moves.
 // Its next move offers continuation or retirement.
-import "./seat-prefix.gandr";
+import "./seat-prefix.gandr"
 
 /// An open play ridden forward along the simulation.
 def carried(play : Prefix Seat.SeatEnd) -> Prefix Evolution.SeatEnd′ =

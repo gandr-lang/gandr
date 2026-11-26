@@ -10,7 +10,7 @@
 //! - see: HoTT Book §1.12.1
 
 // The free naturals.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// Reflexivity at `q`, by transport along `q` in the family of each path's
 /// reflexivity.

@@ -17,9 +17,9 @@
 /// - see: #4618 — `spunComm`
 /// - see: #426 — `comm`
 // The circle, the integers, winding, spinning and the round trip `sect`.
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 // The integers' sum and its laws.
-import "./int-sum.gandr";
+import "./int-sum.gandr"
 
 /// The successor case adds one loop by computation.
 def spinUp(n : Int) -> Path[.A = Path[.A = Circle] Base Base] (spin (S n)) (loop ∷ spin n) =
@@ -78,7 +78,7 @@ def comm(
 
 /// Spinning and winding three loops returns three.
 @[runs("S (S (S Z))")]
-def windThree : () -> Int = wind (spin (S (S (S Z))));
+def windThree : () -> Int = wind (spin (S (S (S Z))))
 
 /// Spinning and winding two inverse loops returns minus two.
 @[runs("P (P Z)")]

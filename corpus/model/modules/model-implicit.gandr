@@ -43,10 +43,10 @@ module Tens : Model(ResetTally) where
   def reset(c : Integer) -> Integer = 0;
 
 /// `stepped` reads one tally step.
-def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c);
+def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c)
 
 /// `further` passes its model to `stepped`.
-def further[t : Model Tally](c : t.C) -> Integer = stepped[.s = t] (t.incr c);
+def further[t : Model Tally](c : t.C) -> Integer = stepped[.s = t] (t.incr c)
 
 /// `fromZero` reads one integer tally step from zero.
 def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
@@ -54,15 +54,15 @@ def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
 
 /// `suppliedUp` passes `Up`.
 @[runs("5")]
-def suppliedUp() -> Integer = stepped[.s = Up] 4;
+def suppliedUp() -> Integer = stepped[.s = Up] 4
 
 /// `suppliedTens` passes the `Tens` reduct.
 @[runs("14")]
-def suppliedTens() -> Integer = stepped[.s = Tens] 4;
+def suppliedTens() -> Integer = stepped[.s = Tens] 4
 
 /// `passedOn` passes `Tens` through `further`.
 @[runs("24")]
-def passedOn() -> Integer = further[.t = Tens] 4;
+def passedOn() -> Integer = further[.t = Tens] 4
 
 /// `manifest` passes `Up` at its manifest carrier.
 @[runs("1")]

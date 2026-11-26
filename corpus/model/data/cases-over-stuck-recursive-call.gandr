@@ -11,8 +11,8 @@
 ///
 /// - see: #3086
 /// - see: #879
-import "./data-base.gandr";
-import "./data-maybe.gandr";
+import "./data-base.gandr"
+import "./data-maybe.gandr"
 
 /// This function gives zero at a present natural.
 def first(m : Maybe Nat) -> Maybe Nat =

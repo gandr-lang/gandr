@@ -13,7 +13,7 @@
 //! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
 // The source imports definitions for lists.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 /// `node` reads the integer at an arena index.
 def rec node(nodes : List Integer, i : Integer) -> Integer =

@@ -12,11 +12,11 @@
 //! - see: #8311
 
 // `Tally`, its two rules that rewrite, and its symmetry.
-import "./rule-symmetry.gandr";
+import "./rule-symmetry.gandr"
 
 /// The two orders of a meet of two variables are one term.
 def swapped(x : Terms Tally, y : Terms Tally) -> Path (Tally.meet x y) (Tally.meet y x) = Path.here
-  (Tally.meet x y);
+  (Tally.meet x y)
 
 /// The crossed pairing joins two meets below a second meet also.
 def swappedBelow(x : Terms Tally, y : Terms Tally, z : Terms Tally) -> Path (Tally.meet

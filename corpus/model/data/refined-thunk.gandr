@@ -37,7 +37,7 @@ def holds(c : C) -> Type =
     | B => return (Branch -> Branch)
 
 /// The identity on the branches.
-def idTwo(u : Branch) -> Branch = u;
+def idTwo(u : Branch) -> Branch = u
 
 /// A witness at each choice: a branch at `A`, and the identity at `B`.
 def mk(c : C) -> holds c =
@@ -53,7 +53,7 @@ def leftOf(c : C, m : holds c) -> Branch =
 
 /// The identity at `B` applied to `R` is `R`.
 @[runs("R")]
-def atB() -> Branch = leftOf B (mk (B));
+def atB() -> Branch = leftOf B (mk (B))
 
 /// The result of `mk(B)` on the branch `L` is `L`.
 @[runs("L")]

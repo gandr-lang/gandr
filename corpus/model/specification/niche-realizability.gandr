@@ -21,10 +21,10 @@
 //! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
 // The import gives Nat.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 // The import gives Maybe.
-import "../data/data-maybe.gandr";
+import "../data/data-maybe.gandr"
 
 /// A heap: finitely many cells, each a location and the word it holds.
 pub data Heap : Type where

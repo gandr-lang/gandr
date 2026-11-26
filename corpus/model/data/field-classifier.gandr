@@ -8,7 +8,7 @@
 // - see: #1171 — `mistyped`
 
 // The lists.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// A representation stores bytes in an integer list.
 data Repr : Type where

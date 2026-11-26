@@ -28,13 +28,13 @@ module Config where
   def note_inside = limits.hard.detail.note;
 
 /// `hard_limit` reads the three-part path.
-def hard_limit = Config.limits.hard.value;
+def hard_limit = Config.limits.hard.value
 
 /// `note` reads the four-part path.
-def note = Config.limits.hard.detail.note;
+def note = Config.limits.hard.detail.note
 
 /// `soft_limit` reads the two-part path.
-def soft_limit = Config.limits.soft;
+def soft_limit = Config.limits.soft
 
 /// `limits` gathers every limit value.
 @[runs("*{.hard = 100, .note = \"the innermost component\", .soft = 10}")]

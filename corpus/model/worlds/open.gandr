@@ -15,7 +15,7 @@
 //! [Vii-2007-typesafe_distributed_programming_ml5]: https://doi.org/10.1007/978-3-540-78663-4_9 "Murphy, Crary and Harper, Type-Safe Distributed Programming with ML5"
 
 // The operator and seat worlds define each entry.
-import "./seat-and-operator.gandr";
+import "./seat-and-operator.gandr"
 
 /// A point the seat measures, two integers.
 data Point : Type where

@@ -13,9 +13,9 @@
 // - see: #2970 — `std.authority` and `std.io`
 
 // The authority `main` is handed, and the console it opens.
-import std.authority (Authority, console);
+import std.authority (Authority, console)
 // The three standard streams, each through the console.
-import std.io (print, eprint, read_line);
+import std.io (print, eprint, read_line)
 
 /// The entry: it reads one line and answers it.
 def main(authority : Authority) -> [std.io.Console.Eff, std.io.Stderr.Eff, std.io.Stdin.Eff] Unit =

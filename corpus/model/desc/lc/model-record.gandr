@@ -12,9 +12,9 @@
 //! - see: #640
 
 // This source imports naturals, syntax and the syntax model.
-import "../model-in-source.gandr";
-import "./syntax.gandr";
-import "./syntax-model.gandr";
+import "../model-in-source.gandr"
+import "./syntax.gandr"
+import "./syntax-model.gandr"
 
 /// `lcSyntax` packs the syntax model into `Model(LC)` order.
 def lcSyntax : *{
@@ -103,7 +103,7 @@ def lcSyntax : *{
 /// `lcModel` contains the packed syntax model at the type `Model(LC)` that the
 /// derivation states. It applies each family over contexts and reads a term in
 /// an extended context after its extension runs.
-def lcModel : Model LC = lcSyntax;
+def lcModel : Model LC = lcSyntax
 
 /// The identity application reduces to the identity.
 @[runs("Lam (Ix Z)")]

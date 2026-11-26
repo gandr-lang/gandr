@@ -10,7 +10,7 @@
 
 /// The unit of the sum.
 @[runs("0")]
-def neutral = 0;
+def neutral = 0
 
 /// The sum of two integers.
 def combine(x : Integer, y : Integer) -> Integer =

@@ -21,9 +21,9 @@
 // - see: `crates/surface-driver/tests/rand.rs` — the run and its range
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 // The host interface of randomness.
-import std.rand;
+import std.rand
 
 /// The sum of two integers, each a draw of two bits: 0 and 6 come from one
 /// pair each, 3 from four pairs.

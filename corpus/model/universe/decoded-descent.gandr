@@ -12,7 +12,7 @@
 //! - see: `pathological/universe/decoded-descent.gandr`
 
 // The naturals, their addition and the lists.
-import "../data/data-base.gandr";
+import "../data/data-base.gandr"
 
 /// The `UL` universe and its `elL` decoder form one block. The field of the
 /// function code names the decoder.
@@ -64,8 +64,8 @@ def rec countBeside(c : UL, v : elL c) -> Nat =
     | PiL(a, b) => Zero
 
 /// The `lists` value holds the list of one and the list of two.
-def lists : List (List Nat);
-def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil);
+def lists : List (List Nat)
+def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil)
 
 /// The `summed` run sums `lists` at the code of lists of lists. Its
 /// sum is three.

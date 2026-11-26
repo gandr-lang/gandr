@@ -21,25 +21,25 @@
 // - see: `model/specification/niche-realizability.gandr` — `deref_or`'s triple
 
 // The boundary check reads `admitBlock` here, whatever the listing names.
-import std.boundary (Arg, NoCode, Plain, Row);
+import std.boundary (Arg, NoCode, Plain, Row)
 
 // `U32` and `U64`, the scalars a `u32` and a `u64` are coded as.
-import std.layout (U32, U64);
+import std.layout (U32, U64)
 
 // `Nat`.
-import "../../data/data-base.gandr";
+import "../../data/data-base.gandr"
 
 // `Maybe`.
-import "../../data/data-maybe.gandr";
+import "../../data/data-maybe.gandr"
 
 // `Tagged`, `Packed`, their paths and `length`.
-import "../../layouts/ribbit-list.gandr";
+import "../../layouts/ribbit-list.gandr"
 
 /// `word`'s row: a `u64` address to the `u64` stored there.
-pub def wordRow : Row = Row (Arg (Plain U64) NoCode) (Plain U64);
+pub def wordRow : Row = Row (Arg (Plain U64) NoCode) (Plain U64)
 
 /// `half`'s row: a `u64` address to the `u32` stored there.
-pub def halfRow : Row = Row (Arg (Plain U64) NoCode) (Plain U32);
+pub def halfRow : Row = Row (Arg (Plain U64) NoCode) (Plain U32)
 
 /// Reads of the Rust caller's memory at the addresses it lends. Its check
 /// admits each read against its row.
@@ -50,13 +50,13 @@ extern "rust" from "memory" as Memory {
 }
 
 /// The cells any list the Rust caller lends may hold, and one more.
-def fuel : Nat = Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))));
+def fuel : Nat = Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))))
 
 /// The address `offset` bytes past the address `n`.
-def past(n : Integer, offset : Integer) -> u64 = u64.from_integer (n + offset);
+def past(n : Integer, offset : Integer) -> u64 = u64.from_integer (n + offset)
 
 /// The `i32` in a word's low four bytes.
-def low(w : u64) -> i32 = i32.from_integer (u64.to_integer w);
+def low(w : u64) -> i32 = i32.from_integer (u64.to_integer w)
 
 /// The tagged list at the word `w`, or `None` once `fuel` runs out.
 def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =

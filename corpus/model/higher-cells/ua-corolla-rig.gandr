@@ -42,21 +42,21 @@ def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
     | +{.3 = u} => +{.3 = u}
 
 /// `dual` applies the natural relabelling to `plus`.
-def dual = ua[1, 4] Rig Rig (*{.plus = rename}) (*{.plus = rename});
+def dual = ua[1, 4] Rig Rig (*{.plus = rename}) (*{.plus = rename})
 
 /// `swaps` transports one corolla element along `dual`.
 def swaps : Path (Path.walk (fun (X) { X }) dual (*{*{}, +{.1 = *{}}})) *{
   *{},
   +{.3 = *{}}
-} = Path.here (*{*{}, +{.3 = *{}}});
+} = Path.here (*{*{}, +{.3 = *{}}})
 
 /// `crossed` refuses a relabelling that does not commute with corolla symmetry.
 @[refuses("NotNatural")]
-def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
+def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross})
 
 /// `twice` refuses tables with a corolla on only one side.
 @[refuses("CorollaTables")]
-def twice = ua[1, 4] Rig Rig (*{.plus = rename, .times = rename}) (*{.plus = rename});
+def twice = ua[1, 4] Rig Rig (*{.plus = rename, .times = rename}) (*{.plus = rename})
 
 /// `widen` maps booleans into four corolla elements.
 def widen(b : Bool) -> Unit + Unit + Unit + Unit =

@@ -17,7 +17,7 @@
 //!   drops a variable
 
 // `Width`.
-import "./family-with-rules.gandr";
+import "./family-with-rules.gandr"
 
 /// The gates of a small circuit at each width.
 pub data Gate : Width -> Type where {
@@ -64,10 +64,10 @@ def rec words(t : Gate Word) -> Gate Word =
     | Hold(c, x) => Hold c (words[<] x)
 
 /// A word behind the lit bit.
-def held() -> Gate Word = Hold Lit (Swap (Swap Nil));
+def held() -> Gate Word = Hold Lit (Swap (Swap Nil))
 
 /// The empty word.
-def nil() -> Gate Word = Nil;
+def nil() -> Gate Word = Nil
 
 /// The fold of a word behind the lit bit is the empty word.
 def sameHeld : Path[.A = Gate Word] (same Word held) nil = Path.here nil;

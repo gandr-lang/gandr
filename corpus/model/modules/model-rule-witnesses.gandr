@@ -31,7 +31,7 @@ theory LeftUnit where
   rule unitL : mul e x <=> x;
 
 /// `tick` adds one natural number.
-def tick(n : Ticks) -> Ticks = Tick n;
+def tick(n : Ticks) -> Ticks = Tick n
 
 /// `joinLeft` recurses on its left argument.
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =

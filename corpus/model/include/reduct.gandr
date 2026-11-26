@@ -11,16 +11,16 @@
 //! - see: #2136
 
 // The source imports the included theories and the endomorphism model.
-import "./monoid.gandr";
+import "./monoid.gandr"
 
 /// `endoMonoid` packs `Endo` at `Monoid`.
-pub def endoMonoid : Model Monoid = pack Endo at Model Monoid;
+pub def endoMonoid : Model Monoid = pack Endo at Model Monoid
 
 /// `endoSemigroup` packs `Endo` at its included `Semigroup`.
-def endoSemigroup : Model Semigroup = pack Endo at Model Semigroup;
+def endoSemigroup : Model Semigroup = pack Endo at Model Semigroup
 
 /// `restricted` compares the named reduct with the packed semigroup model.
-def restricted : Path endoSemigroup (Monoid.Semigroup endoMonoid) = Path.here endoSemigroup;
+def restricted : Path endoSemigroup (Monoid.Semigroup endoMonoid) = Path.here endoSemigroup
 
 /// `multiplies` reads the multiplication field of a semigroup model.
 pub def multiplies(s : Model Semigroup) -> Integer =
@@ -30,7 +30,7 @@ pub def multiplies(s : Model Semigroup) -> Integer =
 /// `asSemigroup` gives the checker an endomorphism monoid when it
 /// requires a semigroup.
 @[runs("0")]
-def asSemigroup() -> Integer = multiplies endoMonoid;
+def asSemigroup() -> Integer = multiplies endoMonoid
 
 /// `throughTheDiamond` reads either inclusion route to `Semigroup`. The two
 /// routes give one reduct.
@@ -46,7 +46,7 @@ pub def endoManifest : Model Monoid with sort M = (Integer -> Integer) = *{
 
 /// `manifestAsSemigroup` reads the manifest model as a semigroup.
 @[runs("0")]
-def manifestAsSemigroup() -> Integer = multiplies endoManifest;
+def manifestAsSemigroup() -> Integer = multiplies endoManifest
 
 /// `manifestDiamond` reads either manifest inclusion route to `Semigroup`. The
 /// two routes compose to one inclusion.

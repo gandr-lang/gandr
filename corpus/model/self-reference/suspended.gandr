@@ -11,7 +11,7 @@
 //! Rust uses `Pin` from RFC 2349 for a self-borrowing future.
 //! C++ keeps such an object immobile by convention.
 //! - see: #1183 — `suspended`
-import std.process;
+import std.process
 
 /// `suspended` reads a view after its stack resumes.
 @[runs("12")]

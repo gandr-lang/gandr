@@ -9,7 +9,7 @@
 ///
 /// - see: corpus/model/identity/then.gandr
 /// - see: corpus/ledger/diagnostics/ComposeDoesNotFill.gandr
-import "./circle-base.gandr";
+import "./circle-base.gandr"
 
 /// The unbiased composite joins three paths with matching endpoints.
 def composed(

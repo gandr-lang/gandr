@@ -29,16 +29,16 @@ theory Mag where
   rule unitR : mul x one <=> x;
 
 /// The unit as a term.
-def neutral : Terms Mag = Mag.one;
+def neutral : Terms Mag = Mag.one
 
 /// Units cancel in conversion: the terms' identity is the theory's rules.
 def cancelled : Path (Mag.mul
   (Mag.mul Mag.one (Mag.mul Mag.one Mag.one))
-  Mag.one) Mag.one = Path.here Mag.one;
+  Mag.one) Mag.one = Path.here Mag.one
 
 /// A term a function builds, which runs to itself.
 @[runs("Mag.mul Mag.one Mag.one")]
-def built() -> Terms Mag = Mag.mul Mag.one Mag.one;
+def built() -> Terms Mag = Mag.mul Mag.one Mag.one
 
 /// Counts: no tick, then one more.
 data Ticks : Type where
@@ -54,7 +54,7 @@ def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
     | Tick(k) => Tick (joinLeft[<] k n)
 
 /// One more tick.
-def tick(n : Ticks) -> Ticks = Tick n;
+def tick(n : Ticks) -> Ticks = Tick n
 
 /// No tick on the right, by induction.
 def rec noTickRight(n : Ticks) -> Path (joinLeft n NoTick) n =

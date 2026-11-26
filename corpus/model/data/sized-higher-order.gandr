@@ -22,7 +22,7 @@
 //   that the arguments do not show
 
 // The naturals the recursion takes apart.
-import "./data-base.gandr";
+import "./data-base.gandr"
 
 /// This function applies a function and argument at one type parameter.
 pub def apply(a : Type, b : Type, f : a -> b, x : a) -> b =
@@ -48,7 +48,7 @@ def rec helped(n : Nat) -> Nat =
 
 /// `helpedTwo` evaluates two through `applyAt`.
 @[runs("Succ (Succ Zero)")]
-def helpedTwo : () -> Nat = helped (Succ (Succ Zero));
+def helpedTwo : () -> Nat = helped (Succ (Succ Zero))
 
 /// `predAt` computes a predecessor at stage `i` and returns zero for zero. Its
 /// result stays at stage `i`, since the returner goes over the staged type and
@@ -68,7 +68,7 @@ def rec halvedAt(n : Nat) -> Nat =
 
 /// Half of four: two.
 @[runs("Succ (Succ Zero)")]
-def halvedAtFour : () -> Nat = halvedAt (Succ three);
+def halvedAtFour : () -> Nat = halvedAt (Succ three)
 
 /// `boundedAt` returns a number below stage `j` without a returner.
 /// Its input stage `k` is below `j`.
@@ -84,7 +84,7 @@ def rec boundedHelped(n : Nat) -> Nat =
 
 /// `boundedTwo` evaluates two through `boundedAt`.
 @[runs("Succ (Succ Zero)")]
-def boundedTwo : () -> Nat = boundedHelped (Succ (Succ Zero));
+def boundedTwo : () -> Nat = boundedHelped (Succ (Succ Zero))
 
 /// `sameAt` applies a function and number at the same stage.
 pub def sameAt[i : Size](f : Nat[i] -> Nat, x : Nat[i]) -> Nat =
@@ -99,7 +99,7 @@ def rec agreed(n : Nat) -> Nat =
 
 /// `agreedTwo` evaluates two through `sameAt`.
 @[runs("Succ (Succ Zero)")]
-def agreedTwo : () -> Nat = agreed (Succ (Succ Zero));
+def agreedTwo : () -> Nat = agreed (Succ (Succ Zero))
 
 /// `appliedAt` applies a function at the named stage `j`.
 /// Its arguments determine `i` at stage `j`.

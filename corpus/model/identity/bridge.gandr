@@ -17,9 +17,9 @@
 /// [Cavallo-2021-internal_parametricity_cubical_type_theory]: https://doi.org/10.46298/lmcs-17(4:5)2021 "Cavallo and Harper, Internal parametricity for cubical type theory"
 
 // The sealed points whose relation is their identity.
-import "./atom-identity.gandr";
+import "./atom-identity.gandr"
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// The unit-string bridge has the total relation.
 def unitString : Bridge[.A = Type] Unit String = thunk {
@@ -54,7 +54,7 @@ def steady(signal : Signal) -> Signal =
   signal
 
 /// The two functions agree at both signal states.
-def toggledTwice : Bridge toggleTwice steady = Path.funext toggleTwice steady;
+def toggledTwice : Bridge toggleTwice steady = Path.funext toggleTwice steady
 
 /// The sealed atom relation connects the two points.
 def originOtherBridge : Bridge Point.origin Point.other = *{};

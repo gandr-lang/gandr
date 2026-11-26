@@ -18,7 +18,7 @@
 //! [boats-2024-references_are_jumps]: https://without.boats/blog/references-are-like-jumps/ "boats, References are like jumps"
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// `keptView` keeps a thunk in scope `c`.
 /// The thunk reads its shared view after the access ends.

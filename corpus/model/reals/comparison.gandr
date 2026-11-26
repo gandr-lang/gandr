@@ -18,13 +18,13 @@
 //   decides
 
 // The console's host interface.
-import std.io;
+import std.io
 // The exact reals' host interface.
-import std.reals;
+import std.reals
 // The native list type.
-import std.list (List);
+import std.list (List)
 // The subject's shared declarations: `belowThreeHalves` and `decided`.
-import "./reals-base.gandr";
+import "./reals-base.gandr"
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.

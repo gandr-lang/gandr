@@ -11,7 +11,7 @@
 // - see: `std.session` — `Run`
 
 // The native session formers.
-import std.session (Run);
+import std.session (Run)
 
 /// A bit.
 pub data Bit : Type where
@@ -51,7 +51,7 @@ def decoded(a : Answer) -> Path (decode (encode a)) a =
 pub def codes : Path[.A = Type] Bit Answer = ua (*{
   decode,
   *{*{encode, encoded}, *{encode, decoded}}
-});
+})
 
 /// A protocol that hears a bit, and one that hears an answer.
 module Ask where
@@ -59,19 +59,19 @@ module Ask where
   type Decoded = Answer >? end;
 
 /// `heard` records `One` as a bit receipt.
-def heard : Run Ask.Coded = recorded (received One) closed;
+def heard : Run Ask.Coded = recorded (received One) closed
 
 /// `heardDecoded` proves that the transported run receives `Yes`.
 def heardDecoded : Path[.A = Run Ask.Decoded] (Path.walk
   (fun (X) { Run (type(X >? end)) })
   codes
-  heard) (recorded (received Yes) closed) = Path.here (recorded (received Yes) closed);
+  heard) (recorded (received Yes) closed) = Path.here (recorded (received Yes) closed)
 
 /// `heardKept` refuses a transported run that receives `No`.
 @[refuses("EndpointMismatch")]
 def heardKept : Path (Path.walk (fun (X) { Run (type(X >? end)) }) codes heard) (recorded
   (received No)
-  closed) = Path.here (recorded (received No) closed);
+  closed) = Path.here (recorded (received No) closed)
 
 /// `heardRun` returns the transported run.
 def heardRun() -> Run Ask.Decoded =

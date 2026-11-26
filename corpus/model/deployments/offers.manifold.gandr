@@ -14,11 +14,11 @@
 // - see: `offers.site.gandr` — the site `far` runs at
 
 // The deployment theories.
-import std.manifold (Site, Manifold, Placement, At);
+import std.manifold (Site, Manifold, Placement, At)
 // The site `far` is placed at.
-import "./offers.site.gandr" as far;
+import "./offers.site.gandr" as far
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// The program this manifold deploys.
 pub module Manifold : Model(Manifold) where
