@@ -1,9 +1,9 @@
 @[form(explicit)]
-def apply : (Type -> Type) -> Type -> Type;
+def apply : (Type -> Type) -> Type -> Type
 def apply = fun (F) { fun (X) { F X } };
 
 @[checks]
-def at_a_static_parameter : apply (fun (Y) { type(*{Y, Y}) }) Integer;
+def at_a_static_parameter : apply (fun (Y) { type(*{Y, Y}) }) Integer
 def at_a_static_parameter = *{1, 2};
 
 @[runs("fun (a) { *{} }")]
