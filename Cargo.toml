@@ -1121,6 +1121,7 @@ path = "crates/surface-pretty"
 # - surface-render-remote (dev)
 # - surface-repl
 # - surface-tui
+# - workflow-outputs
 [workspace.dependencies.gandr-surface-render-remote]
 path = "crates/surface-render-remote"
 

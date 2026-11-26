@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
+use crate::store::Kind;
 use crate::store::Store;
 
 /// The detached work tree of the other commit, below the target directory of
@@ -26,8 +27,8 @@ pub fn place(root: &Path) -> PathBuf
     root.join("target/outputs-checkout")
 }
 
-/// Computes the recovery records of the commit `revision` of the repository
-/// `root` into `store`, by the `outputs` binary of that commit.
+/// Computes the values of the kind `kind` of the commit `revision` of the
+/// repository `root` into `store`, by the `outputs` binary of that commit.
 ///
 /// # Specification
 /// trivial.
@@ -35,11 +36,13 @@ pub fn place(root: &Path) -> PathBuf
 /// # Errors
 /// One line that names the step that failed: the checkout of the commit, or
 /// the build or the run of its binary, with the last line that the step
-/// wrote. A commit with no `gandr-workflow-outputs` fails in its build.
+/// wrote. A commit with no `gandr-workflow-outputs` fails in its build, and
+/// a commit whose binary does not know the kind fails in its run.
 #[inline]
-pub fn recovery(
+pub fn compute(
     root: &Path,
     store: &Store,
+    kind: Kind,
     revision: &str,
 ) -> Result<(), String>
 {
@@ -81,7 +84,7 @@ pub fn recovery(
             "outputs",
             "--",
         ])
-        .args(["compute", "recovery", "--revision", commit]))
+        .args(["compute", kind.0, "--revision", commit]))
     .map_err(|error| format!("the tool of {commit}: {error}"))?;
     Ok(())
 }

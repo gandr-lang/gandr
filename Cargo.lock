@@ -2760,6 +2760,7 @@ dependencies = [
  "blake3",
  "gandr-surface-grammar",
  "gandr-surface-parser",
+ "gandr-surface-render-remote",
  "gandr-surface-syntax",
  "quenchant-anodized",
  "serde_json",

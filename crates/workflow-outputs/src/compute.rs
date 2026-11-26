@@ -1,5 +1,5 @@
-//! The values of the recovery records of a tree: each read from the store,
-//! or computed and written to it.
+//! The values of one kind of output for a tree: each read from the store, or
+//! computed by the writer of the kind and written to the store.
 
 use core::fmt;
 use core::num::NonZeroUsize;
@@ -11,6 +11,8 @@ use anodized::spec;
 
 use crate::recovery::RecordError;
 use crate::recovery::Recorder;
+use crate::roles::Roles;
+use crate::roles::RolesError;
 use crate::store::Digest;
 use crate::store::Kind;
 use crate::store::Store;
@@ -21,9 +23,71 @@ use crate::tree::TreeError;
 /// The kind of the recovery records.
 pub const RECOVERY: Kind = Kind("recovery");
 
-/// The package that computes the recovery records. Its closure in the
-/// workspace is the tool of the kind.
-pub const RECOVERY_PACKAGE: &str = "gandr-workflow-outputs";
+/// The kind of the roles that the highlight gives a source.
+pub const ROLES: Kind = Kind("roles");
+
+/// Each kind, in the order of the names.
+pub const KINDS: [Kind; 2] = [RECOVERY, ROLES];
+
+/// The package that computes each kind. Its closure in the workspace is the
+/// tool of each kind.
+pub const TOOL_PACKAGE: &str = "gandr-workflow-outputs";
+
+/// The writer of the values of one kind, under one grammar.
+#[derive(Debug)]
+pub enum Writer<'grammar>
+{
+    /// The writer of the recovery records.
+    Recovery(Recorder<'grammar>),
+    /// The writer of the roles.
+    Roles(Roles<'grammar>),
+}
+
+impl Writer<'_>
+{
+    /// The kind that the writer computes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn kind(&self) -> Kind
+    {
+        match *self {
+            Self::Recovery(_) => RECOVERY,
+            Self::Roles(_) => ROLES,
+        }
+    }
+
+    /// The value of the source `name`, whose text is `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`ComputeError::Record`] or [`ComputeError::Roles`] when the source
+    /// gives no value.
+    #[inline]
+    pub fn value(
+        &self,
+        name: &str,
+        text: &str,
+    ) -> Result<String, ComputeError>
+    {
+        match *self {
+            Self::Recovery(ref recorder) => {
+                recorder.record(text).map_err(|error| ComputeError::Record {
+                    name: name.to_owned(),
+                    error,
+                })
+            },
+            Self::Roles(ref roles) => roles.value(text).map_err(|error| ComputeError::Roles {
+                name: name.to_owned(),
+                error,
+            }),
+        }
+    }
+}
 
 /// Why the values of a tree could not be given.
 ///
@@ -41,6 +105,14 @@ pub enum ComputeError
         name: String,
         /// The refusal of the writer.
         error: RecordError,
+    },
+    /// A source gives no roles.
+    Roles
+    {
+        /// The name of the source.
+        name: String,
+        /// The refusal of the writer.
+        error: RolesError,
     },
     /// The store could not be read or written.
     Store(io::Error),
@@ -61,6 +133,10 @@ impl fmt::Display for ComputeError
         match *self {
             Self::Tree(ref error) => write!(f, "{error}"),
             Self::Record {
+                ref name,
+                ref error,
+            } => write!(f, "{name}: {error}"),
+            Self::Roles {
                 ref name,
                 ref error,
             } => write!(f, "{name}: {error}"),
@@ -127,7 +203,8 @@ impl Held
     }
 }
 
-/// The recovery records of `tree` under the tool `tool` that `store` holds.
+/// The values of the kind `kind` of `tree` under the tool `tool` that `store`
+/// holds.
 ///
 /// # Specification
 /// - ensures: one key and one place for a value for each source.
@@ -137,14 +214,16 @@ impl Held
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a second run holds each value that a first run computed,
-///   and another tool holds none.
+///   and another tool or another kind holds none.
 /// - witness: `compute::tests::the_values_of_a_tree_are_its_records`
+/// - witness: `compute::tests::each_kind_has_its_own_values`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |held| held.keys.len() == held.sources.len() && held.values.len() == held.sources.len()))]
 #[inline]
 pub fn held(
     store: &Store,
     tree: &Tree,
     tool: &Digest,
+    kind: Kind,
 ) -> Result<Held, ComputeError>
 {
     let mut parts = Vec::new();
@@ -162,7 +241,7 @@ pub fn held(
         .collect();
     let mut values: Vec<Option<Vec<u8>>> = Vec::with_capacity(sources.len());
     for key in &keys {
-        values.push(store.get(RECOVERY, key).map_err(ComputeError::Store)?);
+        values.push(store.get(kind, key).map_err(ComputeError::Store)?);
     }
     parts.push(Part {
         name: "read the store",
@@ -177,9 +256,9 @@ pub fn held(
     })
 }
 
-/// The recovery records of `tree` under the tool `tool`.
+/// The values of `tree` under the tool `tool`, of the kind of `writer`.
 ///
-/// Each source's value is read from `store`, or computed by `recorder` and
+/// Each source's value is read from `store`, or computed by `writer` and
 /// written to `store`. The run reads the contents of the sources that it
 /// computes in one batch, and computes them on each available core.
 ///
@@ -190,24 +269,26 @@ pub fn held(
 /// [`ComputeError`] when the tree, a source or the store refuses.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the values of a tree equal the records of its sources,
-///   and a second run computes none.
+/// - hypothesis: L3 — the values of a tree equal the records of its sources, a
+///   second run computes none, and the values of a second kind are its own.
 /// - witness: `compute::tests::the_values_of_a_tree_are_its_records`
+/// - witness: `compute::tests::each_kind_has_its_own_values`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |values| values.values.is_sorted_by(|left, right| left.0 <= right.0)))]
 #[inline]
-pub fn recovery(
+pub fn values(
     store: &Store,
     tree: &Tree,
     tool: &Digest,
-    recorder: &Recorder<'_>,
+    writer: &Writer<'_>,
 ) -> Result<Values, ComputeError>
 {
+    let kind = writer.kind();
     let Held {
         sources,
         keys,
         values: mut held,
         mut parts,
-    } = self::held(store, tree, tool)?;
+    } = self::held(store, tree, tool, kind)?;
     let missing: Vec<usize> = held
         .iter()
         .enumerate()
@@ -230,9 +311,9 @@ pub fn recovery(
         time: started.elapsed(),
     });
     let started = Instant::now();
-    let records = records_together(recorder, &sources, &missing, &contents)?;
+    let records = values_together(writer, &sources, &missing, &contents)?;
     parts.push(Part {
-        name: "compute the records",
+        name: "compute the values",
         count: records.len(),
         time: started.elapsed(),
     });
@@ -240,7 +321,7 @@ pub fn recovery(
     for (&index, record) in missing.iter().zip(records) {
         if let Some(key) = keys.get(index) {
             store
-                .put(RECOVERY, key, record.as_bytes())
+                .put(kind, key, record.as_bytes())
                 .map_err(ComputeError::Store)?;
         }
         if let Some(slot) = held.get_mut(index) {
@@ -264,16 +345,16 @@ pub fn recovery(
     })
 }
 
-/// The records of the sources at `missing`, whose contents are `contents`,
-/// computed on each available core, in the order of `missing`.
+/// The values of the sources at `missing`, whose contents are `contents`,
+/// computed by `writer` on each available core, in the order of `missing`.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// [`ComputeError::Record`] when a source gives no record.
-fn records_together(
-    recorder: &Recorder<'_>,
+/// [`ComputeError`] when a source gives no value.
+fn values_together(
+    writer: &Writer<'_>,
     sources: &[Source],
     missing: &[usize],
     contents: &[Vec<u8>],
@@ -296,13 +377,9 @@ fn records_together(
                         .iter()
                         .zip(texts)
                         .map(|(&index, text)| {
-                            let name = sources
-                                .get(index)
-                                .map_or_else(String::new, |source| source.name.clone());
+                            let name = sources.get(index).map_or("", |source| source.name.as_str());
                             let text = String::from_utf8_lossy(text);
-                            recorder
-                                .record(&text)
-                                .map_err(|error| ComputeError::Record { name, error })
+                            writer.value(name, &text)
                         })
                         .collect()
                 })
@@ -313,7 +390,7 @@ fn records_together(
             .map(|handle| {
                 handle.join().unwrap_or_else(|_| {
                     Err(ComputeError::Store(io::Error::other(
-                        "a thread of the records stopped",
+                        "a thread of the values stopped",
                     )))
                 })
             })
@@ -331,13 +408,24 @@ mod tests
 {
     use gandr_surface_grammar::built_in;
 
+    use super::RECOVERY;
+    use super::ROLES;
+    use super::Writer;
     use super::held;
-    use super::recovery;
+    use super::values;
     use crate::recovery::Recorder;
+    use crate::roles::Roles;
     use crate::store::Digest;
     use crate::store::Store;
     use crate::tree::Tree;
     use crate::tree::scratch_repository;
+
+    /// A source that parses whole.
+    const WHOLE: &str = include_str!("compute/fixtures/a-definition-of-one.gandr");
+
+    /// A source that stops in an open parenthesis.
+    const CUT: &str =
+        include_str!("compute/unformatted/a-definition-that-stops-in-a-parenthesis.gandr");
 
     /// The values of a tree are the records of its sources; a second run
     /// reads each from the store, and another tool computes each again.
@@ -345,17 +433,14 @@ mod tests
     fn the_values_of_a_tree_are_its_records()
     {
         let root = scratch_repository("compute", &[
-            ("crates/surface-corpus/strict/values.gandr", "def one = 1\n"),
-            ("corpus/model/circle.gandr", "def two = (\n"),
+            ("crates/surface-corpus/strict/values.gandr", WHOLE),
+            ("corpus/model/circle.gandr", CUT),
         ]);
         let store = Store::at(root.join("store"));
         let tree = Tree::of_revision(&root, "HEAD").expect("the commit has a tree");
         let pbg = built_in().expect("the built-in grammar builds");
         let recorder = Recorder::new(&pbg).expect("each mold has a rule");
-        let tool = Digest::of_parts([b"tool".as_slice()]);
-        let first = recovery(&store, &tree, &tool, &recorder).expect("the values are given");
-        assert_eq!(first.computed, 2);
-        let records: Vec<Vec<u8>> = ["def two = (\n", "def one = 1\n"]
+        let records: Vec<Vec<u8>> = [CUT, WHOLE]
             .map(|text| {
                 recorder
                     .record(text)
@@ -363,28 +448,73 @@ mod tests
                     .into_bytes()
             })
             .to_vec();
-        let values: Vec<Vec<u8>> = first.values.into_iter().map(|(_, value)| value).collect();
-        assert_eq!(values, records);
-        let second = recovery(&store, &tree, &tool, &recorder).expect("the values are given");
+        let writer = Writer::Recovery(recorder);
+        let tool = Digest::of_parts([b"tool".as_slice()]);
+        let first = values(&store, &tree, &tool, &writer).expect("the values are given");
+        assert_eq!(first.computed, 2);
+        let given: Vec<Vec<u8>> = first.values.into_iter().map(|(_, value)| value).collect();
+        assert_eq!(given, records);
+        let second = values(&store, &tree, &tool, &writer).expect("the values are given");
         assert_eq!(second.computed, 0);
         let other = Digest::of_parts([b"other tool".as_slice()]);
         assert_eq!(
-            held(&store, &tree, &tool)
+            held(&store, &tree, &tool, RECOVERY)
                 .expect("the store reads")
                 .missing(),
             0
         );
         assert_eq!(
-            held(&store, &tree, &other)
+            held(&store, &tree, &other, RECOVERY)
                 .expect("the store reads")
                 .missing(),
             2
         );
         assert_eq!(
-            recovery(&store, &tree, &other, &recorder)
+            values(&store, &tree, &other, &writer)
                 .expect("the values are given")
                 .computed,
             2
+        );
+        std::fs::remove_dir_all(root).expect("the repository is removed");
+    }
+
+    /// The roles of a tree are not its records: the store holds each kind
+    /// under its own name, and a run of one kind gives no value of the
+    /// other.
+    #[test]
+    fn each_kind_has_its_own_values()
+    {
+        let root = scratch_repository("kinds", &[(
+            "crates/surface-corpus/strict/values.gandr",
+            WHOLE,
+        )]);
+        let store = Store::at(root.join("store"));
+        let tree = Tree::of_revision(&root, "HEAD").expect("the commit has a tree");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let tool = Digest::of_parts([b"tool".as_slice()]);
+        let records = Writer::Recovery(Recorder::new(&pbg).expect("each mold has a rule"));
+        let first = values(&store, &tree, &tool, &records).expect("the records are given");
+        assert_eq!(first.computed, 1);
+        assert_eq!(
+            held(&store, &tree, &tool, ROLES)
+                .expect("the store reads")
+                .missing(),
+            1,
+            "a run of the records writes no roles"
+        );
+        let roles = Roles::new(&pbg).expect("the grammar gives a role table");
+        let written = roles.value(WHOLE).expect("the source gives roles");
+        let roles = Writer::Roles(roles);
+        let second = values(&store, &tree, &tool, &roles).expect("the roles are given");
+        assert_eq!(second.computed, 1);
+        let given: Vec<Vec<u8>> = second.values.into_iter().map(|(_, value)| value).collect();
+        assert_eq!(given, [written.into_bytes()]);
+        assert_eq!(
+            held(&store, &tree, &tool, RECOVERY)
+                .expect("the store reads")
+                .missing(),
+            0,
+            "the roles leave each record in its place"
         );
         std::fs::remove_dir_all(root).expect("the repository is removed");
     }

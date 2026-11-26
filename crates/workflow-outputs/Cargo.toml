@@ -13,12 +13,14 @@ publish.workspace = true
 
 # The pinned anodized facade supplies the specification attribute, and BLAKE3
 # the fingerprint of a tree and the key of a value. The built-in grammar and
-# the parser give the tree of a source. serde_json reads `cargo metadata`.
+# the parser give the tree of a source, and the render seam names each role
+# of the highlight. serde_json reads `cargo metadata`.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
+gandr-surface-render-remote.workspace = true
 gandr-surface-syntax.workspace = true
 serde_json.workspace = true
 

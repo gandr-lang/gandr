@@ -3,11 +3,13 @@
 //! digest of its tool and its input, so a run computes each value one time.
 //!
 //! - [`recovery`] writes the recovery record of a corpus source.
+//! - [`roles`] writes the roles that the highlight gives a corpus source.
 //! - [`store`] holds each value in one file, named by its key.
 //! - [`tree`] reads a tree of the repository from git: its sources and the tool
 //!   of a kind.
 //! - [`workspace`] gives the packages that build a package.
-//! - [`compute`] gives the values of a tree, from the store or computed.
+//! - [`compute`] gives the values of one kind for a tree, from the store or
+//!   computed by the writer of the kind.
 //! - [`checkout`] computes the values of a commit by the binary of that commit,
 //!   when its tool is not the tool of the run.
 //! - [`difference`] gives the changes of the values between two trees.
@@ -25,6 +27,7 @@ pub mod compute;
 pub mod difference;
 pub mod gauge;
 pub mod recovery;
+pub mod roles;
 pub mod store;
 pub mod tree;
 pub mod workspace;

@@ -2,16 +2,20 @@
 //! or computed into it, and the difference of two trees.
 //!
 //! ```text
-//! outputs compute recovery [--revision <revision>] [--print] [--cost]
-//! outputs difference recovery --base <revision> [--head <revision>] [--lines <count>] [--cost]
+//! outputs compute <kind> [--revision <revision>] [--print] [--cost]
+//! outputs difference <kind> --base <revision> [--head <revision>] [--lines <count>] [--cost]
 //! ```
+//!
+//! A kind is `recovery`, the recovery record of a source, or `roles`, the
+//! roles that the highlight gives a source.
 //!
 //! With no revision, the tree is the work tree with its changes. The store is
 //! the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs`.
 //!
-//! `compute --print` prints each source with its value on standard output:
-//! the name, a tab and the value. The count of the values goes to standard
-//! error.
+//! `compute --print` prints each source with its value on standard output.
+//! A value of one line follows the name and a tab. A value of more lines
+//! follows a line with the name, and each of its lines starts with a tab.
+//! The count of the values goes to standard error.
 //!
 //! `difference` prints the count of the sources whose values differ between
 //! the base and the head, then the first changes, one on each line. A tree
@@ -34,11 +38,14 @@ use gandr_surface_grammar::built_in;
 use gandr_workflow_outputs::checkout;
 use gandr_workflow_outputs::compute;
 use gandr_workflow_outputs::compute::Part;
+use gandr_workflow_outputs::compute::Writer;
 use gandr_workflow_outputs::difference;
 use gandr_workflow_outputs::gauge;
 use gandr_workflow_outputs::gauge::Gauge;
 use gandr_workflow_outputs::recovery::Recorder;
+use gandr_workflow_outputs::roles::Roles;
 use gandr_workflow_outputs::store::Digest;
+use gandr_workflow_outputs::store::Kind;
 use gandr_workflow_outputs::store::Store;
 use gandr_workflow_outputs::tree::Source;
 use gandr_workflow_outputs::tree::Tree;
@@ -48,7 +55,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute recovery [--revision <revision>] [--print] [--cost]\n       outputs difference recovery --base <revision> [--head <revision>] [--lines <count>] [--cost]";
+const USAGE: &str = "usage: outputs compute <kind> [--revision <revision>] [--print] [--cost]\n       outputs difference <kind> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is recovery or roles";
 
 /// How many changes `difference` prints when the command line names no
 /// count.
@@ -58,9 +65,11 @@ const LINES: usize = 16;
 type Valued = Vec<(Source, Vec<u8>)>;
 
 /// What the command line asks.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Asked
 {
+    /// The kind of the values.
+    kind: Kind,
     /// Whether the command is `difference`; else it is `compute`.
     difference: bool,
     /// The commit of `compute`, or the head of `difference`; none for the
@@ -76,7 +85,7 @@ struct Asked
     cost: bool,
 }
 
-/// Reads the command line: the command, `recovery`, then the flags.
+/// Reads the command line: the command, the kind, then the flags.
 ///
 /// # Specification
 /// trivial.
@@ -87,15 +96,25 @@ fn asked(arguments: &[String]) -> Result<Asked, String>
 {
     let usage = || String::from(USAGE);
     let mut rest = arguments.iter();
-    let mut asked = Asked::default();
-    match rest.next().map(String::as_str) {
-        Some("compute") => {},
-        Some("difference") => asked.difference = true,
+    let difference = match rest.next().map(String::as_str) {
+        Some("compute") => false,
+        Some("difference") => true,
         _ => return Err(usage()),
-    }
-    if rest.next().map(String::as_str) != Some("recovery") {
-        return Err(usage());
-    }
+    };
+    let named = rest.next().ok_or_else(usage)?;
+    let kind = compute::KINDS
+        .into_iter()
+        .find(|kind| kind.0 == named.as_str())
+        .ok_or_else(usage)?;
+    let mut asked = Asked {
+        kind,
+        difference,
+        revision: None,
+        base: None,
+        lines: None,
+        print: false,
+        cost: false,
+    };
     while let Some(flag) = rest.next() {
         let mut value = || rest.next().cloned().ok_or_else(usage);
         match (asked.difference, flag.as_str()) {
@@ -175,7 +194,7 @@ impl Run
             .map_err(|error| format!("cargo metadata: {error}"))?;
         let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout)
             .map_err(|error| format!("cargo metadata: {error}"))?;
-        let packages = workspace::closure(&metadata, compute::RECOVERY_PACKAGE);
+        let packages = workspace::closure(&metadata, compute::TOOL_PACKAGE);
         let parts = vec![Part {
             name: "read the workspace",
             count: packages.len(),
@@ -229,7 +248,8 @@ impl Run
         Ok((tree, tool))
     }
 
-    /// The values of `tree` under `tool`, computed in this run.
+    /// The values of the kind `kind` of `tree` under `tool`, computed in this
+    /// run.
     ///
     /// # Specification
     /// trivial.
@@ -240,6 +260,7 @@ impl Run
         &mut self,
         tree: &Tree,
         tool: &Digest,
+        kind: Kind,
     ) -> Result<compute::Values, String>
     {
         if self.pbg.is_none() {
@@ -255,16 +276,21 @@ impl Run
             .pbg
             .as_ref()
             .ok_or_else(|| String::from("the grammar is not built"))?;
-        let recorder = Recorder::new(pbg).map_err(|error| error.to_string())?;
-        let values = compute::recovery(&self.store, tree, tool, &recorder)
-            .map_err(|error| error.to_string())?;
+        let writer = if kind == compute::ROLES {
+            Writer::Roles(Roles::new(pbg).map_err(|error| error.to_string())?)
+        }
+        else {
+            Writer::Recovery(Recorder::new(pbg).map_err(|error| error.to_string())?)
+        };
+        let values =
+            compute::values(&self.store, tree, tool, &writer).map_err(|error| error.to_string())?;
         self.parts.extend(values.parts.iter().copied());
         Ok(values)
     }
 
-    /// The values of the side `revision`, from the store, from this run when
-    /// its tool is `own`, or from the binary of its commit; and how many
-    /// values the run computed.
+    /// The values of the kind `kind` of the side `revision`, from the store,
+    /// from this run when its tool is `own`, or from the binary of its
+    /// commit; and how many values the run computed.
     ///
     /// # Specification
     /// trivial.
@@ -275,27 +301,30 @@ impl Run
         &mut self,
         revision: Option<&str>,
         own: &Digest,
+        kind: Kind,
     ) -> Result<(Valued, usize), String>
     {
         let (tree, tool) = self.tree(revision)?;
-        let held = compute::held(&self.store, &tree, &tool).map_err(|error| error.to_string())?;
+        let held =
+            compute::held(&self.store, &tree, &tool, kind).map_err(|error| error.to_string())?;
         let missing = held.missing();
         if missing == 0 {
             return Ok((held_values(held), 0));
         }
         if revision.is_none() || *own == tool {
-            let values = self.compute(&tree, &tool)?;
+            let values = self.compute(&tree, &tool, kind)?;
             return Ok((values.values, values.computed));
         }
         let commit = revision.unwrap_or("HEAD");
         let started = Instant::now();
-        checkout::recovery(&self.root, &self.store, commit)?;
+        checkout::compute(&self.root, &self.store, kind, commit)?;
         self.parts.push(Part {
             name: "run the other tool",
             count: missing,
             time: started.elapsed(),
         });
-        let held = compute::held(&self.store, &tree, &tool).map_err(|error| error.to_string())?;
+        let held =
+            compute::held(&self.store, &tree, &tool, kind).map_err(|error| error.to_string())?;
         let left = held.missing();
         if left > 0 {
             return Err(format!(
@@ -330,6 +359,8 @@ fn held_values(held: compute::Held) -> Vec<(Source, Vec<u8>)>
 fn run(arguments: &[String]) -> Result<(), String>
 {
     let asked = asked(arguments)?;
+    let kind = asked.kind;
+    let name = kind.0;
     let mut run = Run::start()?;
     let mut out = String::new();
     let mut summary = String::new();
@@ -338,13 +369,13 @@ fn run(arguments: &[String]) -> Result<(), String>
         let base = asked.base.as_deref().unwrap_or("HEAD");
         let head = asked.revision.as_deref();
         let own = run.tree(None)?.1;
-        let (head_values, head_computed) = run.side(head, &own)?;
-        let (base_values, base_computed) = run.side(Some(base), &own)?;
+        let (head_values, head_computed) = run.side(head, &own, kind)?;
+        let (base_values, base_computed) = run.side(Some(base), &own, kind)?;
         let changes = difference::changes(&base_values, &head_values);
         let lines = asked.lines.unwrap_or(LINES);
         let _written = writeln!(
             out,
-            "recovery: {} of {} sources differ between {base} and {}",
+            "{name}: {} of {} sources differ between {base} and {}",
             changes.len(),
             head_values.len(),
             head.unwrap_or("the work tree")
@@ -357,22 +388,32 @@ fn run(arguments: &[String]) -> Result<(), String>
         }
         let _written = writeln!(
             summary,
-            "recovery: the head computed {head_computed} values, the base {base_computed}, in {}",
+            "{name}: the head computed {head_computed} values, the base {base_computed}, in {}",
             run.store.root().display()
         );
         recomputed = Some(base_computed);
     }
     else {
         let (tree, tool) = run.tree(asked.revision.as_deref())?;
-        let values = run.compute(&tree, &tool)?;
+        let values = run.compute(&tree, &tool, kind)?;
         if asked.print {
             for &(ref source, ref value) in &values.values {
-                let _written = write!(out, "{}\t{}", source.name, String::from_utf8_lossy(value));
+                let value = String::from_utf8_lossy(value);
+                if value.lines().count() <= 1 {
+                    let _written =
+                        writeln!(out, "{}\t{}", source.name, value.trim_end_matches('\n'));
+                }
+                else {
+                    let _written = writeln!(out, "{}", source.name);
+                    for line in value.lines() {
+                        let _written = writeln!(out, "\t{line}");
+                    }
+                }
             }
         }
         let _written = writeln!(
             summary,
-            "recovery: {} sources, {} from the store, {} computed, in {}",
+            "{name}: {} sources, {} from the store, {} computed, in {}",
             values.values.len(),
             values.values.len().saturating_sub(values.computed),
             values.computed,
