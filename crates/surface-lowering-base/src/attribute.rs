@@ -176,6 +176,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::form::Former;
 use crate::resolve::SurfaceName;
+use crate::unit::SourceIndex;
 use crate::unit::UnitKey;
 
 quenchant_shape::reason_enum! {
@@ -2078,8 +2079,7 @@ impl AttributeTable
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each entry filed under a key whose source is `source`, one
-    ///   time; the entries of the keys in key order, then those of the
-    ///   members.
+    ///   time; the entries of the keys in key order, then those of the members.
     /// - provides: the attributes that a source writes, for the language
     ///   features that they use.
     /// - fails: never.

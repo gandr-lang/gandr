@@ -264,8 +264,8 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
 /// - witness: `gandr-surface-lowering::tests::modules::a_source_uses_the_features_of_its_forms_and_of_its_attributes`
 ///
 /// # Cost
-/// - time: one pass over the nodes of the tree and one over the entries of
-///   the table.
+/// - time: one pass over the nodes of the tree and one over the entries of the
+///   table.
 /// - allocation: the set, one element for each feature.
 #[inline]
 #[must_use]
@@ -315,8 +315,7 @@ pub fn used_features(
 /// - requires: `table` holds the attributes of the unit, and `arena` their
 ///   payloads.
 /// - ensures: nothing for a source with no `features` attribute at its head;
-///   else the texts of the payload of that attribute, and no text for an
-///   attribute with no payload.
+///   else the texts of the payload of that attribute.
 /// - provides: the set that [`used_features`] is compared with.
 /// - fails: never.
 /// - panics: none.

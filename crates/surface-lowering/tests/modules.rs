@@ -2068,6 +2068,10 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
     let features = |text: &'static str| {
         let pbg = built_in().expect("the built-in grammar builds");
         let parsed = parse(&pbg, SourceText::from(text)).expect("the parser reads the source");
+        assert!(
+            bool::from(parsed.is_clean()),
+            "the parser reads the source without repair: {text}"
+        );
         let tree = parsed.into_tree();
         let lowered = finish(&pbg, &tree);
         let whole = gandr_surface_syntax::ByteOffset::from(0_usize)
@@ -2088,8 +2092,7 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
         (used, declared)
     };
 
-    let (used, declared) =
-        features("def add(a : u64, b : u64) -> u64 = u64.wrapping_add a b;");
+    let (used, declared) = features("def add(a : u64, b : u64) -> u64 = u64.wrapping_add a b;");
     assert!(
         used.is_empty(),
         "a source of the forms of the first twin uses no feature: {used:?}"
@@ -2110,7 +2113,8 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
         "the keys of the head are the declared features"
     );
 
-    let (used, declared) = features("@![features] module Inner { def one() -> Integer = 1; }");
+    let (used, declared) =
+        features("@![features(\"modules\")] module Inner where { def one() -> Integer = 1; }");
     assert_eq!(
         used,
         ["modules"],
@@ -2118,8 +2122,8 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
     );
     assert_eq!(
         declared,
-        Some(Vec::new()),
-        "a head with no key declares no feature"
+        Some(Vec::from(["modules".to_owned()])),
+        "one key is one text"
     );
 }
 
