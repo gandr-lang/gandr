@@ -15,7 +15,7 @@
 import std.provide.nix;
 
 /// Every declaration `hello` exposes at a pinned revision.
-@[provide(nix.package "hello" revision (= "3ec636362e18"))]
+@[provide(nix.package[.revision = "3ec636362e18"] "hello")]
 module Hello;
 
 /// The package's description, from the provided module.
