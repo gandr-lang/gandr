@@ -400,8 +400,9 @@ fn run(arguments: &[String]) -> Result<(), String>
         recomputed = Some(base_computed);
         if !changes.is_empty() && !word::named(&run.root, base, head, kind)? {
             refusal = Some(format!(
-                "{name}: {} sources differ, and no commit of {base}..{} has the trailer `{}: {name}`",
+                "{name}: {} of {} sources differ, and no commit of {base}..{} has the trailer `{}: {name}`",
                 changes.len(),
+                head_values.len(),
                 head.unwrap_or("HEAD"),
                 word::TRAILER
             ));
