@@ -742,9 +742,6 @@ fn malformed(
             String::from("supply the value by name, as `.n = …` with the implicit's name for `n`")
         },
         FormFault::SuppliedTwice => String::from("remove one of the two entries"),
-        FormFault::GluedArgument => {
-            String::from("write the argument after the functor and a space, as `F B`")
-        },
         FormFault::MissingOpen(close) => {
             format!(
                 "add the `{}` that this `{}` closes",

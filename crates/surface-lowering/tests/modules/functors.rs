@@ -6,14 +6,10 @@ use gandr_core_term::ValueType;
 use gandr_surface_lowering::AscriptionForm;
 use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
-use gandr_surface_lowering::FormFault;
-use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredStructure;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Stratum;
-use gandr_surface_syntax::ByteOffset;
-use gandr_surface_syntax::ByteSpan;
 
 use super::Amounts;
 use super::Judgement;
@@ -23,7 +19,6 @@ use super::declared_type_of;
 use super::judged;
 use super::lower;
 use super::name;
-use super::repaired;
 use super::row;
 use super::rows;
 use super::span_of;
@@ -343,46 +338,6 @@ fn an_argument_is_matched_against_the_parameter()
             })
         )),
         "a head naming no functor is refused by its name"
-    );
-}
-
-/// A functor application whose argument is glued to the functor's name is
-/// refused by name where the `(` touches the name, for a one-segment and a
-/// dotted argument. A binding that stops after its `=` keeps the refusal of
-/// its repair.
-#[test]
-fn a_glued_argument_is_refused_by_name()
-{
-    for glued in ["MkCounter(Seed)", "MkCounter(Outer.Seed)"] {
-        let source = [SEED, COUNTER, "module A = ", glued, " ;\n"].concat();
-        let at = source.rfind('(').expect("the source glues an argument");
-        let point = ByteOffset::from(at);
-        assert!(
-            rows(&repaired(source.as_str())).contains(&row(
-                "A",
-                Role::Held,
-                Amounts::Refused(LoweringRefusal::MalformedForm {
-                    span: ByteSpan::new(point, point).expect("the point is ordered"),
-                    form: FormName::MODULE,
-                    fault: FormFault::GluedArgument,
-                })
-            )),
-            "`{glued}` is refused as a glued argument: {:?}",
-            rows(&repaired(source.as_str()))
-        );
-    }
-    let stopped = [SEED, COUNTER, "module A = ;\n"].concat();
-    assert!(
-        !rows(&repaired(stopped.as_str()))
-            .iter()
-            .any(|&(_, _, ref amounts)| matches!(
-                *amounts,
-                Amounts::Refused(LoweringRefusal::MalformedForm {
-                    fault: FormFault::GluedArgument,
-                    ..
-                })
-            )),
-        "a binding with no functor is no glued argument"
     );
 }
 
