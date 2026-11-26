@@ -33,7 +33,7 @@ pub theory SmtSheaf where
   /// What runs after an answer.
   sort C : Type;
   /// Asks one question, then runs what follows on its answer.
-  oper ask : (q : Query, k : pi+ (a : Answer q). C) --> C;
+  oper ask : (q : Query, k : (a : Answer q) -> C) --> C;
   /// A second ask of one question reads the first answer.
   rule answered : ask q (bind a. (ask q (bind b. (k a b)))) <=> ask q (bind a. (k a a));
   /// Two questions commute.
