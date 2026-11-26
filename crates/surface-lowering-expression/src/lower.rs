@@ -19705,10 +19705,73 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let decorated = core::mem::take(&mut self.cx_mut().collected.decorated);
         let outcome = self
             .attribute_slots(&mut slots, table, arena)
-            .and_then(|()| self.attribute_modules(&decorated, &mut slots, table, arena));
+            .and_then(|()| self.attribute_modules(&decorated, &mut slots, table, arena))
+            .map(|()| self.undeclared_features(&decorated, &mut slots, table, arena));
         self.cx_mut().collected.slots = slots;
 
         outcome
+    }
+
+    /// Refuse each source of `decorated` that declares its language features
+    /// and uses one that it does not declare.
+    ///
+    /// # Specification
+    /// - requires: the attributes of each slot and of each source are filed in
+    ///   `table`, with their payloads in `arena`.
+    /// - ensures: for each source whose head has the attribute `features`,
+    ///   the first slot of the source is offered
+    ///   [`LoweringRefusal::FeatureUndeclared`] at the attribute, with the
+    ///   feature and the span that
+    ///   [`gandr_surface_lowering_base::gate::undeclared_feature`] answers. A
+    ///   source with no such attribute, and a source that declares each
+    ///   feature that it uses, is offered nothing.
+    /// - provides: the judgement of a declaration of features.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`gandr_surface_lowering_base::gate::undeclared_feature`].
+    /// - witness: `gandr-surface-lowering::tests::modules::a_source_is_refused_for_a_feature_that_it_does_not_declare`
+    fn undeclared_features(
+        &self,
+        decorated: &[DecoratedModule<'source>],
+        slots: &mut [DeclarationSlot<'source>],
+        table: &AttributeTable,
+        arena: &CoreArena,
+    )
+    {
+        for module in decorated {
+            let Some(written) = module.attributes.iter().find(|written| {
+                written.standing == Standing::Source
+                    && written.name.as_ref() == RegisteredAttribute::FEATURES.as_ref()
+            })
+            else {
+                continue;
+            };
+            let source = self.shared().key_at(module.module.node).source();
+            let sources = self.cx().collected.unit.sources();
+            let at = usize::from(source);
+            let start = sources
+                .get(at)
+                .map_or_else(|| ByteOffset::from(0_usize), crate::unit::UnitSource::start);
+            let end = sources.get(at.saturating_add(1_usize)).map_or_else(
+                || ByteOffset::from(usize::MAX),
+                crate::unit::UnitSource::start,
+            );
+            if let Some((feature, span)) = gandr_surface_lowering_base::gate::undeclared_feature(
+                (self.cx().pbg, self.cx().tree),
+                (table, arena),
+                source,
+                &(start .. end),
+            ) && let Some(slot) = slots.get_mut(usize::from(module.first))
+            {
+                slot.refuse(
+                    written.at.node,
+                    LoweringRefusal::FeatureUndeclared { span, feature },
+                );
+            }
+        }
     }
 
     /// Resolve and file the attributes of every decorated module in

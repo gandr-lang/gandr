@@ -1,0 +1,8 @@
+/// `FeatureUndeclared`: a source that declares its language features uses one
+/// that the declaration does not state. The head declares `modules`, and the
+/// mark `deprecated` is a form of the feature `deprecation`.
+@![features("modules")]
+
+@[refuses("FeatureUndeclared")]
+@[deprecated]
+def one() -> Integer = 1;

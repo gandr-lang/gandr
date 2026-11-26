@@ -638,6 +638,10 @@ fn lowered(
         LoweringRefusal::MisplacedAttribute {
             name, place, takes, ..
         } => write!(f, "the attribute `{name}` stands on {takes}, not on {place}"),
+        LoweringRefusal::FeatureUndeclared { feature, .. } => write!(
+            f,
+            "the source uses the language feature `{feature}` and does not declare it"
+        ),
         LoweringRefusal::ForwardMemberReference { name, .. } => {
             write!(f, "the member `{name}` is used before it is declared")
         },
@@ -2105,6 +2109,10 @@ pub mod tests
                 name: registered,
                 place: AttributePlace::Declaration,
                 takes: AttributePlaces::CONSTRUCTOR,
+            },
+            LoweringRefusal::FeatureUndeclared {
+                span,
+                feature: "modules",
             },
             LoweringRefusal::ForwardMemberReference {
                 span,

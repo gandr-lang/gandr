@@ -379,6 +379,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::MisplacedAttribute { name, takes, .. } => {
             format!("write `{name}` before {takes}")
         },
+        LoweringRefusal::FeatureUndeclared { feature, .. } => {
+            format!("add \"{feature}\" to the attribute `features` at the head of the source")
+        },
         LoweringRefusal::NonValuePayload { .. } => {
             String::from("give the attribute a value payload")
         },
@@ -1463,7 +1466,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 250] = [
+    const WORDED: [&str; 251] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1512,6 +1515,7 @@ mod tests
         "HeldKept",
         "IllTypedPayload",
         "MisplacedAttribute",
+        "FeatureUndeclared",
         "ModelAmbiguous",
         "NonCovariantMotive",
         "NotSynthesisable",

@@ -1293,6 +1293,17 @@ pub enum LoweringRefusal<'source>
         takes: crate::attribute::AttributePlaces,
     },
 
+    /// A source that declares its language features with the attribute
+    /// `features` at its head, and that uses a feature that the attribute
+    /// does not state.
+    FeatureUndeclared
+    {
+        /// The bytes of the first form of the source that uses the feature.
+        span: ByteSpan,
+        /// The id of the language feature, a row of the features ledger.
+        feature: &'static str,
+    },
+
     /// A module member named at or after the position of the member that
     /// names it.
     ForwardMemberReference
@@ -2344,6 +2355,11 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::MisplacedAttribute {
                 name, place, takes, ..
             } => write!(f, "`{name}` stands on {takes}, and here it stands on {place}"),
+            Self::FeatureUndeclared { feature, .. } => write!(
+                f,
+                "the source uses the language feature `{feature}`, and its attribute `features` \
+                 does not declare it"
+            ),
             Self::ForwardMemberReference { name, .. } => write!(
                 f,
                 "the member `{name}` is declared at or after the member naming it; a member \
@@ -2910,6 +2926,7 @@ impl LoweringRefusal<'_>
             | Self::NonValuePayload { span, .. }
             | Self::IllTypedPayload { span, .. }
             | Self::MisplacedAttribute { span, .. }
+            | Self::FeatureUndeclared { span, .. }
             | Self::ForwardMemberReference { span, .. }
             | Self::PhaseDependence { span, .. }
             | Self::InertRead { span, .. }

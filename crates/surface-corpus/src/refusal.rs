@@ -983,6 +983,9 @@ pub enum RefusalName
     /// An attribute written at a place that the registry does not let it
     /// stand.
     MisplacedAttribute,
+    /// A source that uses a language feature that its attribute `features`
+    /// does not declare.
+    FeatureUndeclared,
     /// A module member named at or after the member naming it.
     ForwardMemberReference,
     /// A type member, or a type a signature states, reading a value.
@@ -1350,7 +1353,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 251_usize] = [
+    pub const VOCABULARY: [Self; 252_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1456,6 +1459,7 @@ impl RefusalName
         Self::NonValuePayload,
         Self::IllTypedPayload,
         Self::MisplacedAttribute,
+        Self::FeatureUndeclared,
         Self::ForwardMemberReference,
         Self::PhaseDependence,
         Self::InertRead,
@@ -1694,6 +1698,7 @@ impl RefusalName
         b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::MisplacedAttribute, b"MisplacedAttribute") |
+        (Self::FeatureUndeclared, b"FeatureUndeclared") |
         (Self::ForwardMemberReference, b"ForwardMemberReference") |
         (Self::PhaseDependence, b"PhaseDependence") | (Self::InertRead, b"InertRead") |
         (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw, b"UnprovenLaw") | (Self::PartialField, b"PartialField")
@@ -2091,6 +2096,7 @@ impl RefusalName
             Self::NonValuePayload => "NonValuePayload",
             Self::IllTypedPayload => "IllTypedPayload",
             Self::MisplacedAttribute => "MisplacedAttribute",
+            Self::FeatureUndeclared => "FeatureUndeclared",
             Self::ForwardMemberReference => "ForwardMemberReference",
             Self::PhaseDependence => "PhaseDependence",
             Self::InertRead => "InertRead",
@@ -2997,7 +3003,8 @@ impl<'source> RefusalOf<'source, Arena>
         RefusalName::MissingPayload) | (LoweringRefusal::NonValuePayload { .. },
         RefusalName::NonValuePayload) | (LoweringRefusal::IllTypedPayload { .. },
         RefusalName::IllTypedPayload) | (LoweringRefusal::MisplacedAttribute { .. },
-        RefusalName::MisplacedAttribute) | (LoweringRefusal::ForwardMemberReference { .. },
+        RefusalName::MisplacedAttribute) | (LoweringRefusal::FeatureUndeclared { .. },
+        RefusalName::FeatureUndeclared) | (LoweringRefusal::ForwardMemberReference { .. },
         RefusalName::ForwardMemberReference) | (LoweringRefusal::PhaseDependence { .. },
         RefusalName::PhaseDependence) | (LoweringRefusal::InertRead { .. },
         RefusalName::InertRead) | (LoweringRefusal::UnknownMember { .. },
@@ -3125,6 +3132,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::NonValuePayload { .. } => RefusalName::NonValuePayload,
         LoweringRefusal::IllTypedPayload { .. } => RefusalName::IllTypedPayload,
         LoweringRefusal::MisplacedAttribute { .. } => RefusalName::MisplacedAttribute,
+        LoweringRefusal::FeatureUndeclared { .. } => RefusalName::FeatureUndeclared,
         LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
         LoweringRefusal::PhaseDependence { .. } => RefusalName::PhaseDependence,
         LoweringRefusal::InertRead { .. } => RefusalName::InertRead,

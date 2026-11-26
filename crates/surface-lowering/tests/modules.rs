@@ -2084,7 +2084,7 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
             first,
             &whole,
         )
-        .into_iter()
+        .into_keys()
         .collect();
         let declared: Option<Vec<String>> =
             gandr_surface_lowering::gate::declared_features(table, &lowered.arena, first)
@@ -2124,6 +2124,57 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
         declared,
         Some(Vec::from(["modules".to_owned()])),
         "one key is one text"
+    );
+}
+
+/// A source that declares its features is refused for a feature that it uses
+/// and does not declare, at the first form that uses it. A source that
+/// declares nothing is not judged.
+#[test]
+fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
+{
+    let refused = |text: &'static str| -> Vec<(&'static str, ByteSpan)> {
+        lower(text)
+            .module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.outcome() {
+                DeclarationOutcome::Refused(LoweringRefusal::FeatureUndeclared {
+                    span,
+                    feature,
+                }) => Some((feature, span)),
+                _ => None,
+            })
+            .collect()
+    };
+
+    let undeclared = "@![features(\"modules\")] @[deprecated] def one() -> Integer = 1;";
+    assert_eq!(
+        refused(undeclared),
+        [("deprecation", span_of(undeclared, "deprecated", 0_usize))],
+        "the first declaration of the source carries the refusal, at the form that uses the \
+         feature"
+    );
+
+    let two = "@![features(\"records\")] @[deprecated] module Inner where { def one() -> Integer \
+               = 1; }";
+    assert_eq!(
+        refused(two)
+            .iter()
+            .map(|&(feature, _span)| feature)
+            .collect::<Vec<_>>(),
+        ["deprecation"],
+        "of two features that the source does not declare, the one that it uses first is named"
+    );
+
+    assert!(
+        refused("@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer = 1;")
+            .is_empty(),
+        "a source that declares each feature that it uses is not refused"
+    );
+    assert!(
+        refused("@[deprecated] def one() -> Integer = 1;").is_empty(),
+        "a source with no declaration of features is not judged"
     );
 }
 

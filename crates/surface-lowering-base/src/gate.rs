@@ -22,6 +22,7 @@
 //! attribute of it binds. [`declared_features`] answers the keys that the
 //! `features` attribute at the head of the source states.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::ops::Range;
 
@@ -35,6 +36,7 @@ use gandr_surface_grammar::RuleGate;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::rule_gate;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -242,7 +244,8 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
         .map(|&(_kind, _name, gate)| gate)
 }
 
-/// The language features that the source `source` of a unit uses.
+/// The language features that the source `source` of a unit uses, each with
+/// the bytes of its first use.
 ///
 /// # Specification
 /// - requires: `tree` is the tree of the unit, read under `pbg`; `within` is
@@ -252,8 +255,11 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
 ///   `tree` inside `within`, of each attribute that `table` files under a key
 ///   of `source`, and of each builtin row whose key a `builtin` attribute of
 ///   `source` states. A rule, an attribute or a row of tier zero adds nothing.
+///   The span of an id is the span of the node or of the attribute that
+///   starts first among those that use it, and the longest of those that
+///   start there.
 /// - provides: the set that the keys of [`declared_features`] are compared
-///   with.
+///   with, and the place of a refusal.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -266,7 +272,7 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
 /// # Cost
 /// - time: one pass over the nodes of the tree and one over the entries of the
 ///   table.
-/// - allocation: the set, one element for each feature.
+/// - allocation: the map, one element for each feature.
 #[inline]
 #[must_use]
 pub fn used_features(
@@ -274,12 +280,15 @@ pub fn used_features(
     (table, arena): (&AttributeTable, &CoreArena),
     source: SourceIndex,
     within: &Range<ByteOffset>,
-) -> BTreeSet<&'static str>
+) -> BTreeMap<&'static str, ByteSpan>
 {
-    let mut used: BTreeSet<&'static str> = BTreeSet::new();
-    let mut gated = |gate: Option<RuleGate>| {
+    let mut used: BTreeMap<&'static str, ByteSpan> = BTreeMap::new();
+    let mut gated = |gate: Option<RuleGate>, span: ByteSpan| {
         if let Some(RuleGate::Feature(id)) = gate {
-            let _new = used.insert(id);
+            let first = used.entry(id).or_insert(span);
+            if (span.start(), first.end()) < (first.start(), span.end()) {
+                *first = span;
+            }
         }
     };
     for position in tree.positions() {
@@ -289,23 +298,63 @@ pub fn used_features(
             && let NodeLabel::Meld(mold) | NodeLabel::Tile(mold) = node.label()
             && let Ok(rule) = pbg.rule_of(mold)
         {
-            gated(rule_gate(RuleName(rule.name)));
+            gated(rule_gate(RuleName(rule.name)), node.span());
         }
     }
     for entry in table.of_source(source) {
-        gated(attribute_gate(entry.name()));
+        gated(attribute_gate(entry.name()), entry.span());
         if entry.name() == RegisteredAttribute::BUILTIN
             && let Maybe::Present(payload) = entry.payload()
             && let Maybe::Present(keys) = texts(arena, payload)
         {
             for key in keys {
                 if let Maybe::Present(row) = Row::named(Key(key.as_ref())) {
-                    gated(builtin_gate(row));
+                    gated(builtin_gate(row), entry.span());
                 }
             }
         }
     }
     used
+}
+
+/// The language feature that the source `source` uses and does not declare,
+/// with the bytes of its first use: the one whose first use starts first.
+///
+/// # Specification
+/// - requires: as [`used_features`].
+/// - ensures: nothing for a source with no `features` attribute at its head,
+///   and nothing for a source that declares each feature that it uses; else
+///   the feature of [`used_features`] that [`declared_features`] does not
+///   hold and whose span starts first, and the first by its id among those
+///   that start at one byte.
+/// - provides: the refusal of a source that uses a feature that it does not
+///   declare.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source that declares what it uses, a source that
+///   declares a different feature, and a source with no declaration separate
+///   the answers.
+/// - witness: `gandr-surface-lowering::tests::modules::a_source_is_refused_for_a_feature_that_it_does_not_declare`
+///
+/// # Cost
+/// - time: as [`used_features`], for a source with the attribute; one pass
+///   over the keys of the sources for a source with none.
+#[inline]
+#[must_use]
+pub fn undeclared_feature(
+    grammar: (&Pbg, &SyntaxTree<'_>),
+    (table, arena): (&AttributeTable, &CoreArena),
+    source: SourceIndex,
+    within: &Range<ByteOffset>,
+) -> Option<(&'static str, ByteSpan)>
+{
+    let declared = declared_features(table, arena, source)?;
+    used_features(grammar, (table, arena), source, within)
+        .into_iter()
+        .filter(|&(feature, _span)| !declared.contains(feature))
+        .min_by_key(|&(feature, span)| (span.start(), feature))
 }
 
 /// The keys that the source `source` of a unit declares with the attribute
