@@ -15,13 +15,34 @@
 //! tests of this module hold the two tables against the registry and against
 //! the builtin table. The ledger tool holds each id against the rows of the
 //! features ledger.
+//!
+//! [`used_features`] answers the language features that one source of a unit
+//! uses: the feature of the rule of each node of its tree, the feature of each
+//! attribute filed on it, and the feature of each builtin row that a `builtin`
+//! attribute of it binds. [`declared_features`] answers the keys that the
+//! `features` attribute at the head of the source states.
 
+use alloc::collections::BTreeSet;
+use core::ops::Range;
+
+use gandr_core_term::CoreArena;
+use gandr_core_term::builtin::Key;
 use gandr_core_term::builtin::Kind;
 use gandr_core_term::builtin::Row;
 use gandr_surface_grammar::CoreReason;
+use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RuleGate;
+use gandr_surface_grammar::RuleName;
+use gandr_surface_grammar::rule_gate;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::NodeLabel;
+use gandr_surface_syntax::SyntaxTree;
+use quenchant_shape::shape::Maybe;
 
+use crate::attribute::AttributeTable;
 use crate::attribute::RegisteredAttribute;
+use crate::attribute::texts;
+use crate::unit::SourceIndex;
 
 /// The gate of each registered attribute, in the order of the registry.
 ///
@@ -219,6 +240,112 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
         .iter()
         .find(|&&(held, name, _gate)| held == kind && name == word)
         .map(|&(_kind, _name, gate)| gate)
+}
+
+/// The language features that the source `source` of a unit uses.
+///
+/// # Specification
+/// - requires: `tree` is the tree of the unit, read under `pbg`; `within` is
+///   the bytes of the source in the unit; `table` holds the attributes of the
+///   unit, and `arena` their payloads.
+/// - ensures: the id of the language feature of each rule that molds a node of
+///   `tree` inside `within`, of each attribute that `table` files under a key
+///   of `source`, and of each builtin row whose key a `builtin` attribute of
+///   `source` states. A rule, an attribute or a row of tier zero adds nothing.
+/// - provides: the set that the keys of [`declared_features`] are compared
+///   with.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source of the forms of the first twin uses nothing, and
+///   a form, an attribute and a builtin row outside tier zero each add their
+///   feature.
+/// - witness: `gandr-surface-lowering::tests::modules::a_source_uses_the_features_of_its_forms_and_of_its_attributes`
+///
+/// # Cost
+/// - time: one pass over the nodes of the tree and one over the entries of
+///   the table.
+/// - allocation: the set, one element for each feature.
+#[inline]
+#[must_use]
+pub fn used_features(
+    (pbg, tree): (&Pbg, &SyntaxTree<'_>),
+    (table, arena): (&AttributeTable, &CoreArena),
+    source: SourceIndex,
+    within: &Range<ByteOffset>,
+) -> BTreeSet<&'static str>
+{
+    let mut used: BTreeSet<&'static str> = BTreeSet::new();
+    let mut gated = |gate: Option<RuleGate>| {
+        if let Some(RuleGate::Feature(id)) = gate {
+            let _new = used.insert(id);
+        }
+    };
+    for position in tree.positions() {
+        if let Some(node) = tree.node(position)
+            && within.start <= node.span().start()
+            && node.span().end() <= within.end
+            && let NodeLabel::Meld(mold) | NodeLabel::Tile(mold) = node.label()
+            && let Ok(rule) = pbg.rule_of(mold)
+        {
+            gated(rule_gate(RuleName(rule.name)));
+        }
+    }
+    for entry in table.of_source(source) {
+        gated(attribute_gate(entry.name()));
+        if entry.name() == RegisteredAttribute::BUILTIN
+            && let Maybe::Present(payload) = entry.payload()
+            && let Maybe::Present(keys) = texts(arena, payload)
+        {
+            for key in keys {
+                if let Maybe::Present(row) = Row::named(Key(key.as_ref())) {
+                    gated(builtin_gate(row));
+                }
+            }
+        }
+    }
+    used
+}
+
+/// The keys that the source `source` of a unit declares with the attribute
+/// `features` at its head.
+///
+/// # Specification
+/// - requires: `table` holds the attributes of the unit, and `arena` their
+///   payloads.
+/// - ensures: nothing for a source with no `features` attribute at its head;
+///   else the texts of the payload of that attribute, and no text for an
+///   attribute with no payload.
+/// - provides: the set that [`used_features`] is compared with.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source with the attribute answers its keys, and a
+///   source with none answers nothing.
+/// - witness: `gandr-surface-lowering::tests::modules::a_source_uses_the_features_of_its_forms_and_of_its_attributes`
+#[inline]
+#[must_use]
+pub fn declared_features<'arena>(
+    table: &AttributeTable,
+    arena: &'arena CoreArena,
+    source: SourceIndex,
+) -> Option<BTreeSet<&'arena str>>
+{
+    let entry = table
+        .sources()
+        .iter()
+        .filter(|key| key.source() == source)
+        .flat_map(|&key| table.entries(key))
+        .find(|entry| entry.name() == RegisteredAttribute::FEATURES)?;
+    let mut declared: BTreeSet<&'arena str> = BTreeSet::new();
+    if let Maybe::Present(payload) = entry.payload()
+        && let Maybe::Present(keys) = texts(arena, payload)
+    {
+        declared.extend(keys.into_iter().map(AsRef::as_ref));
+    }
+    Some(declared)
 }
 
 #[cfg(test)]

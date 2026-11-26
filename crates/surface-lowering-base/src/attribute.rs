@@ -2072,6 +2072,44 @@ impl AttributeTable
         self.entries.get(&key).map_or(&[], Vec::as_slice)
     }
 
+    /// Each entry of the source `source`: of the source itself, of each of
+    /// its declarations, and of each member of them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each entry filed under a key whose source is `source`, one
+    ///   time; the entries of the keys in key order, then those of the
+    ///   members.
+    /// - provides: the attributes that a source writes, for the language
+    ///   features that they use.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a lazy iterator, and a predicate that
+    ///   walked it would consume it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the attribute of a declaration of a source is among
+    ///   the features that the source uses.
+    /// - witness: `gandr-surface-lowering::tests::modules::a_source_uses_the_features_of_its_forms_and_of_its_attributes`
+    #[inline]
+    pub fn of_source(
+        &self,
+        source: SourceIndex,
+    ) -> impl Iterator<Item = &AttributeEntry>
+    {
+        let filed = self
+            .entries
+            .iter()
+            .filter(move |&(key, _entries)| key.source() == source)
+            .flat_map(|(_key, entries)| entries);
+        let members = self
+            .members
+            .iter()
+            .filter(move |&(key, _members)| key.source() == source)
+            .flat_map(|(_key, members)| members.values().flatten());
+        filed.chain(members)
+    }
+
     /// File `laws`, what the `respects` entry filed under `key` names.
     ///
     /// # Specification

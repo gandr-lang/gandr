@@ -191,7 +191,7 @@ pub const RULE_GATES: [(&str, RuleGate); 164_usize] = [
     ("if_expression", RuleGate::Feature("conditionals")),
     ("import_declaration", RuleGate::Feature("imports")),
     ("index_expression", RuleGate::Feature("places")),
-    ("inner_attribute_block", RuleGate::Feature("attributes")),
+    ("inner_attribute_block", RuleGate::Core(CoreReason::Record)),
     ("inner_attribute_member", RuleGate::Feature("attributes")),
     (
         "instantiation.direction.descent",

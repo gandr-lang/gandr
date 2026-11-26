@@ -2060,6 +2060,69 @@ fn a_source_declares_its_features_at_its_head()
     );
 }
 
+/// The features that a source uses are those of its forms and of its
+/// attributes, and the features that it declares are the keys at its head.
+#[test]
+fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
+{
+    let features = |text: &'static str| {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let parsed = parse(&pbg, SourceText::from(text)).expect("the parser reads the source");
+        let tree = parsed.into_tree();
+        let lowered = finish(&pbg, &tree);
+        let whole = gandr_surface_syntax::ByteOffset::from(0_usize)
+            .. gandr_surface_syntax::ByteOffset::from(text.len());
+        let first = gandr_surface_lowering::SourceIndex::from(0_usize);
+        let table = lowered.module.attributes();
+        let used: Vec<&'static str> = gandr_surface_lowering::gate::used_features(
+            (&pbg, &tree),
+            (table, &lowered.arena),
+            first,
+            &whole,
+        )
+        .into_iter()
+        .collect();
+        let declared: Option<Vec<String>> =
+            gandr_surface_lowering::gate::declared_features(table, &lowered.arena, first)
+                .map(|keys| keys.into_iter().map(str::to_owned).collect());
+        (used, declared)
+    };
+
+    let (used, declared) =
+        features("def add(a : u64, b : u64) -> u64 = u64.wrapping_add a b;");
+    assert!(
+        used.is_empty(),
+        "a source of the forms of the first twin uses no feature: {used:?}"
+    );
+    assert_eq!(declared, None, "and it declares nothing");
+
+    let (used, declared) = features(
+        "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer = 1;",
+    );
+    assert_eq!(
+        used,
+        ["deprecation"],
+        "the attribute `deprecated` adds its feature, and the head of the source adds none"
+    );
+    assert_eq!(
+        declared,
+        Some(Vec::from(["deprecation".to_owned(), "modules".to_owned()])),
+        "the keys of the head are the declared features"
+    );
+
+    let (used, declared) = features("@![features] module Inner { def one() -> Integer = 1; }");
+    assert_eq!(
+        used,
+        ["modules"],
+        "a form outside tier zero adds the feature of its rule"
+    );
+    assert_eq!(
+        declared,
+        Some(Vec::new()),
+        "a head with no key declares no feature"
+    );
+}
+
 #[test]
 fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
 {
