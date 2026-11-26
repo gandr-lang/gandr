@@ -240,13 +240,13 @@ impl FeatureCensus
     ///   reaches it. Each source is read, laid out after the prelude and the
     ///   sources that it imports, parsed and lowered. Its step holds the
     ///   declaration of the features that the source itself uses, and how its
-    ///   head stands against it. Under [`Rewrite::InPlace`] a source whose
-    ///   head states a different declaration is written back with the
-    ///   declaration of its step, as [`rewritten`] writes it, and no other
-    ///   source is written. A path that cannot be listed or read, that names
-    ///   no source, that fails to parse or lower, whose source the lowering
-    ///   refuses whole, or whose source cannot be written is a
-    ///   [`FeatureStep::Fault`]. Exhaustion is stable.
+    ///   head stands against it. Under [`Rewrite::InPlace`] a source whose head
+    ///   states a different declaration is written back with the declaration of
+    ///   its step, as [`rewritten`] writes it, and no other source is written.
+    ///   A path that cannot be listed or read, that names no source, that fails
+    ///   to parse or lower, whose source the lowering refuses whole, or whose
+    ///   source cannot be written is a [`FeatureStep::Fault`]. Exhaustion is
+    ///   stable.
     /// - provides: the pass that `gandr features` renders.
     /// - fails: never; each fault is a step, and the census continues past it.
     /// - panics: none.
@@ -255,18 +255,19 @@ impl FeatureCensus
     /// # Adequacy
     /// - hypothesis: L3 — a source of the first twin, a source that uses one
     ///   feature and a missing path give the exact line of each one and the
-    ///   exit; a source with no attribute, one with a stale attribute, one
-    ///   with the attribute beside a different one and one with a `//!` line
-    ///   are each written to their exact text, and a second run writes none.
+    ///   exit; a source with no attribute, one with a stale attribute, one with
+    ///   the attribute beside a different one and one with a `//!` line are
+    ///   each written to their exact text, and a second run writes none.
     /// - witness: `gandr-surface-driver::tests::cli::features_prints_the_declaration_of_each_source`
     /// - witness: `gandr-surface-driver::tests::cli::features_writes_the_declaration_of_each_source`
     #[inline]
     #[spec(
         captures: [built = self.grammar.is_ok(), rewrite = self.rewrite],
-        ensures: |ref ret| !(built && matches!(*ret,
-            Maybe::Present(FeatureStep::Fault { fault: CensusFault::Grammar(_), .. })))
-            && !(rewrite == Rewrite::Check && matches!(*ret,
-                Maybe::Present(FeatureStep::Source { head: Head::Written, .. }))),
+        ensures: |ref ret| match *ret {
+            Maybe::Present(FeatureStep::Fault { fault: CensusFault::Grammar(_), .. }) => !built,
+            Maybe::Present(FeatureStep::Source { head: Head::Written, .. }) => rewrite == Rewrite::InPlace,
+            Maybe::Present(_) | Maybe::Absent(_) => true,
+        },
     )]
     pub fn step(&mut self) -> Maybe<FeatureStep<'_>, walk_step::Absent>
     {
@@ -368,8 +369,8 @@ fn read_features<'census>(
 ///   it has one: the bytes of the attribute, and the bytes of the inner block
 ///   that holds it, which opens with `@![` and closes with `]`.
 /// - ensures: the rows of the table of the module documentation. A written
-///   block of its own is followed by one blank line. A removed block takes
-///   the rest of its line and one blank line after it.
+///   block of its own is followed by one blank line. A removed block takes the
+///   rest of its line and one blank line after it.
 /// - provides: the write of `gandr features --write`.
 /// - fails: never.
 /// - panics: none.
@@ -400,7 +401,7 @@ fn rewritten(
         (Some(&(ref entry, ref block)), true) => (removal(text, entry, block), String::new()),
     };
     let (before, after) = (text.get(.. cut.start)?, text.get(cut.end ..)?);
-    if text.get(cut.clone()) == Some(written.as_str()) {
+    if text.get(cut) == Some(written.as_str()) {
         return None;
     }
     let mut rewritten = String::with_capacity(
@@ -459,7 +460,9 @@ fn removal(
     let after = text.get(entry.end .. closed).unwrap_or_default();
     if before.trim().is_empty() && after.trim().is_empty() {
         let rest = text.get(block.end ..).unwrap_or_default();
-        let line = rest.find('\n').map_or(rest.len(), |end| end.saturating_add(1));
+        let line = rest
+            .find('\n')
+            .map_or(rest.len(), |end| end.saturating_add(1));
         let own_line = text
             .get(.. block.start)
             .is_some_and(|head| head.is_empty() || head.ends_with('\n'))
@@ -477,9 +480,9 @@ fn removal(
     let following = after.len().saturating_sub(after.trim_start().len());
     if after.trim_start().starts_with(',') {
         let comma = entry.end.saturating_add(following).saturating_add(1_usize);
-        let spaces = text
-            .get(comma .. closed)
-            .map_or(0_usize, |tail| tail.len().saturating_sub(tail.trim_start().len()));
+        let spaces = text.get(comma .. closed).map_or(0_usize, |tail| {
+            tail.len().saturating_sub(tail.trim_start().len())
+        });
         return entry.start .. comma.saturating_add(spaces);
     }
     let kept = before.trim_end();
@@ -516,15 +519,15 @@ mod tests
         let block = text.find("@![").expect("the text has an inner block");
         let closed = text.find(']').expect("the block closes");
         let entry = text.find("features").expect("the block has the attribute");
-        let ended = text
+        let payload = text
             .get(entry ..)
             .and_then(|rest| rest.find(')'))
-            .map_or(entry.saturating_add("features".len()), |at| {
-                let nested = text
-                    .get(entry.saturating_add(at).saturating_add(1) ..)
-                    .is_some_and(|rest| rest.starts_with(')'));
-                entry.saturating_add(at).saturating_add(if nested { 2 } else { 1 })
-            });
+            .map(|at| entry.saturating_add(at).saturating_add(1))
+            .expect("the attribute has a payload");
+        let nested = text
+            .get(payload ..)
+            .is_some_and(|rest| rest.starts_with(')'));
+        let ended = payload.saturating_add(usize::from(nested));
         (entry .. ended, block .. closed.saturating_add(1))
     }
 
@@ -536,7 +539,11 @@ mod tests
         let two = Declaration(Vec::from(["deprecation", "modules"]));
         let body = "/// The value one.\ndef one() -> Integer = 1;\n";
 
-        assert_eq!(rewritten(body, None, &none), None, "no attribute and no feature");
+        assert_eq!(
+            rewritten(body, None, &none),
+            None,
+            "no attribute and no feature"
+        );
         assert_eq!(
             rewritten(body, None, &one),
             Some(format!("@![features(\"modules\")]\n\n{body}")),
@@ -545,13 +552,17 @@ mod tests
         let documented = format!("//! A source.\n\n{body}");
         assert_eq!(
             rewritten(&documented, None, &one),
-            Some(format!("//! A source.\n\n@![features(\"modules\")]\n\n{body}")),
+            Some(format!(
+                "//! A source.\n\n@![features(\"modules\")]\n\n{body}"
+            )),
             "and after the `//!` lines of the head and their blank line"
         );
         let close = format!("//! A source.\n{body}");
         assert_eq!(
             rewritten(&close, None, &one),
-            Some(format!("//! A source.\n@![features(\"modules\")]\n\n{body}")),
+            Some(format!(
+                "//! A source.\n@![features(\"modules\")]\n\n{body}"
+            )),
             "with no blank line to pass"
         );
 
@@ -563,7 +574,9 @@ mod tests
         );
         assert_eq!(
             rewritten(&stated, Some(&site(&stated)), &two),
-            Some(format!("@![features((\"deprecation\", \"modules\"))]\n\n{body}")),
+            Some(format!(
+                "@![features((\"deprecation\", \"modules\"))]\n\n{body}"
+            )),
             "the attribute is replaced where it stands"
         );
         assert_eq!(

@@ -416,9 +416,8 @@ fn features_entry(
 /// - requires: `tree` is the tree of the unit, read under `pbg`, and `table`
 ///   holds the attributes of the unit.
 /// - ensures: nothing for a source with no `features` attribute at its head;
-///   else the span of the attribute, from its name through its payload, and
-///   the span of the inner attribute block that holds it, from `@![` through
-///   `]`.
+///   else the span of the attribute, from its name through its payload, and the
+///   span of the inner attribute block that holds it, from `@![` through `]`.
 /// - provides: the place that a tool rewrites the declaration at.
 /// - fails: never.
 /// - panics: none.
@@ -429,8 +428,7 @@ fn features_entry(
 /// - witness: `gandr-surface-driver::tests::cli::features_writes_the_declaration_of_each_source`
 ///
 /// # Cost
-/// - time: one pass over the nodes of the tree, for a source with the
-///   attribute
+/// - time: one pass over the nodes of the tree, for a source with the attribute
 #[inline]
 #[must_use]
 pub fn declaration_site(

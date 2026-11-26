@@ -2440,7 +2440,11 @@ fn features_writes_the_declaration_of_each_source()
 
     let again = ran(gandr(&[features, write, &scratch.0]));
     assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
-    assert_eq!(stdout(&again), "", "a head that states its declaration stands");
+    assert_eq!(
+        stdout(&again),
+        "",
+        "a head that states its declaration stands"
+    );
 
     let checked = ran(gandr(&[Path::new("check"), &scratch.0]));
     assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));

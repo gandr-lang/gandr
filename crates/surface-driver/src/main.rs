@@ -368,7 +368,6 @@ use gandr_surface_dispatcher::AuthorityError;
 use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::Class;
-use gandr_surface_dispatcher::Head;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
@@ -382,6 +381,7 @@ use gandr_surface_dispatcher::Fusions;
 use gandr_surface_dispatcher::Gathered;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Grant;
+use gandr_surface_dispatcher::Head;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Invocation;
@@ -4487,10 +4487,9 @@ fn kept(
 ///   `<path>: <declaration>` on standard output, the declaration rendered as
 ///   the dispatcher's `Declaration` renders it, sources in walk order. Under
 ///   [`Rewrite::InPlace`], only a source that the census wrote has its line.
-///   Each path that the census cannot read or write is `gandr: <path>:
-///   <fault>` on standard error, and the census continues past it. The exit is
-///   two when a path faulted or a write to a stream failed, and zero
-///   otherwise.
+///   Each path that the census cannot read or write is `gandr: <path>: <fault>`
+///   on standard error, and the census continues past it. The exit is two when
+///   a path faulted or a write to a stream failed, and zero otherwise.
 /// - provides: `gandr features`.
 /// - fails: never; each failure is an exit code.
 /// - panics: none.
@@ -4499,9 +4498,9 @@ fn kept(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source of the first twin, a source that uses one
-///   feature and a missing path observe each line on both streams and the
-///   exit; four sources are written to their exact text, each with its line,
-///   and a second run prints no line.
+///   feature and a missing path observe each line on both streams and the exit;
+///   four sources are written to their exact text, each with its line, and a
+///   second run prints no line.
 /// - witness: `tests::cli::features_prints_the_declaration_of_each_source`
 /// - witness: `tests::cli::features_writes_the_declaration_of_each_source`
 ///

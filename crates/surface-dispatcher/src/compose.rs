@@ -2319,9 +2319,8 @@ pub fn unit_source_features<'source>(
         own,
         &(start .. gandr_surface_syntax::ByteOffset::from(usize::MAX)),
     );
-    let bytes = |span: gandr_surface_syntax::ByteSpan| {
-        usize::from(span.start()) .. usize::from(span.end())
-    };
+    let bytes =
+        |span: gandr_surface_syntax::ByteSpan| usize::from(span.start()) .. usize::from(span.end());
     let site =
         gandr_surface_lowering::gate::declaration_site((grammar, &tree), module.attributes(), own)
             .map(|(entry, block)| (bytes(entry), bytes(block)));
