@@ -151,6 +151,10 @@ pub enum RewriteName
     /// `handle`; both forms write `effect … handle`, the one spelling of a
     /// handler.
     HandlerWords,
+    /// A receiver at a deduced mode: `self : m T` and `self : View[m] T`,
+    /// the mode a static argument of `View`; both forms write the view, its
+    /// type in parentheses when it is no atom.
+    ModedReceiver,
 }
 
 impl RewriteName
@@ -176,6 +180,7 @@ impl RewriteName
         Self::TypeApplication,
         Self::BodyAfterEquals,
         Self::HandlerWords,
+        Self::ModedReceiver,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -206,6 +211,7 @@ impl RewriteName
             Self::TypeApplication => "type-application",
             Self::BodyAfterEquals => "body-after-equals",
             Self::HandlerWords => "handler-words",
+            Self::ModedReceiver => "moded-receiver",
         }
     }
 
@@ -292,7 +298,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 48] = [
+pub const REWRITES: [Rewrite; 50] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -679,6 +685,22 @@ pub const REWRITES: [Rewrite; 48] = [
         mold: HANDLER,
         from: Spelling("handle c : I { M } with { … }"),
         to: Spelling("effect c : I { M } handle { … }"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::ModedReceiver,
+        direction: Direction::Sugar,
+        mold: MoldName("moded_type"),
+        from: Spelling("self : m T"),
+        to: Spelling("self : View[m] T"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::ModedReceiver,
+        direction: Direction::Desugar,
+        mold: MoldName("moded_type"),
+        from: Spelling("self : m T"),
+        to: Spelling("self : View[m] T"),
         enabled: Enabled::On,
     },
 ];
@@ -2609,6 +2631,12 @@ impl<'source> Respelling<'_, 'source>
             },
             (RewriteName::HandlerWords, Direction::Sugar | Direction::Desugar) => {
                 return self.handler_words(parts, extent);
+            },
+            (RewriteName::ModedReceiver, Direction::Sugar | Direction::Desugar) => {
+                if !self.receiving(at) {
+                    return None;
+                }
+                self.viewed_receiver(&mut out, parts)?
             },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {

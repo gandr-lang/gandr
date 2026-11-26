@@ -311,6 +311,7 @@ use crate::form::misspelt_keyword;
 use crate::form::read_pieces;
 use crate::form::repair_at;
 use crate::form::shape_of;
+use crate::form::view_type;
 use crate::import::ImportBinding;
 use crate::import::ImportDeclaration;
 use crate::import::ImportIndex;
@@ -6856,6 +6857,13 @@ impl<'source> Collector<'_, 'source>
                         Some(Ok(Shape::Form { name, .. })) => Some(name),
                         Some(Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_))
                         | None => None,
+                    },
+                    |operand| {
+                        let mut pieces = Pieces::new();
+                        matches!(
+                            view_type(self.pbg, self.tree, operand, &mut pieces),
+                            Ok(Maybe::Present(_))
+                        )
                     },
                 )
             {

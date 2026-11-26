@@ -2731,6 +2731,166 @@ pub fn own_pieces<'source>(
     Ok(())
 }
 
+/// The mode word and the element of a view type at `view`: `View[m] a`,
+/// which applies the staged head `View[m]` to its element, and `View[m](a)`,
+/// which writes both in one form.
+///
+/// # Specification
+/// - requires: `view` is a form of `tree`; `pbg` interprets its molds.
+/// - ensures: for a staged type or a type's application whose head is the type
+///   name `View` with one name in its bracket and whose one argument is its
+///   element, that name's tile and the element; nothing for any other form.
+///   `read` holds pieces of the form after the call.
+/// - fails: [`LoweringRefusal::UnknownMold`] on a mold lookup absent from
+///   `pbg`.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Cost
+/// - allocation: the pieces of the form, growth within `read`'s buffer
+///
+/// # Adequacy
+/// - hypothesis: L3 — a method answering a view of its receiver, its result
+///   written juxtaposed and glued, and a receiver at a deduced mode written as
+///   a view.
+/// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
+/// - witness: `gandr-surface-lowering::lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
+#[inline]
+pub fn view_type<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    view: Placed,
+    read: &mut Pieces,
+) -> Result<Maybe<ViewType, view_type::Absent>, LoweringRefusal<'source>>
+{
+    let former = |at: Placed| -> Result<Option<Former>, LoweringRefusal<'source>> {
+        Ok(
+            match tree
+                .node(at.node)
+                .map(|node| shape_of(pbg, node))
+                .transpose()?
+            {
+                Some(Shape::Form { former, .. }) => Some(former),
+                Some(Shape::Root | Shape::Repair(_) | Shape::Layout) | None => None,
+            },
+        )
+    };
+    let unviewed = Ok(Maybe::Absent(view_type::Absent::Unviewed));
+    if !matches!(
+        former(view)?,
+        Some(Former::StagedType | Former::TypeApplication)
+    ) {
+        return unviewed;
+    }
+    read_pieces(pbg, tree, view.node, read)?;
+    let element = match *read.pieces.as_slice() {
+        [
+            Piece::Operand(staged),
+            Piece::Tile {
+                label: TileName::PAREN_OPEN,
+                ..
+            },
+            Piece::Operand(element),
+            Piece::Tile {
+                label: TileName::PAREN_CLOSE,
+                ..
+            },
+        ] if matches!(former(staged)?, Some(Former::StagedType)) => {
+            read_pieces(pbg, tree, staged.node, read)?;
+            element
+        },
+        [
+            ..,
+            Piece::Operand(element),
+            Piece::Tile {
+                label: TileName::PAREN_CLOSE,
+                ..
+            },
+        ] => element,
+        _ => return unviewed,
+    };
+    let &[
+        Piece::Operand(head),
+        Piece::Tile {
+            label: TileName::BRACKET_OPEN,
+            ..
+        },
+        Piece::Tile {
+            label: TileName::IDENTIFIER,
+            at: mode,
+        },
+        Piece::Tile {
+            label: TileName::BRACKET_CLOSE,
+            ..
+        },
+        ref rest @ ..,
+    ] = read.pieces.as_slice()
+    else {
+        return unviewed;
+    };
+    let listed = matches!(
+        *rest,
+        [
+            Piece::Tile {
+                label: TileName::PAREN_OPEN,
+                ..
+            },
+            Piece::Operand(listed),
+            Piece::Tile {
+                label: TileName::PAREN_CLOSE,
+                ..
+            },
+        ] if listed == element
+    );
+    let viewed = (listed || rest.is_empty())
+        && matches!(former(head)?, Some(Former::TypeHead))
+        && tree
+            .fragment(head.node)
+            .is_some_and(|name| name.as_ref() == "View");
+
+    Ok(if viewed {
+        Maybe::Present(ViewType { mode, element })
+    }
+    else {
+        Maybe::Absent(view_type::Absent::Unviewed)
+    })
+}
+
+/// The parts of a view type `View[m] a`, as [`view_type`] reads them.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the tile of the mode word and the element's form.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — a plain pair.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`view_type`].
+/// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ViewType
+{
+    /// The mode word in the bracket, `m`.
+    pub mode: Placed,
+    /// The element, `a`.
+    pub element: Placed,
+}
+
+/// Why a form is no view type.
+pub mod view_type
+{
+    /// Why a form is no view type.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum Absent
+    {
+        /// The form is no staged `View[m]` applied to one element.
+        Unviewed,
+    }
+}
+
 /// Replace the head of the type's application pieces in `read` with the
 /// pieces of the call it holds, when the head is a call in parentheses: `(f
 /// a) b` reads as the call `f(a)(b)`, and `(M.f a) b` as `M.f(a)(b)`, so

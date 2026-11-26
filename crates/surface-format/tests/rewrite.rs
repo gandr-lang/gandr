@@ -1596,6 +1596,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "type-application",
             "body-after-equals",
             "handler-words",
+            "moded-receiver",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2699,6 +2700,38 @@ fn a_handler_is_written_effect_then_handle()
             spelled(&grammar, source, form, only),
             moved,
             "{form}: the words move alike"
+        );
+        assert_eq!(
+            spelled(&grammar, moved.as_str(), form, only),
+            moved,
+            "{form}: a second pass changes nothing"
+        );
+    }
+}
+
+/// A receiver at a deduced mode is written as a view in either form and
+/// alone in a selection: `self : m List Integer` is `self : View[m] (List
+/// Integer)`, its type in parentheses as no atom, and `self : m Places` is
+/// `self : View[m] Places`. A receiver at a mode word and a parameter after
+/// the receiver stay. A second pass changes nothing.
+#[test]
+fn a_receiver_at_a_deduced_mode_is_written_as_a_view()
+{
+    let grammar = grammar();
+    let source = "module Places where
+  type Places = List Integer;
+  def first[m : Mode](self : m List Integer) -> View[m] Integer = self.#[0];
+  def nth[m : Mode](self : m Places, i : Integer) -> View[m] Integer = self.#[i];
+  def size(self : shared List Integer) -> Integer = pure 2;
+";
+    let only = Selection::Only(&[RewriteName::ModedReceiver]);
+    let moved = spelled(&grammar, source, Form::Sugared, only);
+    expect![[r#""#]].assert_eq(&moved);
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, only),
+            moved,
+            "{form}: the receiver moves alike"
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, only),
