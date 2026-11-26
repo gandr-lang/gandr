@@ -2079,11 +2079,18 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
             .. gandr_surface_syntax::ByteOffset::from(text.len());
         let first = gandr_surface_lowering::SourceIndex::from(0_usize);
         let table = lowered.module.attributes();
+        let marked = gandr_surface_lowering::gate::marked_rows(&lowered.module, &lowered.arena);
+        let reached = gandr_surface_lowering::gate::reached_rows(
+            lowered.module.resolutions(),
+            &whole,
+            |constant| marked.get(&constant).copied(),
+        );
         let used: Vec<&'static str> = gandr_surface_lowering::gate::used_features(
             (&pbg, &tree),
             (table, &lowered.arena),
             first,
             &whole,
+            &reached,
         )
         .into_keys()
         .collect();

@@ -2317,11 +2317,18 @@ pub fn unit_source_features<'source>(
         || gandr_surface_syntax::ByteOffset::from(0_usize),
         gandr_surface_lowering::UnitSource::start,
     );
+    let within = start .. gandr_surface_syntax::ByteOffset::from(usize::MAX);
+    let marked = gandr_surface_lowering::gate::marked_rows(&module, &arena);
+    let reached =
+        gandr_surface_lowering::gate::reached_rows(module.resolutions(), &within, |constant| {
+            marked.get(&constant).copied()
+        });
     let used = gandr_surface_lowering::gate::used_features(
         (grammar, &tree),
         (module.attributes(), &arena),
         own,
-        &(start .. gandr_surface_syntax::ByteOffset::from(usize::MAX)),
+        &within,
+        &reached,
     );
     let bytes =
         |span: gandr_surface_syntax::ByteSpan| usize::from(span.start()) .. usize::from(span.end());

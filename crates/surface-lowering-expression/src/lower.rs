@@ -19764,17 +19764,32 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 || ByteOffset::from(usize::MAX),
                 crate::unit::UnitSource::start,
             );
+            let within = start .. end;
+            // A name of the source reaches a builtin row through the
+            // declaration of the tool chain that has the mark of the row.
+            let reached = gandr_surface_lowering_base::gate::reached_rows(
+                &self.cx().resolutions,
+                &within,
+                |constant| {
+                    slots.get(usize::from(constant)).and_then(|marked| {
+                        match self.cx().row_of(marked) {
+                            Maybe::Present(row) => Some(row),
+                            Maybe::Absent(_) => None,
+                        }
+                    })
+                },
+            );
             let Some(slot) = slots.get_mut(usize::from(module.first))
             else {
                 continue;
             };
             let grammar = (self.cx().pbg, self.cx().tree);
-            let within = start .. end;
             if let Some((feature, span)) = gandr_surface_lowering_base::gate::undeclared_feature(
                 grammar,
                 (table, arena),
                 source,
                 &within,
+                &reached,
             ) {
                 slot.refuse(written.at.node, LoweringRefusal::FeatureUndeclared {
                     span,
@@ -19786,6 +19801,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 (table, arena),
                 source,
                 &within,
+                &reached,
             ) {
                 slot.refuse(written.at.node, LoweringRefusal::FeatureUnused {
                     span,

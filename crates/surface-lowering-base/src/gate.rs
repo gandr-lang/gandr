@@ -24,12 +24,14 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
 use core::ops::Range;
 
 use gandr_core_term::CoreArena;
 use gandr_core_term::builtin::Key;
 use gandr_core_term::builtin::Kind;
 use gandr_core_term::builtin::Row;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::CoreReason;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RuleGate;
@@ -44,6 +46,8 @@ use quenchant_shape::shape::Maybe;
 use crate::attribute::AttributeTable;
 use crate::attribute::RegisteredAttribute;
 use crate::attribute::texts;
+use crate::module::LoweredModule;
+use crate::resolve::Resolution;
 use crate::resolve::SurfaceName;
 use crate::unit::SourceIndex;
 
@@ -245,19 +249,129 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
         .map(|&(_kind, _name, gate)| gate)
 }
 
+/// The builtin rows that the names of one source reach: each written name
+/// inside `within` that the lowering resolved to a declaration with a
+/// `builtin` mark, with the row of the mark.
+///
+/// A source of the tool chain binds a row with the mark. Each other source
+/// reaches the row by the name of that declaration, through the prelude or
+/// through an import.
+///
+/// # Specification
+/// - requires: `resolutions` are the names that the lowering of the unit
+///   resolved; `row_of` answers the row of the `builtin` mark of the
+///   declaration at a position, when the declaration has one.
+/// - ensures: one element for each resolution inside `within` that names a
+///   declaration for which `row_of` answers, with the span of the name and that
+///   row, in the order of `resolutions`.
+/// - provides: the rows that [`used_features`] counts beside the marks of the
+///   source itself.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source that names a float primitive of the prelude uses
+///   the feature of the float row, and a source that names a primitive of the
+///   first twin uses none.
+/// - witness: `gandr-surface-driver::tests::cli::features_counts_a_builtin_row_that_a_name_reaches`
+///
+/// # Cost
+/// - time: one pass over the resolutions.
+/// - allocation: the rows, one element for each name that reaches one.
+#[inline]
+#[must_use]
+pub fn reached_rows(
+    resolutions: &[(ByteSpan, Resolution)],
+    within: &Range<ByteOffset>,
+    row_of: impl Fn(ConstantIndex) -> Option<Row>,
+) -> Vec<(ByteSpan, Row)>
+{
+    resolutions
+        .iter()
+        .filter(|&&(span, _resolution)| within.start <= span.start() && span.end() <= within.end)
+        .filter_map(|&(span, resolution)| match resolution {
+            Resolution::Declaration(constant) => row_of(constant).map(|row| (span, row)),
+            Resolution::Binder(_) | Resolution::Constructor { .. } | Resolution::Builtin => None,
+        })
+        .collect()
+}
+
+/// The row of the `builtin` mark of each declaration of `module` that has
+/// one, by the position of the declaration.
+///
+/// # Specification
+/// - requires: `arena` is the arena that `module` was lowered into.
+/// - ensures: one element for each declaration either half of which carries a
+///   `builtin` attribute whose first text is the key of a row.
+/// - provides: the `row_of` of [`reached_rows`] for a lowered module.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`reached_rows`].
+/// - witness: `gandr-surface-driver::tests::cli::features_counts_a_builtin_row_that_a_name_reaches`
+///
+/// # Cost
+/// - time: one pass over the declarations of the module.
+/// - allocation: the map, one element for each marked declaration.
+#[inline]
+#[must_use]
+pub fn marked_rows(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+) -> BTreeMap<ConstantIndex, Row>
+{
+    let table = module.attributes();
+    module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            [declaration.signature(), declaration.definition()]
+                .into_iter()
+                .find_map(|half| {
+                    let Maybe::Present(key) = half
+                    else {
+                        return None;
+                    };
+                    table.entries(key).iter().find_map(|entry| {
+                        if entry.name() != RegisteredAttribute::BUILTIN {
+                            return None;
+                        }
+                        let Maybe::Present(payload) = entry.payload()
+                        else {
+                            return None;
+                        };
+                        let Maybe::Present(keys) = texts(arena, payload)
+                        else {
+                            return None;
+                        };
+                        let key = keys.first()?;
+                        match Row::named(Key(key.as_ref())) {
+                            Maybe::Present(row) => Some(row),
+                            Maybe::Absent(_) => None,
+                        }
+                    })
+                })
+                .map(|row| (declaration.constant(), row))
+        })
+        .collect()
+}
+
 /// The language features that the source `source` of a unit uses, each with
 /// the bytes of its first use.
 ///
 /// # Specification
 /// - requires: `tree` is the tree of the unit, read under `pbg`; `within` is
 ///   the bytes of the source in the unit; `table` holds the attributes of the
-///   unit, and `arena` their payloads.
+///   unit, and `arena` their payloads; `reached` is [`reached_rows`] of the
+///   source.
 /// - ensures: the id of the language feature of each rule that molds a node of
 ///   `tree` inside `within`, of each attribute that `table` files under a key
-///   of `source`, and of each builtin row whose key a `builtin` attribute of
-///   `source` states. A rule, an attribute or a row of tier zero adds nothing.
-///   The span of an id is the span of the node or of the attribute that starts
-///   first among those that use it, and the longest of those that start there.
+///   of `source`, of each builtin row whose key a `builtin` attribute of
+///   `source` states, and of each row of `reached`. A rule, an attribute or a
+///   row of tier zero adds nothing. The span of an id is the span of the node,
+///   of the attribute or of the name that starts first among those that use it,
+///   and the longest of those that start there.
 /// - provides: the set that the keys of [`declared_features`] are compared
 ///   with, and the place of a refusal.
 /// - fails: never.
@@ -265,13 +379,14 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source of the forms of the first twin uses nothing, and
-///   a form, an attribute and a builtin row outside tier zero each add their
-///   feature.
+///   a form, an attribute, a builtin row and a name that reaches a builtin row
+///   outside tier zero each add their feature.
 /// - witness: `gandr-surface-lowering::tests::modules::a_source_uses_the_features_of_its_forms_and_of_its_attributes`
+/// - witness: `gandr-surface-driver::tests::cli::features_counts_a_builtin_row_that_a_name_reaches`
 ///
 /// # Cost
-/// - time: one pass over the nodes of the tree and one over the entries of the
-///   table.
+/// - time: one pass over the nodes of the tree, one over the entries of the
+///   table and one over the rows.
 /// - allocation: the map, one element for each feature.
 #[inline]
 #[must_use]
@@ -280,6 +395,7 @@ pub fn used_features(
     (table, arena): (&AttributeTable, &CoreArena),
     source: SourceIndex,
     within: &Range<ByteOffset>,
+    reached: &[(ByteSpan, Row)],
 ) -> BTreeMap<&'static str, ByteSpan>
 {
     let mut used: BTreeMap<&'static str, ByteSpan> = BTreeMap::new();
@@ -313,6 +429,9 @@ pub fn used_features(
                 }
             }
         }
+    }
+    for &(span, row) in reached {
+        gated(builtin_gate(row), span);
     }
     used
 }
@@ -348,10 +467,11 @@ pub fn undeclared_feature(
     (table, arena): (&AttributeTable, &CoreArena),
     source: SourceIndex,
     within: &Range<ByteOffset>,
+    reached: &[(ByteSpan, Row)],
 ) -> Option<(&'static str, ByteSpan)>
 {
     let declared = declared_features(table, arena, source)?;
-    used_features(grammar, (table, arena), source, within)
+    used_features(grammar, (table, arena), source, within, reached)
         .into_iter()
         .filter(|&(feature, _span)| !declared.contains(feature))
         .min_by_key(|&(feature, span)| (span.start(), feature))
@@ -389,6 +509,7 @@ pub fn unused_feature<'source>(
     (table, arena): (&AttributeTable, &CoreArena),
     source: SourceIndex,
     within: &Range<ByteOffset>,
+    reached: &[(ByteSpan, Row)],
 ) -> Option<(SurfaceName<'source>, ByteSpan)>
 {
     let entry = features_entry(table, source)?;
@@ -400,7 +521,7 @@ pub fn unused_feature<'source>(
     else {
         return None;
     };
-    let used = used_features((pbg, tree), (table, arena), source, within);
+    let used = used_features((pbg, tree), (table, arena), source, within, reached);
     let key = keys
         .iter()
         .map(AsRef::as_ref)

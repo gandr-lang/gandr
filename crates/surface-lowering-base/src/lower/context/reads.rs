@@ -144,6 +144,33 @@ impl<'source> Context<'_, 'source>
         else {
             return unkeyed;
         };
+        self.row_of(slot)
+    }
+
+    /// The row that the `builtin` attribute of `slot` names, for a slot that
+    /// stands in the collection or that a pass took out of it.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::builtin_row`], for `slot`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::builtin_row`].
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_type_signature_under_builtin_reads_its_atom_8073`
+    ///
+    /// # Cost
+    /// - allocation: the text of the attribute's key, setup
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(row) => gandr_core_term::builtin::Row::named(row.key()) == Maybe::Present(row),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn row_of(
+        &self,
+        slot: &crate::module::DeclarationSlot<'source>,
+    ) -> Maybe<gandr_core_term::builtin::Row, gandr_core_term::builtin::row::Absent>
+    {
+        let unkeyed = Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed);
         let Some(text) = slot
             .attributes
             .iter()
