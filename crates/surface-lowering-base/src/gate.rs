@@ -380,12 +380,7 @@ pub fn declared_features<'arena>(
     source: SourceIndex,
 ) -> Option<BTreeSet<&'arena str>>
 {
-    let entry = table
-        .sources()
-        .iter()
-        .filter(|key| key.source() == source)
-        .flat_map(|&key| table.entries(key))
-        .find(|entry| entry.name() == RegisteredAttribute::FEATURES)?;
+    let entry = features_entry(table, source)?;
     let mut declared: BTreeSet<&'arena str> = BTreeSet::new();
     if let Maybe::Present(payload) = entry.payload()
         && let Maybe::Present(keys) = texts(arena, payload)
@@ -394,6 +389,73 @@ pub fn declared_features<'arena>(
     }
     Some(declared)
 }
+
+/// The attribute `features` at the head of the source `source`, when its
+/// head has one.
+///
+/// # Specification
+/// trivial.
+fn features_entry(
+    table: &AttributeTable,
+    source: SourceIndex,
+) -> Option<&crate::attribute::AttributeEntry>
+{
+    table
+        .sources()
+        .iter()
+        .filter(|key| key.source() == source)
+        .flat_map(|&key| table.entries(key))
+        .find(|entry| entry.name() == RegisteredAttribute::FEATURES)
+}
+
+/// Where the source `source` of a unit writes the attribute `features` at its
+/// head: the bytes of the attribute, and the bytes of the inner block that
+/// holds it.
+///
+/// # Specification
+/// - requires: `tree` is the tree of the unit, read under `pbg`, and `table`
+///   holds the attributes of the unit.
+/// - ensures: nothing for a source with no `features` attribute at its head;
+///   else the span of the attribute, from its name through its payload, and
+///   the span of the inner attribute block that holds it, from `@![` through
+///   `]`.
+/// - provides: the place that a tool rewrites the declaration at.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an attribute alone in its block and one beside a
+///   different attribute are each rewritten at their exact bytes.
+/// - witness: `gandr-surface-driver::tests::cli::features_writes_the_declaration_of_each_source`
+///
+/// # Cost
+/// - time: one pass over the nodes of the tree, for a source with the
+///   attribute
+#[inline]
+#[must_use]
+pub fn declaration_site(
+    (pbg, tree): (&Pbg, &SyntaxTree<'_>),
+    table: &AttributeTable,
+    source: SourceIndex,
+) -> Option<(ByteSpan, ByteSpan)>
+{
+    let entry = features_entry(table, source)?.span();
+    tree.positions()
+        .filter_map(|position| tree.node(position))
+        .find(|node| {
+            node.span().start() < entry.start()
+                && entry.end() <= node.span().end()
+                && matches!(
+                    node.label(),
+                    NodeLabel::Meld(mold) | NodeLabel::Tile(mold)
+                        if pbg.rule_of(mold).is_ok_and(|rule| rule.name == INNER_BLOCK)
+                )
+        })
+        .map(|node| (entry, node.span()))
+}
+
+/// The name of the rule of an inner attribute block.
+const INNER_BLOCK: &str = "inner_attribute_block";
 
 #[cfg(test)]
 mod tests

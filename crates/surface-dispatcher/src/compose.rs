@@ -2242,8 +2242,18 @@ pub fn lower_unit_source<'source>(
 #[derive(Clone, Debug)]
 pub enum SourceFeatures<'source>
 {
-    /// The id of each language feature that the source uses, in byte order.
-    Used(Vec<&'static str>),
+    /// What the source uses, and where it declares it.
+    Used
+    {
+        /// The id of each language feature that the source uses, in byte
+        /// order.
+        used: Vec<&'static str>,
+        /// Where the source writes the attribute `features` at its head, in
+        /// the text of the unit: the bytes of the attribute, and the bytes of
+        /// the inner block that holds it. Nothing for a source with no such
+        /// attribute.
+        site: Option<(core::ops::Range<usize>, core::ops::Range<usize>)>,
+    },
     /// The lowering refused the unit as a whole.
     Refused(LoweringRefusal<'source>),
 }
@@ -2309,7 +2319,16 @@ pub fn unit_source_features<'source>(
         own,
         &(start .. gandr_surface_syntax::ByteOffset::from(usize::MAX)),
     );
-    Ok(SourceFeatures::Used(used.into_keys().collect()))
+    let bytes = |span: gandr_surface_syntax::ByteSpan| {
+        usize::from(span.start()) .. usize::from(span.end())
+    };
+    let site =
+        gandr_surface_lowering::gate::declaration_site((grammar, &tree), module.attributes(), own)
+            .map(|(entry, block)| (bytes(entry), bytes(block)));
+    Ok(SourceFeatures::Used {
+        used: used.into_keys().collect(),
+        site,
+    })
 }
 
 /// Lower the sources `unit` lays end to end in the tree `parsed` committed:

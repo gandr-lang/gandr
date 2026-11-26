@@ -2377,6 +2377,75 @@ fn check_refuses_a_declared_feature_that_is_no_row()
     );
 }
 
+/// `gandr features --write` writes the declaration into the head of each
+/// source that states a different one: a block of its own before a `///`
+/// comment and after a `//!` line, the attribute replaced beside a different
+/// one, and a stale block removed. A second run writes nothing, and each
+/// written source checks.
+#[test]
+fn features_writes_the_declaration_of_each_source()
+{
+    let scratch = Scratch::new(Path::new("features-write"));
+    let body = "/// The value one.\n@[deprecated]\ndef one() -> Integer = 1;\n";
+    let plain = "def one() -> Integer = 1;\n";
+    let sources = [
+        (
+            "bare.gandr",
+            body.to_owned(),
+            format!("@![features(\"deprecation\")]\n\n{body}"),
+        ),
+        (
+            "documented.gandr",
+            format!("//! A source.\n\n{body}"),
+            format!("//! A source.\n\n@![features(\"deprecation\")]\n\n{body}"),
+        ),
+        (
+            "shared.gandr",
+            format!("@![doc(\"A source.\"), features(\"modules\")]\n\n{body}"),
+            format!("@![doc(\"A source.\"), features(\"deprecation\")]\n\n{body}"),
+        ),
+        (
+            "stale.gandr",
+            format!("@![features(\"modules\")]\n\n{plain}"),
+            plain.to_owned(),
+        ),
+    ];
+    for &(name, ref before, _) in &sources {
+        std::fs::write(scratch.0.join(name), before).expect("the scratch source is written");
+    }
+    let features = Path::new("features");
+    let write = Path::new("--write");
+
+    let wrote = ran(gandr(&[features, write, &scratch.0]));
+    assert_eq!(code(&wrote), Code(0_i32), "{}", stderr(&wrote));
+    let shown = |name: &str| scratch.0.join(name).display().to_string();
+    assert_eq!(
+        stdout(&wrote),
+        format!(
+            "{}: @![features(\"deprecation\")]\n{}: @![features(\"deprecation\")]\n{}: \
+             @![features(\"deprecation\")]\n{}: tier zero\n",
+            shown("bare.gandr"),
+            shown("documented.gandr"),
+            shown("shared.gandr"),
+            shown("stale.gandr")
+        )
+    );
+    for &(name, _, ref after) in &sources {
+        assert_eq!(
+            &std::fs::read_to_string(scratch.0.join(name)).expect("the source is read back"),
+            after,
+            "{name}"
+        );
+    }
+
+    let again = ran(gandr(&[features, write, &scratch.0]));
+    assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
+    assert_eq!(stdout(&again), "", "a head that states its declaration stands");
+
+    let checked = ran(gandr(&[Path::new("check"), &scratch.0]));
+    assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));
+}
+
 /// #4906: `gandr doc` writes a page for each source of a package, an
 /// importer's beside the sibling it imports, and an index naming each page by
 /// its source and the first sentence of its own documentation; a path naming

@@ -88,11 +88,12 @@ use crate::walk::Traversal;
 use crate::walk::walk_step;
 use crate::width::Width;
 
-/// What the format verb does with a source whose layout changes.
+/// What a verb that rewrites sources does with a source whose text changes:
+/// the format verb with a layout, and the features verb with a declaration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Rewrite
 {
-    /// Write the formatted text back over the source.
+    /// Write the changed text back over the source.
     InPlace,
     /// Write nothing; report the source alone.
     Check,

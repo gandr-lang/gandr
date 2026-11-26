@@ -92,6 +92,8 @@ pub enum CensusFault<'census>
     Composed(ComposeFault<'census>),
     /// The lowering refused the source as a whole.
     Refused(LoweringRefusal<'census>),
+    /// The source could not be written back.
+    Unwritable(std::io::Error),
 }
 
 impl core::fmt::Display for CensusFault<'_>
@@ -112,6 +114,7 @@ impl core::fmt::Display for CensusFault<'_>
             Self::Grammar(error) => write!(f, "the built-in grammar did not build: {error}"),
             Self::Composed(ref fault) => write!(f, "not lowered: {fault}"),
             Self::Refused(ref refusal) => write!(f, "the lowering refused the source: {refusal}"),
+            Self::Unwritable(ref error) => write!(f, "not written: {error}"),
         }
     }
 }

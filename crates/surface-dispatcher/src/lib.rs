@@ -346,6 +346,7 @@ pub use crate::entry::worlds::Worlds;
 pub use crate::features::Declaration;
 pub use crate::features::FeatureCensus;
 pub use crate::features::FeatureStep;
+pub use crate::features::Head;
 pub use crate::format::FormatFault;
 pub use crate::format::FormatStep;
 pub use crate::format::Formatting;
