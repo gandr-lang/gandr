@@ -1,3 +1,5 @@
+@![features(("data-parameters", "indexed-data", "let-statements", "nominal-data", "universes"))]
+
 /// `number.type`: a number in type position.
 data Ix(n : Integer) : Type where
   | MkIx : Ix n

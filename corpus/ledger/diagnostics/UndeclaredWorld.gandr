@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "records", "session-types"))]
+
 /// `UndeclaredWorld`: a world position no world declaration holds.
 module Seat :> *{
   type Dispatch,

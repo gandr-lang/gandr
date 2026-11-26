@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 /// `record_selection_expression`: the record of the fields a
 /// value's labels select.
 def pick(r : *{a : Integer, b : Integer, c : Integer}) -> *{c : Integer, a : Integer} =

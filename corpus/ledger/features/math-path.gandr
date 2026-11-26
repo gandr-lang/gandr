@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "universes"))]
+
 /// `math-path`: `std.math.path` states composition and a function's action with
 /// endpoints, and proves composition's groupoid laws.
 ///

@@ -1,3 +1,5 @@
+@![features(("atom-identity", "data-parameters", "explicit-exits", "identity-types", "let-statements", "modules", "records", "universes"))]
+
 /// `identity`: names the relation, its reflexivity and its transport law a
 /// sealed type's identity is.
 def related(a : Unit, b : Unit) -> Type = return Unit;

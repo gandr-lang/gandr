@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "nominal-data", "universes"))]
+
 /// `NestedOccurrence`: a data declaration's own family occurs nested where no
 /// stage reaches it.
 data Two : Type where

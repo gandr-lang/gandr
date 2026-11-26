@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "located-judgements", "modules", "temporary-access"))]
+
 /// `hold_expression`: reading a held cell.
 world seat;
 module Seat :> *{mobile type Report, progress : Report} where {

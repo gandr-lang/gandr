@@ -1,3 +1,5 @@
+@![features(("codata", "universes"))]
+
 /// `CodataKindNotUniverse`: a codata declaration whose kind is not
 /// a computation universe.
 @[refuses("CodataKindNotUniverse")]

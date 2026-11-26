@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `UncertifiedCondition`: univalence over a catalogue whose site fails the
 /// corolla or the Segal condition.
 theory Magma where

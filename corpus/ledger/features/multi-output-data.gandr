@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 /// `multi-output-data`: Multi-output data constructors.
 /// Implemented: at grade ω a constructor that writes an output group reads as
 /// one port per output, an ordinary constructor over the shared inputs.

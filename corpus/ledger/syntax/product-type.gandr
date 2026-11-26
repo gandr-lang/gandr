@@ -1,2 +1,4 @@
+@![features(("products-and-sums", "records"))]
+
 /// `product_type`: a product type.
 def pair : Integer * String = *{1, "s"};

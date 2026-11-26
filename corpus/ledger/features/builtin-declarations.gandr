@@ -1,3 +1,5 @@
+@![features(("imports", "text-primitives"))]
+
 /// `builtin-declarations`: a module of `std` binds a row of the builtin table.
 /// The signature has no body, and the mark `builtin` names the row by its key.
 /// Implemented: `std.string` declares `string.append` as `append`, and a call

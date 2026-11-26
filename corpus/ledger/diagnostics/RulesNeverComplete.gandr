@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `RulesNeverComplete`: two rules of a block whose completion never ends.
 @[refuses("RulesNeverComplete")]
 theory Extrusion where

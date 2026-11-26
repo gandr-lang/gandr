@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "temporary-access", "universes"))]
+
 /// `memory-readmission`: Holds replayed by the kernel.
 /// Implemented: the bridge reads a lexical hold as its state-passing reduct.
 /// An exclusive access answers its result beside the value that it leaves,

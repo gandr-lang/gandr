@@ -1,3 +1,5 @@
+@![features(("extension-types", "indexed-data", "modules", "records"))]
+
 /// `extension_type`: a record type whose reader `.#{` fixes fields by label,
 /// by face or by a system of faces.
 type Pair = *{left : Integer, right : Integer} where

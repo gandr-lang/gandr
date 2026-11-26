@@ -1,3 +1,5 @@
+@![features(("effect-rows", "exact-distributions", "imports", "let-statements", "modules"))]
+
 /// `exact-distributions`: Finite distributions with exact weights.
 /// Implemented: a distribution holds exact rational weights in one canonical
 /// order. `distributes` states the exact distribution of a definition's runs

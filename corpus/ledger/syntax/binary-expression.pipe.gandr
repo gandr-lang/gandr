@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "several-outputs"))]
+
 /// `binary_expression.pipe`: a call's outputs plug into a function's
 /// inputs, in order.
 def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) =

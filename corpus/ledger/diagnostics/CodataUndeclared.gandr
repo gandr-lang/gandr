@@ -1,3 +1,5 @@
+@![features(("codata", "let-statements", "thunks-and-force", "universes"))]
+
 /// `CodataUndeclared`: a type names a codata declaration the checker refused.
 @[refuses("CodataKindNotUniverse")]
 codata Scaled : Type where

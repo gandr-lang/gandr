@@ -1,3 +1,5 @@
+@![features("effect-rows")]
+
 /// `OutOfFragment.ExportRow`: a form out of the fragment: the form is an
 /// `export` mark on a definition whose row names an interface.
 @[refuses("OutOfFragment.ExportRow")]

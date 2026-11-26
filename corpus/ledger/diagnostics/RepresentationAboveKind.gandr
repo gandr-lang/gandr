@@ -1,3 +1,5 @@
+@![features(("modules", "universes"))]
+
 /// `RepresentationAboveKind`: an abstract type represented by a type above the
 /// kind it states.
 module Above :> *{type T : Type} where {

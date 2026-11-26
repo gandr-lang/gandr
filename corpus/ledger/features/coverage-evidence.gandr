@@ -1,3 +1,5 @@
+@![features(("extension-types", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "records", "typed-holes", "universes"))]
+
 /// `coverage-evidence`: Coverage as replayable evidence.
 /// Implemented: a semantic coverage verdict the kernel replays, fed by
 /// unification: a pattern hole's arms covered by the canonical cover, and a

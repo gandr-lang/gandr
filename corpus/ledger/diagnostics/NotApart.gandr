@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `NotApart`: a case of no branches over a path type whose endpoints are
 /// not shown apart.
 data Empty : Type where {}

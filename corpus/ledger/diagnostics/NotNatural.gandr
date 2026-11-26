@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `NotNatural`: translator tables that do not commute with
 /// a corolla's automorphisms.
 theory Rig where

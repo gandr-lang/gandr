@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `send_session_type`: a session that sends.
 def outward(c : Integer >! end) -> Unit =
   send c 1

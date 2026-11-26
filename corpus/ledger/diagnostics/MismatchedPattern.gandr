@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `MismatchedPattern`: a case arm naming a constructor of another data type
 /// than the first arm's.
 data Bit : Type where

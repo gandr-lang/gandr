@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values"))]
+
 /// `SignatureMismatch.Unstated`: an import at a signature that states a member
 /// its source declares with no type.
 @[refuses("SignatureMismatch.Unstated")]

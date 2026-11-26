@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `constructor_pattern`: a constructor pattern with its fields.
 data Stack : Type where
   | Empty : Stack

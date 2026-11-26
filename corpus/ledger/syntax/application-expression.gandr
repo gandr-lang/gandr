@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 /// `application_expression`: a call written by juxtaposition.
 def max(a : Integer, b : Integer) -> Integer =
   b

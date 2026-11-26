@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "implicit-arguments", "let-statements", "nominal-data", "sized-types", "universes"))]
+
 /// `StagesDisagree`: two arguments of a call show stages for one stage binder
 /// that no stage satisfies together.
 data Nat : Type where

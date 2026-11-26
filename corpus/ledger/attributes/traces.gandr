@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types", "traces"))]
+
 /// `traces`: states the web one channel of the run decomposes to, once per
 /// channel beside `runs`. The task's close waits on its send alone, so it
 /// sits beside the parent's receipt and close.

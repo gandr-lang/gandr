@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "implicit-arguments", "let-statements"))]
+
 /// `instantiation.explicit`: a resident naming an implicit, `.n = e`, `.n`, or
 /// a claim on the named stage, `.n <`. The checker does not reach a size
 /// supply yet.

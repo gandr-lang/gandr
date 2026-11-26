@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "second-order-rules", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.Binding`: a model component the derivation cannot state:
 /// a law relating a term at a port that binds a variable.
 ///

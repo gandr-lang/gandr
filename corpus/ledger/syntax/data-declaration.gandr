@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `data_declaration`: a datatype: its family head, `where`, and one member per
 /// constructor opened by a bar, a field at the unrestricted grade written with
 /// its glyph and in ASCII.

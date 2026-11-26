@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "tarski-universes", "universes"))]
+
 /// `descent_type`: a decoder's own recursion in the type that an arm returns,
 /// at a code below the code that it decodes.
 

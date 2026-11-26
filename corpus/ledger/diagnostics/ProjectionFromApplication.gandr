@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "modules"))]
+
 /// `ProjectionFromApplication`: a path read off a functor application rather
 /// than off its binding.
 module MkCounter(S : *{type T, zero : T, next : T -> T}) :> *{

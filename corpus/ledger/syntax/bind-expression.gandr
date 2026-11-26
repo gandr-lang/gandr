@@ -1,3 +1,5 @@
+@![features(("second-order-rules", "signatures-as-values", "universes"))]
+
 /// `bind_expression`: an atom abstracted over a rule term, at a port that
 /// abstracts one.
 theory Restriction where

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "modules", "signatures-as-values", "universes"))]
+
 /// `ModelAmbiguous`: a call omitting a model implicit more than one module in
 /// scope answers at the types its arguments force.
 ///

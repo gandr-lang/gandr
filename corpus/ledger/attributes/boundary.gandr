@@ -1,3 +1,5 @@
+@![features(("interop-boundary", "let-statements", "nominal-data", "universes"))]
+
 /// `boundary`: names the row each member of an `extern "rust"` block
 /// is admitted against.
 data Scalar : Type where

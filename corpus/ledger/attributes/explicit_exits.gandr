@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements"))]
+
 /// `explicit_exits`: asks that every exit a declaration takes be written.
 @[explicit_exits]
 def answer() -> Integer =

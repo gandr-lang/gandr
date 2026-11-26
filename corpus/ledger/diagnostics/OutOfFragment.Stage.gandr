@@ -1,3 +1,5 @@
+@![features(("let-statements", "sized-types"))]
+
 /// `OutOfFragment.Stage`: a former the checker does not admit: a stage the
 /// kernel cannot read.
 @[refuses("OutOfFragment.Stage")]

@@ -1,3 +1,5 @@
+@![features("rust-semantics-thir")]
+
 /// `StagedBody.Bodied`: a signature that a `thir` mark stages, with a body of
 /// its own. The staged THIR is the value, so the signature has no body.
 @[refuses("StagedBody.Bodied")]

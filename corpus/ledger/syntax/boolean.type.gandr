@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "explicit-exits", "indexed-data", "products-and-sums", "records", "universes"))]
+
 /// `boolean.type`: a boolean in type position.
 
 /// The type of the integers, for each pair of a number and a boolean.

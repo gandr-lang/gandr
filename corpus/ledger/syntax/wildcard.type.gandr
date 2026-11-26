@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "wildcards"))]
+
 /// `wildcard.type`: the wildcard where a type is read, an endpoint that the
 /// elaborator answers from the comparisons that force it.
 

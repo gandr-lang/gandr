@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "identity-types", "imports", "lazy-records", "let-statements", "modules", "products-and-sums", "run-prefixes", "session-types"))]
+
 /// `session-identity`: Session identity (Path_U and Flow_U at sessions).
 /// Implemented: a protocol's evolution as a certified path or flow between
 /// session types, a recorded run transported along it by conversion and on the

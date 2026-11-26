@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.IllSorted`: a model component the derivation cannot
 /// state: a term whose sort disagrees with the sort its position reads.
 ///

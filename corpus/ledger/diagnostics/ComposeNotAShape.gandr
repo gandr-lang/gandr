@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "universes"))]
+
 /// `ComposeNotAShape`: a composite whose chain is past its stratum's bound.
 def withinBound(
   A : Type,

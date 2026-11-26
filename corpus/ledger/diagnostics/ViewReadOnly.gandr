@@ -1,3 +1,5 @@
+@![features(("let-statements", "temporary-access"))]
+
 /// `ViewReadOnly`: a resume or an abort naming a shared view.
 @[refuses("ViewReadOnly")]
 def written() -> Unit =

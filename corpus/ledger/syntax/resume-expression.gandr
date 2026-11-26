@@ -1,3 +1,5 @@
+@![features(("let-statements", "temporary-access"))]
+
 /// `resume_expression`: resuming an accessed cell with a value.
 def bump() -> Unit =
   var c = 0

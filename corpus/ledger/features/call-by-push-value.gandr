@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "native-primitives"))]
+
 /// `call-by-push-value`: a value definition and a computation definition; `-F`
 /// returns a value, `thunk` suspends a computation and `become` runs it.
 def answer = 42;

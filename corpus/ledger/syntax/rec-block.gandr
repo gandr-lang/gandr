@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `rec_block`: a recursive group: definitions that may name each other.
 data Nat : Type where
   | Zero : Nat

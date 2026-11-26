@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `GenericMisplaced`: `Eq.generic` applied inside a larger body rather than as
 /// a definition's whole body.
 data Point : Type where

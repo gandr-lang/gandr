@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `string-model`: A string written in the language.
 /// Implemented: a string written in the language: inline bytes or a counted
 /// buffer, UTF-8 code points, a C reading's trailing zero, copy-on-write, the

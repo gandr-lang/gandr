@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+
 /// `signatures-as-values`: a `theory` block presents a sort and its operations
 /// as one value of `Theory`, which an ordinary function reads by `case`.
 theory Monoid where

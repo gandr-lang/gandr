@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `RuleNotRespected`: a case over a presented type is not shown to respect one
 /// of the type's rules.
 data Int : Type where {

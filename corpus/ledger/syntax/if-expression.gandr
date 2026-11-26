@@ -1,3 +1,5 @@
+@![features(("conditionals", "let-statements"))]
+
 /// `if_expression`: a conditional.
 def pick(b : Bool) -> Integer =
   if b { 1 } else { 2 }

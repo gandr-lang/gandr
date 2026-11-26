@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+
 /// `theory-terms`: a theory's closed terms as a type, its rules
 /// the type's conversion.
 ///

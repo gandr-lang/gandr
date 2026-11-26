@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "modules"))]
+
 /// `HeldConsumed`: a held slot read, accessed or consumed after a consumed
 /// receiver ended its hold, or consumed on one arm of an offer and
 /// not on another.

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "imports", "let-statements"))]
+
 /// `two-layouts-one-code` lays one list out two ways, admits each by an
 /// equivalence with the list, and runs one function on both.
 ///

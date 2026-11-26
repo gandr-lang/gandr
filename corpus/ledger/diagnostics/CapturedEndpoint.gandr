@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types", "thunks-and-force"))]
+
 /// `CapturedEndpoint`: an endpoint named where its use may run other than once.
 @[refuses("CapturedEndpoint")]
 def seat_closed_in_a_thunk() -> Unit =

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `NonExhaustiveMatch`: a match some scrutinee value reaches no arm of.
 data Int : Type where {
   | Z : Int

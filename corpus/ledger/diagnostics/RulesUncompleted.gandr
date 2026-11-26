@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `RulesUncompleted`: two rules of a block rewriting one term to two normal
 /// forms no rule the path order orients joins.
 @[refuses("RulesUncompleted")]

@@ -1,3 +1,5 @@
+@![features(("atom-identity", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "modules", "records", "type-codes", "universes"))]
+
 /// `atom-identity`: Identity at a sealed type.
 /// Implemented: a sealed type's interface names its identity, a reflexive
 /// relation whose singletons contract onto reflexivity; based path induction

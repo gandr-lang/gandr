@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values", "visibility"))]
+
 /// `package-signature`: An import at a signature.
 /// Implemented: an import writes a theory after its address, `import … : S ;`,
 /// and the lowering matches `S` against the `pub` interface of its source,

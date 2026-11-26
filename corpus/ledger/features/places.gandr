@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "imports", "let-statements", "native-lists", "native-primitives", "products-and-sums", "records", "temporary-access"))]
+
 /// `places`: Access at a place.
 /// Implemented: an access lending one element of a held list at an index, an
 /// exclusive view writing it back at its index.

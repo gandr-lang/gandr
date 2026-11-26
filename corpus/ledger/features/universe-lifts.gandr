@@ -1,3 +1,5 @@
+@![features("universes")]
+
 /// `universe-lifts`: a type moves to a higher universe by a recorded lift;
 /// `Integer`, a type of the lowest universe, is a type of the universe
 /// above it too.

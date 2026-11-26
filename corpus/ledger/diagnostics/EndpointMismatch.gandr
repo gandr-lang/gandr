@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "products-and-sums", "records"))]
+
 /// `EndpointMismatch`: reflexivity met a path type whose endpoints its point
 /// does not both convert to.
 @[refuses("EndpointMismatch")]

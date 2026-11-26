@@ -1,2 +1,4 @@
+@![features("products-and-sums")]
+
 /// `sum_type`: a sum type.
 def either : Integer + String = +{.0 = 1};

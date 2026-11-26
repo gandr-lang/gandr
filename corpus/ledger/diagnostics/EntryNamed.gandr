@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "records", "session-types"))]
+
 /// `EntryNamed`: an entry named from another declaration.
 module Seat :> *{
   type Dispatch,

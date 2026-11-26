@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `ShadowedBuiltin`: a declared name or binder over a builtin, under
 /// the reject policy.
 @[refuses("ShadowedBuiltin")]

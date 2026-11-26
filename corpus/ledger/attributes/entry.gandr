@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "located-judgements", "records"))]
+
 /// `entry`: names the worlds a declaration is entered at.
 world seat;
 @[entry(seat)]

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "nominal-data", "universes", "visibility"))]
+
 /// `UnfixedParameter`: a `let` with no type binds a constructor of a family
 /// with a parameter, and no field fixes the parameter.
 pub data Box(a : Type) : Type where

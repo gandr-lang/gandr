@@ -1,3 +1,5 @@
+@![features(("codata", "data-parameters", "universes"))]
+
 /// `CodataOccurrence`: a codata declaration that names itself other than at its
 /// own parameters in order; the tail swaps them.
 ///

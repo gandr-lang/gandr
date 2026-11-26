@@ -1,3 +1,5 @@
+@![features(("builtin-declarations", "data-parameters", "dependent-functions", "nominal-data", "universes"))]
+
 /// `builtin`: its text is the key of the row of the builtin table that the
 /// declaration holds. Only a package of the toolchain writes the mark, so this
 /// source meets the refusal. In `std`, the library gives a role's row: the

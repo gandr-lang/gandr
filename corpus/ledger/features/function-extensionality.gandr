@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "products-and-sums"))]
+
 /// `function-extensionality`: Function extensionality by computation.
 /// Implemented: `Path.funext(f, g)` decided by evaluating both functions over
 /// their finite inputs and replayed by the kernel, and at the empty row derived

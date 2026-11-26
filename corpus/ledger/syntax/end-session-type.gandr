@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `end_session_type`: the ended session.
 def finish(c : end) -> Unit =
   close c

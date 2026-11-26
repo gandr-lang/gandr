@@ -1,3 +1,5 @@
+@![features(("let-statements", "universes"))]
+
 /// `type_variable`: a type variable.
 def keep(code : Type, x : code) -> code =
   x

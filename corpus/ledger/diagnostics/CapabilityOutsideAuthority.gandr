@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
+
 /// `CapabilityOutsideAuthority`: an operation exercised through a capability
 /// that does not grant it.
 

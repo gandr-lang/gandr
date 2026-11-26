@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `effects-as-data`: Effects as data, replayed by the kernel.
 /// Implemented: a program over a row of operations written as a tree, the free
 /// model of its operations, each handler a fold, so the kernel replays the

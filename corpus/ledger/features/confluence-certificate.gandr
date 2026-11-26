@@ -1,3 +1,5 @@
+@![features(("nominal-data", "signatures-as-values", "universes"))]
+
 /// `confluence-certificate`: Confluence as a certificate.
 /// Implemented: the overlap enumeration as a convex pre-critical-pair criterion
 /// and the coincidence verdict as a replayable certificate, a path from a

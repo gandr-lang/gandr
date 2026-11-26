@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "second-order-rules", "signatures-as-values", "universes"))]
+
 /// `UndescribedMember.NestedOperation`: a member the description does not read:
 /// a rule with an operation nested in producer position, beside
 /// an indexed sort.

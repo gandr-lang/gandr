@@ -1,3 +1,5 @@
+@![features(("let-statements", "temporary-access"))]
+
 /// `NotHeld`: an access naming a linear slot that holds no value.
 @[refuses("NotHeld")]
 def nested() -> Unit =

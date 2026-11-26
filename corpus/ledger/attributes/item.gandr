@@ -1,3 +1,5 @@
+@![features(("nominal-data", "rust-semantics-thir", "universes"))]
+
 /// `item`: the mark of a constructor of the item type names the Rust path
 /// that a staged call reads as that constructor. A constructor with no mark
 /// is admitted.

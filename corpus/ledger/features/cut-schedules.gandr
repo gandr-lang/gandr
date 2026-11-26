@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `cut-schedules` sums a complete tree with every recursive call under a cut.
 ///
 /// Implemented: two cuts of the tree sum run by hand on two threads, each with

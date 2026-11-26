@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "modules", "thunks-and-force"))]
+
 /// `NotAnAbstractType`: a member typed at an abstract type whose
 /// declaration was refused.
 module Seat :> *{

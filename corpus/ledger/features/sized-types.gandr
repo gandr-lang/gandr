@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `sized-types`: Sized types.
 /// Implemented: a staged type read off a call's arguments, erased on the wire
 /// and re-derived by the kernel, explicit stage binders in the prefix block

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "explicit-exits", "let-statements", "native-primitives", "thunks-and-force"))]
+
 /// `statement_block`: the block a form writes after its tile, its statements
 /// then the computation it ends in.
 @[checks]

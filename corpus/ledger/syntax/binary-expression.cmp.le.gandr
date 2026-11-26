@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.cmp.le`: an at-most comparison.
 def at_most() -> Bool =
   1 <= 2

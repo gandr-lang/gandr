@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `RuleNotPresentable`: a data declaration's rules do not present its type.
 @[refuses("RuleNotPresentable")]
 data Tally : Type where {

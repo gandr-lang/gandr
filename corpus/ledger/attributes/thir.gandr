@@ -1,3 +1,5 @@
+@![features("rust-semantics-thir")]
+
 /// `thir`: its two texts name a Rust file beside the source and a function of
 /// that file, whose staged THIR is the signature's value. The dispatcher stages
 /// a mark only when its texts hold no escape. This file holds one, so the mark

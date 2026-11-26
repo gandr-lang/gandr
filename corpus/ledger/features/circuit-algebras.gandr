@@ -1,3 +1,5 @@
+@![features(("nominal-data", "signatures-as-values", "universes"))]
+
 /// `circuit-algebras`: Circuit algebras.
 /// Implemented: a circuit rule's body read as a monogamous acyclic wiring,
 /// matched by embedding with a convexity check and compared by its diagram

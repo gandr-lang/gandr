@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 /// `ContinuationUnspent`: an operation clause owing its continuation, which
 /// holds an obligation, finishing without resuming or abandoning it.
 

@@ -1,3 +1,5 @@
+@![features("modules")]
+
 /// `module_definition_member`: a definition inside a module body, its linear
 /// tail written with its glyph and in ASCII.
 module Kept where {

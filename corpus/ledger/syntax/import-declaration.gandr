@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// `import_declaration`: an import: another source's declarations,
 /// under a name.
 import "./def-value.gandr" as value;

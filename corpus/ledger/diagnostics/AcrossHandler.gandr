@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "explicit-exits", "imports", "let-statements", "modules", "records"))]
+
 /// `AcrossHandler`: a `become` in a handled subject, or a `break` or a
 /// `continue` there whose loop holds the scope.
 

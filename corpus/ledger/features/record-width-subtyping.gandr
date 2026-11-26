@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 /// `record-width-subtyping`: a record with more labels stands where one with
 /// fewer is expected.
 def first(p : *{x : Integer}) -> Integer =

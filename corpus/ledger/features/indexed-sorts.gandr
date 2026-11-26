@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "modules", "native-lists", "signatures-as-values", "thunks-and-force", "universes"))]
+
 /// `indexed-sorts`: Dependent sorts in signatures.
 /// Implemented: a `theory` block and `Model(S)` index a sort by earlier sorts
 /// or by the host's types. A model states each such sort as a family into a

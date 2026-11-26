@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
+
 /// `std-authority`: The ambient authority.
 /// Implemented: `std.authority`, `library/std/src/authority.gandr`, names
 /// `Authority`, a capability holding every host operation a landed module of

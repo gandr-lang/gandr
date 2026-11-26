@@ -1,3 +1,5 @@
+@![features("tactics-over-goals")]
+
 /// `TacticRefused`: a splice whose tactic answers no term its goal admits.
 ///
 /// No binder in scope is an integer, so `assumption` has no answer.

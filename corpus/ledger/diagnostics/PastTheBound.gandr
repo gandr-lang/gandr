@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `PastTheBound`: a generator whose corolla is past the catalogue's bound.
 theory Magma where
   sort M : Type;

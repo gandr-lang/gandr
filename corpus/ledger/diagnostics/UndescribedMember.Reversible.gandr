@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `UndescribedMember.Reversible`: a member the description does not read: the
 /// glyph `<->`, reserved for reversible maps.
 @[refuses("UndescribedMember.Reversible")]

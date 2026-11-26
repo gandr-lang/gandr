@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "native-lists", "signature-models", "visibility"))]
+
 /// `deployment-file` reads a deployment's site and manifold as the flags
 /// they desugar to.
 ///

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `TranslatorStuck`: a translator that does not evaluate at an element
 /// of its corolla.
 theory Magma where

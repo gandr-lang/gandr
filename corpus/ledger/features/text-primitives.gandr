@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "text-primitives"))]
+
 /// `text-primitives`: Text, pattern and path primitives.
 /// Implemented: `string.append`, interpolation `"…${ e }…"`, `string.eq` behind
 /// `EqString`, and `string.lt` behind `OrdString`, run on both executors.

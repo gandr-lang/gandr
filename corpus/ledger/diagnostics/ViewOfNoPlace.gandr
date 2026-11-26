@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "deduced-receivers", "let-statements", "modules"))]
+
 /// `ViewOfNoPlace`: a view block after a call of no method answering a place.
 ///
 /// An integer's methods.

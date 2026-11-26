@@ -1,3 +1,5 @@
+@![features(("let-statements", "loops"))]
+
 /// `break_expression`: a break out of a loop.
 def once(n : Integer) -> Integer = {
   loop { break; }

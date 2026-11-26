@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.Unsorted`: a model component the derivation cannot state:
 /// a variable no occurrence gives a sort.
 ///

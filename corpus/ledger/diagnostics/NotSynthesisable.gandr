@@ -1,3 +1,5 @@
+@![features(("native-primitives", "typed-holes"))]
+
 /// `NotSynthesisable`: a checking-only form where a type must be synthesised.
 @[refuses("NotSynthesisable")]
 def in_infix = ? + 1;

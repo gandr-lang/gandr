@@ -1,3 +1,5 @@
+@![features("modules")]
+
 /// `DuplicateDefinition`: a second definition for one name.
 module Bad where {
   @[refuses("DuplicateDefinition")]

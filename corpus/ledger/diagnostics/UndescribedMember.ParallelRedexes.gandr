@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `UndescribedMember.ParallelRedexes`: a member the description does not read:
 /// a circuit rule rewriting two redexes at once.
 @[refuses("UndescribedMember.ParallelRedexes")]

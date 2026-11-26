@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching"))]
+
 /// `rule-symmetry` states that an operation is commutative, by a rule that
 /// swaps its two arguments.
 ///

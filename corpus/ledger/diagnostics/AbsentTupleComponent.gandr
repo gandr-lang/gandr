@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 /// `AbsentTupleComponent`: a positional projection of the unit, a product
 /// of no components.
 @[refuses("AbsentTupleComponent")]

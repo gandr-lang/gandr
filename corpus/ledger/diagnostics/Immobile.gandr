@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "located-judgements", "modules", "records"))]
+
 /// `Immobile`: a value crossing to a world its type does not reach.
 module Seat :> *{
   type Dispatch,

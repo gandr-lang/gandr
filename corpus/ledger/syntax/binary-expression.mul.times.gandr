@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.mul.times`: multiplication.
 def product() -> Integer =
   2 * 3

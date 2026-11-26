@@ -1,3 +1,5 @@
+@![features(("buffer-tokens", "call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records"))]
+
 /// `BufferRead`: a placed buffer read other than by the send, the operation or
 /// the resumption that returns it.
 

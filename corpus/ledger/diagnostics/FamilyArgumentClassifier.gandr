@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "indexed-data", "let-statements", "products-and-sums", "type-codes", "universes"))]
+
 /// `FamilyArgumentClassifier`: a type operator applied to a value where its
 /// static Pi takes a type.
 def twice : Type -> Type = fun (Y) { type(Y * Y) };

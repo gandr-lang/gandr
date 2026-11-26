@@ -1,3 +1,5 @@
+@![features(("imports", "nominal-data", "universes"))]
+
 /// `ImportUnresolved`: a declaration of a source whose path import resolves
 /// to no source.
 import "./circle-absent.gandr";

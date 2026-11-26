@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "records", "thunks-and-force"))]
+
 /// `u_type`: a thunk type at the unrestricted grade, written with its glyph
 /// and in ASCII.
 @[checks]

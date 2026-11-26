@@ -1,3 +1,5 @@
+@![features("directed-paths")]
+
 /// `SessionCodeExpected`: a session statement over operands that are
 /// no session codes.
 @[refuses("SessionCodeExpected")]

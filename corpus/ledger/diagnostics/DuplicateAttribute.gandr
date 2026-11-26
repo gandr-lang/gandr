@@ -1,3 +1,5 @@
+@![features("call-by-push-value")]
+
 /// `DuplicateAttribute`: one attribute written twice for one name.
 @[refuses("DuplicateAttribute"), explicit_exits, explicit_exits]
 def twice(n : Integer) -> Integer = pure n;

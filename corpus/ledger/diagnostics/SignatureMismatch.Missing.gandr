@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values"))]
+
 /// `SignatureMismatch.Missing`: an import at a signature that states a member
 /// its source exports no `pub` declaration of.
 @[refuses("SignatureMismatch.Missing")]

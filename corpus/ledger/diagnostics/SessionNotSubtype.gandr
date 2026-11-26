@@ -1,3 +1,5 @@
+@![features(("directed-paths", "lazy-records", "modules", "products-and-sums", "session-types"))]
+
 /// `SessionNotSubtype`: a `Flow.sim` whose source does not simulate its target.
 module Evolution where {
   type SeatEnd = String >? rec turn => +{

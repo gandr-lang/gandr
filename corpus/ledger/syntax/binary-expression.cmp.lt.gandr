@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.cmp.lt`: a less-than comparison.
 def smaller() -> Bool =
   1 < 2

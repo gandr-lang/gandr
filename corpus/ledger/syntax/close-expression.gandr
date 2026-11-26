@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `close_expression`: closing a session endpoint.
 def finished() -> Unit =
   let desk = fork (seat : end) { close seat }

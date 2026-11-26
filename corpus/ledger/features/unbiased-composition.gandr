@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "pattern-matching", "type-codes", "universes"))]
+
 /// `unbiased-composition`: a chain of paths composes unbiased at a stratum the
 /// chain sub-site certifies, and a level-two shape of 2-cells at a stratum
 /// the wreath certifies.

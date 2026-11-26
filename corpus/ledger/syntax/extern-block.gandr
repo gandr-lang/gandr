@@ -1,3 +1,5 @@
+@![features("interop-boundary")]
+
 /// `extern_block`: an extern block: foreign declarations from a library, under
 /// a calling convention named as a value of `Abi`.
 /// The checker does not reach this form yet.

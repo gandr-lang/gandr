@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "products-and-sums"))]
+
 /// `PointwiseDistinct`: a function extensionality whose functions disagree at
 /// some covering input.
 def not(b : Unit + Unit) -> Unit + Unit =

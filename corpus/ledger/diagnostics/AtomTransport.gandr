@@ -1,3 +1,5 @@
+@![features(("atom-identity", "data-parameters", "explicit-exits", "identity-types", "modules", "records", "universes"))]
+
 /// `AtomTransport`: a sealed type states a relation and its reflexivity but no
 /// transport law, so the relation's evidence is no path between its points.
 def related(a : Unit, b : Unit) -> Type = return Unit;

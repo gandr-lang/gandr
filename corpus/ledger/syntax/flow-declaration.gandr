@@ -1,3 +1,5 @@
+@![features(("modules", "signature-translation", "signatures-as-values"))]
+
 /// `flow_declaration`: a flow: one theory's members, defined over another's,
 /// written with its glyph and in ASCII.
 theory Older where

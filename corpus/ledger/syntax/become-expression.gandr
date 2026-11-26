@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements"))]
+
 /// `become_expression`: a tail call: the computation becomes another.
 def answer() -> Integer =
   42

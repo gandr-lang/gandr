@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching", "products-and-sums", "records"))]
+
 /// `colimit-layer`: The colimit layer (recursive codes past the base stratum).
 /// Implemented: a recursive type code past the base stratum carrying one
 /// transport cell over its rigid tail.

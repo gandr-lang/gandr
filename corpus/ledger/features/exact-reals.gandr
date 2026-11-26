@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "native-lists", "records", "visibility"))]
+
 /// `exact-reals`: exact real arithmetic beside the kernel, which a program
 /// reaches through `std.reals.Eff`.
 /// Implemented: the host interface holds seven operations under a profile of

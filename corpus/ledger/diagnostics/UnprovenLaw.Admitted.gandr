@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "modules", "native-primitives", "nominal-data", "signatures-as-values", "tactics-over-goals", "universes"))]
+
 /// `UnprovenLaw.Admitted`: a law of a module's model admitted at a carrier the
 /// host does not provide.
 ///

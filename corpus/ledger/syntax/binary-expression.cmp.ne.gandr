@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.cmp.ne`: an inequality comparison.
 def different() -> Bool =
   1 != 2

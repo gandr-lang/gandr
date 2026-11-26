@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "records"))]
+
 /// `dependent-transport`: Transport in path-dependent motives.
 /// Implemented: a motive depending on the identification itself, path induction
 /// derived in the singleton, and transport along a closed path of native

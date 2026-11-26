@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements"))]
+
 /// `layout-as-model` states the layout of a truth value in one bit. The
 /// layout is a model of the theory of truth.
 ///

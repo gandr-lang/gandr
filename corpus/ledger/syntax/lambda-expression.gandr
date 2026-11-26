@@ -1,2 +1,4 @@
+@![features(("dependent-functions", "let-statements", "native-primitives"))]
+
 /// `lambda_expression`: a lambda.
 def double : Integer -> Integer = fun (x : Integer) { x + x };

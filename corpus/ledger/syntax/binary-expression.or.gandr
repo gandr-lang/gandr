@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.or`: a disjunction.
 def either() -> Bool =
   true || false

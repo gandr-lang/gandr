@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules"))]
+
 /// `HandlerCoverage`: handler clauses do not cover their interface exactly.
 
 // Early exit's host interface.

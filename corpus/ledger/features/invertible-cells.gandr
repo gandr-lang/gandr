@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "native-lists", "records", "type-codes"))]
+
 /// `invertible-cells`: Invertible cells between distinct points.
 /// Implemented: a free invertible cell at a point, its loop space the words
 /// over the cell and its inverse with the cancellations as rules (the circle).

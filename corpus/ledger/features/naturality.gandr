@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "type-codes", "universes"))]
+
 /// `naturality`: a term's naturality along a path in one of its arguments, the
 /// action of the term on that path.
 ///

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "let-statements", "records", "second-order-rules", "signatures-as-values", "universes"))]
+
 /// `HandlerUnlawful`: a capability scope over a theory is not shown to satisfy
 /// one of the theory's laws, here a read after a store answering other than
 /// the stored value.

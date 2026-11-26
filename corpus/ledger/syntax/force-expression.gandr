@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "thunks-and-force"))]
+
 /// `force_expression`: forcing a thunk.
 def forced(k : () -> Integer) -> Integer =
   force k

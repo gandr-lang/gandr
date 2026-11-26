@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "thunks-and-force"))]
+
 /// `KeptEscaped`: a capability scope's answer naming a value kept in
 /// the scope's region.
 @[refuses("KeptEscaped")]

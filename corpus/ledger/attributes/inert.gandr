@@ -1,3 +1,5 @@
+@![features("inert-fields")]
+
 /// `inert`: a top-level definition that only the manifest step and another
 /// inert declaration read.
 @[inert]

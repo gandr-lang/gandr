@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "modules", "native-primitives"))]
+
 /// `module-sealing`: a module sealed by a signature keeps its type abstract
 /// outside; a value of it is made and read only through the members
 /// the signature exposes.

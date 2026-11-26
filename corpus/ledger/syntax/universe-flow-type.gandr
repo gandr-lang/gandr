@@ -1,3 +1,5 @@
+@![features(("directed-paths", "let-statements", "modules", "pattern-matching", "products-and-sums", "records"))]
+
 /// `universe_flow_type`: a flow between universe codes, written with its glyph
 /// and in ASCII.
 module Schema where {

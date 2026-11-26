@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "nominal-data", "universes"))]
+
 /// `DataFieldLevel`: a constructor field exceeds the declared universe.
 @[refuses("DataFieldLevel")]
 data Small : Type where

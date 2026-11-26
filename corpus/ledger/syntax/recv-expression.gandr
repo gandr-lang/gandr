@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `recv_expression`: a receive over a session endpoint, the value
 /// a `let` binds.
 def received() -> Unit =

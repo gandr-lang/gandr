@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
+
 /// `CapabilityAmplified`: a capability standing where one granting
 /// more is expected.
 

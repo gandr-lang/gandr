@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
+
 /// `CapabilityForged`: a term standing at a capability type that is
 /// no capability hypothesis.
 

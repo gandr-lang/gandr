@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "imports", "let-statements", "modules", "native-primitives", "nominal-data", "records", "thunks-and-force", "universes"))]
+
 /// `glf-model-in-source`: A model of a signature written in source;
 /// the shape parameter.
 /// Implemented: a first-order model of a signature written as a record type in

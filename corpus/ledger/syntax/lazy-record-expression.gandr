@@ -1,2 +1,4 @@
+@![features(("call-by-push-value", "lazy-records", "thunks-and-force"))]
+
 /// `lazy_record_expression`: a lazy record: one computation per label.
 def binary : +U (-F Integer & -F String) = &{.0 => 1, .1 => "s"};

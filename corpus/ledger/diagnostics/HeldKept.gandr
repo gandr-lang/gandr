@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "temporary-access", "thunks-and-force"))]
+
 /// `HeldKept`: an exclusive access of a held slot a view of which is kept in
 /// a live region.
 @[refuses("HeldKept")]

@@ -1,2 +1,4 @@
+@![features("typed-holes")]
+
 /// `hole`: a hole: a term left to fill.
 def anon = ?;

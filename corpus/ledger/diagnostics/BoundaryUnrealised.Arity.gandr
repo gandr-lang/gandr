@@ -1,3 +1,5 @@
+@![features(("imports", "interop-boundary"))]
+
 /// `BoundaryUnrealised.Arity`: an `extern "rust"` block whose member takes
 /// another number of arguments than its row.
 // The boundary check reads `admitBlock` here, whatever the listing names.

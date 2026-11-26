@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `UndescribedMember.LhsNotOperation`: a member the description does not read:
 /// a rule whose left side is no operation application.
 @[refuses("UndescribedMember.LhsNotOperation")]

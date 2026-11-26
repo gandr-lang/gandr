@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "modules", "native-primitives", "temporary-access"))]
+
 /// `MethodAsValue`: a method that writes through its receiver, named
 /// as a value.
 /// `Counter` holds the method.

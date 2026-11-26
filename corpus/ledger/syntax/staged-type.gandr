@@ -1,3 +1,5 @@
+@![features(("nominal-data", "sized-types", "universes"))]
+
 /// `staged_type`: a type at a stage its signature binds.
 data Nat : Type where
   | Zero : Nat

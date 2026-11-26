@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "identity-types", "products-and-sums", "thunks-and-force"))]
+
 /// `PathCode`: a native path at a type that is no closed first-order code.
 @[refuses("PathCode")]
 def thunked : Path[.A = Type] ((() -> Integer) * Unit) ((() -> Integer) * Unit) = Path.product

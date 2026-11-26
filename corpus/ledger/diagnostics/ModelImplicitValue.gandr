@@ -1,3 +1,5 @@
+@![features(("data-parameters", "implicit-arguments", "modules", "signature-models", "signatures-as-values", "universes"))]
+
 /// `ModelImplicitValue`: a model implicit named alone where a value is read, or
 /// supplied by what names neither a module nor a model implicit.
 ///

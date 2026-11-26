@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `IllFormedDescription`: a description the description check refuses.
 @[refuses("IllFormedDescription")]
 theory Past where

@@ -1,3 +1,5 @@
+@![features("nominal-data")]
+
 /// `DataKindNotUniverse`: a data declaration's kind is not a value universe.
 @[refuses("DataKindNotUniverse")]
 data Odd : Integer where

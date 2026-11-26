@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.Circuit`: a model component the derivation cannot state:
 /// a circuit rule, whose sphere the model does not read yet.
 ///

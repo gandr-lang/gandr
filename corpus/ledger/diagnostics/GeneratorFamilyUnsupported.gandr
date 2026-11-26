@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "identity-types", "let-statements", "pattern-matching", "universes"))]
+
 /// `GeneratorFamilyUnsupported`: a fill whose lifted cell is a directed flow, a
 /// family with no filler yet.
 ///

@@ -1,3 +1,5 @@
+@![features(("deployment-offers", "imports", "modules"))]
+
 /// `offers_declaration`: a site's offer: the host interfaces it grants, and
 /// each label bound to a model module the file declares.
 

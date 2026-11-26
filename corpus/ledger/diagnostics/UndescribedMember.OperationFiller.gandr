@@ -1,3 +1,5 @@
+@![features(("data-parameters", "operations"))]
+
 /// `UndescribedMember.OperationFiller`: a member the description does not read:
 /// an operation written with a circuit body.
 @[refuses("UndescribedMember.OperationFiller")]

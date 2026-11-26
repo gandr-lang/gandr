@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "universes"))]
+
 /// `ImplicitUnsolved`: a call omitting an implicit that neither its arguments
 /// nor the type it is checked against determine.
 ///

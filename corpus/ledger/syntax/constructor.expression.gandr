@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `constructor.expression`: a constructor.
 data Colour : Type where
   | Blue : Colour

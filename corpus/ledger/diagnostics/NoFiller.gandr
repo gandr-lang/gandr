@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "universes"))]
+
 /// `NoFiller`: a fill asked for a square its generator does not make.
 // `Circle`, `Base`, `loop`.
 import "../../model/identity/circle-base.gandr";

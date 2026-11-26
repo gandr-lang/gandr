@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `pattern-matching`: `case` matches a value against nested constructor
 /// patterns, a wildcard taking what the arms before it left.
 data Inner : Type where

@@ -1,3 +1,5 @@
+@![features(("circuit-spiders", "signatures-as-values", "universes"))]
+
 /// `circuit-spiders`: Spiders on a marked sort.
 /// Implemented: a theory sort carries the attribute `@[ frobenius ]`. A circuit
 /// rule that merges or splits its wires on that sort reads as a diagram, modulo

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `bicontextual-kernel-key` keys the kernel's check memo by the binders a
 /// goal's judgement reads.
 ///

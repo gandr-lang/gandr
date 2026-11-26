@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "located-judgements", "signatures-as-values", "universes", "visibility"))]
+
 /// `UnlabelledRequirement`: a world requiring an effect theory under no label,
 /// so its code cannot perform it.
 pub theory Store where

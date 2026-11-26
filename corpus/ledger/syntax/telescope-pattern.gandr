@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "records"))]
+
 /// `telescope_pattern`: a telescope pattern.
 def nothing(t : *{}) -> Integer =
   match t where

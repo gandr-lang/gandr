@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "type-codes", "universes"))]
+
 /// `cylinder-composites`: squares and triangles of paths compose at dimension
 /// 2, as Catt's built-ins compose them, and `fill` and suspension compose
 /// cylinders and cones at dimension 3.

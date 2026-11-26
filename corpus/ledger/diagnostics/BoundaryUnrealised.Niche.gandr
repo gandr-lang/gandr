@@ -1,3 +1,5 @@
+@![features(("imports", "interop-boundary"))]
+
 /// `BoundaryUnrealised.Niche`: an `extern "rust"` block whose member declares a
 /// type laid out as its row's but for the niche its row's keeps
 /// its discriminant in.

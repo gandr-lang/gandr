@@ -1,3 +1,5 @@
+@![features("universes")]
+
 /// `NoUniverseAbove`: a universe at the greatest level, which no
 /// universe stands above.
 @[refuses("NoUniverseAbove")]

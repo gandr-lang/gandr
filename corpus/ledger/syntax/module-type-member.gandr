@@ -1,3 +1,5 @@
+@![features("modules")]
+
 /// `module_type_member`: a type definition inside a module body.
 module Counter where
   type T = Integer;

@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "visibility"))]
+
 /// `package-address`: A package's address.
 /// Implemented: a package's address digests each item its sources declare, as
 /// its path and its content key, every inert component of its models left out

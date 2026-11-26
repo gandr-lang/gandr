@@ -1,3 +1,5 @@
+@![features(("lazy-records", "let-statements", "session-types"))]
+
 /// `select_expression`: a selection of a label on a session endpoint.
 def choose() -> Unit =
   let desk = fork (seat : &{next : end}) { offer seat { | next => close seat } }

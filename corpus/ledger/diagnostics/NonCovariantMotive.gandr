@@ -1,3 +1,5 @@
+@![features(("directed-paths", "let-statements", "modules", "pattern-matching", "products-and-sums", "records"))]
+
 /// `NonCovariantMotive`: a ride whose motive uses the moving endpoint
 /// other than covariantly.
 module Schema where {

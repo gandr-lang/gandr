@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "imports", "located-judgements", "modules", "signature-models", "signatures-as-values", "universes", "visibility"))]
+
 /// `deployment-offers` places a world only at a site whose offer answers the
 /// row the world requires.
 ///

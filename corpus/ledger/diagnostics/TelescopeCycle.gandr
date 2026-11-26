@@ -1,3 +1,5 @@
+@![features("explicit-exits")]
+
 /// `TelescopeCycle`: a function's merged telescope with two parameters each
 /// mentioning the other.
 @[refuses("TelescopeCycle")]

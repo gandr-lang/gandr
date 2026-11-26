@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "imports", "let-statements", "native-primitives", "records", "temporary-access"))]
+
 /// `grades`: Grades on a hold.
 /// Implemented: `var[1] s = e`, a value held at grade one: made in place, never
 /// copied while held, a copying read refused by name, and a string held at

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "modules", "traces", "web-decomposition"))]
+
 /// `temporal-judgement`: The temporal judgement (logical time as a web).
 /// Implemented: a binary session's logical time as a two-colour causal web, a
 /// recorded dialogue admitted exactly when its order linearizes the web, and

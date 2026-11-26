@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UndescribedMember.RewrittenIndex`: a law whose carried index applies an
 /// operation that a law at an earlier sort rewrites.
 ///

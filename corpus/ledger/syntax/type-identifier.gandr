@@ -1,3 +1,5 @@
+@![features("modules")]
+
 /// `type_identifier`: a named type.
 module Counts where {
   type Count = Integer;

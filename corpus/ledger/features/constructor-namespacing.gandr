@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 /// `constructor-namespacing`: Constructor names namespaced by family.
 /// Implemented: a constructor named by its family, `Family.Constructor`, in a
 /// pattern and in a value, and bare where its name resolves to it; two data

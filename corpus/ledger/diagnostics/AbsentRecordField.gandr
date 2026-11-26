@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 /// `AbsentRecordField`: a projection names no field in its
 /// operand's record type.
 @[refuses("AbsentRecordField")]

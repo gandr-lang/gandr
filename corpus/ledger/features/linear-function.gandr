@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "linear-function", "universes"))]
+
 /// `linear-function`: The linear function `(x : A) ⊸ C`, whose body takes
 /// its parameter once.
 /// Implemented: a linear function takes each parameter of its own list once, at

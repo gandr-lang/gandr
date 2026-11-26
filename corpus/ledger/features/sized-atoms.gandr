@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 /// `sized-atoms`: Width atoms and their literals.
 /// Implemented: `u32`, `u64`, `i32` and `i64` as base atoms apart from
 /// `Integer` and from one another, literals stating their width with a

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "modules", "native-primitives", "signatures-as-values", "stated-laws", "tactics-over-goals", "universes"))]
+
 /// `module_law_member`: a module body admitting its model's law at
 /// a host primitive.
 theory Reflexive where

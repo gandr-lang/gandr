@@ -1,2 +1,4 @@
+@![features("native-primitives")]
+
 /// `boolean.expression`: a boolean.
 def yes : Bool = true;

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits", "let-statements"))]
+
 /// `return_expression`: a return: the computation that returns a value.
 @[checks]
 def answer() -> -F Integer =

@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.cmp.gt`: a greater-than comparison.
 def larger() -> Bool =
   2 > 1

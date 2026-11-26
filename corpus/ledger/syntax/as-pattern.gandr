@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching"))]
+
 /// `as_pattern`: an as-pattern binds a name to the value its pattern matches,
 /// the name first, `x @ p`, or through the dotted alias, `x .@ p`.
 def same(n : Integer) -> Integer =

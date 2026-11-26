@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `CorollaTables`: a corolla whose translators are missing on one side
 /// or given twice.
 theory Rig where

@@ -1,2 +1,4 @@
+@![features("directed-paths")]
+
 /// `flow_type`: a flow type, its carrier supplied by name.
 def stayed : Flow[.A = Integer](4, 4) = Flow.stay 4;

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.Abstraction`: a model component the derivation cannot
 /// state: an operation one of whose ports abstracts an atom.
 ///

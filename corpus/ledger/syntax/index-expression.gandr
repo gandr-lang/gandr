@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "native-lists", "places", "sized-types"))]
+
 /// `index_expression`: the place a method's body answers, its receiver
 /// at an index.
 

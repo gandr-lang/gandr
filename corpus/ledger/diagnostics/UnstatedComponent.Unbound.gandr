@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "native-primitives", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.Unbound`: a model component the derivation cannot state:
 /// a stated law naming a variable its statement does not bind once.
 ///

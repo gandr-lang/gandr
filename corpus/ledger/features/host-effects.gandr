@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "modules"))]
+
 /// `host-effects`: `Console.print` performed by its name under a row naming
 /// `std.io.Console.Eff`; a `runs` expectation keeps the line it prints, as
 /// `gandr run` writes it.

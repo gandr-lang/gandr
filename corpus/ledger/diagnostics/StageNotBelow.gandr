@@ -1,3 +1,5 @@
+@![features(("let-statements", "structural-recursion"))]
+
 /// `StageNotBelow`: a value does not stand below the stage its
 /// structural recursion wants.
 @[refuses("StageNotBelow")]

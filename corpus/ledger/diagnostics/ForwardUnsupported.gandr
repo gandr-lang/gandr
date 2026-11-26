@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "directed-paths", "let-statements", "universes"))]
+
 /// `ForwardUnsupported`: a `Flow.into` whose translator the rule cannot image.
 @[refuses("ForwardUnsupported")]
 def lift(t : Type, f : t -> t) -> Flow[.A = Type](t, t) =

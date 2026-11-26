@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "native-lists"))]
+
 /// `type_application.juxtaposed`: a type family applied by juxtaposition.
 
 // The native finite lists.

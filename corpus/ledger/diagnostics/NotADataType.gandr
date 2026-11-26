@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data"))]
+
 /// `NotADataType`: a type names a data declaration the checker refused.
 @[refuses("DataKindNotUniverse")]
 data Odd : Integer where

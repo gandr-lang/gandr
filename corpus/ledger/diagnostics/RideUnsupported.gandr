@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "lazy-records", "let-statements", "modules", "native-lists", "products-and-sums", "session-types"))]
+
 /// `RideUnsupported`: a ride between two distinct session codes whose motive is
 /// no run of them.
 

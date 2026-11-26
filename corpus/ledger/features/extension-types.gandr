@@ -1,3 +1,5 @@
+@![features(("extension-types", "modules", "native-primitives", "records", "signatures-as-values", "universes"))]
+
 /// `extension-types`: Extension types as face-theory signatures.
 /// Implemented: an extension type as a face-theory signature, the reader
 /// `T.#{.l = v}`, `T.#{f ↦ v}` or a system of faces `T.#{f ↦ v, g ↦ w}`, its

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "session-types"))]
+
 /// `EndpointAsValue`: an endpoint read as a value outside an action.
 @[refuses("EndpointAsValue")]
 def seat_returned() -> Unit =

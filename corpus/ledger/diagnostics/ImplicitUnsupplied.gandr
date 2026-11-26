@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "universes"))]
+
 /// `ImplicitUnsupplied`: a function standing as a value with one of
 /// its implicits unsupplied.
 ///

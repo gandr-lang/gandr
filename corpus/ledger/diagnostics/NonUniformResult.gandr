@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "universes"))]
+
 /// `NonUniformResult`: a generator's result instantiates a parameter
 /// of its family.
 @[refuses("NonUniformResult")]

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "imports", "let-statements", "native-primitives", "records"))]
+
 /// `abi-realizability`: Layouts as realizability predicates.
 /// Implemented: `Option<&T>`'s null niche as a realizability predicate over
 /// heaps written as data, equivalent at every heap to the two-word tagged

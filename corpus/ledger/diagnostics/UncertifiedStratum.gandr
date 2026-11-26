@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching", "products-and-sums", "records"))]
+
 /// `UncertifiedStratum`: a universe equivalence whose round trip at a list cell
 /// does not return it with the tail unread.
 

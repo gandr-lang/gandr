@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "native-primitives", "products-and-sums", "records"))]
+
 /// `spinal-duplication` states the spinal stance on one
 /// abstraction applied twice.
 ///

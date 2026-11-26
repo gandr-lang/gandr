@@ -1,3 +1,5 @@
+@![features("linear-function")]
+
 /// `linear_function_type`: a linear function type, written with its glyph
 /// and in ASCII.
 def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f (a);

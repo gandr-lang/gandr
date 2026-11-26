@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "records", "shared-endpoints"))]
+
 /// `release_expression`: a release of an acquired endpoint, the shared end
 /// a `let` binds.
 /// The checker does not reach this form yet.

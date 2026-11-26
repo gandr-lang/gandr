@@ -1,3 +1,5 @@
+@![features(("imports", "qubit-type"))]
+
 /// `ComonoidAbsent`: a binder of the intuitionistic zone holds a qubit, which
 /// has no copy and no discard.
 

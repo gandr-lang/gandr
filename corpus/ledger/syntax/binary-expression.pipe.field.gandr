@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "method-calls", "modules", "native-primitives"))]
+
 /// `binary_expression.pipe.field`: the answer of a call is the receiver of
 /// the method that the field names.
 module Counter where

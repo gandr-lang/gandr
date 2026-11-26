@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `structural-recursion`: `def rec` recurses on a structurally smaller
 /// argument, each recursive call marked `[<]`.
 data Nat : Type where

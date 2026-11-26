@@ -1,3 +1,5 @@
+@![features(("second-order-rules", "signatures-as-values", "universes"))]
+
 /// `RulesOverlapCondition`: two rules of a block whose left sides overlap, one
 /// of which states a freshness condition where a term can name the atom it is
 /// stated on, rewriting the overlap to two normal forms under the

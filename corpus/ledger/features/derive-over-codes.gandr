@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `derive-over-codes`: Derivations over levitated codes.
 /// Implemented: `Eq.generic(T)` reads a closed family's levitated code — the
 /// constructor table, the product spine, a `var` as the recursion and each leaf

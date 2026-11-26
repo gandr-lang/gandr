@@ -1,3 +1,5 @@
+@![features(("imports", "qubit-type"))]
+
 /// `qubit-type`: The qubit type `Qubit`, which carries no comonoid.
 /// Implemented: a source imports the type from the module `std.quantum`, and a
 /// gate takes the qubit once as a linear function's parameter. Each binder that

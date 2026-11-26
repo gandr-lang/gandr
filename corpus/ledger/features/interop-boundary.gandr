@@ -1,3 +1,5 @@
+@![features(("effect-handlers", "effect-rows", "imports", "let-statements"))]
+
 /// `interop-boundary` is the boundary with Rust: a gandr definition called from
 /// Rust, and a Rust function called from gandr.
 ///

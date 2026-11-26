@@ -1,3 +1,5 @@
+@![features(("inert-fields", "modules", "signatures-as-values"))]
+
 /// `inert-fields`: A theory's inert operations and inert definitions.
 /// Implemented: a theory's operation marked `@[ inert ]` is a field the
 /// manifest step reads; a model's component for it is inert, an `include`

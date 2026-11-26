@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "temporary-access", "thunks-and-force"))]
+
 /// `ViewEscaped`: a view named where it would outlive its access's body.
 @[refuses("ViewEscaped")]
 def leak() -> Integer =

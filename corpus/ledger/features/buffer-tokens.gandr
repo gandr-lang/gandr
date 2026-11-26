@@ -1,3 +1,5 @@
+@![features(("buffer-tokens", "call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "pattern-matching", "records", "session-types"))]
+
 /// `buffer-tokens`: Buffer tokens.
 /// Implemented: a linear buffer token, placed live by a receive or by
 /// `std.io.Ring.alloc` and returned exactly once, by every arm of a case

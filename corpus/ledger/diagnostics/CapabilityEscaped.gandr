@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-handlers", "explicit-exits", "imports", "modules", "records"))]
+
 /// `CapabilityEscaped`: a scoped capability that would outlive its region.
 
 // Early exit's host interface.

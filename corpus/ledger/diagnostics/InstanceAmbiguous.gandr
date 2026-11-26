@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "named-instances"))]
+
 /// `InstanceAmbiguous`: a call omitting an instance where several of
 /// its interface stand.
 

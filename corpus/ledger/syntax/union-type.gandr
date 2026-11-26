@@ -1,3 +1,5 @@
+@![features("union-types")]
+
 /// `union_type`: a union type.
 /// The checker does not reach this form yet.
 ///

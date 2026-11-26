@@ -1,3 +1,5 @@
+@![features(("let-statements", "temporary-access"))]
+
 /// `ViewSpent`: a view used after its resume or abort.
 @[refuses("ViewSpent")]
 def twice() -> Unit =

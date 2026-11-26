@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// `std-string`: `std.string` joins strings with `concat`, its unit `empty` and
 /// the test `isEmpty`, and states the monoid laws of joining beside them.
 /// Implemented: the functions over the native `string` namespace, and the laws

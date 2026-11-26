@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching"))]
+
 /// `match_expression`: a case analysis. In layout form, it writes `where`
 /// between its scrutinee and its arms.
 def sign(b : Bool) -> Integer =

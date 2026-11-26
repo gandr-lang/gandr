@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.add.plus`: addition.
 def sum() -> Integer =
   1 + 2

@@ -1,3 +1,5 @@
+@![features(("modules", "signature-translation", "signatures-as-values"))]
+
 /// `path_declaration`: a path: two signatures, a body each way and the round
 /// trips, written with its glyph and in ASCII.
 theory Older where

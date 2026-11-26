@@ -1,3 +1,5 @@
+@![features(("derived-rules", "signatures-as-values", "universes"))]
+
 /// `UnderivedRule`: a derived rule whose two sides the theory's rules rewrite
 /// to different normal forms.
 theory Involution where

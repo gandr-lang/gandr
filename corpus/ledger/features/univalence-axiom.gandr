@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "records", "universes", "wildcards"))]
+
 /// `univalence-axiom`: Univalence on a record's laws (ua).
 /// Implemented: `ua(e)` making a bi-invertible record a path between any two
 /// codes, transport along it by the record's maps in both checkers and on the

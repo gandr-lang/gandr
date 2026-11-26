@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// `imports`: a source imports a sibling source and reaches its declarations
 /// as its own.
 import "./modules.gandr";

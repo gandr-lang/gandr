@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `fork_expression`: a fork of a session, the parent's end a `let` binds and
 /// the child's end its binder.
 def forked() -> Unit =

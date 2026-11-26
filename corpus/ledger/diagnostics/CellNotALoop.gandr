@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `CellNotALoop`: a cell `<->` of a `data` block between two distinct terms.
 @[refuses("CellNotALoop")]
 data Interval : Type where

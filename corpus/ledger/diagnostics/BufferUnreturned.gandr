@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records"))]
+
 /// `BufferUnreturned`: a receive or an allocation ending with the buffer it
 /// placed live never handed back.
 

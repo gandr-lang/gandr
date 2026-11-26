@@ -1,3 +1,5 @@
+@![features("native-primitives")]
+
 /// `OutOfFragment.TopLevel`: an expression at a source's top level, where
 /// only declarations stand. A program runs the `main` it declares, so the
 /// expression is written in `main`'s body, or named by a definition; the

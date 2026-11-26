@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `UnknownGenerator`: a translator record naming a generator its description
 /// does not declare.
 theory Magma where

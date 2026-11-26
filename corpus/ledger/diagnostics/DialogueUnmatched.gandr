@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "session-types", "traces"))]
+
 /// `DialogueUnmatched`: a receipt in a dialogue that no send of the
 /// other endpoint matches.
 

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "tactics-over-goals"))]
+
 /// `splice_expression`: a splice, a hole the checker fills by running its
 /// tactic at the goal the hole stands at.
 def id : Integer -> Integer = ~intro assumption;

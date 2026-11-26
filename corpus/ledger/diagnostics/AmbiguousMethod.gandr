@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "modules"))]
+
 /// `AmbiguousMethod`: a method call whose name more than one
 /// module's receivers declare.
 ///

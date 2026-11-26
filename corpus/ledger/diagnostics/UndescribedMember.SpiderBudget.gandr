@@ -1,3 +1,5 @@
+@![features(("circuit-spiders", "signatures-as-values", "universes"))]
+
 /// `UndescribedMember.SpiderBudget`: a member the description does not read: a
 /// circuit rule whose tied spider legs need more trials than the budget holds.
 ///

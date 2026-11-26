@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "visibility"))]
+
 /// `package-toolchain`: A package's toolchain constraints.
 /// Implemented: a package's model states what it asks of the toolchain,
 /// `gandr`, the least language version as `>= 0.3`, `features`, keys of the

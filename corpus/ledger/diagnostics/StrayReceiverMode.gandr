@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements"))]
+
 /// `StrayReceiverMode`: a receiver mode word on a parameter that is
 /// no method's receiver.
 @[refuses("StrayReceiverMode")]

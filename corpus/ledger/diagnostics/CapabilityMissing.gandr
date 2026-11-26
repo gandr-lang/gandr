@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "session-types"))]
+
 /// `CapabilityMissing`: a migration with no capability for its world.
 module Seat :> *{
   type Dispatch,

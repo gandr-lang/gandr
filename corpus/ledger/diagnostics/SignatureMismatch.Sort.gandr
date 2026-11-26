@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values"))]
+
 /// `SignatureMismatch.Sort`: an import at a signature that states a member its
 /// source exports at another type.
 @[refuses("SignatureMismatch.Sort")]

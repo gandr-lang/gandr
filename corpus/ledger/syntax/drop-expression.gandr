@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `drop_expression`: a drop of an endpoint at `end`, the end action a
 /// `close` writes at the fork's other end.
 def dropped() -> Unit =

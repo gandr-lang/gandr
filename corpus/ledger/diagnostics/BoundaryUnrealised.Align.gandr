@@ -1,3 +1,5 @@
+@![features(("imports", "interop-boundary"))]
+
 /// `BoundaryUnrealised.Align`: an `extern "rust"` block whose member declares a
 /// type of its row's size at another alignment.
 // The boundary check reads `admitBlock` here, whatever the listing names.

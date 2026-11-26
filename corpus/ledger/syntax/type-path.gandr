@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "modules", "nominal-data", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `type_path`: a type named through a module, applied when it is a family,
 /// or a call of a function the module declares. A path also names a term
 /// where an operand of a type reads it, as `Two.word` names an operation of

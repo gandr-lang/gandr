@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "thunks-and-force"))]
+
 /// `thunk_expression`: a thunk: a suspended computation at the unrestricted
 /// grade, written with its glyph and in ASCII.
 /// The checker does not reach this form yet.

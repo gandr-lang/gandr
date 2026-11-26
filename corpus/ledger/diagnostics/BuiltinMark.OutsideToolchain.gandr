@@ -1,3 +1,5 @@
+@![features(("builtin-declarations", "dependent-functions"))]
+
 /// `BuiltinMark.OutsideToolchain`: a `builtin` mark in a source that is no
 /// module of a package of the toolchain. Only `std` binds a row of the builtin
 /// table.

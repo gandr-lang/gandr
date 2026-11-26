@@ -1,3 +1,5 @@
+@![features("modules")]
+
 /// `UnknownMember`: a selection or a signature component a module
 /// does not supply.
 ///

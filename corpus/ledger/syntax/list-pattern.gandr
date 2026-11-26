@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "pattern-matching"))]
+
 /// `list_pattern`: a list pattern.
 
 // The native finite lists.

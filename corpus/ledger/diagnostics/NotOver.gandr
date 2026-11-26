@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "nominal-data", "universes"))]
+
 /// `NotOver`: a telescope transport's second identity that does not lie
 /// over its path.
 data Circle : Type where

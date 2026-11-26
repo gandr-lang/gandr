@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+
 /// `atom-sorts`: Atom sorts.
 /// Implemented: `sort Name : Atom;` in a theory block, a port abstracting its
 /// atoms with `bind (a : Name) .`, rule terms abstracting an atom at such a

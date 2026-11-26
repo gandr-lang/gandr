@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "session-types", "temporary-access"))]
+
 /// `Unlocated`: a hold or an opening `let x at w` at the host's world.
 module Seat :> *{
   type Dispatch,

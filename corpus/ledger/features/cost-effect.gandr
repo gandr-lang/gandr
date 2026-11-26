@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "identity-types", "imports", "let-statements", "modules", "named-instances", "native-primitives", "signature-models"))]
+
 /// `cost-effect`: decalf's cost effect.
 ///
 /// Implemented: `std.cost` declares `Cost.Eff`.

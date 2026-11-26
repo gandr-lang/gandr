@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "modules", "records"))]
+
 /// `OutOfFragment.Held`: a form out of the fragment: the name an access lends
 /// is no linear slot.
 ///

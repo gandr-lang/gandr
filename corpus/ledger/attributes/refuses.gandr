@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 /// `refuses`: states the refusal a declaration is expected to meet.
 @[refuses("TypeMismatch")]
 def wrong() -> Integer =

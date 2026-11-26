@@ -1,3 +1,5 @@
+@![features(("floating-point", "modules", "native-primitives", "nominal-data", "universes"))]
+
 /// `literal-reading`: at a type a model of the prelude's `FromNat`, `FromNeg`
 /// or `FromDecimal` carries, the checker reads a natural literal through its
 /// `fromNat`, a negative literal through its `fromNeg` at the magnitude and a

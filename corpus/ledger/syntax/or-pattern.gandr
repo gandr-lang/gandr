@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `or_pattern`: an or-pattern: either alternative matches.
 data Color : Type where
   | Red : Color

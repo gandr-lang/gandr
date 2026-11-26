@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements"))]
+
 /// `FunextUnsupported`: a function extensionality past the first-order
 /// boundary, where no finite coverage decides it.
 @[refuses("FunextUnsupported")]

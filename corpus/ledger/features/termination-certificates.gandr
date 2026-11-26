@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `termination-certificates`: Replayable termination certificates.
 /// Implemented: one termination evidence form, a path order's derivation over
 /// the precedence as data, replayed by the kernel for an operation's and a

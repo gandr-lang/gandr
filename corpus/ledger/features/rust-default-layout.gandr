@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// `rust-default-layout` computes rustc's layout of a `repr(Rust)` struct or
 /// enum as a gandr program over the type's code.
 ///

@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `AmbiguousConstructor`: a bare constructor name more than one
 /// data family declares.
 ///

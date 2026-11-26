@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `UndescribedMember.HigherCell`: a member the description does not read: a
 /// rule between rules.
 @[refuses("UndescribedMember.HigherCell")]

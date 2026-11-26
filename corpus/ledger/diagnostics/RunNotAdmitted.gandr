@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "lazy-records", "let-statements", "modules", "products-and-sums", "run-prefixes", "session-types"))]
+
 /// `RunNotAdmitted`: a recorded run the protocol does not admit.
 
 // The native session formers.

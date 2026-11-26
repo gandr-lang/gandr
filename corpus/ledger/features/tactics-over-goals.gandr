@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "tactics-over-goals", "universes"))]
+
 /// `tactics-over-goals`: Tactics over goals (~t).
 /// Implemented: a splice `~t` where a value is read runs `assumption` or
 /// `intro(t)` in the checker at the goal the hole holds, the binders in scope

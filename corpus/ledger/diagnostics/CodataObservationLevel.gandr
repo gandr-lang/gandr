@@ -1,3 +1,5 @@
+@![features(("codata", "universes"))]
+
 /// `CodataObservationLevel`: an observation lives above the
 /// codata declaration's universe.
 @[refuses("CodataObservationLevel")]

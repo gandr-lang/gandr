@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "modules", "native-lists", "native-primitives", "records", "thunks-and-force", "universes"))]
+
 /// `thunks-and-force`: a computation of no input runs at its bare name.
 ///
 /// A `def` with an empty input list is a computation of no input.

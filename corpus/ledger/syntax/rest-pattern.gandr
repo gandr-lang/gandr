@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "pattern-matching", "typed-holes"))]
+
 /// `rest_pattern`: a rest pattern, matching the remainder of a list; here a
 /// hole, which leaves the arm that runs undecided.
 

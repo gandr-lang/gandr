@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "modules", "native-primitives", "signatures-as-values", "thunks-and-force", "universes"))]
+
 /// `theory-include`: Theory inclusion.
 /// Implemented: a theory including another with the morphism kept, imported
 /// includes, manifest sorts, and the reduct `T.S` applied by the checker where

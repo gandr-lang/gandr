@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// `ImportShadows`: a name an import binds and another binding of the
 /// source binds too.
 // The answer, unqualified and exported.

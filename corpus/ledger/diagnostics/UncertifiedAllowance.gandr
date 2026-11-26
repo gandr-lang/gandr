@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `UncertifiedAllowance`: univalence over a bound past the largest a
 /// catalogue builds at.
 theory Magma where

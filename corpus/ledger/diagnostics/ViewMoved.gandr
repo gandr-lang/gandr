@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "native-primitives", "records", "temporary-access"))]
+
 /// `ViewMoved`: an abort of a view whose value held at grade one a
 /// read moved out.
 def succ(n : Integer) -> Integer =

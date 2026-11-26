@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `theory_declaration`: a theory: its sorts, operations and rules.
 theory Semi where
   sort S : Type;

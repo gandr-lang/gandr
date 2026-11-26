@@ -1,3 +1,5 @@
+@![features("call-by-push-value")]
+
 /// `NonValuePayload`: an attribute payload that is not a value.
 @[refuses("NonValuePayload")]
 @[doc(pure 1)]

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "derived-rules", "identity-types", "modules", "signatures-as-values", "universes"))]
+
 /// `DerivedComponent`: a model writing a component under the name of a rule
 /// its theory derives.
 theory Involution where

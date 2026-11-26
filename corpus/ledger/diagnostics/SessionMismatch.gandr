@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `SessionMismatch`: an action the endpoint's session type does not admit.
 @[refuses("SessionMismatch")]
 def desk_receives_first() -> Unit =

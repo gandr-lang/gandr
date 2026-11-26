@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `UndescribedMember.TypeShape`: a member the description does not read: a
 /// type shape with no first-order reference.
 ///

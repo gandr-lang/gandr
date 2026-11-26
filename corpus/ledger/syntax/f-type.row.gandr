@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-rows", "let-statements", "records", "row-kind"))]
+
 /// `f_type.row`: a computation type with the capabilities it uses, open
 /// through a row variable after the bar.
 @[checks]

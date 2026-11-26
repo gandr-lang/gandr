@@ -1,3 +1,5 @@
+@![features(("extension-types", "indexed-data", "modules", "records"))]
+
 /// `FixedFieldDiffers`: a record literal at a patched type states a fixed field
 /// at another value.
 type Config = *{host : String, port : Integer};

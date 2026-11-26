@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.cmp.ge`: an at-least comparison.
 def at_least() -> Bool =
   2 >= 1

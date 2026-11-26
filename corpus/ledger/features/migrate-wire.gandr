@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "located-judgements", "native-primitives", "records", "visibility"))]
+
 /// `migrate-wire` ships a migration to the process a host binds its world to.
 ///
 /// Implemented: a host's world bindings bind each declared world to the key of

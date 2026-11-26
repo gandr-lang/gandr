@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "universes"))]
+
 /// `PartialField`: a field read by name off a value some constructor of whose
 /// type declares no such field.
 data Shape : Type where

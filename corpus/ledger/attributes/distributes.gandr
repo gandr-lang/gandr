@@ -1,3 +1,5 @@
+@![features(("exact-distributions", "let-statements"))]
+
 /// `distributes`: states the exact distribution of a declaration's runs, one
 /// run for each sequence of answers to its draws, as texts `weight outcome`.
 /// A declaration that draws nothing runs once, with weight 1.

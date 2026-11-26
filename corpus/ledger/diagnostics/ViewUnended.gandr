@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "records", "temporary-access"))]
+
 /// `ViewUnended`: an exclusive access's body ending with its view neither
 /// resumed nor aborted.
 @[refuses("ViewUnended")]

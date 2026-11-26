@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "let-statements", "modules", "named-instances", "native-primitives", "second-order-rules", "signature-models", "signatures-as-values", "universes"))]
+
 /// `effect-theories`: effects as theories with laws, handled by capability
 /// scopes and named in rows.
 ///

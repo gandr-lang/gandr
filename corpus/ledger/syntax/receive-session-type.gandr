@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `receive_session_type`: a session that receives.
 def inward(c : Integer >? end) -> Unit =
   let n = recv c

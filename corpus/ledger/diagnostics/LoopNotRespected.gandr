@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `LoopNotRespected`: a case over a sort its words loop at is not shown to
 /// respect one of the loops.
 data Circle : Type where

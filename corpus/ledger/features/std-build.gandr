@@ -1,3 +1,5 @@
+@![features(("imports", "inert-fields", "modules", "visibility"))]
+
 /// `std-build`: The standard library's manifest theories.
 /// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned`
 /// and `Toolchain`, which `Project` joins once, `Presentation`,

@@ -1,3 +1,5 @@
+@![features(("let-statements", "temporary-access"))]
+
 /// `OutOfFragment.View`: a form out of the fragment: the name a `resume` or an
 /// `abort` ends is no linear slot.
 @[refuses("OutOfFragment.View")]

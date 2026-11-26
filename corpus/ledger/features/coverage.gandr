@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `coverage`: a match is checked for missing and unreachable arms; every
 /// `Shape` meets one arm here, with no wildcard to hide a gap.
 data Shape : Type where

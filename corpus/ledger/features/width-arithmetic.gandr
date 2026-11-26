@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "named-instances", "native-primitives", "pattern-matching", "products-and-sums", "signature-models"))]
+
 /// `width-arithmetic`: arithmetic on a width that stops at the end
 /// of its range.
 ///

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "modules", "native-primitives", "signatures-as-values", "universes"))]
+
 /// `NoFiller.Omitted`: a law a model omits, whose sides do not convert, so no
 /// source discharges it.
 ///

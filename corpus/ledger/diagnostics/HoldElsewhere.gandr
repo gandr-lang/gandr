@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "session-types", "temporary-access"))]
+
 /// `HoldElsewhere`: a hold checked against a handle at another world.
 module Seat :> *{
   type Dispatch,

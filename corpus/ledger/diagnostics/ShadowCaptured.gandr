@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "thunks-and-force"))]
+
 /// `ShadowCaptured`: a thunk reads a linear function's parameter, and a thunk
 /// may run that read other than once.
 @[refuses("ShadowCaptured")]

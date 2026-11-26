@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching", "records", "universes"))]
+
 /// `spheres`: The 2-sphere and the 3-sphere as presentations.
 /// Implemented: a data declaration declares a cell at the reflexivity of a
 /// point. The checker and the kernel take the path type at that wrapped point

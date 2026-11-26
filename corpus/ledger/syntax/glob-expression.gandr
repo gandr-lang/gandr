@@ -1,3 +1,5 @@
+@![features(("globular-structures", "let-statements", "universes"))]
+
 /// `glob_expression`: a globular structure: its cells and its homs.
 /// The checker does not reach this form yet: no type `Glob` is declared for
 /// it to answer, so the signature is refused first.

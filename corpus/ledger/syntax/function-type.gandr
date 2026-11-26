@@ -1,2 +1,4 @@
+@![features(("dependent-functions", "let-statements", "products-and-sums", "type-codes", "universes"))]
+
 /// `function_type`: a function type.
 def twice : Type -> Type = fun (Y) { type(Y * Y) };

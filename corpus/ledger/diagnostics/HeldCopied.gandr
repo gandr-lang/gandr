@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements"))]
+
 /// `HeldCopied`: a value held at grade one copied.
 @[refuses("HeldCopied")]
 def read_held() -> Integer =

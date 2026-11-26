@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 /// `ContinuationAsValue`: a continuation holding an obligation read as a value,
 /// other than as what a resumption or an abandonment ends.
 

@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "loops", "native-primitives"))]
+
 /// `while_expression`: a while loop.
 def until_done(n : Integer) -> Integer =
   while n > 0 { return n }

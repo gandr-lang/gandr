@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "indexed-data", "let-statements", "modules", "pattern-matching", "products-and-sums", "records"))]
+
 /// `directed-paths`: Directed paths (Flow).
 /// Implemented: `Flow[.A = A](a, b)` with `Flow.stay`, `Flow.then` and
 /// covariant `Flow.ride`, certified on readmission, and `Flow.into(f)` decided

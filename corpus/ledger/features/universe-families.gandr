@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "let-statements", "native-primitives", "pattern-matching", "products-and-sums", "records", "type-codes", "universes"))]
+
 /// `universe-families`: Value and computation universe families.
 /// Implemented: two universe families indexed by polarity and level over one
 /// level algebra, with an erased static core beneath the surface.

@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `BareFeedback`: a circuit rule's fed-back port read under no observation.
 @[refuses("BareFeedback")]
 theory Wheel where

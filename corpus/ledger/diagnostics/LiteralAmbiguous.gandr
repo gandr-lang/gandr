@@ -1,3 +1,5 @@
+@![features(("modules", "nominal-data", "universes"))]
+
 /// `LiteralAmbiguous`: a natural literal at a type two models of the prelude's
 /// `FromNat` read it into.
 ///

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "lazy-records", "modules", "products-and-sums", "session-types"))]
+
 /// `SessionNotEquivalent`: a `Path.bisim` relating two protocols that
 /// are not bisimilar.
 module Evolution where {

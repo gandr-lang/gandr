@@ -1,3 +1,5 @@
+@![features(("let-statements", "products-and-sums", "session-types"))]
+
 /// `mu_session_type`: a recursive session type.
 def serve(c : rec t => +{more : Integer >! t, done : end}) -> Unit =
   select c done

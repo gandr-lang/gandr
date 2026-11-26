@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "pattern-matching", "signatures-as-values"))]
+
 /// `second-order-rules`: Second-order rules.
 /// Implemented: a rule over a binding operation, instantiation `t(u)`, the
 /// abstraction `bind x . t` at a port, sorted at its binders, oriented by

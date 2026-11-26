@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "structural-recursion"))]
+
 /// `instantiation.tail`: a recursive call in tail position.
 /// The checker does not reach this form yet.
 ///

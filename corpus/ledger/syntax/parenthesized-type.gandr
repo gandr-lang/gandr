@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits", "let-statements", "thunks-and-force"))]
+
 /// `parenthesized_type`: a parenthesized type.
 @[checks]
 def later : +U (-F Integer);

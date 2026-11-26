@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.and`: a conjunction.
 def both() -> Bool =
   true && false

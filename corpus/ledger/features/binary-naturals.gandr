@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types"))]
+
 /// `binary-naturals`: Binary natural numbers.
 // A numeral annotated `(n : Nat)` is the prelude's binary natural it names,
 // its lowest digit outermost: five is one, zero, one read from the outside

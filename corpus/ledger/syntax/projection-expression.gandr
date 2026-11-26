@@ -1,3 +1,5 @@
+@![features("records")]
+
 /// `projection_expression`: a projection of a field, `x` off the record
 /// `point` holds.
 def point = *{.x = 1, .y = 2};

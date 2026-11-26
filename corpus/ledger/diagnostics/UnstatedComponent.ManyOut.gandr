@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.ManyOut`: a model component the derivation cannot state:
 /// a term relating the results of a many-out operation.
 ///

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "signatures-as-values", "universes"))]
+
 /// `nested-operation-laws`: Operations nested in a law or a call.
 /// Implemented: a theory's call nesting an operation where a value is read
 /// normalizes over terms under the block's oriented rules, each operation over

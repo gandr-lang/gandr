@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 /// `MisplacedAttribute`: an attribute written at a place that the registry
 /// does not let it stand. The mark `deprecated` stands on a declaration, and
 /// here it stands on a constructor.

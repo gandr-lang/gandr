@@ -1,3 +1,5 @@
+@![features("products-and-sums")]
+
 /// `labelled_sum_type`: a labelled sum type.
 @[checks]
 def tagged : +{Integer, String};

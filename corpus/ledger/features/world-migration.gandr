@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "imports", "let-statements", "located-judgements", "native-primitives", "records", "temporary-access"))]
+
 /// `world-migration` runs a migration's body at its world and brings
 /// its answer back.
 ///

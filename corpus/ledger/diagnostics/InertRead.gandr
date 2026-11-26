@@ -1,3 +1,5 @@
+@![features(("inert-fields", "modules", "signatures-as-values"))]
+
 /// `InertRead`: a declaration reads a field its theory marks inert.
 ///
 /// - see: #3029

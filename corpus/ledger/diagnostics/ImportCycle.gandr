@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// `ImportCycle`: a declaration of a source whose imports lead back to it.
 import "ImportCycle.gandr";
 

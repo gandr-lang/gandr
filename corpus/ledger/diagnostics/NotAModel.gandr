@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 /// `NotAModel`: a module statement opens a name no binder or definition
 /// declares at a model type.
 @[refuses("NotAModel")]

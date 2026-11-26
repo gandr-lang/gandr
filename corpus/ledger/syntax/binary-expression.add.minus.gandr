@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.add.minus`: subtraction.
 def difference() -> Integer =
   3 - 1

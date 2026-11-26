@@ -1,3 +1,5 @@
+@![features(("mutual-recursion", "nominal-data", "universes"))]
+
 /// `CrossBlockReference`: a data declaration's field names a family written
 /// past its block.
 rec {

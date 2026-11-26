@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 /// `UndecidedCoverage`: a leaf of a match's tree is one of its pattern holes.
 data Color : Type where
   | Red : Color

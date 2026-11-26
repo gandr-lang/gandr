@@ -1,3 +1,5 @@
+@![features(("lazy-records", "let-statements", "session-types"))]
+
 /// `UnofferedLabel`: a selection of a label the endpoint's state
 /// does not offer.
 @[refuses("UnofferedLabel")]

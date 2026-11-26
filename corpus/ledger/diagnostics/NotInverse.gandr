@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `NotInverse`: translator tables that are not mutually inverse.
 theory Magma where
   sort M : Type;

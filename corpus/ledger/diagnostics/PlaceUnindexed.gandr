@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "temporary-access"))]
+
 /// `PlaceUnindexed`: an access at a place naming a held value whose type
 /// is no list.
 @[refuses("PlaceUnindexed")]

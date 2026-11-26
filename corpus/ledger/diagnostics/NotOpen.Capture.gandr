@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "modules", "records", "thunks-and-force"))]
+
 /// `NotOpen.Capture`: a thunk crossing to another world over a handle whose
 /// held value is not open.
 module Seat :> *{

@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `UncertifiedDegree`: univalence at a degree no shape of
 /// the catalogue reaches.
 theory Magma where

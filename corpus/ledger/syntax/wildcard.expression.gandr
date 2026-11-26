@@ -1,3 +1,5 @@
+@![features(("universes", "wildcards"))]
+
 /// `wildcard.expression`: the wildcard where a value is read, a term the
 /// elaborator answers from the comparisons that force it.
 def idAt(a : Type, y : a) -> a = y;

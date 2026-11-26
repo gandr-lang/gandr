@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 /// `ContinuationUsedTwice`: a continuation holding an obligation resumed or
 /// abandoned a second time.
 

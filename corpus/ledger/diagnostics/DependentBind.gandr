@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements"))]
+
 /// `DependentBind`: a bind whose body synthesises a type naming the
 /// value it binds.
 def one() -> Integer =

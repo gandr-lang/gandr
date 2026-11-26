@@ -1,3 +1,5 @@
+@![features(("derived-rules", "signatures-as-values", "universes"))]
+
 /// `derived_rule_declaration`: a rule a theory's completion derives, named
 /// under the theory outside its block and proved for every model; here an
 /// involution applied four times.

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "nominal-data", "universes"))]
+
 /// `indexed-data`: Indexed data families.
 /// Implemented: data families over value indices, written as the kind `Nat ->
 /// Type` or as a named telescope whose later index types read the earlier ones,

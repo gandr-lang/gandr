@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "records"))]
+
 /// `HeldShared`: a hold at grade one entering a value not made in place.
 @[refuses("HeldShared")]
 def entered(n : Integer) -> Unit =

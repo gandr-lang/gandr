@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// `UnmarkedSelfReference`: a recursive definition's own name written without
 /// a descent claim.
 data Nat : Type where

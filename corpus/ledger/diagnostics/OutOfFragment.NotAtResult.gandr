@@ -1,3 +1,5 @@
+@![features(("effect-rows", "let-statements", "records", "thunks-and-force"))]
+
 /// `OutOfFragment.NotAtResult`: a row written before a parameter's type, where
 /// no returner is inserted for it to belong to.
 @[refuses("OutOfFragment.NotAtResult")]

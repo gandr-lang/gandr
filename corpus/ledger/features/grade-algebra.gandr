@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "native-primitives"))]
+
 /// `grade-algebra`: Grade algebras.
 /// Implemented: the standard library declares `Grade`, an ordered semiring's
 /// operations, and its models `Usage` and `Count`. Conversion decides each

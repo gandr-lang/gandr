@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 /// `unary_expression`: negation.
 def negated(n : Integer) -> Integer =
   - n

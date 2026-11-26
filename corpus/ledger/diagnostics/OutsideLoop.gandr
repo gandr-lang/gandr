@@ -1,3 +1,5 @@
+@![features(("let-statements", "loops", "nominal-data", "universes"))]
+
 /// `OutsideLoop`: a `break` or a `continue` on no path through a loop's body.
 data Nat : Type where
   | Zero : Nat

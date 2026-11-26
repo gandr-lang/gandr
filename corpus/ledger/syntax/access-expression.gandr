@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "native-primitives", "temporary-access"))]
+
 /// `access_expression`: an access to a held cell under a name.
 def bump() -> Integer =
   var c = 0

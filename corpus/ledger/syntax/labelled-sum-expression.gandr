@@ -1,3 +1,5 @@
+@![features(("let-statements", "products-and-sums"))]
+
 /// `labelled_sum_expression`: a labelled sum injection.
 def one() -> +{Integer} =
   +{.0 = 1}

@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "modules", "named-instances"))]
+
 /// `f_type.result.labelled`: a definition's result written as a row naming an
 /// instance by its label, `-F [out : std.io.Console.Eff] Unit`, the
 /// capability the label

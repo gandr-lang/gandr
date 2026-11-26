@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "nominal-data", "universes"))]
+
 /// `OutOfFragment.Indexed`: an indexed family that states an index
 /// at a field writes a rule over its generators.
 data N : Type where {

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "records", "session-types", "thunks-and-force"))]
+
 /// `CapabilityCaptured`: a migration under a former that may run it
 /// other than once.
 module Seat :> *{

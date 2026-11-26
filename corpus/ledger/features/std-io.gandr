@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "modules", "visibility"))]
+
 /// `std-io`: `print`, `eprint` and `read_line` write standard output and
 /// standard error and read standard input through the console capability `main`
 /// opens from its authority.

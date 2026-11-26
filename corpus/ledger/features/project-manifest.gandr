@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "visibility"))]
+
 /// `project-manifest`: A package, its root and its manifest.
 /// Implemented: a package is its `package.gandr` at its root and the modules
 /// under the directory its `sources` names, found from any path in it, and

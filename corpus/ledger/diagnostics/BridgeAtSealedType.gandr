@@ -1,3 +1,5 @@
+@![features(("bridge-types", "data-parameters", "modules", "records"))]
+
 /// `BridgeAtSealedType`: a bridge at a sealed type stating no identity system,
 /// whose representation the seal hides.
 module Hidden :> *{type T, one : T} where {

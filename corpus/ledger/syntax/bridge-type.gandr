@@ -1,3 +1,5 @@
+@![features(("bridge-types", "data-parameters", "imports", "native-lists", "records"))]
+
 /// `bridge_type`: a bridge type.
 
 // The native finite lists.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "nominal-data", "pattern-matching", "thunks-and-force", "universes"))]
+
 /// `abstract-closures` converts each closure of a program to an abstract
 /// closure over the context variables its code names.
 ///

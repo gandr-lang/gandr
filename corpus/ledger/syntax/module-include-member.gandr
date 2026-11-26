@@ -1,3 +1,5 @@
+@![features(("model-include", "modules"))]
+
 /// `module_include_member`: a module body taking another module's members.
 module Base where
   def zero = 0;

@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching"))]
+
 /// `OutOfFragment.BareArms`: a match in layout form writes no `where` between
 /// its scrutinee and its arms.
 @[refuses("OutOfFragment.BareArms")]

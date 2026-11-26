@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `LoopUndecided`: a case over a sort its words loop at whose answer costs
 /// more to carry along a loop than the machine's fuel allows.
 data Nat : Type where

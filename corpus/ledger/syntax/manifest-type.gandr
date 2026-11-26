@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "let-statements", "signature-models", "signatures-as-values", "type-codes", "universes"))]
+
 /// `manifest_type`: a model type with its sorts fixed, one `with` per sort.
 theory Pair where
   sort A : Type;

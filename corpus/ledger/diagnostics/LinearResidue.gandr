@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "records", "session-types"))]
+
 /// `LinearResidue`: a half of a fork that finished with an endpoint unconsumed.
 @[refuses("LinearResidue")]
 def seat_left_open() -> Unit =

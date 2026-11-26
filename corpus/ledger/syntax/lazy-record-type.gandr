@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "thunks-and-force"))]
+
 /// `lazy_record_type`: a lazy record type.
 @[checks]
 def menu : +U &{-F Integer, -F String};

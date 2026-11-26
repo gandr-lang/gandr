@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives"))]
+
 /// `binary_expression.cmp.eq`: an equality comparison.
 def same() -> Bool =
   1 == 1

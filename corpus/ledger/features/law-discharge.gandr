@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "modules", "native-primitives", "nominal-data", "signatures-as-values", "universes"))]
+
 /// `law-discharge`: a law a model leaves out, discharged by the checker.
 ///
 /// Implemented: the lowering states a law the model leaves out at the law's

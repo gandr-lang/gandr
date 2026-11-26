@@ -1,3 +1,5 @@
+@![features(("let-statements", "temporary-access"))]
+
 /// `NotAView`: a resume or an abort naming a linear slot that is no view.
 @[refuses("NotAView")]
 def resumed() -> Unit =

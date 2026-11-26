@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types", "thunks-and-force"))]
+
 /// `ContinuationCaptured`: a continuation holding an obligation named where its
 /// end may run other than once.
 

@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements"))]
+
 /// `Unreachable`: code after a statement every path of which exits.
 @[refuses("Unreachable")]
 def early(n : Nat) -> Nat =

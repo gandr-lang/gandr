@@ -1,3 +1,5 @@
+@![features("signatures-as-values")]
+
 /// `MalformedForm`: a form whose pieces fall short of its rule.
 @[refuses("MalformedForm")]
 theory Magma where

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "universes"))]
+
 /// `NonUniformOccurrence`: a data declaration's own family is applied
 /// off its parameters.
 @[refuses("NonUniformOccurrence")]

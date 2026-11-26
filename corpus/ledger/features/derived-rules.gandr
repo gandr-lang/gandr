@@ -1,3 +1,5 @@
+@![features(("data-parameters", "derived-rules", "identity-types", "imports", "let-statements", "modules", "nominal-data", "pattern-matching", "signature-models", "universes"))]
+
 /// `derived-rules`: Derived rules at a model (rule T.r : l <=> r).
 /// Implemented: `rule T.r : l <=> r;`, an equation the theory's completed rules
 /// prove, proved for every model as a path over the model's fields and read as

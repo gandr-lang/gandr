@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `send_expression`: a send over a session endpoint.
 def deliver() -> Unit =
   let desk = fork (seat : Integer >? end) { let n = recv seat; close seat }

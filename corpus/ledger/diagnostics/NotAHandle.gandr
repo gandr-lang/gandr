@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "session-types"))]
+
 /// `NotAHandle`: an opening `let x at w` of a value whose type is no handle.
 module Seat :> *{
   type Dispatch,

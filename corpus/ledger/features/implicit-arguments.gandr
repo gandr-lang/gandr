@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "implicit-arguments", "let-statements", "modules", "native-primitives", "pattern-matching", "records", "type-codes", "universes"))]
+
 /// `implicit-arguments`: Implicit arguments.
 /// Implemented: rungs A and B: implicits in one prefix block, supply by name or
 /// by position through the slot, a solver binding only forced solutions, and

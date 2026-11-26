@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "list-case", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `cons_pattern`: a path cons pattern: a step and the rest of the path,
 /// written with its glyph and in ASCII.
 data Circle : Type where

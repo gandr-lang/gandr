@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "capabilities", "let-statements", "temporary-access"))]
+
 /// `UnwindEffect`: an access's unwind performing an effect.
 @[refuses("UnwindEffect")]
 def noisy(p : Cap { exit }) -> Integer =

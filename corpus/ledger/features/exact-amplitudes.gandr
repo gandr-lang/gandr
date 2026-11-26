@@ -1,3 +1,5 @@
+@![features("imports")]
+
 /// `exact-amplitudes`: Exact Clifford+T amplitudes in ℤ[1/√2, i].
 /// Implemented: an amplitude stands at its least scale, so equal amplitudes
 /// have equal forms. Its sums, products, negations, conjugates and squared

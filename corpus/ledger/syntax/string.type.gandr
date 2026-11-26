@@ -1,3 +1,5 @@
+@![features(("extension-types", "indexed-data", "modules", "records"))]
+
 /// `string.type`: a string in type position.
 
 /// A server's address.

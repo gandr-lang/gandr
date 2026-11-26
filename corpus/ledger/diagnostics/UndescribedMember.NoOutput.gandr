@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `UndescribedMember.NoOutput`: a member the description does not read: an
 /// operation with no output port, so its result goes nowhere.
 @[refuses("UndescribedMember.NoOutput")]

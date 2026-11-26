@@ -1,3 +1,5 @@
+@![features(("imports", "located-judgements", "modules"))]
+
 /// `world_declaration`: a world: a name a computation can be placed at, and the
 /// row a role placed there requires of its site.
 

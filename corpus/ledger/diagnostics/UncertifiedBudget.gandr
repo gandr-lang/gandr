@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 /// `UncertifiedBudget`: univalence over a catalogue of more shape classes than
 /// the stratum budget.
 theory Magma where

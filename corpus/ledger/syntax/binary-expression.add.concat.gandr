@@ -1,3 +1,5 @@
+@![features("native-lists")]
+
 /// `binary_expression.add.concat`: list concatenation.
 /// The checker does not reach this form yet.
 ///

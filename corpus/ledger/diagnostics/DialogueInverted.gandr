@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "modules", "session-types", "traces"))]
+
 /// `DialogueInverted`: a dialogue that logs a receipt before the
 /// send it matches.
 

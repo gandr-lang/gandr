@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "modules", "places", "sized-types"))]
+
 /// `ViewNotPlace`: a method at a deduced mode whose result is no view of its
 /// receiver's mode or whose body is no place of its receiver, or a view type
 /// off such a method's result.

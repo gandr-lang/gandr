@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "let-statements", "signatures-as-values", "universes"))]
+
 /// `UninterfacedMember`: a member of the theory a scope handles that it cannot
 /// read as an operation, here the value sort no manifest fixes.
 theory Stored where

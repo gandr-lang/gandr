@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types", "shared-endpoints"))]
+
 /// `dup_expression`: a duplication of a shared endpoint.
 /// The checker does not reach this form yet.
 ///

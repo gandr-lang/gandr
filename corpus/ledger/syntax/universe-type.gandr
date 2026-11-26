@@ -1,2 +1,4 @@
+@![features("universes")]
+
 /// `universe_type`: the universe of types.
 def code : Type = Integer;

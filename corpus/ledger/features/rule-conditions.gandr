@@ -1,3 +1,5 @@
+@![features(("second-order-rules", "signatures-as-values", "universes"))]
+
 /// `rule-conditions`: Conditions on a rule.
 /// Implemented: a rule's condition read over its variables, a freshness
 /// condition `where a # t`, overlaps decided under the condition they compose,

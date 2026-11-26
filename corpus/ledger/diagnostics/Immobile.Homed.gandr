@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "records", "thunks-and-force"))]
+
 /// `Immobile.Homed`: a thunk crossing to another world over a call of a
 /// declaration homed where the thunk is formed.
 world operator;

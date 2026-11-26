@@ -1,3 +1,5 @@
+@![features(("imports", "interop-boundary", "records"))]
+
 /// `BoundaryUnrealised.Members`: an `extern "rust"` block whose `boundary`
 /// attribute names more rows than it declares members.
 // The boundary check reads `admitBlock` here, whatever the listing names.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "let-statements", "modules", "native-primitives", "pattern-matching", "second-order-rules", "signatures-as-values", "thunks-and-force", "universes"))]
+
 /// `relative-monads`: Monads relative to the shift.
 /// Implemented: a monad relative to `-F` as a theory, its unit and extension
 /// over a family of computation types; the carrier as a theory's sort into the

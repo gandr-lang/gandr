@@ -1,2 +1,4 @@
+@![features(("data-parameters", "identity-types"))]
+
 /// `path_type`: a path type.
 def four : Path 4 4 = Path.here 4;

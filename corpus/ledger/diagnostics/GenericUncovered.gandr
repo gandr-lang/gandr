@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "nominal-data", "universes"))]
+
 /// `GenericUncovered`: `Eq.generic` over a data type with a function field,
 /// which has no equality the program decides.
 data Shape : Type where

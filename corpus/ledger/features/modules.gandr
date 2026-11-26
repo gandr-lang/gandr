@@ -1,3 +1,5 @@
+@![features(("modules", "visibility"))]
+
 /// `modules`: a module groups declarations under a name, and a member is
 /// reached through it.
 pub module Origin where

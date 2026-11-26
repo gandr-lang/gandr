@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UndescribedMember.IllSorted`: a law whose two sides stand at sorts that
 /// differ, even modulo the laws at earlier sorts.
 ///

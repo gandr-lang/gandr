@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 /// `UnstatedComponent.Computation`: a model component the derivation cannot
 /// state: a sort indexed by a computation sort, or an operation with a
 /// port at one.

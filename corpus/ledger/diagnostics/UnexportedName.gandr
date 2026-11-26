@@ -1,3 +1,5 @@
+@![features(("imports", "universes"))]
+
 /// `UnexportedName`: a name an import answers with a declaration its source
 /// does not export.
 // `code`, a signature with no definition.

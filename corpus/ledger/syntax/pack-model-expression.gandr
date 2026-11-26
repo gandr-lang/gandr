@@ -1,3 +1,5 @@
+@![features(("data-parameters", "modules", "signature-models", "signatures-as-values", "universes"))]
+
 /// `pack_model_expression`: a module packed at its theory's models.
 theory Pointed where
   sort P : Type;

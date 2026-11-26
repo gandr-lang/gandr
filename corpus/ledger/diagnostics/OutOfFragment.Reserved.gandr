@@ -1,3 +1,5 @@
+@![features(("corecursion", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `OutOfFragment.Reserved`: a form parsed so it can be declined by name: a
 /// recursive call claiming both descent and productivity.
 data Nat : Type where

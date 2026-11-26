@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "deduced-receivers", "imports", "let-statements", "modules", "native-lists", "places", "sized-types", "temporary-access"))]
+
 /// `view_expression`: a call's place lent to a block, at the mode it asks.
 
 // The native finite lists.

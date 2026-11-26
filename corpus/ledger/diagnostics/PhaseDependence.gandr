@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "modules"))]
+
 /// `PhaseDependence`: a type member reads a value member of its own module.
 module Counted where {
   @[runs("3")]

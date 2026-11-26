@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "universes"))]
+
 /// `unification`: Unification and index refinement.
 /// Implemented: the solution step, which replaces the variable side of an arm's
 /// index equation by the other side, in the arm's goal and in each later binder

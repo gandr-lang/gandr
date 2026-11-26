@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "pattern-matching"))]
+
 /// `OutOfFragment.Unadmitted`: a form the grammar parses and the fragment has
 /// no reading of: a match of no arms written with its answer.
 @[refuses("OutOfFragment.match_expression")]

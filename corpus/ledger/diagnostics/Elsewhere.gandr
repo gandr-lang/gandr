@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "session-types"))]
+
 /// `Elsewhere`: a hypothesis or a resident used at a world other than its own.
 module Seat :> *{
   type Dispatch,

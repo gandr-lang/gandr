@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "session-types"))]
+
 /// `FootprintsOverlap` refuses a fork whose two halves write
 /// through one capability.
 ///

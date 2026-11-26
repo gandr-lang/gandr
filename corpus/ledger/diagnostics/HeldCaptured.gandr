@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "thunks-and-force"))]
+
 /// `HeldCaptured`: a held value named where its holding may run
 /// other than once.
 @[runs("0"), refuses("HeldCaptured")]

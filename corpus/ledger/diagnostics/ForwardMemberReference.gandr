@@ -1,3 +1,5 @@
+@![features(("modules", "native-primitives"))]
+
 /// `ForwardMemberReference`: a module member named at or after the
 /// member naming it.
 module Bad where {

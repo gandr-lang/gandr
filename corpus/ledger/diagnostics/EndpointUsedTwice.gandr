@@ -1,3 +1,5 @@
+@![features(("let-statements", "session-types"))]
+
 /// `EndpointUsedTwice`: an endpoint named twice in one action.
 @[refuses("EndpointUsedTwice")]
 def seat_sent_over_itself() -> Unit =

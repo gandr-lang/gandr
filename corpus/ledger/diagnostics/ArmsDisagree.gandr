@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "records", "session-types"))]
+
 /// `ArmsDisagree`: two arms of an offer leaving an endpoint
 /// in different states.
 @[refuses("ArmsDisagree")]

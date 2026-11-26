@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// `higher-order-fields`: Function fields in described families.
 /// Implemented: a constructor field `A -> T` is the function former of the
 /// description code. The code decodes the field to the thunked arrow. So a

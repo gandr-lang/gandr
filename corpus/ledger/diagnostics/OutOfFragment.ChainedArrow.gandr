@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements"))]
+
 /// `OutOfFragment.ChainedArrow`: a parameter's type chains two arrows, where
 /// one function of two inputs takes them as one group.
 @[refuses("OutOfFragment.ChainedArrow")]

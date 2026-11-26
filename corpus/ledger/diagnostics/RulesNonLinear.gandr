@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 /// `RulesNonLinear`: a rule of a block whose left side names
 /// one variable twice.
 @[refuses("RulesNonLinear")]

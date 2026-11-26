@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements"))]
+
 /// `Path.walk`: `Path.walk(P, p, x)` moves `x` along the path `p` in the family
 /// `P`; along reflexivity it keeps the value.
 def along_here : Path (Path.walk (fun (X) { X }) (Path.here Integer) 2) 2 = Path.here 2;

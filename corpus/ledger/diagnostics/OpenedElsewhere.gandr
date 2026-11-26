@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "session-types"))]
+
 /// `OpenedElsewhere`: an opening `let x at w` writing another world than the
 /// one its handle stands at.
 module Seat :> *{

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "modules"))]
+
 /// `MarkUnfounded`: a type marked `mobile` whose representation cannot cross
 /// to another world.
 module Alone :> *{mobile type Report} where {

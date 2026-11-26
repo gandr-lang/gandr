@@ -1,3 +1,5 @@
+@![features(("let-statements", "temporary-access"))]
+
 /// `abort_expression`: aborting an accessed cell.
 def give_up() -> Unit =
   var c = 0

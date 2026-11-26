@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "explicit-exits", "imports", "let-statements", "native-primitives", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 /// `specification-monads`: Specification monads.
 /// Implemented: state's weakest-precondition observation as a handler of state
 /// into the predicate transformers, checked as a model of state's laws, and as

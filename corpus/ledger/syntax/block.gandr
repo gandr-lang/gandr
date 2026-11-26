@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "conditionals", "data-parameters", "effect-rows", "identity-types", "imports", "let-statements", "loops", "modules", "native-lists", "native-primitives", "places", "temporary-access"))]
+
 /// `block`: a block: statements, then the computation it ends in.
 
 // The native finite lists.
