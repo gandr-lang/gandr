@@ -122,6 +122,7 @@ extern crate alloc;
 
 mod automaton;
 mod check;
+mod gate;
 mod highlight;
 mod model;
 mod mold;
@@ -140,6 +141,10 @@ pub use crate::automaton::TileTableBytes;
 pub use crate::check::validate_assumption_3;
 pub use crate::check::validate_operator_form;
 pub use crate::check::validate_unique_tiles;
+pub use crate::gate::CoreReason;
+pub use crate::gate::RULE_GATES;
+pub use crate::gate::RuleGate;
+pub use crate::gate::rule_gate;
 pub use crate::highlight::HighlightError;
 pub use crate::highlight::RoleTable;
 pub use crate::model::Adaptation;

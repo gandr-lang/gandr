@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('unknown-type','checking','The unknown type',NULL,'planned','ordinary',NULL,'`?` written where a type is read is the unknown type. The grammar reads the form, and the checker does not reach it.',NULL,'corpus/ledger/syntax/unknown-type.gandr',NULL,'#1503');

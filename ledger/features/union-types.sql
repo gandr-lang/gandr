@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('union-types','types','Union types',NULL,'planned','ordinary',NULL,'`A | B` is the union of two types. The grammar reads the form, and the checker does not reach it.',NULL,'corpus/ledger/syntax/union-type.gandr',NULL,'#1056');

@@ -1235,7 +1235,8 @@ fn superseded(adaptations: &[Adaptation]) -> Vec<SupersededRow>
         .collect()
 }
 
-/// A rule row as a JSON object.
+/// A rule row as a JSON object. Its `feature` is the id of the language
+/// feature that gates the rule, or null for a rule of tier zero.
 ///
 /// # Specification
 /// trivial.
@@ -1260,6 +1261,13 @@ fn rule_json(row: &RuleRow) -> Value
             fields.insert("issue".to_owned(), Value::from(issue.to_string()));
         }
     }
+    fields.insert(
+        "feature".to_owned(),
+        match gandr_surface_grammar::rule_gate(RuleName(row.name)) {
+            Some(gandr_surface_grammar::RuleGate::Feature(feature)) => Value::from(feature),
+            Some(gandr_surface_grammar::RuleGate::Core(_)) | None => Value::Null,
+        },
+    );
     fields.insert("form".to_owned(), Value::from(row.form.clone()));
     if let Some(ref ascii) = row.ascii {
         fields.insert("ascii".to_owned(), Value::from(ascii.clone()));
@@ -2266,6 +2274,38 @@ mod tests
             .iter()
             .find(|row| row.name == name.0)
             .unwrap_or_else(|| panic!("the ledger has a row for `{name}`"))
+    }
+
+    /// Each language feature that gates a rule is a row of the committed
+    /// features ledger that is not declined, and the syntax ledger states it.
+    #[test]
+    fn each_gate_of_a_rule_names_a_row_of_the_features_ledger()
+    {
+        let features = gandr_surface_features::FeatureLedger::read(&committed().join("../.."))
+            .expect("the committed features ledger reads");
+        for (rule, gate) in gandr_surface_grammar::RULE_GATES {
+            if let gandr_surface_grammar::RuleGate::Feature(id) = gate {
+                let status = features.status(&FeatureId(id.to_owned()));
+                assert!(
+                    matches!(
+                        status,
+                        Ok(Status::Implemented | Status::Partial | Status::Planned)
+                    ),
+                    "the rule `{rule}` names `{id}`, which is no row or a declined row: {status:?}"
+                );
+            }
+        }
+        let ledger = SyntaxLedger::build().expect("the ledger builds");
+        assert_eq!(
+            super::rule_json(row(&ledger, RuleName("match_expression"))).get("feature"),
+            Some(&serde_json::Value::from("pattern-matching")),
+            "a rule outside tier zero states its feature"
+        );
+        assert_eq!(
+            super::rule_json(row(&ledger, RuleName("def_value"))).get("feature"),
+            Some(&serde_json::Value::Null),
+            "a rule of tier zero states none"
+        );
     }
 
     #[test]

@@ -1,0 +1,1 @@
+INSERT INTO feature VALUES('globular-structures','descriptions','Globular structures (glob)',NULL,'planned','ordinary',NULL,'`glob { … }` writes a globular structure by its cells and its homs. The grammar reads the form, and the checker does not reach it: no type `Glob` is declared for the form to answer.',NULL,'corpus/ledger/syntax/glob-expression.gandr',NULL,'#1207');
