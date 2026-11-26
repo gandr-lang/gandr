@@ -147,6 +147,10 @@ pub enum RewriteName
     /// `handle`; both forms write `effect … handle`, the one spelling of a
     /// handler.
     HandlerWords,
+    /// A call of a method whose one input is its receiver: `s.m ()` and
+    /// `s.m`; both forms write the selection alone, the one spelling of the
+    /// call.
+    BareRun,
 }
 
 impl RewriteName
@@ -171,6 +175,7 @@ impl RewriteName
         Self::JoinedDefinition,
         Self::TypeApplication,
         Self::HandlerWords,
+        Self::BareRun,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -200,6 +205,7 @@ impl RewriteName
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
             Self::HandlerWords => "handler-words",
+            Self::BareRun => "bare-run",
         }
     }
 
@@ -286,7 +292,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 40] = [
+pub const REWRITES: [Rewrite; 42] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -609,6 +615,22 @@ pub const REWRITES: [Rewrite; 40] = [
         mold: HANDLER,
         from: Spelling("handle c : I { M } with { … }"),
         to: Spelling("effect c : I { M } handle { … }"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BareRun,
+        direction: Direction::Sugar,
+        mold: APPLICATION,
+        from: Spelling("s.m ()"),
+        to: Spelling("s.m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BareRun,
+        direction: Direction::Desugar,
+        mold: APPLICATION,
+        from: Spelling("s.m ()"),
+        to: Spelling("s.m"),
         enabled: Enabled::On,
     },
 ];
@@ -2497,6 +2519,9 @@ impl<'source> Respelling<'_, 'source>
             (RewriteName::HandlerWords, Direction::Sugar | Direction::Desugar) => {
                 return self.handler_words(parts, extent);
             },
+            (RewriteName::BareRun, Direction::Sugar | Direction::Desugar) => {
+                self.bare_run(&mut out, parts)?
+            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -3302,6 +3327,55 @@ impl<'source> Respelling<'_, 'source>
             return None;
         }
         let operand = self.operand(argument);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
+    /// Write the call whose parts are `parts` as its callee alone, answering
+    /// the callee's band, when it applies a selection off a name to the empty
+    /// list: `s.m ()` as `s.m`. Nothing when a comment stands among its
+    /// parts, or for any other call. The meaning check withdraws the rewrite
+    /// where `m` is no method of its receiver alone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bare_run(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (_, operands) = split(parts);
+        let &[callee, argument] = operands.as_slice()
+        else {
+            return None;
+        };
+        let texts = |child| {
+            self.tokens(child)
+                .into_iter()
+                .map(<&str>::from)
+                .collect::<Vec<&str>>()
+        };
+        let &["(", ")"] = texts(argument).as_slice()
+        else {
+            return None;
+        };
+        let word = |text: &str| {
+            text.chars()
+                .next()
+                .is_some_and(|first| first.is_alphabetic() || first == '_')
+        };
+        let &[receiver, ".", method] = texts(callee).as_slice()
+        else {
+            return None;
+        };
+        if !word(receiver) || !word(method) {
+            return None;
+        }
+        let operand = self.operand(callee);
         out.place(&operand, Band::Loose);
         Some(operand.band)
     }

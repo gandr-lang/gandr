@@ -1632,6 +1632,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "joined-definition",
             "type-application",
             "handler-words",
+            "bare-run",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2644,6 +2645,50 @@ fn a_handler_is_written_effect_then_handle()
             spelled(&grammar, source, form, only),
             moved,
             "{form}: the words move alike"
+        );
+        assert_eq!(
+            spelled(&grammar, moved.as_str(), form, only),
+            moved,
+            "{form}: a second pass changes nothing"
+        );
+    }
+}
+
+/// A call of a method whose one input is its receiver is written as its
+/// selection in either form: `s.read ()` is `s.read`. A comment keeps its
+/// place, and a call of a name that no module declares as a method stays. A
+/// second pass changes nothing.
+#[test]
+fn a_method_call_of_its_receiver_alone_is_its_bare_selection_8316()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/a-method-call-of-its-receiver-alone-is-its-bare-selection-8316.gandr"
+    );
+    let only = Selection::Only(&[RewriteName::BareRun]);
+    let moved = spelled(&grammar, source, Form::Sugared, only);
+    expect![[r#"
+        module Counter where
+          def read(self : shared Integer) -> -F Integer = pure self
+          def spend(self : consumed Integer) -> -F Integer = pure self + 1
+
+        def counted() -> -F Integer =
+          var s = 1
+          let n = s.read
+          // this call takes the receiver
+          let m = s.spend
+          pure n + m
+
+        def readOf(t : Integer) -> -F Integer = t.read
+
+        def nothing(t : Integer) -> -F Integer = t.size ()
+    "#]]
+    .assert_eq(&moved);
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, only),
+            moved,
+            "{form}: the calls move alike"
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, only),

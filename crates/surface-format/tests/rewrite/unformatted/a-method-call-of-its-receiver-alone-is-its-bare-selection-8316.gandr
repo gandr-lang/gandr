@@ -1,0 +1,14 @@
+module Counter where
+  def read(self : shared Integer) -> -F Integer = pure self
+  def spend(self : consumed Integer) -> -F Integer = pure self + 1
+
+def counted() -> -F Integer =
+  var s = 1
+  let n = s.read ()
+  // this call takes the receiver
+  let m = s.spend ()
+  pure n + m
+
+def readOf(t : Integer) -> -F Integer = t.read ()
+
+def nothing(t : Integer) -> -F Integer = t.size ()
