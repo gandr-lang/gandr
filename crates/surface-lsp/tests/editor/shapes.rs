@@ -48,7 +48,7 @@ use super::scenarios::spot;
 /// sweep counts their positions but holds no shape on them.
 const SHAPELESS: &[(&str, &str)] = &[];
 
-/// The sources whose every hover is pinned in a golden beside its role golden:
+/// The sources whose every hover is pinned in a golden:
 /// univalence's computation rule by `here`, path induction over the based
 /// path space, transport at `here`, function extensionality by computation,
 /// the circle, and a theory with a documented model module, whose hover shows
@@ -559,9 +559,9 @@ fn host_path(text: &str) -> Option<&str>
     })
 }
 
-/// Each headline source's hovers, against the golden beside its role golden
-/// under `gandr-surface-grammar`'s `tests/highlight/`. `UPDATE_EXPECT=1`
-/// rewrites them.
+/// Each headline source's hovers, against its golden under
+/// `gandr-surface-grammar`'s `tests/highlight/`. `UPDATE_EXPECT=1` rewrites
+/// them.
 #[test]
 fn the_headline_sources_hover_as_their_goldens()
 {

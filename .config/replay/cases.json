@@ -38,15 +38,15 @@
     "due": ["the debug traces and goldens of core-checker"]
   },
   {
-    "name": "#6144: the base rewrites the highlight roles under commits that change the grammar and its traces, and the two rows that share the grammar's suite run it once",
-    "moved": ["crates/surface-grammar/tests/highlight/fixture/model/basics/annotations.roles"],
+    "name": "#6144: the base rewrites the frozen tables under commits that change the grammar and its traces, and the two rows that share the grammar's suite run it once",
+    "moved": ["crates/surface-grammar/src/surface/frozen.rs"],
     "own": [
       "crates/surface-grammar/src/mold.rs",
       "crates/surface-grammar/tests/debug-traces/mold.tests.a_rule_9.txt"
     ],
     "crates": ["surface-grammar"],
     "due": [
-      "the highlight roles, the frozen tables and the grammar fingerprint, the debug traces and goldens of surface-grammar"
+      "the frozen tables and the grammar fingerprint, the debug traces and goldens of surface-grammar"
     ]
   },
   {

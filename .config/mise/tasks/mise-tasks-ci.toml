@@ -268,19 +268,17 @@ run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-par
 description = "The recovery sweep over the records a change touches, or every record when it reaches the parser or removes a source"
 run = ".config/recovery/change.bash"
 
-# The goldens a corpus source carries beside it — its recovery record, its
-# role golden and, for a refusing source, its rendered refusals — rewritten
-# for every source. The records are a sweep and run whole under the `sweeps`
-# profile: under a pull-request profile the 30 s bound cuts the rewrite short
-# and leaves a partial record. The role golden and the rendered refusals read
-# every source under any profile. A new or changed source runs this once,
-# then the check.
+# The goldens a corpus source carries beside it — its recovery record and,
+# for a refusing source, its rendered refusals — rewritten for every source.
+# The records are a sweep and run whole under the `sweeps` profile: under a
+# pull-request profile the 30 s bound cuts the rewrite short and leaves a
+# partial record. The rendered refusals read every source under any profile.
+# A new or changed source runs this once, then the check.
 ["corpus:goldens"]
-description = "Rewrite every corpus source's recovery record, role golden and rendered refusals"
+description = "Rewrite every corpus source's recovery record and rendered refusals"
 env.UPDATE_EXPECT = "1"
 run = [
   ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::each_variant_parses_marks_and_keeps_the_clean_tree)'",
-  ".config/mise/scope cargo nextest run --locked --package gandr-surface-grammar --test tests -E 'test(=highlight::corpus_roles_match_the_golden)'",
   ".config/mise/scope cargo nextest run --locked --package gandr-surface-render-terminal --test tests -E 'test(=corpus::every_refusing_source_renders_as_its_golden)'",
 ]
 

@@ -152,7 +152,7 @@
 //!   back — parsed, lowered beside the source, compared with the certificate's
 //!   type (`TypeTable::read_back`) — and the dispatcher's census pins the types
 //!   that do not, by why. Five headline sources keep a golden of every hover
-//!   beside their role goldens.
+//!   under `tests/highlight/` of `gandr-surface-grammar`.
 //! - **Totality, statically**: the `answer-totality` lint, queued — every path
 //!   through the hover ends in an answer or a named absence.
 //!

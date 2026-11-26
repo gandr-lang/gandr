@@ -398,7 +398,7 @@ version = "3.0.0"
 default-features = false
 features = ["fast", "zeroize"]
 
-# Snapshot comparison for the highlighter's role goldens, the printer's
+# Snapshot comparison for the frozen tables of the grammar, the printer's
 # layout goldens and the inline completion's ranking golden: a file or an
 # inline literal compared whole, a diff on mismatch, and a rewrite under
 # `UPDATE_EXPECT=1`. It has no features to leave off.

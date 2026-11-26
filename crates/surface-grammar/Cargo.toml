@@ -30,10 +30,10 @@ gandr-surface-syntax.workspace = true
 gandr-theory-graphs.workspace = true
 hashbrown.workspace = true
 
-# The role golden runs the parser over the corpus sources and pins each
-# source's spans in a file the suite rewrites under `UPDATE_EXPECT=1`. The
+# The tests of the highlighter run the parser over the corpus sources. The
 # parser depends on this crate; the cycle closes only for the integration
-# target, which links the one library build both see.
+# target, which links the one library build both see. The snapshot crate
+# compares the frozen tables with their file.
 [dev-dependencies]
 expect-test.workspace = true
 gandr-surface-parser.workspace = true

@@ -12,11 +12,8 @@
     "record": "UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<each source the sweep names> mise run ci:recovery"
   },
   {
-    "name": "the highlight roles, the frozen tables and the grammar fingerprint",
-    "paths": [
-      "crates/surface-grammar/tests/highlight/",
-      "crates/surface-grammar/src/surface/frozen.rs"
-    ],
+    "name": "the frozen tables and the grammar fingerprint",
+    "paths": ["crates/surface-grammar/src/surface/frozen.rs"],
     "inputs": ["corpus/", "crates/surface-grammar/", "crates/surface-syntax/"],
     "check": ".config/mise/scope cargo nextest run --locked --manifest-path crates/surface-grammar/Cargo.toml",
     "stale": [100],

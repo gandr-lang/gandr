@@ -59,12 +59,11 @@
 //! cases and the surface families — are kept in their own subdirectories with
 //! their commentary removed. The parser reads every source here but the
 //! sketch set as its zero-obligation gate — a pathological source whose point
-//! is a parse error is pinned there to exactly the obligations it owes — and
-//! the highlighter's role golden in `gandr-surface-grammar` mirrors every such
-//! source: a source added, moved between roots or removed is followed by
-//! `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-grammar`, which
-//! rewrites the golden to match. The parser's recovery record mirrors every
-//! `strict/` and `fixture/` source outside the sketch set the same way:
+//! is a parse error is pinned there to exactly the obligations it owes. The
+//! roles that the highlighter gives every such source are an output of the
+//! store of `gandr-workflow-outputs`, with no file in the tree. The parser's
+//! recovery record mirrors every `strict/` and `fixture/` source outside the
+//! sketch set:
 //! `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<path here> mise run ci:recovery`
 //! re-records one source, and the diff is read for recovery regressions.
 //!
@@ -185,7 +184,7 @@
 //! grammar need not read them, so nothing lowers, formats or settles them:
 //! `check:corpus` and `check:corpus-format` name the other roots, the
 //! dispatcher's walk leaves the directory out of `corpus`, and the sweeps, the
-//! highlighter's role golden and the parser's recovery record hold it out.
+//! tests of the highlighter and the parser's recovery record hold it out.
 //! The comment gate and the prose check read the sketches as text, so their
 //! comments meet the corpus's rules.
 //!

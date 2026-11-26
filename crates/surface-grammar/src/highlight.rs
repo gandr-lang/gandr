@@ -863,9 +863,9 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// # Adequacy
 /// - hypothesis: Built-in identifier places and explicit competing contexts
 ///   provide L3 exact role observations, catching reversed kind, neighbor and
-///   enclosure priority; the roles of the corpus are an output that
-///   `outputs difference roles` compares between two trees, but arbitrary
-///   custom context combinations are not exhausted.
+///   enclosure priority; the roles of the corpus are an output that `outputs
+///   difference roles` compares between two trees, but arbitrary custom context
+///   combinations are not exhausted.
 /// - witness: `highlight::tests::role_of_pins_context_free_classes`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
