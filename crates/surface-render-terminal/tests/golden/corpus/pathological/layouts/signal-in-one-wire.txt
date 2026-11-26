@@ -3,12 +3,12 @@ error[NoFiller.Omitted]: the module omits this law, and its sides do not convert
    │
 23 │ ┏ module SignalTorn : Model(Signal) where
 24 │ ┃   /// The carrier, a term of one wire.
-25 │ ┃   type L = Terms Wire;
+25 │ ┃   type L = Terms Wire
 26 │ ┃   /// Red is the high level.
    ┆ ┇
 30 │ ┃   /// Green is the high level.
-31 │ ┃   def green : Terms Wire = Wire.high;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert: found `() -> Path[.A = Terms Wire] SignalTorn.amber SignalTorn.green`
+31 │ ┃   def green : Terms Wire = Wire.high
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert: found `() -> Path[.A = Terms Wire] SignalTorn.amber SignalTorn.green`
    │
    ├ note: `calm` is refused with NoFiller.Omitted, as its expectation states
    ╰ help: prove the law by a definition at its type, or admit it where the host asserts it

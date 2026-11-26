@@ -1,7 +1,7 @@
 error[IllFormedDescription]: a rule applies `L`, which the signature does not declare
    ╭▸ corpus/pathological/desc/data-rule-refusal.gandr:25:3
    │
-25 │   rule : FixedAsk k <=> k L;
+25 │   rule : FixedAsk k <=> k L
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `FixedShfy` is refused with IllFormedDescription, as its expectation states
@@ -10,7 +10,7 @@ error[IllFormedDescription]: a rule applies `L`, which the signature does not de
 error[IllFormedDescription]: a rule uses `k` where no port binds it over the same sorts
    ╭▸ corpus/pathological/desc/data-rule-refusal.gandr:25:3
    │
-25 │   rule : FixedAsk k <=> k L;
+25 │   rule : FixedAsk k <=> k L
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `FixedShfy` is refused with IllFormedDescription, as its expectation states

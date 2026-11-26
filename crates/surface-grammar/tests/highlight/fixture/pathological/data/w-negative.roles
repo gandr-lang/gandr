@@ -109,5 +109,5 @@
 1337..1341 TypeBuiltin "Type"
 1342..1343 Other "="
 1344..1350 Constructor "Hidden"
-1350..1351 Other ";"
-1352..1353 Other "}"
+1350..1350 Other ""
+1351..1352 Other "}"

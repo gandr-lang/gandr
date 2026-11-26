@@ -36,7 +36,7 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 error[RulesUnoriented]: this rule may rewrite forever: its right side is not smaller than its left in the order the block's calls induce, so the block's rules are refused
    ╭▸ corpus/pathological/desc/rule-keeps-count.gandr:50:3
    │
-50 │   rule up : dim ==> lit;
+50 │   rule up : dim ==> lit
    │   ━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
    │
    ├ note: `Flicker` is refused with RulesUnoriented, as its expectation states

@@ -1,7 +1,7 @@
 error[ForwardUnsupported]: `Flow.into` cannot image this translator at every input
    ╭▸ corpus/pathological/identity/flow-data.gandr:32:62
    │
-32 │   def repacked : Flow[.A = Type](Box Integer, Box Integer) = Flow.into rebox;
+32 │   def repacked : Flow[.A = Type](Box Integer, Box Integer) = Flow.into rebox
    │                                                              ━━━━━━━━━━━━━━━ a translator the rule cannot image
    │
    ├ note: `repacked` is refused with ForwardUnsupported, as its expectation states
@@ -10,7 +10,7 @@ error[ForwardUnsupported]: `Flow.into` cannot image this translator at every inp
 error[ForwardUnsupported]: `Flow.into` cannot image this translator at every input
    ╭▸ corpus/pathological/identity/flow-data.gandr:45:48
    │
-45 │   def renumbered : Flow[.A = Type](Nat, Nat) = Flow.into step;
+45 │   def renumbered : Flow[.A = Type](Nat, Nat) = Flow.into step
    │                                                ━━━━━━━━━━━━━━ a translator the rule cannot image
    │
    ├ note: `renumbered` is refused with ForwardUnsupported, as its expectation states

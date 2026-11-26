@@ -3,7 +3,7 @@
 theory Past where
   boundary Square {a, b, c, d};
   face far = {b, e};
-  sort Cell : Type;
+  sort Cell : Type
 
 module Scope : *{entry : Integer} where
-  def entry = 1;
+  def entry = 1

@@ -15,11 +15,11 @@ module Facts : *{
   inner : *{answer : Integer},
   total : Integer
 } where
-  def base = 40;
+  def base = 40
   module inner : *{answer : Integer} where
-    def answer = base + 1;
+    def answer = base + 1
 
-  def total = inner.answer + 1;
+  def total = inner.answer + 1
 
 def pairs = thunk {
   fun (m) {

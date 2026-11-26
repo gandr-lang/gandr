@@ -23,8 +23,8 @@ error[IllFormedDescription]: the boundary `Square` names the face `left` twice
 18 │ ┃   boundary Square {a, b, c, d};
 19 │ ┃   face left = {a, c};
 20 │ ┃   face left = {b, d};
-21 │ ┃   sort Cell : Type;
-   │ ┗━━━━━━━━━━━━━━━━━━━┛ what the description check refuses
+21 │ ┃   sort Cell : Type
+   │ ┗━━━━━━━━━━━━━━━━━━┛ what the description check refuses
    │
    ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
    ╰ help: give each face of the boundary its own name

@@ -1,7 +1,7 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
    ╭▸ corpus/pathological/desc/second-order-signatures.gandr:20:3
    │
-20 │   sort Scoped(i : pi+ (x : Tm). Tm) : Type;
+20 │   sort Scoped(i : pi+ (x : Tm). Tm) : Type
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
    │
    ├ note: `BoundIndex` is refused with MalformedForm, as its expectation states
@@ -20,9 +20,9 @@ error[IllFormedDescription]: the port `t` binds a variable of the sort `Tm`, whi
    ╭▸ corpus/pathological/desc/second-order-signatures.gandr:11:1
    │
 11 │ ┏ theory Unbindable where
-12 │ ┃   sort Tm : Type;
-13 │ ┃   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ what the description check refuses
+12 │ ┃   sort Tm : Type
+13 │ ┃   oper lam : (t : pi+ (x : Tm). Tm) --> Tm
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ what the description check refuses
    │
    ├ note: `Unbindable` is refused with IllFormedDescription, as its expectation states
    ╰ help: bind the variable over a declared, representable sort

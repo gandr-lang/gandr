@@ -10,7 +10,7 @@ error[ModelAmbiguous]: more than one module in scope answers the model implicit 
 error[UnresolvedName]: `Nowhere` is not defined
    ╭▸ corpus/pathological/modules/model-include.gandr:24:11
    │
-24 │   include Nowhere;
+24 │   include Nowhere
    │           ━━━━━━━ not found in this scope
    │
    ├ note: `Stray` is refused with UnresolvedName, as its expectation states
@@ -19,10 +19,10 @@ error[UnresolvedName]: `Nowhere` is not defined
 error[DuplicateDefinition]: `least` is defined twice
    ╭▸ corpus/pathological/modules/model-include.gandr:36:11
    │
-36 │   include Zero;
+36 │   include Zero
    │           ━━━━ written again here
 37 │   /// A second `least`.
-38 │   def least() -> Integer = 1;
+38 │   def least() -> Integer = 1
    │       ───── first written here
    │
    ├ note: `Shadowing` is refused with DuplicateDefinition, as its expectation states

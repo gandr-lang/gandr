@@ -5,7 +5,7 @@ error[Boundary]: this boundary flow runs against the variance of its position
    │ ┌──────────────────────────────────────────────────────────────────┘
 12 │ │     upgrade
    │ │     ━━━━━━━ a boundary flow running against its variance
-13 │ │     (Flow.stay Integer);
+13 │ │     (Flow.stay Integer)
    │ └───────────────────────┘ checked against `Flow[.A = Type](String * Integer -> Integer, Integer * String -> Integer)`; while checking this arrow's boundaries against the function codes it relates
    │
    ├ note: `reader` is refused with Boundary, as its expectation states

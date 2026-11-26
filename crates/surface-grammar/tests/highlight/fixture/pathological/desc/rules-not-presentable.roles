@@ -33,5 +33,5 @@
 126..131 Constructor "Empty"
 132..135 Operator "==>"
 136..141 Constructor "Empty"
-141..142 Other ";"
-143..144 Other "}"
+141..141 Other ""
+142..143 Other "}"

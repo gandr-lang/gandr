@@ -12,5 +12,5 @@
 38..45 FunctionDef "missing"
 46..47 Other ":"
 48..55 TypeBuiltin "Integer"
-55..56 Other ";"
-57..58 Other "}"
+55..55 Other ""
+56..57 Other "}"

@@ -3,14 +3,14 @@ error[RulesUncompleted]: this rule and an earlier one rewrite `meet(pair(x, y), 
    │
 24 │ ┏ theory Torn where
 25 │ ┃   /// The terms.
-26 │ ┃   sort T : Type;
+26 │ ┃   sort T : Type
 27 │ ┃   /// The first constant.
    ┆ ┇
-36 │ ┃   rule meetPair : meet (pair x y) z <=> x;
+36 │ ┃   rule meetPair : meet (pair x y) z <=> x
    │ ┃   ─────────────────────────────────────── the rule it overlaps
 37 │ ┃   /// The meet is commutative.
-38 │ ┃   rule meetComm : meet x y <=> meet y x;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ rewrites a term two ways no rule joins
+38 │ ┃   rule meetComm : meet x y <=> meet y x
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ rewrites a term two ways no rule joins
    │
    ├ note: `Torn` is refused with RulesUncompleted, as its expectation states
    ╰ help: add a rule that joins the two normal forms, or remove one of the two rules
@@ -36,14 +36,14 @@ error[RulesUncompleted]: this rule and an earlier one rewrite `meet(pair(x, y), 
    │
 24 │ ┏ theory Torn where
 25 │ ┃   /// The terms.
-26 │ ┃   sort T : Type;
+26 │ ┃   sort T : Type
 27 │ ┃   /// The first constant.
    ┆ ┇
-36 │ ┃   rule meetPair : meet (pair x y) z <=> x;
+36 │ ┃   rule meetPair : meet (pair x y) z <=> x
    │ ┃   ─────────────────────────────────────── the rule it overlaps
 37 │ ┃   /// The meet is commutative.
-38 │ ┃   rule meetComm : meet x y <=> meet y x;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ rewrites a term two ways no rule joins
+38 │ ┃   rule meetComm : meet x y <=> meet y x
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ rewrites a term two ways no rule joins
    │
    ├ note: `Terms Torn` is refused with RulesUncompleted, as its expectation states
    ╰ help: add a rule that joins the two normal forms, or remove one of the two rules
@@ -53,14 +53,14 @@ error[RulesUncompleted]: this rule and an earlier one rewrite `meet(pair(x, y), 
    │
 24 │ ┏ theory Torn where
 25 │ ┃   /// The terms.
-26 │ ┃   sort T : Type;
+26 │ ┃   sort T : Type
 27 │ ┃   /// The first constant.
    ┆ ┇
-36 │ ┃   rule meetPair : meet (pair x y) z <=> x;
+36 │ ┃   rule meetPair : meet (pair x y) z <=> x
    │ ┃   ─────────────────────────────────────── the rule it overlaps
 37 │ ┃   /// The meet is commutative.
-38 │ ┃   rule meetComm : meet x y <=> meet y x;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ rewrites a term two ways no rule joins
+38 │ ┃   rule meetComm : meet x y <=> meet y x
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ rewrites a term two ways no rule joins
    │
    ├ note: `tornApart` is refused with RulesUncompleted, as its expectation states
    ╰ help: add a rule that joins the two normal forms, or remove one of the two rules

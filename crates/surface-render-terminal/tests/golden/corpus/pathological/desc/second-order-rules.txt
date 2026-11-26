@@ -1,7 +1,7 @@
 error[RulesUnoriented]: this rule may rewrite forever: its right side is not smaller than its left in the order the block's calls induce, so the block's rules are refused
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:19:3
    │
-19 │   rule beta : app (lam t) u <=> t u;
+19 │   rule beta : app (lam t) u <=> t u
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
    │
    ├ note: `Beta` is refused with RulesUnoriented, as its expectation states
@@ -10,7 +10,7 @@ error[RulesUnoriented]: this rule may rewrite forever: its right side is not sma
 error[IllFormedDescription]: a rule uses `t` where no port binds it over the same sorts
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:29:3
    │
-29 │   rule betaShadow : app (lam t) u <=> app t u;
+29 │   rule betaShadow : app (lam t) u <=> app t u
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `BetaShadow` is refused with IllFormedDescription, as its expectation states
@@ -19,7 +19,7 @@ error[IllFormedDescription]: a rule uses `t` where no port binds it over the sam
 error[IllFormedDescription]: a rule uses `t` where no port binds it over the same sorts
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:37:3
    │
-37 │   rule zeta : let u t <=> t u u;
+37 │   rule zeta : let u t <=> t u u
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `LetTwice` is refused with IllFormedDescription, as its expectation states
@@ -28,7 +28,7 @@ error[IllFormedDescription]: a rule uses `t` where no port binds it over the sam
 error[IllFormedDescription]: a rule applies `f`, which the signature does not declare
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:48:3
    │
-48 │   rule putPut : put s (put (f s) k) <=> put (f s) k;
+48 │   rule putPut : put s (put (f s) k) <=> put (f s) k
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `Undeclared` is refused with IllFormedDescription, as its expectation states
@@ -37,9 +37,9 @@ error[IllFormedDescription]: a rule applies `f`, which the signature does not de
 error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping terms, one of them applies a variable a binding port binds, and the overlap rewrites to two different normal forms, so the block's rules are refused
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:58:3
    │
-57 │   rule zeta : let u t <=> t u;
+57 │   rule zeta : let u t <=> t u
    │   ─────────────────────────── the rule it overlaps
-58 │   rule toZero : let zero t <=> zero;
+58 │   rule toZero : let zero t <=> zero
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
    │
    ├ note: `LetToZero` is refused with RulesOverlapSecondOrder, as its expectation states

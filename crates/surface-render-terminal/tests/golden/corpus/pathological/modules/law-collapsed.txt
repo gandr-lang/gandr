@@ -2,8 +2,8 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
    ╭▸ corpus/pathological/modules/law-collapsed.gandr:31:3
    │
 31 │ ┏   @[refuses("UnprovenLaw.Admitted")]
-32 │ ┃   law one = ~admitted;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Integer, b : Integer) -> Path[.A = Integer] a b`
+32 │ ┃   law one = ~admitted
+   │ ┗━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Integer, b : Integer) -> Path[.A = Integer] a b`
    │
    ├ note: `one` is refused with UnprovenLaw.Admitted, as its expectation states
    ╰ help: prove the law
@@ -11,7 +11,7 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
 error[UndescribedMember.LhsNotOperation]: this member rewrites from something other than an operation application
    ╭▸ corpus/pathological/modules/law-collapsed.gandr:43:3
    │
-43 │   rule k : p ==> loop p;
+43 │   rule k : p ==> loop p
    │   ━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `RuledK` is refused with UndescribedMember.LhsNotOperation, as its expectation states
@@ -22,7 +22,7 @@ error[UnstatedComponent.UnknownHead]: the model signature cannot state `k`, whic
    │
 51 │ ┏   law k : (a : Carrier, p : Path[.A = Carrier] a a) -> Path[.A = Path[.A = Carrier] a a]
 52 │ ┃     p
-53 │ ┃     (Path.here a);
+53 │ ┃     (Path.here a)
    │ ┗━━━━━━━━━━━━━━━━━┛ the signature this model derives
    │
    ├ note: `WithK` is refused with UnstatedComponent.UnknownHead, as its expectation states

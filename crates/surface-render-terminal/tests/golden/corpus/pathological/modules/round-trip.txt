@@ -1,7 +1,7 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/modules/round-trip.gandr:32:5
    │
-17 │     oper answer : Integer;
+17 │     oper answer : Integer
    │          ────── an endpoint the point does not convert to
    ┆
 32 │ ┏     @[refuses("EndpointMismatch")]
@@ -17,7 +17,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/modules/round-trip.gandr:28:5
    │
-22 │     oper reply : Integer;
+22 │     oper reply : Integer
    │          ───── an endpoint the point does not convert to
    ┆
 28 │ ┏     @[refuses("EndpointMismatch")]

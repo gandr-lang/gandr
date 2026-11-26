@@ -25,5 +25,5 @@
 97..100 Constructor "Aye"
 101..104 Operator "<=>"
 105..108 Constructor "Nay"
-108..109 Other ";"
-110..111 Other "}"
+108..108 Other ""
+109..110 Other "}"

@@ -2146,18 +2146,18 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
     expect![[r#"
         module Outer where {
           /// The one.
-          def one : Integer = 1;
+          def one : Integer = 1
 
-          def two : Integer = 2;
+          def two : Integer = 2
 
-          def three : Integer;
+          def three : Integer
           // parts them
-          def three = 3;
+          def three = 3
 
-          def four() -> Integer = 4;
+          def four() -> Integer = 4
 
           module Inner where {
-            def five : Integer = 5;
+            def five : Integer = 5
           }
         }
     "#]]
@@ -2165,21 +2165,21 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
     expect![[r#"
         module Outer where {
           /// The one.
-          def one : Integer;
-          def one = 1;
+          def one : Integer
+          def one = 1
 
-          def two : Integer;
-          def two = 2;
+          def two : Integer
+          def two = 2
 
-          def three : Integer;
+          def three : Integer
           // parts them
-          def three = 3;
+          def three = 3
 
-          def four() -> -F Integer = 4;
+          def four() -> -F Integer = 4
 
           module Inner where {
-            def five : Integer;
-            def five = 5;
+            def five : Integer
+            def five = 5
           }
         }
     "#]]
@@ -2224,7 +2224,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
         def four() -> Integer = 4
 
         module Kept where {
-          def five() -> Integer = 5;
+          def five() -> Integer = 5
         }
     "#]]
     .assert_eq(&laid(Form::Sugared));
@@ -2240,7 +2240,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
         def four() -> -F Integer = 4
 
         module Kept where {
-          def five() -> -F Integer = 5;
+          def five() -> -F Integer = 5
         }
     "#]]
     .assert_eq(&laid(Form::Explicit));
@@ -2616,7 +2616,7 @@ fn a_brace_body_moves_after_the_equals_6318()
         def kept(n : Nat) -> Nat = twice n
 
         module Inner where {
-          def inner(n : Nat) -> Nat = twice n;
+          def inner(n : Nat) -> Nat = twice n
         }
     "#]]
     .assert_eq(&moved);
@@ -2649,13 +2649,13 @@ fn a_handler_is_written_effect_then_handle()
     let moved = spelled(&grammar, source, Form::Sugared, only);
     expect![[r#"
         theory State where
-          sort S : Type+;
-          sort C : Type;
-          oper get : (k : pi+ (s : S). C) --> C;
-          oper put : (s : S, k : C) --> C;
+          sort S : Type+
+          sort C : Type
+          oper get : (k : pi+ (s : S). C) --> C
+          oper put : (s : S, k : C) --> C
 
         module Passing : Model(State) with sort S = Integer where
-          type C = Integer -> Integer;
+          type C = Integer -> Integer
           def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
             fun (s) { let after = k s; after s }
           def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =

@@ -10,7 +10,7 @@ error[MalformedForm]: a keyword or symbol of this attribute is out of place
 error[InertRead]: `tag` reads the inert `label`; only another inert declaration reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:33:13
    │
-33 │   def tag = label;
+33 │   def tag = label
    │             ━━━━━ an inert read
    │
    ├ note: `tag` is refused with InertRead, as its expectation states

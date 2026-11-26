@@ -54,5 +54,5 @@
 945..946 StringLit "\""
 946..951 StringLit "notes"
 951..952 StringLit "\""
-952..953 Other ";"
-953..953 Other ""
+952..952 Other ""
+952..952 Other ""

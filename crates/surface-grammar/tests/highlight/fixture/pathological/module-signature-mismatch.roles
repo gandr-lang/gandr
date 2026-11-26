@@ -20,5 +20,5 @@
 70..71 FunctionDef "x"
 72..73 Other "="
 74..75 Number "1"
-75..76 Other ";"
-77..78 Other "}"
+75..75 Other ""
+76..77 Other "}"

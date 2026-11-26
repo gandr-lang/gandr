@@ -1,7 +1,7 @@
 error[IllFormedDescription]: `q` stands under an abstraction of `a` on one side of the rule and outside it on the other, so an instance naming `a` would be captured or escape
    ╭▸ corpus/pathological/desc/freshness.gandr:17:3
    │
-17 │   rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q));
+17 │   rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q))
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `Captured` is refused with IllFormedDescription, as its expectation states
