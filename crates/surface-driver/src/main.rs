@@ -528,6 +528,10 @@ const REFUSED: u8 = 1;
 /// The exit code of `fmt --check` over a source out of layout.
 const UNFORMATTED: u8 = 1;
 
+/// The exit code of `features --check` over a source whose head states a
+/// declaration that differs from the features that the source uses.
+const UNDECLARED: u8 = 1;
+
 /// The exit code of `gandr tokens` when the verb holds no counter: no hub
 /// answers, or the verb joins no slot or makes no FIFO. It is 125, as `env`
 /// and `timeout` exit when they fail themselves, so a command's own code
@@ -1031,8 +1035,10 @@ enum Command
     /// feature whose form, attribute or builtin the source uses, and no other.
     /// The line of a source that uses none is `tier zero`. With `--write`,
     /// each source whose head states a different declaration is written back
-    /// with its declaration, and only those sources have a line. Nothing is
-    /// checked. Exits 0 when every path was read, and 2 when a path cannot be
+    /// with its declaration, and only those sources have a line. With
+    /// `--check`, nothing is written, and only those sources have a line.
+    /// Nothing is checked by the kernel. Exits 0 when every path was read, 1
+    /// under `--check` when a source has a line, and 2 when a path cannot be
     /// read or written, names no source, or holds a source the lowering
     /// cannot read.
     Features
@@ -1042,6 +1048,10 @@ enum Command
         /// it, or remove it for a source that uses no feature.
         #[arg(long)]
         write: bool,
+        /// Write nothing; print the line of each source whose head states a
+        /// different declaration, and exit 1 when there is one.
+        #[arg(long, conflicts_with = "write")]
+        check: bool,
         /// Source files, and directories searched for `.gandr` sources.
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -2314,14 +2324,23 @@ fn main() -> ExitCode
             },
             Verbosity::User,
         ),
-        Some(Command::Features { write, paths }) => {
+        Some(Command::Features {
+            write,
+            check,
+            paths,
+        }) => {
+            let lines = match (write, check) {
+                (true, _) => FeatureLines::Written,
+                (false, true) => FeatureLines::Differing,
+                (false, false) => FeatureLines::Each,
+            };
             let rewrite = if write {
                 Rewrite::InPlace
             }
             else {
                 Rewrite::Check
             };
-            return features(FeatureCensus::new(paths, rewrite), rewrite);
+            return features(FeatureCensus::new(paths, rewrite), lines);
         },
         Some(Command::Doc {
             out,
@@ -4478,19 +4497,36 @@ fn kept(
     Ok(())
 }
 
-/// Step `census`, printing the declaration of each source on a line, and
-/// choose the exit code.
+/// The sources that `gandr features` prints a line for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FeatureLines
+{
+    /// Each source that the census reads.
+    Each,
+    /// Each source that the census wrote, under `--write`.
+    Written,
+    /// Each source whose head states a different declaration, under
+    /// `--check`.
+    Differing,
+}
+
+/// Step `census`, printing the declaration of each source of `lines` on a
+/// line, and choose the exit code.
 ///
 /// # Specification
-/// - requires: `rewrite` is what `census` was built with.
-/// - ensures: under [`Rewrite::Check`], each source that the census reads is
-///   `<path>: <declaration>` on standard output, the declaration rendered as
-///   the dispatcher's `Declaration` renders it, sources in walk order. Under
-///   [`Rewrite::InPlace`], only a source that the census wrote has its line,
-///   and a source that the census keeps has none. Each path that the census
-///   cannot read or write is `gandr: <path>: <fault>` on standard error, and
-///   the census continues past it. The exit is two when a path faulted or a
-///   write to a stream failed, and zero otherwise.
+/// - requires: `census` was built with [`Rewrite::InPlace`] exactly when
+///   `lines` is [`FeatureLines::Written`].
+/// - ensures: a line is `<path>: <declaration>` on standard output, the
+///   declaration rendered as the dispatcher's `Declaration` renders it, sources
+///   in walk order. [`FeatureLines::Each`] prints each source that the census
+///   reads; [`FeatureLines::Written`] each source that the census wrote;
+///   [`FeatureLines::Differing`] each source whose head states a different
+///   declaration. A source that the census keeps has a line only under
+///   [`FeatureLines::Each`]. Each path that the census cannot read or write is
+///   `gandr: <path>: <fault>` on standard error, and the census continues past
+///   it. The exit is two when a path faulted or a write to a stream failed;
+///   else one under [`FeatureLines::Differing`] when a source has a line; else
+///   zero.
 /// - provides: `gandr features`.
 /// - fails: never; each failure is an exit code.
 /// - panics: none.
@@ -4501,30 +4537,43 @@ fn kept(
 /// - hypothesis: L3 — a source of the first twin, a source that uses one
 ///   feature and a missing path observe each line on both streams and the exit;
 ///   four sources are written to their exact text, each with its line, and a
-///   second run prints no line.
+///   second run prints no line; a check of a source that differs prints its
+///   line and exits one, and a check after the write prints nothing and exits
+///   zero.
 /// - witness: `tests::cli::features_prints_the_declaration_of_each_source`
 /// - witness: `tests::cli::features_writes_the_declaration_of_each_source`
+/// - witness: `tests::cli::features_checks_the_declaration_of_each_source`
 ///
 /// # Cost
 /// - allocation: the text of each line, diagnostic
 fn features(
     mut census: FeatureCensus,
-    rewrite: Rewrite,
+    lines: FeatureLines,
 ) -> ExitCode
 {
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     let mut faulted = false;
+    let mut differing = false;
     while let Maybe::Present(step) = census.step() {
         let written = match step {
             FeatureStep::Source {
-                head: Head::Stands | Head::Differs | Head::Kept,
-                ..
-            } if rewrite == Rewrite::InPlace => Ok(()),
-            FeatureStep::Source {
-                path, declaration, ..
+                path,
+                declaration,
+                head,
             } => {
-                writeln!(stdout, "{}: {declaration}", path.display())
+                let shown = match lines {
+                    FeatureLines::Each => true,
+                    FeatureLines::Written => head == Head::Written,
+                    FeatureLines::Differing => head == Head::Differs,
+                };
+                differing |= shown && lines == FeatureLines::Differing;
+                if shown {
+                    writeln!(stdout, "{}: {declaration}", path.display())
+                }
+                else {
+                    Ok(())
+                }
             },
             FeatureStep::Fault { path, fault } => {
                 faulted = true;
@@ -4537,6 +4586,9 @@ fn features(
     }
     if faulted {
         ExitCode::from(FAULTED)
+    }
+    else if differing {
+        ExitCode::from(UNDECLARED)
     }
     else {
         ExitCode::SUCCESS

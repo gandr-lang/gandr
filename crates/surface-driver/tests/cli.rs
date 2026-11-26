@@ -2450,6 +2450,60 @@ fn features_writes_the_declaration_of_each_source()
     assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));
 }
 
+/// `gandr features --check` writes nothing. It prints the line of each
+/// source whose head states a declaration that differs from what the source
+/// uses, and it exits one when there is one. A source that states its
+/// declaration, a source of tier zero with no attribute, and a source that
+/// shows the refusal of its declaration have no line. After `--write`, the
+/// check prints nothing and exits zero.
+#[test]
+fn features_checks_the_declaration_of_each_source()
+{
+    let scratch = Scratch::new(Path::new("features-check"));
+    let body = "@[deprecated]\ndef one() -> Integer = 1;\n";
+    let sources = [
+        ("bare.gandr", body.to_owned()),
+        (
+            "declared.gandr",
+            format!("@![features(\"deprecation\")]\n\n{body}"),
+        ),
+        ("plain.gandr", "def one() -> Integer = 1;\n".to_owned()),
+        (
+            "shown.gandr",
+            format!("@![features(\"modules\")]\n\n@[refuses(\"FeatureUndeclared\")]\n{body}"),
+        ),
+    ];
+    for &(name, ref text) in &sources {
+        std::fs::write(scratch.0.join(name), text).expect("the scratch source is written");
+    }
+    let features = Path::new("features");
+    let check = Path::new("--check");
+
+    let differs = ran(gandr(&[features, check, &scratch.0]));
+    assert_eq!(code(&differs), Code(1_i32), "{}", stderr(&differs));
+    assert_eq!(
+        stdout(&differs),
+        format!(
+            "{}: @![features(\"deprecation\")]\n",
+            scratch.0.join("bare.gandr").display()
+        ),
+        "the one source whose head differs has its line"
+    );
+    for &(name, ref text) in &sources {
+        assert_eq!(
+            &std::fs::read_to_string(scratch.0.join(name)).expect("the source is read back"),
+            text,
+            "the check writes nothing: {name}"
+        );
+    }
+
+    let wrote = ran(gandr(&[features, Path::new("--write"), &scratch.0]));
+    assert_eq!(code(&wrote), Code(0_i32), "{}", stderr(&wrote));
+    let stands = ran(gandr(&[features, check, &scratch.0]));
+    assert_eq!(code(&stands), Code(0_i32), "{}", stderr(&stands));
+    assert_eq!(stdout(&stands), "", "each head states its declaration");
+}
+
 /// `gandr features --write` writes the declaration of a source that admits
 /// no declaration: a source of one import. A second run leaves the source,
 /// and `gandr check` refuses the source when its head declares a different
