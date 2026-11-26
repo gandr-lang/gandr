@@ -68,7 +68,7 @@ jobs:
             target: target
             nextest: true
             run: cargo nextest run --workspace --locked --no-fail-fast
-            timing: cargo run --locked --quiet --package gandr-workflow-test-timing --
+            timing: cargo run --locked --package gandr-workflow-test-timing --
           # `.config/mise/enforcing` sets the flag that runs each `#[spec]`
           # clause. The suite has a target directory of its own, with an
           # absolute path: a test that starts Cargo in the directory of a crate
@@ -86,7 +86,7 @@ jobs:
             timing: >-
               CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/enforcing"
               CARGO_UNSTABLE_FEATURE_UNIFICATION=true
-              .config/mise/enforcing cargo run --locked --quiet
+              .config/mise/enforcing cargo run --locked
               --config 'resolver.feature-unification="workspace"'
               --package gandr-workflow-test-timing --
           - gate: Clippy
