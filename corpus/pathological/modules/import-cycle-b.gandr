@@ -3,7 +3,7 @@
 // - see: #434
 
 // The first member, which imports this one.
-import "./import-cycle-a.gandr";
+import "./import-cycle-a.gandr"
 
 /// A declaration of the second member, refused with the cycle.
 @[refuses("ImportCycle")]

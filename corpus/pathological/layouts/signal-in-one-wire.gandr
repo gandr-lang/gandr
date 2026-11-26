@@ -11,10 +11,10 @@
 //! - see: #8333
 
 // `Signal` and `Wire`.
-import "../../model/desc/rule-keeps-count.gandr";
+import "../../model/desc/rule-keeps-count.gandr"
 
 // `SignalInWire`.
-import "../../model/layouts/signal-in-one-wire.gandr";
+import "../../model/layouts/signal-in-one-wire.gandr"
 
 /// The layout that gives the two joined lamps two levels. It has no law.
 ///

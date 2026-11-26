@@ -58,7 +58,7 @@ data Marked : Type where
 /// `Elsewhere`. `Path.step` is
 /// the composite of the 2-chain, so its one inner wire does not fill.
 @[refuses("ComposeDoesNotFill")]
-def misjoined_then : Path Mark Elsewhere = Path.step turn (Path.here Elsewhere);
+def misjoined_then : Path Mark Elsewhere = Path.step turn (Path.here Elsewhere)
 
 /// Every point to itself, by cases: no loop arm, and the motive reads no
 /// point, so the turn is owed nothing.
@@ -73,7 +73,7 @@ def kept(x : Marked) -> Marked =
 /// does not inhabit
 /// it.
 @[refuses("TypeMismatch")]
-def elsewhereComputed : Path (kept Elsewhere) (kept Elsewhere) = Path.here Mark;
+def elsewhereComputed : Path (kept Elsewhere) (kept Elsewhere) = Path.here Mark
 
 /// `Path.ap` maps a path by a function, and the point's constructor is not one:
 /// `Base` names the point, not a map out of the circle.

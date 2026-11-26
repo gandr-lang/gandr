@@ -11,7 +11,7 @@
 //! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
 // The ring's protocol and its entries.
-import "../../model/completion/ring-base.gandr";
+import "../../model/completion/ring-base.gandr"
 
 /// A view of the held buffer kept in the hold's region and submitted to a
 /// kernel the region does not bound: the hold could end with the completion

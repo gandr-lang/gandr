@@ -8,7 +8,7 @@
 /// one that opens with a send.
 @[refuses("EndpointMismatch")]
 def quoted_receive : Flow[.A = Type](String >? end, String >! end) = Flow.stay
-  (type(String >? end));
+  (type(String >? end))
 
 /// A quote beneath a motive's binder whose payload reads that binder: a
 /// session's payload codes form in the empty term context, so the quote is

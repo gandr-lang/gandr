@@ -12,7 +12,7 @@
 ///   only its rules' witnesses
 
 // The monoid, its derived associator of four, and the signs.
-import "../../model/identity/derived-associator.gandr";
+import "../../model/identity/derived-associator.gandr"
 
 /// The signs under their product, writing the derived associator too.
 module Written : Model(Monoid) where {

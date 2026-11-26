@@ -9,7 +9,7 @@
 // - see: `../../ledger/features/session-identity.gandr`
 
 // The native session formers.
-import std.session (Run);
+import std.session (Run)
 
 module Evolution where {
   type SeatEnd = String >? rec turn => +{
@@ -26,7 +26,7 @@ def served : Run Evolution.SeatEnd = recorded
   (selected report)
   (sent "progress")
   (offered retire)
-  closed;
+  closed
 
 @[refuses("RunNotAdmitted")]
 def retired() -> Run Evolution.Kept = Flow.ride (fun (X) { Run X }) Evolution.keep served;

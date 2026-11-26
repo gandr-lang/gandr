@@ -12,13 +12,13 @@
 // - see: #4730
 // - see: #6046 — the entries' type that a theory's value computes
 // - see: `../../model/desc/module-reflection.gandr` — what reaches a module
-import std.build (Gandr, modelType, packageEntries, packagePresentation, render);
-import std.string (concat);
+import std.build (Gandr, modelType, packageEntries, packagePresentation, render)
+import std.string (concat)
 
 /// An encoder for the model of any theory. `Model(T)` over the variable `T`
 /// is refused, because `Model` reads a theory's name and not a value.
 @[refuses("UnresolvedTypeHead")]
-def encodeAny(T : Theory, m : Model T) -> String = "";
+def encodeAny(T : Theory, m : Model T) -> String = ""
 
 /// The `[package]` lines of a model. `name` and `version` are inert, so this
 /// function is refused at its first read of them.
@@ -29,7 +29,7 @@ def manifest(m : Model (Gandr.Package)) -> String =
 /// A package's entries, read by a declaration with no `@[ inert ]`. The
 /// entries hold the model's inert fields, so this is refused.
 @[refuses("InertRead")]
-def leaked(m : Model (Gandr.Package)) -> modelType packagePresentation = packageEntries m;
+def leaked(m : Model (Gandr.Package)) -> modelType packagePresentation = packageEntries m
 
 /// A package's lines, written by a declaration with no `@[ inert ]`.
 @[refuses("InertRead")]

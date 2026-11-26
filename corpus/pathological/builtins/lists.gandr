@@ -4,7 +4,7 @@
 // - see: #1544 — `mixed`
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// A text among integers: the second element does not convert to the element
 /// type the annotation states.

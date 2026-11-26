@@ -12,7 +12,7 @@
 //   answers its role's row
 
 // The console's host interface.
-import std.io;
+import std.io
 
 /// What the site keeps: values by key.
 pub theory Kept where

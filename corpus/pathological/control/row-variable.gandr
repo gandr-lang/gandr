@@ -5,7 +5,7 @@
 // - see: #2270
 
 // `log` prints through `std.io.Console.Eff`, its row open through `r`.
-import "../../model/control/row-variable.gandr";
+import "../../model/control/row-variable.gandr"
 
 /// A suspended computation taken and never run: its row variable occurs in
 /// its argument alone.
@@ -21,7 +21,7 @@ def stall[r : Row](s : String) -> [Partial | r] Unit = pure *{};
 /// `log` suspended and ignored: nothing reads its row, so nothing determines
 /// its `r`, and the call is refused naming the slot `log[.r = …]`.
 @[refuses("ImplicitUnsolved")]
-def unread() -> Unit = ignored (thunk { log "unread" });
+def unread() -> Unit = ignored (thunk { log "unread" })
 
 /// `log` and `stall` made to share a row nothing reads:
 /// `[std.io.Console.Eff | r]`

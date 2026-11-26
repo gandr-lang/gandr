@@ -25,11 +25,11 @@ theory Pair where
   oper pair : (x : P, y : P) --> Q;
 
 /// The terms of the points are a type: their one operation takes no input.
-def start() -> Terms Pair P = Pair.origin;
+def start() -> Terms Pair P = Pair.origin
 
 /// A pair takes two points, so the terms of the pairs stand outside the slice.
 @[refuses("OutOfFragment.terms_type.sorted")]
-def paired : Terms Pair Q = Pair.pair Pair.origin Pair.origin;
+def paired : Terms Pair Q = Pair.pair Pair.origin Pair.origin
 
 /// A fragment whose one operation keeps the width of its input.
 theory Open where
@@ -45,11 +45,11 @@ theory Open where
   oper same : (x : Term w) --> Term w;
 
 /// A width as it is. The terms of the widths are a type.
-def openWidth(w : Terms Open Width) -> Terms Open Width = w;
+def openWidth(w : Terms Open Width) -> Terms Open Width = w
 
 /// A port of `same` states a variable, so the terms stand outside the slice.
 @[refuses("OutOfFragment.terms_type.sorted")]
-def kept : Terms Open Term Open.bit = Open.low;
+def kept : Terms Open Term Open.bit = Open.low
 
 /// A fragment whose widths no type of the source asks for.
 theory Bare where
@@ -64,7 +64,7 @@ theory Bare where
 
 /// No type writes the terms of the widths before this one, so it is refused.
 @[refuses("OutOfFragment.terms_type.sorted")]
-def alone(w : Type) -> Terms Bare Term w = Bare.low;
+def alone(w : Type) -> Terms Bare Term w = Bare.low
 
 /// A name that no sort of the theory has.
 @[refuses("OutOfFragment.terms_type.sorted")]

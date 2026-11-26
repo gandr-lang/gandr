@@ -13,7 +13,7 @@
 //!   rule
 
 // `Width` and `Fragment`.
-import "../../model/desc/family-with-rules.gandr";
+import "../../model/desc/family-with-rules.gandr"
 
 /// The arm of a choice crosses its two words. A choice under the high bit is
 /// its first word, and the fold gives the value of its second word.

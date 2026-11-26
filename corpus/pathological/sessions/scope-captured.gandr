@@ -6,7 +6,7 @@
 // - see: #1336 — `closedInScope`
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// A seat's end closed inside a scope after an operation whose clause drops
 /// its continuation: the close never runs and the end is left open.

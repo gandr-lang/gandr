@@ -9,7 +9,7 @@
 // - see: corpus/ledger/diagnostics/AcrossHandler.gandr
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 def one() -> Integer =
   1

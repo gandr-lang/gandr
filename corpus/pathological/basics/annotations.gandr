@@ -6,7 +6,7 @@
 
 /// A text its annotation calls an integer.
 @[refuses("TypeMismatch")]
-def misstated = ("three" : Integer);
+def misstated = ("three" : Integer)
 
 /// A returned value its annotation misstates.
 @[refuses("TypeMismatch")]
@@ -23,7 +23,7 @@ def inner = *{("three" : Integer), 1};
 
 /// An annotation its definition's signature disagrees with.
 @[refuses("TypeMismatch")]
-def disagreeing : String = (3 : Integer);
+def disagreeing : String = (3 : Integer)
 
 /// A pair a bind runs, its pattern annotated with a product the pair does not
 /// have.

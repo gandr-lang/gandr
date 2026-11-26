@@ -9,10 +9,10 @@
 // - see: #3403
 
 // The naturals the indices count in.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // The predecessor family and the witnesses.
-import "../../model/data/injective-index.gandr";
+import "../../model/data/injective-index.gandr"
 
 /// A natural beside a predecessor of its successor.
 pub data Sig : Type where

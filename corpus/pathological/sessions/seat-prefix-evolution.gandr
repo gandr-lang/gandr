@@ -6,7 +6,7 @@
 // - see: #1318 — `dropped`, `narrowed`
 
 // The native session formers.
-import std.session (Prefix);
+import std.session (Prefix)
 
 /// The seat's protocol and one that no longer offers `retire`, related by
 /// simulation.
@@ -24,17 +24,17 @@ module Evolution where {
 def reported : Prefix Evolution.SeatEnd = recorded
   (received "task")
   (selected report)
-  (sent "progress");
+  (sent "progress")
 
 /// The seat after it took `retire`.
 def retired : Prefix Evolution.SeatEnd = recorded
   (received "task")
   (selected report)
   (sent "progress")
-  (offered retire);
+  (offered retire)
 
 /// Short of the offer, the play is a prefix of the narrowed protocol too.
-def kept() -> Prefix Evolution.Kept = Flow.ride (fun (X) { Prefix X }) Evolution.keep reported;
+def kept() -> Prefix Evolution.Kept = Flow.ride (fun (X) { Prefix X }) Evolution.keep reported
 
 /// `Kept` offers no `retire`: refused at that move.
 @[refuses("RunNotAdmitted")]

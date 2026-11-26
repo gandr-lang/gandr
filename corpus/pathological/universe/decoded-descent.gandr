@@ -10,10 +10,10 @@
 // - see: #2862 — `totalDirect`, `decodedAt`
 
 // The naturals, their addition and the lists.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // The universe and its decoder.
-import "../../model/universe/decoded-descent.gandr";
+import "../../model/universe/decoded-descent.gandr"
 
 /// A list's entries and its tail summed at once: an entry's sum descends on
 /// the element code, the list code's field, but the tail's stands at the list

@@ -6,8 +6,8 @@
 //!
 //! - see: #2136 — `noZero`
 // The source imports the included theories and their endomorphism models.
-import "../../model/include/monoid.gandr";
-import "../../model/include/reduct.gandr";
+import "../../model/include/monoid.gandr"
+import "../../model/include/reduct.gandr"
 
 /// `absorbs` reads the zero field of a left-zero model.
 def absorbs(z : Model LeftZero) -> Integer =

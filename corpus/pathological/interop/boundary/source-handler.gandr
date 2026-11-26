@@ -13,13 +13,13 @@
 //   the block in gandr
 
 // The boundary check reads `admitBlock` here, whatever the listing names.
-import std.boundary (Arg, NoCode, Plain, Row);
+import std.boundary (Arg, NoCode, Plain, Row)
 
 // `U32`, the scalar that codes a `u32`.
-import std.layout (U32);
+import std.layout (U32)
 
 /// `add`'s row: two `u32` to a `u32`.
-def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
+def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32)
 
 /// The Rust caller's adder.
 @[boundary(addRow)]

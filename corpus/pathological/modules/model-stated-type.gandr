@@ -75,7 +75,7 @@ module ByCode : Model(Eq) with sort Carrier = Code where
 
 /// Two modules answer the comparison's model.
 @[refuses("ModelAmbiguous")]
-def twice : decoded (ofFlag (Yes == No)) = "x";
+def twice : decoded (ofFlag (Yes == No)) = "x"
 
 /// No module answers the comparison's model.
 @[refuses("ModelUnanswered")]

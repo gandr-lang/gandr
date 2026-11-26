@@ -10,7 +10,7 @@
 //! - see: #8385
 
 // `Beacon` with its symmetry.
-import "../../model/desc/rule-symmetry-case.gandr";
+import "../../model/desc/rule-symmetry-case.gandr"
 
 /// The left beacon of two is no function of the two.
 ///

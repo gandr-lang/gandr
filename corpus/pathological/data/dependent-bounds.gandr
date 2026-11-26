@@ -14,10 +14,10 @@
 // - see: #3481 — the spike that wrote these programs
 
 // The naturals the bounds count in.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // The bounds.
-import "../../model/data/injective-index.gandr";
+import "../../model/data/injective-index.gandr"
 
 /// No natural lies below zero. Each constructor stands at a successor, apart
 /// from zero, so the match needs no arm.

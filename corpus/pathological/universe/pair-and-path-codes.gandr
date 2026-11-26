@@ -15,10 +15,10 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The naturals.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // The dependent pairs.
-import "../../model/universe/ir-codes.gandr";
+import "../../model/universe/ir-codes.gandr"
 
 /// The dependent pair code with a run for its first decode, in one block.
 rec {

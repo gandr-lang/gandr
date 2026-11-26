@@ -5,7 +5,7 @@
 // not a quotient of them.
 
 // The circle and its loop.
-import "../../model/identity/circle-base.gandr";
+import "../../model/identity/circle-base.gandr"
 
 /// The loop beside the reflexivity at the point, refused: they are two
 /// certificates of one boundary that no rule identifies.

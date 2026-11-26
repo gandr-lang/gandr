@@ -20,7 +20,7 @@ theory Wider where
   oper extra : Integer;
 
 // The newer version, read through the flow it publishes.
-import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
+import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade
 
 /// The answer, which is refused with its import.
 @[refuses("SignatureMismatch.Missing")]

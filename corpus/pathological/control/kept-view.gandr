@@ -9,7 +9,7 @@
 //! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// The model's thunk at a type kept in no region: the view would outlive the
 /// access that lent it.

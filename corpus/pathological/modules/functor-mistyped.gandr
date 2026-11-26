@@ -4,7 +4,7 @@
 // expectation of that witness; the witnesses that check keep the default.
 
 // The counter functor and its seed.
-import "../../model/modules/functor-pair.gandr";
+import "../../model/modules/functor-pair.gandr"
 
 /// A counter whose zero is an integer rather than its own abstract type.
 module Integral :> *{type T, zero : Integer, next : T -> T, read : T -> Integer} where

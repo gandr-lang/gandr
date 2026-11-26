@@ -35,20 +35,20 @@ module Box : Model(Labelled) where {
 
 /// The label, read by its path.
 @[refuses("InertRead")]
-def shown = Box.label;
+def shown = Box.label
 
 /// The label of any labelled thing.
 @[refuses("InertRead")]
-def labelOf(l : Model Labelled) -> String = l.label;
+def labelOf(l : Model Labelled) -> String = l.label
 
 /// The label, read by an inert definition.
 @[inert]
 @[runs("\"box\"")]
-def boxLabel = Box.label;
+def boxLabel = Box.label
 
 /// The inert definition, read by a content one.
 @[refuses("InertRead")]
-def boxShown = boxLabel;
+def boxShown = boxLabel
 
 /// A module whose member carries the mark.
 module Marked where {

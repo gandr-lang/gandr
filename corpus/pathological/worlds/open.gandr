@@ -17,7 +17,7 @@
 
 // The operator's and the seat's worlds, each declaration's entry, and the
 // seat's sealed side of the exchange, its dispatch unmarked.
-import "../../model/worlds/seat-and-operator.gandr";
+import "../../model/worlds/seat-and-operator.gandr"
 
 /// A handle to a thunk over the dispatch is refused: what it holds is not
 /// open.

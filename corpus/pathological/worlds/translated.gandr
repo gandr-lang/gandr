@@ -18,11 +18,11 @@
 // - see: `crates/surface-driver/tests/cli.rs` — the check refusing it
 
 // The deployment theories.
-import std.manifold (Site, Manifold, Placement, At);
+import std.manifold (Site, Manifold, Placement, At)
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 // The two versions of the store, and the flow from the newer to the older.
-import "../../model/translations/translated.versions.gandr" (Older, Newer, downgrade);
+import "../../model/translations/translated.versions.gandr" (Older, Newer, downgrade)
 
 /// Every key holds its own name, and a write keeps nothing.
 pub module Echo : Model(Newer) with sort V = String where
@@ -57,7 +57,7 @@ pub module Site : Model(Site) where
   def secret = "far";
 
 /// The site's model, which a placement holds.
-pub def site : Model Site = pack Site at Model Site;
+pub def site : Model Site = pack Site at Model Site
 
 /// The program this deployment runs.
 pub module Manifold : Model(Manifold) where

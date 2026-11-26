@@ -10,7 +10,7 @@
 //! After a C++ move, the object remains valid but unspecified.
 //! - see: `lib.types.movedfrom` in ISO/IEC 14882:2020
 //! - see: file-base.gandr — the file protocol
-import "../../model/moves/file-base.gandr";
+import "../../model/moves/file-base.gandr"
 
 /// `closedAfterMove` closes a handle that its send already consumed.
 @[refuses("UsedAfterClose")]

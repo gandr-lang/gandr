@@ -13,7 +13,7 @@
 // - see: #6548 — the two notes of its refusal
 
 // The 2-sphere.
-import "../../model/identity/sphere.gandr";
+import "../../model/identity/sphere.gandr"
 
 /// A case with no arm at the cell sends the cell to reflexivity.
 def flatten(x : S2) -> S2 =

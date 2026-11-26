@@ -13,8 +13,8 @@
 //!   rule
 
 // `Width` and `Gate`.
-import "../../model/desc/family-with-rules.gandr";
-import "../../model/desc/fold-over-family.gandr";
+import "../../model/desc/family-with-rules.gandr"
+import "../../model/desc/fold-over-family.gandr"
 
 /// The arm of a swap gives the empty word. Two swaps of a word are that word,
 /// and the fold gives the empty word for them and the word for itself.

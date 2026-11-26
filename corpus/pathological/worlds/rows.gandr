@@ -13,13 +13,13 @@
 //   through the console that its world requires
 
 // The console's host interface.
-import std.io;
+import std.io
 
 /// The world the entry runs at.
-pub world near;
+pub world near
 
 /// A world that requires nothing.
-pub world bare;
+pub world bare
 
 /// `unrequired` prints at a world that requires nothing, and the print is
 /// refused. The enclosing row holds the console, but the body runs at `bare`.

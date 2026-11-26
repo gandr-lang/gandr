@@ -29,7 +29,7 @@ flow retagged : Tagged ~~> Older where
   def answer = reply;
 
 // The newer version, which publishes `reply` and no `label`.
-import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;
+import "../../model/modules/translated-newer.gandr" as newer : Older via retagged
 
 /// The answer, which is refused with its import.
 @[refuses("SignatureMismatch.Missing")]

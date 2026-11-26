@@ -13,7 +13,7 @@
 // - see: #5034
 
 /// The syntax and the semantic types that the model source declares.
-import "../../model/desc/stlc.gandr";
+import "../../model/desc/stlc.gandr"
 
 /// The renamer past one more entry. The constructor `There` is the body of a
 /// lambda, where it reads no stated type.

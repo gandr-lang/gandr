@@ -4,7 +4,7 @@
 // trip, and `equiv` decides no round trip over a type that holds itself.
 
 // `Ints`, `Packed`, `packInts` and `unpack`.
-import "../../model/layouts/ribbit-list.gandr";
+import "../../model/layouts/ribbit-list.gandr"
 
 /// A tag without its payloads, Ribbit's Example 3.15: it tells the empty list
 /// from the rest and keeps nothing else.

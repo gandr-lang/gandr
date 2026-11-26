@@ -9,12 +9,12 @@
 //! - see: #2713 — `halt`
 
 // The paints and the lamps, which share `Red`.
-import "../../model/data/constructor-shared-name.gandr";
+import "../../model/data/constructor-shared-name.gandr"
 // The signals, whose `Red` the lamps share too.
-import "../../model/data/signal.gandr";
+import "../../model/data/signal.gandr"
 
 /// The red signal, written through its family.
-def stop : Signal = Signal.Red;
+def stop : Signal = Signal.Red
 
 /// The red signal, written bare.
 @[refuses("ImportShadows")]

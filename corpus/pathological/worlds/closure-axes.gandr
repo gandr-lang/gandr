@@ -17,7 +17,7 @@
 
 // The operator's and the seat's worlds, and the seat's sealed side of the
 // exchange, its dispatch unmarked.
-import "../../model/worlds/seat-and-operator.gandr";
+import "../../model/worlds/seat-and-operator.gandr"
 
 /// The seat's own work, homed at the seat.
 @[entry(seat)]

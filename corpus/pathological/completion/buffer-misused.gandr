@@ -11,10 +11,10 @@
 //! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 // The native buffer a receive places live.
-import std.buffer (Buf);
+import std.buffer (Buf)
 
 // The ring's host interface.
-import std.io;
+import std.io
 
 /// A buffer allocated and never freed.
 @[refuses("BufferUnreturned")]

@@ -5,9 +5,9 @@
 // - see: #2832
 
 // `Nat`.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 // `Heap`, `emp` and `viaZero`.
-import "../../model/data/stuck-arm-call.gandr";
+import "../../model/data/stuck-arm-call.gandr"
 
 /// No arm is selected at an open natural: `viaZero(w, h)` is not `emp(h)`.
 @[refuses("TypeMismatch")]

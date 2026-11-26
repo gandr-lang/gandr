@@ -7,7 +7,7 @@
 
 // The circle, the presented integers, the winding number, spinning and their
 // round trips.
-import "../../model/identity/circle-base.gandr";
+import "../../model/identity/circle-base.gandr"
 
 /// The loops at the point and the integers with `retr` written where `sect`
 /// belongs, refused at the section: `retr` reads `Path[.A = Int](wind(spin(n)),

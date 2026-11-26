@@ -21,7 +21,7 @@ module Sealed :> Model(Counter) where
 
 /// An integer where the sealed carrier is asked.
 @[refuses("TypeMismatch")]
-def stepOne() -> Sealed.C = Sealed.step 1;
+def stepOne() -> Sealed.C = Sealed.step 1
 
 /// The sealed start read as an integer.
 @[refuses("TypeMismatch")]

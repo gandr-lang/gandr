@@ -5,9 +5,9 @@
 // needs the tail's own round trip, a hypothesis it does not assume.
 
 // The booleans, lists of them and `keep`, the identity on lists.
-import "../../model/identity/transport-list.gandr";
+import "../../model/identity/transport-list.gandr"
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// Every list of booleans to the empty list.
 def emptied(xs : List Bool) -> List Bool =

@@ -5,7 +5,7 @@
 // - see: #1561 — `restrictionModel`
 
 // The restriction signature.
-import "../../model/desc/bind-port.gandr";
+import "../../model/desc/bind-port.gandr"
 
 /// `bind` abstracts an atom, and `Tm` is an ordinary sort: the description
 /// check refuses the abstraction by name (`NonAtomAbstraction`).

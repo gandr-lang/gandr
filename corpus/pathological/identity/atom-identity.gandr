@@ -12,7 +12,7 @@
 //! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 // The relation, its reflexivity and its transport law over the unit type.
-import "../../model/identity/atom-identity.gandr";
+import "../../model/identity/atom-identity.gandr"
 
 /// The unit type sealed, stating the relation and its reflexivity alone.
 module Lawless :> *{type T, origin : T, other : T} where {

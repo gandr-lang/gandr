@@ -5,17 +5,17 @@
 // - see: #2269
 
 // `peek` reads through `std.fs.Eff`; `once` states `Partial`.
-import "../../model/control/capability-attenuate.gandr";
-import "../../model/control/divergence.gandr";
+import "../../model/control/capability-attenuate.gandr"
+import "../../model/control/divergence.gandr"
 // The filesystem's host interface.
-import std.fs;
+import std.fs
 
 /// `std.fs.Eff` named twice: a row holds each interface once, so the
 /// second `std.fs.Eff` is
 /// refused as a label defined twice, as a record's second field of one label
 /// is.
 @[refuses("DuplicateDefinition")]
-def namedTwice() -> [std.fs.Eff, std.fs.Eff] Integer = pure 1;
+def namedTwice() -> [std.fs.Eff, std.fs.Eff] Integer = pure 1
 
 /// Sequencing joins the rows: the computation reads through
 /// `std.fs.Eff`, which the

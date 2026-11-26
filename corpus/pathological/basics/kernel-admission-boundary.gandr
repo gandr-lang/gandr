@@ -3,7 +3,7 @@
 // does not lower.
 
 /// A string.
-def greeting = "the value zone";
+def greeting = "the value zone"
 
 /// The string paired with itself.
 def pair = *{greeting, greeting};
@@ -13,11 +13,11 @@ def identity(x : Integer) -> Integer =
   x
 
 /// A number at a stated width.
-def wide = 1u32;
+def wide = 1u32
 
 /// A number one past the greatest `u32` does not fit the width it states.
 @[refuses("MalformedLiteral")]
-def wider = 4294967296u32;
+def wider = 4294967296u32
 
 /// The string, named again.
 @[runs("\"the value zone\"")]

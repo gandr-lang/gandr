@@ -9,7 +9,7 @@
 // - see: corpus/ledger/diagnostics/CapabilityForged.gandr
 
 // The filesystem's host interface.
-import std.fs;
+import std.fs
 
 def peek(c : Cap { read }) -> [std.fs.Eff] String =
   c.read "notes"

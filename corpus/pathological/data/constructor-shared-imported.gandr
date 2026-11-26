@@ -10,10 +10,10 @@
 //! - see: #2713 — `lamp`
 
 // The paints and the lamps, which share `Red`.
-import "../../model/data/constructor-shared-name.gandr";
+import "../../model/data/constructor-shared-name.gandr"
 
 /// The red lamp, written through its family.
-def stop : Light = Light.Red;
+def stop : Light = Light.Red
 
 /// The red lamp, written bare.
 @[refuses("AmbiguousConstructor")]

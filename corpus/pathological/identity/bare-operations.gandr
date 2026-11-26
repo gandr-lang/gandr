@@ -4,11 +4,11 @@
 
 /// The bare reflexivity, `here`, which no binder declares.
 @[refuses("UnresolvedName")]
-def bareHere : Path 4 4 = here 4;
+def bareHere : Path 4 4 = here 4
 
 /// A transport written bare, which no binder declares.
 @[refuses("UnresolvedName")]
-def bareTransport : Integer = transport (fun (X) { X }) (Path.here Integer) 2;
+def bareTransport : Integer = transport (fun (X) { X }) (Path.here Integer) 2
 
 /// A directed reflexivity written bare, which no binder declares.
 @[refuses("UnresolvedName")]

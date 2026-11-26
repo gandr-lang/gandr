@@ -10,7 +10,7 @@
 // - see: #3139
 
 // The naturals, their addition and three.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 /// Fibonacci, the doubly recursive definition.
 def rec fib(n : Nat) -> Nat =

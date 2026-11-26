@@ -14,11 +14,11 @@ theory Tally where
   oper read : (c : C) --> Integer;
 
 /// The reading after one step, over any tally the slot names.
-def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c);
+def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c)
 
 /// No module of `Tally` is in scope yet.
 @[refuses("ModelUnanswered")]
-def nothingYet() -> Integer = stepped 4;
+def nothingYet() -> Integer = stepped 4
 
 /// Counting up by one.
 module Up : Model(Tally) where
@@ -42,15 +42,15 @@ module Tens : Model(Tally) where
 
 /// Text is no tally's carrier.
 @[refuses("ModelUnanswered")]
-def textual() -> Integer = stepped "four";
+def textual() -> Integer = stepped "four"
 
 /// Both count integers.
 @[refuses("ModelAmbiguous")]
-def twin() -> Integer = stepped 4;
+def twin() -> Integer = stepped 4
 
 /// Naming one settles it.
 @[runs("14")]
-def named() -> Integer = stepped[.s = Tens] 4;
+def named() -> Integer = stepped[.s = Tens] 4
 
 /// The reading from zero over a tally of integers.
 def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
@@ -58,7 +58,7 @@ def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
 
 /// Both fix the carrier to the integers, as the slot does.
 @[refuses("ModelAmbiguous")]
-def manifest() -> Integer = fromZero;
+def manifest() -> Integer = fromZero
 
 /// The reading from zero over a tally of text.
 def fromText[s : Model Tally with sort C = String]() -> Integer =

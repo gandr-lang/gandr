@@ -11,9 +11,9 @@
 // - see: #2288 — decalf's cost effect as a lawful theory
 
 // The cost effect and its counting model.
-import std.cost (Cost, Counting, costs, counted, countOf);
+import std.cost (Cost, Counting, costs, counted, countOf)
 // The counting grades.
-import std.grade (Count);
+import std.grade (Count)
 
 /// Three steps: a charge of one, a charge of two, then seven.
 def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =

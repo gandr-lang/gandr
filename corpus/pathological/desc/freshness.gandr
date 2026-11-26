@@ -3,7 +3,7 @@
 // not abstract.
 
 // The conditions' laws.
-import "../../model/desc/freshness.gandr";
+import "../../model/desc/freshness.gandr"
 
 /// Scope extrusion without `where a # q`: `q` moves under the restriction, so
 /// an instance naming `a` would be captured. The description check refuses

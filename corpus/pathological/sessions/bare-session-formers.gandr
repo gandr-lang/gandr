@@ -16,11 +16,11 @@ module Ask where
 
 /// A run of the protocol, the run type unimported.
 @[refuses("UnresolvedTypeHead")]
-def ran : Run (Ask.Asking) = recorded (sent "yes") closed;
+def ran : Run (Ask.Asking) = recorded (sent "yes") closed
 
 /// A prefix of the protocol, the prefix type unimported.
 @[refuses("UnresolvedTypeHead")]
-def begun : Prefix (Ask.Asking) = recorded (sent "yes");
+def begun : Prefix (Ask.Asking) = recorded (sent "yes")
 
 /// A dialogue over the protocol, the dialogue type unimported.
 @[refuses("UnresolvedTypeHead")]

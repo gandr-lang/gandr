@@ -5,7 +5,7 @@
 // - see: #2510
 
 // Programs that only store, quotiented by put-put, and the state-passing fold.
-import "../../model/identity/state-passing.gandr";
+import "../../model/identity/state-passing.gandr"
 
 /// The count of stores past an accumulator: at `Store(s, Store(u, k))` it
 /// counts two onto the accumulator and at `Store(u, k)` one.

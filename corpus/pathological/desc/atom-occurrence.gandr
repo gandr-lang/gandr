@@ -7,7 +7,7 @@
 // - see: #1934 — `Split`
 
 // The law over the channel its restriction abstracts.
-import "../../model/desc/atom-occurrence.gandr";
+import "../../model/desc/atom-occurrence.gandr"
 
 /// `par` takes processes, so the channel `bind a .` abstracts cannot stand as
 /// one: the description check refuses the occurrence as misplaced, an

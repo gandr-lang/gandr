@@ -8,7 +8,7 @@
 //!
 //! Rust `Pin` prevents a moved future from dangling self-reference.
 //! - see: #1183 — `dangling`
-import std.process;
+import std.process
 
 /// `dangling` returns a thunk that captures the access view.
 @[refuses("ViewEscaped")]

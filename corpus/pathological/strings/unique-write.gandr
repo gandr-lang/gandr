@@ -4,12 +4,12 @@
 
 // The lists; the byte lists; the owned bytes; where they live; the long string,
 // its copy and the write that counts holders; the write that does not.
-import "../../model/data/data-base.gandr";
-import "../../model/strings/string-base.gandr";
-import "../../model/strings/nul-terminated.gandr";
-import "../../model/strings/small-string.gandr";
-import "../../model/strings/copy-on-write.gandr";
-import "../../model/strings/unique-write.gandr";
+import "../../model/data/data-base.gandr"
+import "../../model/strings/string-base.gandr"
+import "../../model/strings/nul-terminated.gandr"
+import "../../model/strings/small-string.gandr"
+import "../../model/strings/copy-on-write.gandr"
+import "../../model/strings/unique-write.gandr"
 
 /// A copy held at grade one: the copy shares its buffer with the string it was
 /// copied from, so the hold would hold a string another string holds.

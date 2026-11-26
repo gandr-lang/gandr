@@ -24,7 +24,7 @@ data Light : Type where
 
 /// The red lamp, written bare.
 @[refuses("AmbiguousConstructor")]
-def lamp : Light = Red;
+def lamp : Light = Red
 
 /// The pause that a lamp asks for. The match writes the red lamp bare.
 @[refuses("AmbiguousConstructor")]

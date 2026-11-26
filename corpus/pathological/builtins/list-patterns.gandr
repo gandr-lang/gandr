@@ -2,7 +2,7 @@
 // a list pattern beside a pattern of another kind in one column.
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// No arm matches the empty list.
 @[refuses("NonExhaustiveMatch")]

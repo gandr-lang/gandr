@@ -3,7 +3,7 @@
 // carriers answer their sorts in the other ground sort.
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// Extending an extension by `l` is extending by `l` alone: the inner
 /// continuation `k` is lost. Against the left unit law at `ext(ext(ret(a), k),

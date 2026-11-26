@@ -9,7 +9,7 @@
 // - see: corpus/ledger/diagnostics/CapabilityAmplified.gandr
 
 // The filesystem's host interface.
-import std.fs;
+import std.fs
 
 def save(c : Cap { read, write }) -> [std.fs.Eff] Unit =
   c.write "notes" "draft"

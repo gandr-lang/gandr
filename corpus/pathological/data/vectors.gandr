@@ -11,10 +11,10 @@
 // - see: #3579 — a family's argument written as a call converts with its value
 
 // The naturals the lengths count in.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // The vectors.
-import "../../model/data/vectors.gandr";
+import "../../model/data/vectors.gandr"
 
 /// One integer said to be two long: `VCons` stands one past its tail, which
 /// is empty.

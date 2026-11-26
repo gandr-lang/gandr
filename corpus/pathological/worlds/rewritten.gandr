@@ -18,11 +18,11 @@
 // - see: `crates/surface-driver/tests/cli.rs` — the check refusing it
 
 // The deployment theories, and the translation policy.
-import std.manifold (Site, Manifold, Placement, At, Translation, Path);
+import std.manifold (Site, Manifold, Placement, At, Translation, Path)
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 // The two versions of the store.
-import "../../model/translations/translated.versions.gandr" (Older, Newer);
+import "../../model/translations/translated.versions.gandr" (Older, Newer)
 
 /// The newer store read as the older one: `put` keeps nothing, in code.
 flow keeping : Newer ~~> Older where {
@@ -55,7 +55,7 @@ pub module Site : Model(Site) where
   def secret = "far";
 
 /// The site's model, which a placement holds.
-pub def site : Model Site = pack Site at Model Site;
+pub def site : Model Site = pack Site at Model Site
 
 /// The program this deployment runs.
 pub module Manifold : Model(Manifold) where
@@ -63,7 +63,7 @@ pub module Manifold : Model(Manifold) where
   def artifact = "../../model/translations/translated.gandr";
 
 /// The manifold admits only translations that rename.
-pub def translation : Translation = Path;
+pub def translation : Translation = Path
 
 /// `far` at a site whose flow computes a member.
 pub def placements : List Placement = #[

@@ -15,7 +15,7 @@
 //! - see: #8323
 
 // `Hollow` and `Pick`.
-import "../../model/desc/rule-symmetry-apart.gandr";
+import "../../model/desc/rule-symmetry-apart.gandr"
 
 /// The theory of a meet over pairs, with a rule that tears under the symmetry.
 /// The meet of two pairs is the first part of each one, so the rules of the

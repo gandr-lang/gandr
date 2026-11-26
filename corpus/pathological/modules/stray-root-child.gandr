@@ -6,7 +6,7 @@
 // - see: #2572
 
 /// A declaration before every stray, which checks.
-def before : Integer = 1;
+def before : Integer = 1
 
 /// An arm outside any match: a form of the arm's sort, not a declaration.
 @[refuses("OutOfFragment.WrongSort.declaration")]
@@ -22,7 +22,7 @@ def before : Integer = 1;
 def mu = 1 ;
 
 /// A declaration between the strays, which checks.
-def between : Integer = before;
+def between : Integer = before
 
 /// A byte no label molds.
 @[refuses("MalformedForm")]

@@ -4,10 +4,10 @@
 // - see: #2773 — `incrMissesTwo`
 
 // `Either`, `StateOp` and `Prog`.
-import "../../model/effects/tree.gandr";
+import "../../model/effects/tree.gandr"
 
 // `incrTree`, `wp` and `isOne`.
-import "../../model/specification/tree-state-wp.gandr";
+import "../../model/specification/tree-state-wp.gandr"
 
 /// A precondition the increment does not meet: ending at one needs the
 /// successor of the initial state to be one, not the state itself. The
@@ -20,7 +20,7 @@ def incrMissesOne : *{
 } = *{incrTree, fun (s) { fun (h) { h } }};
 
 /// A specification asking two more than the increment stores.
-def incrByTwoSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post *{} (s + 2);
+def incrByTwoSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post *{} (s + 2)
 
 /// The increment against two more: both sides read as `post`'s call over a
 /// held sum, and the sums differ.

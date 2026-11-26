@@ -40,7 +40,7 @@ def funextAxiom : (
   f : (x : a) -> b x,
   g : (x : a) -> b x,
   (x : a) -> Path[.A = b x] (f x) (g x)
-) -> Path[.A = (x : a) -> b x] f g;
+) -> Path[.A = (x : a) -> b x] f g
 
 /// Function extensionality at two open functions. `Path.funext` decides two
 /// closed functions only.
@@ -65,7 +65,7 @@ def decides(q : Type) -> Type = return (type(q + (q -> Empty)))
 /// A tree of the excluded-middle oracle. Its queries name types, one universe
 /// above the shape parameter of `Tree`.
 @[refuses("LevelMismatch")]
-def lemTree : Tree Type decides Two = Leaf L;
+def lemTree : Tree Type decides Two = Leaf L
 
 /// A family of types, the one field of a modality that the next three fill.
 data Mode : Type[+, 1] where
@@ -75,22 +75,22 @@ data Mode : Type[+, 1] where
 /// The trees of an open container as a lambda that returns a type. The field
 /// does not check it.
 @[refuses("NotSynthesisable")]
-def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s p q) });
+def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s p q) })
 
 /// The trees of an open container as a static lambda. The lowering reads its
 /// body as a computation, which a type is not.
 @[refuses("OutOfFragment.WrongSort")]
-def staticOpenMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { type(Tree s p q) });
+def staticOpenMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { type(Tree s p q) })
 
 /// Each query has two answers.
-def branches(a : Two) -> Type = return Two;
+def branches(a : Two) -> Type = return Two
 
 /// The trees of a fixed container as a named function.
 def treesNamed(q : Type) -> Type = return (Tree Two branches q)
 
 /// A named function into types has a thunk type, not the static family type.
 @[refuses("TypeMismatch")]
-def namedMode : Mode = MkMode treesNamed;
+def namedMode : Mode = MkMode treesNamed
 
 /// Sheafification at a fixed container, its first equation a cell.
 @[refuses("OutOfFragment.cell_member")]

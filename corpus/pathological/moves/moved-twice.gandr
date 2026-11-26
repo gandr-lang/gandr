@@ -9,7 +9,7 @@
 //! Two closers would close one descriptor.
 //! - see: POSIX `close(2)` — a repeated descriptor close
 //! - see: file-base.gandr — the file protocol
-import "../../model/moves/file-base.gandr";
+import "../../model/moves/file-base.gandr"
 
 /// `movedTwice` sends a handle after its first send consumed it.
 @[refuses("UsedAfterClose")]

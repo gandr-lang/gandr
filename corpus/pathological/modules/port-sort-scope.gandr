@@ -12,7 +12,7 @@
 // - see: #8139
 // - see: model/modules/port-sort-scope.gandr — the theory and its binding
 
-import "../../model/modules/port-sort-scope.gandr";
+import "../../model/modules/port-sort-scope.gandr"
 
 /// `Quiet` gives a number where the port names a word.
 module Quiet : Model(Shout) where

@@ -7,10 +7,10 @@
 //! interface.
 //!
 //! - see: corpus/model/regions/natural.gandr — valid widening squares
-import "../../model/regions/passed.gandr";
-import "../../model/regions/natural.gandr";
+import "../../model/regions/passed.gandr"
+import "../../model/regions/natural.gandr"
 // The source imports the early exit host interface.
-import std.process;
+import std.process
 
 /// `backwards` reverses the valid outer-to-inner widening.
 @[refuses("TypeMismatch")]

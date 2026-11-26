@@ -14,17 +14,17 @@
 // No payload: the record is the payload, and it is missing.
 @[refuses("MissingPayload")]
 @[format]
-def bare = 1;
+def bare = 1
 
 // A bare text, not a record.
 @[refuses("IllTypedPayload")]
 @[format("\\oplus")]
-def bare_text = 2;
+def bare_text = 2
 
 // A record with a field of no format.
 @[refuses("IllTypedPayload")]
 @[format(*{.html = "&oplus;"})]
-def foreign_field = 3;
+def foreign_field = 3
 
 // A record whose `latex` is a number, not a text.
 @[refuses("IllTypedPayload")]

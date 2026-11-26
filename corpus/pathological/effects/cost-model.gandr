@@ -13,7 +13,7 @@
 // - see: `../../../library/std/src/cost.gandr` — `Cost.Eff` and `Counting`
 
 // The cost effect.
-import std.cost (Cost);
+import std.cost (Cost)
 
 /// A model whose charge doubles its cost.
 module Doubled : Model(Cost.Eff) with sort N = Nat -> Nat where

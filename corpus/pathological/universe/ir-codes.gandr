@@ -15,10 +15,10 @@
 //   admitted
 
 // The naturals.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // The codes and their arguments.
-import "../../model/universe/ir-codes.gandr";
+import "../../model/universe/ir-codes.gandr"
 
 /// The decode of the arguments a code asks for. The code's case refines their
 /// type, since the marked call stages the code.

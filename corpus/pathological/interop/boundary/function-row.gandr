@@ -15,16 +15,16 @@
 //   to the niche
 
 // `Nat`.
-import "../../../model/data/data-base.gandr";
+import "../../../model/data/data-base.gandr"
 
 // `Heap`, `vOpt`, `vInt`.
-import "../../../model/specification/niche-realizability.gandr";
+import "../../../model/specification/niche-realizability.gandr"
 
 // The codes and the niche test.
-import std.boundary (Code, niched);
+import std.boundary (Code, niched)
 
 // `optRef`.
-import "../../../model/interop/boundary/function-row.gandr";
+import "../../../model/interop/boundary/function-row.gandr"
 
 /// A code's realisers, chosen by its layout: a niched enum's are the null
 /// niche over `u32`, any other code's an unboxed integer.

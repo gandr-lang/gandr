@@ -12,10 +12,10 @@
 //! - see: #8330
 
 // `Hollow`.
-import "../../model/desc/rule-symmetry-apart.gandr";
+import "../../model/desc/rule-symmetry-apart.gandr"
 
 // `Signal` and `Wire`.
-import "../../model/desc/rule-keeps-count.gandr";
+import "../../model/desc/rule-keeps-count.gandr"
 
 /// The two joined lamps have two levels, so the case does not respect the
 /// rule.

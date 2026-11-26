@@ -18,7 +18,7 @@
 //! [Huang-2026-fat_cell_structures_generalized_algebraic_theories]: https://doi.org/10.4230/LIPIcs.LICS.2026.58 "Huang and Angiuli, Fat Cell Structures and Generalized Algebraic Theories"
 
 /// The CwF signature that the model source declares.
-import "../../model/desc/cwf.gandr";
+import "../../model/desc/cwf.gandr"
 
 /// A term substituted twice is the term substituted along the composite, but
 /// a law on types rewrites the index of the outer substitution.

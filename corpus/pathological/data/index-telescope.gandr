@@ -8,7 +8,7 @@
 /// an index takes no grade.
 ///
 /// - see: #4022
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 /// Positions below a bound.
 data Fin : Nat -> Type where

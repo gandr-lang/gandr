@@ -6,7 +6,7 @@
 // - see: #2343 — `nested`
 
 // The scalars, the fields and the struct layout.
-import std.layout (U8, U16, Done, Field, Layout, structLayout);
+import std.layout (U8, U16, Done, Field, Layout, structLayout)
 
 /// `struct Outer { a: u8, inner: Small }`, `Small` written as its fields where
 /// a scalar stands, is refused.

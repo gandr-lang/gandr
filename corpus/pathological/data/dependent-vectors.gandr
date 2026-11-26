@@ -13,10 +13,10 @@
 // - see: #3481 — the spike that wrote these programs
 
 // The naturals the lengths count in.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // The vectors and the vector two long.
-import "../../model/data/vectors.gandr";
+import "../../model/data/vectors.gandr"
 
 /// The first element, its element type and length implicit. `VNil` stands at
 /// zero, apart from `Succ(n)`, so the case leaves its arm out.
@@ -27,15 +27,15 @@ def head[a : Type, n : Nat](v : Vec a (Succ n)) -> a =
 /// The head of the vector two long. The checker splits `Succ` against
 /// `Succ (Succ Zero)`, so `n` stands at `Succ Zero`.
 @[runs("1")]
-def firstOfPair() -> Integer = head pair;
+def firstOfPair() -> Integer = head pair
 
 /// The head of the empty vector. `Zero` and `Succ` are two constructors, so
 /// the empty vector's length is apart from `Succ n`.
 @[refuses("TypeMismatch")]
-def headOfEmpty() -> Integer = head (VNil : Vec Integer Zero);
+def headOfEmpty() -> Integer = head (VNil : Vec Integer Zero)
 
 /// The length one, written as a call.
-def single() -> Nat = Succ Zero;
+def single() -> Nat = Succ Zero
 
 /// The vector two long, at a length with a call under `Succ`. The checker
 /// pairs the field of each `Succ`, and the call converts with its value.

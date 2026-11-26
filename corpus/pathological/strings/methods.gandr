@@ -6,9 +6,9 @@
 // - see: #1488 — `readAfterTakenInOneArm`
 
 // The lists; the byte lists; the string's methods.
-import "../../model/data/data-base.gandr";
-import "../../model/strings/string-base.gandr";
-import "../../model/strings/methods.gandr";
+import "../../model/data/data-base.gandr"
+import "../../model/strings/string-base.gandr"
+import "../../model/strings/methods.gandr"
 
 /// A string read after it was taken: the take ended its hold.
 @[refuses("HeldConsumed")]

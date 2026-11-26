@@ -9,7 +9,7 @@
 //! - see: #1224
 
 // The source imports the semigroup and monoid theories.
-import "../../model/include/monoid.gandr";
+import "../../model/include/monoid.gandr"
 
 /// `Swapping` conflicts with the imported left unit rule.
 @[refuses("RulesUncompleted")]

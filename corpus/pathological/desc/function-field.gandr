@@ -6,7 +6,7 @@
 // - see: #2511 — `stores`
 
 // Programs over a state, quotiented by put-put.
-import "../../model/desc/function-field.gandr";
+import "../../model/desc/function-field.gandr"
 
 /// The number of stores a program makes, its reads answered with zero: two
 /// stores and one tell the law's sides apart.

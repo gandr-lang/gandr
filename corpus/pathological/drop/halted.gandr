@@ -10,7 +10,7 @@
 // - see: `../cancellation/shielded.gandr` — `abandon k` inside an unwind
 
 // The import provides the early-exit host interface.
-import std.process;
+import std.process
 
 /// A halt with a code, which no handler resumes.
 theory Halt.Eff where

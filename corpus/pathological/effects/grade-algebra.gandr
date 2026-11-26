@@ -14,15 +14,15 @@
 // - see: #3287 — grade algebras as models of one theory
 
 // The grade theory and its two models.
-import std.grade (Grade, Once, Many, Usage, Count);
+import std.grade (Grade, Once, Many, Usage, Count)
 
 /// Many is not under once: usage keeps them apart.
 @[refuses("EndpointMismatch")]
-def manyUnderOnce : Path (Usage.le Many Once) true = Path.here true;
+def manyUnderOnce : Path (Usage.le Many Once) true = Path.here true
 
 /// Eight gibibytes are not under two.
 @[refuses("EndpointMismatch")]
-def eightUnderTwoGiB : Path (Count.le (8589934592 : Nat) (2147483648 : Nat)) true = Path.here true;
+def eightUnderTwoGiB : Path (Count.le (8589934592 : Nat) (2147483648 : Nat)) true = Path.here true
 
 /// Counted bytes in the native integers: the order is the integer primitive.
 module Bytes : Model(Grade) where

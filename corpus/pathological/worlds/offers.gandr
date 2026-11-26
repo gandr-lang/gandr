@@ -17,9 +17,9 @@
 // - see: `crates/surface-driver/tests/cli.rs` — the check refusing all three
 
 // The deployment theories.
-import std.manifold (Site, Manifold, Placement, At);
+import std.manifold (Site, Manifold, Placement, At)
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// What the site keeps: values by key.
 pub theory Kept where
@@ -54,7 +54,7 @@ pub module Site : Model(Site) where
   def secret = "far";
 
 /// The site's model, which a placement holds.
-pub def site : Model Site = pack Site at Model Site;
+pub def site : Model Site = pack Site at Model Site
 
 /// The program this deployment runs.
 pub module Manifold : Model(Manifold) where

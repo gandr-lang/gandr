@@ -11,7 +11,7 @@
 //! - see: #8338
 
 // `Width` and `Fragment`.
-import "../../model/desc/family-with-rules.gandr";
+import "../../model/desc/family-with-rules.gandr"
 
 /// The rule gives a bit for the word of the turned bit.
 ///

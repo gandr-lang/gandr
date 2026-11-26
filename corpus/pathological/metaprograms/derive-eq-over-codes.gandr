@@ -32,7 +32,7 @@ rec {
 /// No equality for a code with a parameter, whose element equality the
 /// derivation would need supplied, yet.
 @[refuses("GenericUncovered")]
-def eqList = Eq.generic List;
+def eqList = Eq.generic List
 
 /// No equality for a pair whose codes name each other, which needs a code of
 /// two sorts and one mutual fixpoint, yet.

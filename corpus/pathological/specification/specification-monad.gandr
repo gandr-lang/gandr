@@ -5,7 +5,7 @@
 // - see: #2752 — `IncludedSpecificationMonad`
 
 // `RelativeMonad`.
-import "../../model/desc/relative-monad.gandr";
+import "../../model/desc/relative-monad.gandr"
 
 /// The monad's laws beside the order: right unit rewrites an extension whose
 /// continuation returns, an operation nested in producer position, which the

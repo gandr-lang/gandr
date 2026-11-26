@@ -14,7 +14,7 @@
 //!   the rule
 
 // `Purse` with its symmetry.
-import "../../model/desc/fold-swaps-variables.gandr";
+import "../../model/desc/fold-swaps-variables.gandr"
 
 /// The arm of two purses answers with the fold of the first purse. The two
 /// orders of one purse get two answers.

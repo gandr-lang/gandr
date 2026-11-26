@@ -11,7 +11,7 @@
 //! - see: #8311
 
 // `Tally` with its symmetry.
-import "../../model/desc/rule-symmetry.gandr";
+import "../../model/desc/rule-symmetry.gandr"
 
 /// The theory of a chain of links, with no law of commutativity.
 theory Chain where
@@ -28,7 +28,7 @@ theory Chain where
 @[refuses("EndpointMismatch")]
 def apartInOne(x : Terms Tally, y : Terms Tally, z : Terms Tally) -> Path (Tally.meet
   x
-  y) (Tally.meet y z) = Path.here (Tally.meet x y);
+  y) (Tally.meet y z) = Path.here (Tally.meet x y)
 
 /// The two orders of an operation with no symmetry are two terms.
 ///

@@ -6,7 +6,7 @@
 // - see: #1274
 
 // The counter functor and its seed.
-import "../../model/modules/functor-pair.gandr";
+import "../../model/modules/functor-pair.gandr"
 
 /// A counter with no reader: it exports three of the four components
 /// `MkCounter`'s parameter states.
