@@ -282,9 +282,6 @@ unbuilt! {
     /// pattern over a node's outputs, the linear reading's. At grade ω a value
     /// is one port, matched as `C(x).l`.
     PortPattern => "port_pattern",
-    /// An inner attribute block at a source's root, `@![ … ]`: the source it
-    /// decorates has no key of its own yet.
-    SourceAttribute => "inner_attribute_block",
     /// A value a static bracket fixes that the lowering does not read: a
     /// face's value that is no record written in place.
     FixedValue => "staged_type.fixed_value",
@@ -373,7 +370,6 @@ impl Unbuilt
             Self::LawTerms => TrackingIssue::LAW_CELL,
             Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
             Self::LinearPorts | Self::PortPattern => TrackingIssue::LINEAR_PORTS,
-            Self::SourceAttribute => TrackingIssue::SOURCE_ATTRIBUTE,
             Self::FixedValue | Self::DependentPatch => TrackingIssue::PATCHED_TYPE,
         }
     }

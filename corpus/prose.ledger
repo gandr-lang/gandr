@@ -830,8 +830,6 @@ corpus/ledger/syntax/forget-model-expression.gandr STE-9.3 798321420afaf116
 corpus/ledger/syntax/glob-expression.gandr STE-3.6 229e0c83d51d74c6
 corpus/ledger/syntax/hold-expression.gandr STE-3.5 0092b59e2a3dcf5c
 corpus/ledger/syntax/hole.pattern.gandr STE-3.6 9e31fb214fc47fcc
-corpus/ledger/syntax/inner-attribute-block.gandr STE-3.5 78510bba78cb7708
-corpus/ledger/syntax/inner-attribute-block.gandr STE-9.3 78510bba78cb7708
 corpus/ledger/syntax/inner-attribute-member.gandr STE-3.5 fa8562dd06400a79
 corpus/ledger/syntax/instantiation.explicit.gandr STE-3.5 331a73e26abc0a9e
 corpus/ledger/syntax/module-include-member.gandr STE-3.5 ea0aee5b50cacdc3

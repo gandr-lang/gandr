@@ -684,6 +684,48 @@ fn an_inner_attribute_decorates_its_module()
     );
 }
 
+/// An inner block leading a source, `@![ explicit_exits ]`, asks for the
+/// exits of each declaration of the source, a module's member too; one after
+/// a declaration is refused where it stands, and takes nothing from the
+/// leading one.
+#[test]
+fn an_inner_attribute_decorates_its_source()
+{
+    let source = format!(
+        include_str!("tests/unformatted/an-inner-attribute-decorates-its-source.gandr"),
+        NAT = NAT
+    );
+    let text = SourceText::from(source.as_str());
+    let module = lowered(text, &mut CoreArena::new());
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let inferred = |span, exit, explicitness| InferredExit {
+        span,
+        exit,
+        explicitness,
+    };
+    assert_eq!(
+        module.inferred_exits(),
+        [
+            inferred(at("= n;", "n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= Succ n;", "Succ n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= Zero;", "Zero"), Exit::Return, Explicitness::Asked),
+        ],
+        "a leading inner block asks for the exits of each declaration of its source"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("@![")),
+            LoweringRefusal::MalformedForm {
+                fault: crate::FormFault::MisplacedTile,
+                ..
+            }
+        ),
+        "an inner block after a declaration is refused where it stands"
+    );
+}
+
 #[test]
 fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
 {

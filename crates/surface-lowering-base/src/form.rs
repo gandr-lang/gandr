@@ -1126,8 +1126,9 @@ pub enum Former
     Unadmitted(Unbuilt),
     /// A form admitted at one position only, read where the dispatch reads
     /// forms: the universe of representable sorts, which classifies a
-    /// theory's sort member, and the descent `[<]`, the first argument of a
-    /// lowercase head.
+    /// theory's sort member, the descent `[<]`, the first argument of a
+    /// lowercase head, and the inner attribute block `@![ … ]`, which leads
+    /// a source or the body of a module or of a theory.
     Misplaced,
 }
 
@@ -1374,10 +1375,7 @@ pub const FORMERS: [(&str, Former); 125_usize] = [
     ("extern_block", Former::Unadmitted(Unbuilt::ExternBlock)),
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
     ("if_expression", Former::If),
-    (
-        "inner_attribute_block",
-        Former::Unadmitted(Unbuilt::SourceAttribute),
-    ),
+    ("inner_attribute_block", Former::Misplaced),
     (
         "labelled_sum_pattern",
         Former::Unadmitted(Unbuilt::LabelledSumPattern),

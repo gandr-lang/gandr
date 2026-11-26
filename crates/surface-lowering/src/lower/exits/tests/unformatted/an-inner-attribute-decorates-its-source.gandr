@@ -1,0 +1,7 @@
+@![ explicit_exits ]
+{NAT}def kept(n : Nat) -> -F Nat = n;
+module Inner where {{
+def deep(n : Nat) -> -F Nat = Succ n;
+}}
+@![ explicit_exits ]
+def late(n : Nat) -> -F Nat = Zero;

@@ -1944,8 +1944,9 @@ pub struct MutualBlock
     pub end: SlotIndex,
 }
 
-/// A top-level module an attribute block decorates, with the slots of the
-/// members its attributes reach.
+/// A top-level module an attribute block decorates, or a source the inner
+/// blocks leading it decorate, with the slots of the members its attributes
+/// reach.
 ///
 /// # Specification
 /// - requires: nothing to construct this data; the collection produces it.
@@ -1961,7 +1962,7 @@ pub struct MutualBlock
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DecoratedModule<'source>
 {
-    /// The module form.
+    /// The module form, or the first inner block of a decorated source.
     pub module: Placed,
     /// The attributes written before it, in source order.
     pub attributes: Vec<WrittenAttribute<'source>>,
@@ -4262,6 +4263,10 @@ pub fn collect_source<'source>(
     // for a source that declares nothing else.
     let mut filed = 0_usize;
     let mut first_stray: Option<LoweringRefusal<'source>> = None;
+    // The inner attribute blocks leading a source decorate that source, as
+    // those leading a module's body decorate the module. A unit lays several
+    // sources, so the head is that of the source the child read last is in.
+    let mut head: Option<SourceHead<'source>> = None;
     let mut decorations: Vec<Placed> = Vec::new();
     // The `pub` mark read before the declaration it exports, attribute blocks
     // between the two aside.
@@ -4336,6 +4341,26 @@ pub fn collect_source<'source>(
         if terminates {
             continue;
         }
+        let source = collector.collected.unit.source_at(child.span.start());
+        if head.as_ref().is_none_or(|open| open.source != source) {
+            // The strays of the source before this one are filed, so the
+            // slot after them is the first this source can admit.
+            if let Some(mut closed) = head.take()
+                && let Some(stray) = collector.decorate_source(&mut closed)
+            {
+                items_refused = true;
+                first_stray.get_or_insert(stray.refusal);
+                filed = filed.saturating_add(1);
+                collector.refuse_stray(stray);
+            }
+            head = Some(SourceHead {
+                source,
+                first: SlotIndex(collector.collected.slots.len()),
+                inner: Vec::new(),
+                blocks: Vec::new(),
+                leading: Leading(true),
+            });
+        }
         while let Some(at) = manifests.next_if(|at| at.span.start() < child.span.end()) {
             if at.span.start() >= child.span.start() {
                 let before = collector.collected.slots.len();
@@ -4357,15 +4382,35 @@ pub fn collect_source<'source>(
                 let mut stray = Stray::of(child, refusal, core::mem::take(&mut decorations));
                 stray.torn = torn;
                 strays.push(stray);
+                if let Some(open) = head.as_mut() {
+                    open.leading = Leading(false);
+                }
                 continue;
             },
             Some(Tearing::Follows { last }) => {
                 after_stray = last;
+                if let Some(open) = head.as_mut() {
+                    open.leading = Leading(false);
+                }
                 continue;
             },
             None => {},
         }
         let former = collector.root_former(child)?;
+        if let Some(open) = head.as_mut() {
+            if former == Maybe::Present(Former::Misplaced) && collector.opens_inner_block(child)?.0
+            {
+                // An inner block out of its place is a whole item that carries
+                // its own refusal, so the source stays a list of declarations.
+                let late = !open.leading.0;
+                if let Some(refusal) = collector.source_block(child, open)? {
+                    items_refused |= late;
+                    strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
+                }
+                continue;
+            }
+            open.leading = Leading(false);
+        }
         if former == Maybe::Present(Former::AttributeBlock) {
             decorations.push(child);
             continue;
@@ -4565,6 +4610,12 @@ pub fn collect_source<'source>(
     for module in implied.into_iter().rev() {
         collector.close(module, &[])?;
     }
+    if let Some(mut closed) = head.take()
+        && let Some(stray) = collector.decorate_source(&mut closed)
+    {
+        items_refused = true;
+        strays.push(stray);
+    }
     if let Some(&block) = decorations.first()
         && let Some(refusal) = strayed(collector.module_child(block))?
     {
@@ -4661,6 +4712,28 @@ impl<'source> Stray<'source>
         }
     }
 }
+
+/// The inner attribute blocks leading one source of the unit, `@![ … ]`, which
+/// decorate that source once its root children are collected.
+#[derive(Debug)]
+struct SourceHead<'source>
+{
+    /// The source the root children read last are in.
+    source: SourceIndex,
+    /// The first slot the source can admit.
+    first: SlotIndex,
+    /// The attributes of the inner blocks leading the source.
+    inner: Vec<WrittenAttribute<'source>>,
+    /// Those inner blocks, owned by the source's first slot.
+    blocks: Vec<Placed>,
+    /// Whether every root child of the source read so far is an inner block.
+    leading: Leading,
+}
+
+/// Whether a root child opens with the inner attribute tile `@![`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct OpensInner(bool);
 
 /// What collecting one root child came to: nothing to refuse, a refusal of
 /// that child alone, or a refusal of the whole source.
@@ -4853,17 +4926,6 @@ impl<'source> Collector<'_, 'source>
                 name,
                 ..
             } => self.import(child, name),
-            // An inner attribute block at the root decorates the source,
-            // which has no key of its own yet.
-            Shape::Form {
-                former: Former::Unadmitted(feature @ Unbuilt::SourceAttribute),
-                name,
-            } => Err(LoweringRefusal::OutOfFragment {
-                span: child.span,
-                form: name,
-                sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::Unadmitted(feature),
-            }),
             Shape::Form { name, .. } => Err(self
                 .closed_early(child)
                 .or_else(|| self.doubled_within(child))
@@ -4885,6 +4947,147 @@ impl<'source> Collector<'_, 'source>
             },
             Shape::Root | Shape::Layout => Ok(()),
         }
+    }
+
+    /// Whether the root child `child` opens with the inner attribute tile
+    /// `@![`.
+    ///
+    /// # Specification
+    /// - requires: `child` is a written child of the root.
+    /// - ensures: yes exactly when the first piece of the child's reading is
+    ///   the tile `@![`.
+    /// - provides: the test [`collect_source`] reads an inner block by.
+    /// - fails: as [`read_pieces`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`read_pieces`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an inner block leading a source is read as one, and a
+    ///   definition after it is not.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_inner_attribute_decorates_its_source`
+    fn opens_inner_block(
+        &self,
+        child: Placed,
+    ) -> Result<OpensInner, LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, child.node, &mut pieces)?;
+
+        Ok(OpensInner(matches!(
+            pieces.pieces.first(),
+            Some(&Piece::Tile { label, .. }) if label == TileName::INNER_ATTRIBUTES
+        )))
+    }
+
+    /// Read the inner attribute block `block`, `@![ … ]`, standing at the root
+    /// of the source `head` is open for.
+    ///
+    /// # Specification
+    /// - requires: `block` is a root child of that source whose first tile is
+    ///   `@![`.
+    /// - ensures: a block that only inner blocks precede in the source keeps
+    ///   its attributes in `head`, decorating the first such block, for
+    ///   [`Self::decorate_source`]; a block after another root child, or one
+    ///   out of shape, answers its refusal and keeps nothing.
+    /// - provides: the inner attribute half of [`collect_source`].
+    /// - fails: as [`read_pieces`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`read_pieces`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an inner block leading a source asks for the exits of
+    ///   each declaration of the source, and one after a declaration is
+    ///   refused where it stands.
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_inner_attribute_decorates_its_source`
+    #[spec(
+        captures: before = (head.blocks.len(), head.inner.len()),
+        ensures: head.blocks.len() <= before.0.saturating_add(1)
+            && head.inner.len() >= before.1,
+    )]
+    fn source_block(
+        &self,
+        block: Placed,
+        head: &mut SourceHead<'source>,
+    ) -> Result<Option<LoweringRefusal<'source>>, LoweringRefusal<'source>>
+    {
+        if !head.leading.0 {
+            return Ok(Some(misplaced_in(FormName::ROOT, block.span)));
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, block.node, &mut pieces)?;
+        let mut cursor = Cursor::new(&pieces.pieces, block.span);
+        let _opener = cursor.tile(TileName::INNER_ATTRIBUTES);
+        let decorated = head.blocks.first().map_or(block.node, |first| first.node);
+        let start = head.inner.len();
+        let read = self
+            .read_block(&mut cursor, decorated, &mut head.inner)
+            .and_then(|()| match cursor.peek() {
+                Maybe::Present(_) => Err(misplaced(cursor.here())),
+                Maybe::Absent(_) => Ok(()),
+            });
+        if let Err(refusal) = read {
+            head.inner.truncate(start);
+            return Ok(Some(refusal));
+        }
+        head.blocks.push(block);
+
+        Ok(None)
+    }
+
+    /// Decorate the source `head` closes with the inner blocks leading it, as
+    /// [`Self::decorate_from_within`] decorates a module with those leading
+    /// its body.
+    ///
+    /// # Specification
+    /// - requires: each root child of the source `head` is open for is
+    ///   collected, and each stray of it but the last child's is filed.
+    /// - ensures: with no inner block nothing changes; otherwise the source's
+    ///   attributes are kept with the slots the source admitted, under the
+    ///   first block, and the blocks are owned by the first of those slots; a
+    ///   source that admits no slot decorates nothing, and its first inner
+    ///   block is the stray this answers.
+    /// - provides: the closing half of [`Self::source_block`].
+    /// - fails: never; the refusal is the stray's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::source_block`].
+    /// - witness: `gandr-surface-lowering::lower::exits::tests::an_inner_attribute_decorates_its_source`
+    #[spec(
+        captures: before = self.collected.decorated.len(),
+        ensures: self.collected.decorated.len() <= before.saturating_add(1),
+    )]
+    fn decorate_source(
+        &mut self,
+        head: &mut SourceHead<'source>,
+    ) -> Option<Stray<'source>>
+    {
+        let blocks = core::mem::take(&mut head.blocks);
+        let attributes = core::mem::take(&mut head.inner);
+        let &block = blocks.first()?;
+        let end = SlotIndex(self.collected.slots.len());
+        if head.first == end {
+            return Some(Stray::of(
+                block,
+                misplaced_in(FormName::ROOT, block.span),
+                Vec::new(),
+            ));
+        }
+        for written in &blocks {
+            self.collected.own(written.node, head.first);
+        }
+        self.collected.decorated.push(DecoratedModule {
+            module: block,
+            attributes,
+            first: head.first,
+            end,
+        });
+
+        None
     }
 
     /// File `stray`, a root child that is no declaration, as the one held
