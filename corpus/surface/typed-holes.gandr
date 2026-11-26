@@ -1,14 +1,14 @@
-def anon = ?;
+def anon = ?
 
-def named = ?goal;
+def named = ?goal
 
 @[refuses("NotSynthesisable")]
-def in_infix = ? + 1;
+def in_infix = ? + 1
 @[refuses("NotSynthesisable")]
-def named_infix = ?lhs + ?rhs;
+def named_infix = ?lhs + ?rhs
 
 @[refuses("UnresolvedName")]
-def in_call = f (?) 2;
+def in_call = f (?) 2
 
 @[refuses("NotSynthesisable")]
 def in_thunk = thunk { ? };

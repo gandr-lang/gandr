@@ -9,7 +9,7 @@
 // - see: corpus/model/builtins/list-patterns.gandr
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 def absurd(x : Void) -> Integer =
   match x {}
