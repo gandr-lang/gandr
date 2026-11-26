@@ -266,6 +266,7 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::MisplacedAttribute { .. }
             | Self::FeatureUndeclared { .. }
+            | Self::FeatureUnused { .. }
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }
@@ -352,6 +353,7 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::MisplacedAttribute { .. }
             | Self::FeatureUndeclared { .. }
+            | Self::FeatureUnused { .. }
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }

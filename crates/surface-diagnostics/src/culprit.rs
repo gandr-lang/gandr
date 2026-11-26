@@ -293,6 +293,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
         LoweringRefusal::MisplacedAttribute { .. } => "an attribute at another place",
         LoweringRefusal::FeatureUndeclared { .. } => "a feature that the source does not declare",
+        LoweringRefusal::FeatureUnused { .. } => "a feature that the source does not use",
         LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
         LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
         LoweringRefusal::InertRead { .. } => "an inert read",
@@ -901,6 +902,7 @@ mod tests
             LoweringRefusal::FeatureUndeclared { .. } => {
                 "a feature that the source does not declare"
             },
+            LoweringRefusal::FeatureUnused { .. } => "a feature that the source does not use",
             LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
             LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
             LoweringRefusal::InertRead { .. } => "an inert read",
@@ -1192,6 +1194,10 @@ mod tests
             LoweringRefusal::FeatureUndeclared {
                 span: at,
                 feature: "modules",
+            },
+            LoweringRefusal::FeatureUnused {
+                span: at,
+                feature: name,
             },
             LoweringRefusal::ForwardMemberReference {
                 span: at,

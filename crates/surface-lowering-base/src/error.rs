@@ -1304,6 +1304,17 @@ pub enum LoweringRefusal<'source>
         feature: &'static str,
     },
 
+    /// A source that declares a language feature with the attribute
+    /// `features` at its head, and that uses no form, attribute or builtin row
+    /// of that feature.
+    FeatureUnused
+    {
+        /// The bytes of the key in the attribute.
+        span: ByteSpan,
+        /// The key that the attribute states.
+        feature: SurfaceName<'source>,
+    },
+
     /// A module member named at or after the position of the member that
     /// names it.
     ForwardMemberReference
@@ -2360,6 +2371,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the source uses the language feature `{feature}`, and its attribute `features` \
                  does not declare it"
             ),
+            Self::FeatureUnused { feature, .. } => write!(
+                f,
+                "the attribute `features` declares the language feature `{feature}`, and the \
+                 source does not use it"
+            ),
             Self::ForwardMemberReference { name, .. } => write!(
                 f,
                 "the member `{name}` is declared at or after the member naming it; a member \
@@ -2927,6 +2943,7 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { span, .. }
             | Self::MisplacedAttribute { span, .. }
             | Self::FeatureUndeclared { span, .. }
+            | Self::FeatureUnused { span, .. }
             | Self::ForwardMemberReference { span, .. }
             | Self::PhaseDependence { span, .. }
             | Self::InertRead { span, .. }

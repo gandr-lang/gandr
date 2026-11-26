@@ -19713,26 +19713,31 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     }
 
     /// Refuse each source of `decorated` that declares its language features
-    /// and uses one that it does not declare.
+    /// and uses one that it does not declare, or declares one that it does
+    /// not use.
     ///
     /// # Specification
     /// - requires: the attributes of each slot and of each source are filed in
     ///   `table`, with their payloads in `arena`.
     /// - ensures: for each source whose head has the attribute `features`, the
-    ///   first slot of the source is offered
-    ///   [`LoweringRefusal::FeatureUndeclared`] at the attribute, with the
-    ///   feature and the span that
-    ///   [`gandr_surface_lowering_base::gate::undeclared_feature`] answers. A
-    ///   source with no such attribute, and a source that declares each feature
-    ///   that it uses, is offered nothing.
+    ///   first slot of the source is offered, at the attribute,
+    ///   [`LoweringRefusal::FeatureUndeclared`] with the feature and the span
+    ///   that [`gandr_surface_lowering_base::gate::undeclared_feature`]
+    ///   answers, and then [`LoweringRefusal::FeatureUnused`] with the key and
+    ///   the span that [`gandr_surface_lowering_base::gate::unused_feature`]
+    ///   answers. A slot keeps the first of the two. A source with no such
+    ///   attribute, and a source that declares exactly the features that it
+    ///   uses, is offered nothing.
     /// - provides: the judgement of a declaration of features.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as
-    ///   [`gandr_surface_lowering_base::gate::undeclared_feature`].
+    ///   [`gandr_surface_lowering_base::gate::undeclared_feature`] and
+    ///   [`gandr_surface_lowering_base::gate::unused_feature`].
     /// - witness: `gandr-surface-lowering::tests::modules::a_source_is_refused_for_a_feature_that_it_does_not_declare`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_source_is_refused_for_a_feature_that_it_declares_and_does_not_use`
     fn undeclared_features(
         &self,
         decorated: &[DecoratedModule<'source>],
@@ -19759,14 +19764,30 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 || ByteOffset::from(usize::MAX),
                 crate::unit::UnitSource::start,
             );
+            let Some(slot) = slots.get_mut(usize::from(module.first))
+            else {
+                continue;
+            };
+            let grammar = (self.cx().pbg, self.cx().tree);
+            let within = start .. end;
             if let Some((feature, span)) = gandr_surface_lowering_base::gate::undeclared_feature(
-                (self.cx().pbg, self.cx().tree),
+                grammar,
                 (table, arena),
                 source,
-                &(start .. end),
-            ) && let Some(slot) = slots.get_mut(usize::from(module.first))
-            {
+                &within,
+            ) {
                 slot.refuse(written.at.node, LoweringRefusal::FeatureUndeclared {
+                    span,
+                    feature,
+                });
+            }
+            if let Some((feature, span)) = gandr_surface_lowering_base::gate::unused_feature(
+                grammar,
+                (table, arena),
+                source,
+                &within,
+            ) {
+                slot.refuse(written.at.node, LoweringRefusal::FeatureUnused {
                     span,
                     feature,
                 });

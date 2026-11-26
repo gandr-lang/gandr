@@ -44,6 +44,7 @@ use quenchant_shape::shape::Maybe;
 use crate::attribute::AttributeTable;
 use crate::attribute::RegisteredAttribute;
 use crate::attribute::texts;
+use crate::resolve::SurfaceName;
 use crate::unit::SourceIndex;
 
 /// The gate of each registered attribute, in the order of the registry.
@@ -356,6 +357,69 @@ pub fn undeclared_feature(
         .min_by_key(|&(feature, span)| (span.start(), feature))
 }
 
+/// The key that the source `source` declares and does not use, with the
+/// bytes of its text in the attribute: the first such key of the attribute.
+///
+/// # Specification
+/// - requires: as [`used_features`].
+/// - ensures: nothing for a source with no `features` attribute at its head,
+///   and nothing for a source that uses each feature that it declares; else the
+///   first key of the attribute that [`used_features`] does not hold, as the
+///   source writes it between its quotes, with those bytes. A key that the
+///   attribute does not write in that form is the text of the attribute, with
+///   the bytes of the attribute.
+/// - provides: the refusal of a source that declares a feature that it does not
+///   use.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source that uses what it declares, a source that
+///   declares one feature more, and a source with no declaration separate the
+///   answers.
+/// - witness: `gandr-surface-lowering::tests::modules::a_source_is_refused_for_a_feature_that_it_declares_and_does_not_use`
+///
+/// # Cost
+/// - time: as [`used_features`], for a source with the attribute.
+/// - allocation: the quoted text of each key that the source does not use.
+#[inline]
+#[must_use]
+pub fn unused_feature<'source>(
+    (pbg, tree): (&Pbg, &SyntaxTree<'source>),
+    (table, arena): (&AttributeTable, &CoreArena),
+    source: SourceIndex,
+    within: &Range<ByteOffset>,
+) -> Option<(SurfaceName<'source>, ByteSpan)>
+{
+    let entry = features_entry(table, source)?;
+    let Maybe::Present(payload) = entry.payload()
+    else {
+        return None;
+    };
+    let Maybe::Present(keys) = texts(arena, payload)
+    else {
+        return None;
+    };
+    let used = used_features((pbg, tree), (table, arena), source, within);
+    let key = keys
+        .iter()
+        .map(AsRef::as_ref)
+        .find(|&key| !used.contains_key(key))?;
+    let text = <&'source str>::from(tree.source());
+    let (start, end) = (
+        usize::from(entry.span().start()),
+        usize::from(entry.span().end()),
+    );
+    let attribute = text.get(start .. end).unwrap_or_default();
+    let written = attribute.find(&alloc::format!("\"{key}\"")).and_then(|at| {
+        let from = start.saturating_add(at).saturating_add(1);
+        let to = from.saturating_add(key.len());
+        let span = ByteSpan::new(ByteOffset::from(from), ByteOffset::from(to)).ok()?;
+        Some((SurfaceName::from(text.get(from .. to)?), span))
+    });
+    Some(written.unwrap_or((SurfaceName::from(attribute), entry.span())))
+}
+
 /// The keys that the source `source` of a unit declares with the attribute
 /// `features` at its head.
 ///
@@ -454,7 +518,7 @@ pub fn declaration_site(
 
 /// Whether a declaration of the source `source` states that the lowering
 /// refuses the declaration of features of the source: the expectation
-/// `refuses` with a text that starts with [`FEATURE_REFUSAL`].
+/// `refuses` with a text that starts with a name of [`FEATURE_REFUSALS`].
 ///
 /// Such a source shows the refusal, so its head states a declaration that
 /// differs from what the source uses.
@@ -487,13 +551,15 @@ pub fn states_feature_refusal(
     table.of_source(source).into_iter().any(|entry| {
         entry.name().as_ref() == "refuses"
             && matches!(entry.payload(), Maybe::Present(payload)
-                if matches!(texts(arena, payload), Maybe::Present(ref stated)
-                    if stated.iter().any(|text| text.as_ref().starts_with(FEATURE_REFUSAL))))
+            if matches!(texts(arena, payload), Maybe::Present(ref stated)
+                if stated.iter().any(|text| {
+                    FEATURE_REFUSALS.iter().any(|name| text.as_ref().starts_with(name))
+                })))
     })
 }
 
-/// The start of the name of the refusal of a declaration of features.
-pub const FEATURE_REFUSAL: &str = "FeatureUndeclared";
+/// The names of the refusals of a declaration of features.
+pub const FEATURE_REFUSALS: [&str; 2] = ["FeatureUndeclared", "FeatureUnused"];
 
 /// The name of the rule of an inner attribute block.
 const INNER_BLOCK: &str = "inner_attribute_block";

@@ -642,6 +642,10 @@ fn lowered(
             f,
             "the source uses the language feature `{feature}` and does not declare it"
         ),
+        LoweringRefusal::FeatureUnused { feature, .. } => write!(
+            f,
+            "the source declares the language feature `{feature}` and does not use it"
+        ),
         LoweringRefusal::ForwardMemberReference { name, .. } => {
             write!(f, "the member `{name}` is used before it is declared")
         },
@@ -2113,6 +2117,10 @@ pub mod tests
             LoweringRefusal::FeatureUndeclared {
                 span,
                 feature: "modules",
+            },
+            LoweringRefusal::FeatureUnused {
+                span,
+                feature: name,
             },
             LoweringRefusal::ForwardMemberReference {
                 span,

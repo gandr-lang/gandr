@@ -2185,6 +2185,53 @@ fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
     );
 }
 
+/// A source that declares its features is refused for a key that it declares
+/// and does not use, at the text of the key. A feature that the source uses
+/// and does not declare is named before it.
+#[test]
+fn a_source_is_refused_for_a_feature_that_it_declares_and_does_not_use()
+{
+    let refused = |text: &'static str| -> Vec<(String, ByteSpan)> {
+        lower(text)
+            .module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(LoweringRefusal::FeatureUnused {
+                    span,
+                    feature,
+                }) = declaration.outcome()
+                {
+                    Some((feature.to_string(), span))
+                }
+                else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    let unused = "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer \
+                  = 1;";
+    assert_eq!(
+        refused(unused),
+        [("modules".to_owned(), span_of(unused, "modules", 0_usize))],
+        "the first declaration of the source carries the refusal, at the text of the key"
+    );
+    assert!(
+        refused("@![features(\"deprecation\")] @[deprecated] def one() -> Integer = 1;").is_empty(),
+        "a source that uses each feature that it declares is not refused"
+    );
+    assert!(
+        refused("@![features(\"modules\")] @[deprecated] def one() -> Integer = 1;").is_empty(),
+        "a feature that the source uses and does not declare is named first"
+    );
+    assert!(
+        refused("def one() -> Integer = 1;").is_empty(),
+        "a source with no declaration of features is not judged"
+    );
+}
+
 /// The head of a source that admits no declaration takes attributes: the
 /// attribute `features` is filed on the source, and an attribute that is
 /// refused refuses the one held slot of the head.

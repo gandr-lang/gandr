@@ -1,0 +1,7 @@
+/// `FeatureUnused`: a source declares a language feature that it does not
+/// use. The head declares `modules`, and the source has no form of that
+/// feature.
+@![features("modules")]
+
+@[refuses("FeatureUnused")]
+def one() -> Integer = 1;

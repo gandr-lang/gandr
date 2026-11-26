@@ -630,6 +630,7 @@ impl Annotations
                 LoweringRefusal::BuiltinMark { .. } |
                 LoweringRefusal::StagedBody { .. } |
                 LoweringRefusal::FeatureUndeclared { .. } |
+                LoweringRefusal::FeatureUnused { .. } |
                 LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::UnresolvedTypeHead { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::MisplacedAttribute { .. } | LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::NotAModel { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::UninterfacedMember { .. } | LoweringRefusal::UnlabelledRequirement { .. } | LoweringRefusal::ImplicitTelescope { .. } | LoweringRefusal::TelescopeCycle { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::ImplicitInParentheses { .. } | LoweringRefusal::ModelImplicitValue { .. } | LoweringRefusal::RegionAsValue { .. } | LoweringRefusal::MethodAsValue { .. } | LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::AmbiguousMethod { .. } | LoweringRefusal::ViewNotPlace { .. } | LoweringRefusal::ViewOfNoPlace { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
             }
     })]
@@ -726,6 +727,7 @@ impl Annotations
             | LoweringRefusal::IllTypedPayload { .. }
             | LoweringRefusal::MisplacedAttribute { .. }
             | LoweringRefusal::FeatureUndeclared { .. }
+            | LoweringRefusal::FeatureUnused { .. }
             | LoweringRefusal::PhaseDependence { .. }
             | LoweringRefusal::InertRead { .. }
             | LoweringRefusal::UnlockedDependency { .. }
