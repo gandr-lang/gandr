@@ -4025,6 +4025,78 @@ impl<'source> Respelling<'_, 'source>
         (!opened && !carrier).then_some(juxtaposition(Band::Atom, led))
     }
 
+    /// Whether the form at `at` is the type of a definition's receiver: the
+    /// operand of its parent right after the tiles `(`, `self` and `:`, its
+    /// first parameter named `self`, where the lowering reads a mode.
+    ///
+    /// # Specification
+    /// trivial.
+    fn receiving(
+        &self,
+        at: NodeIndex,
+    ) -> bool
+    {
+        let Some(&parent) = self.parents.get(&at)
+        else {
+            return false;
+        };
+        let mut last: [Option<SourceFragment<'source>>; 3] = [None, None, None];
+        for child in self.tree.children(parent) {
+            if child == at {
+                break;
+            }
+            match self
+                .tree
+                .node(child)
+                .map(|node| (node.label(), node.span()))
+            {
+                Some((NodeLabel::Tile(_), span)) => {
+                    let [_, second, third] = last;
+                    last = [second, third, self.leaf(span, None).map(|leaf| leaf.text)];
+                },
+                Some((NodeLabel::Meld(_) | NodeLabel::Wald, _)) => last = [None, None, None],
+                Some(_) | None => {},
+            }
+        }
+        last.into_iter()
+            .map(|text| text.map(<&str>::from))
+            .eq([Some("("), Some("self"), Some(":")])
+    }
+
+    /// Write the receiver's moded type `m T` whose parts are `parts` as the
+    /// view `View[m] T`, `T` in its parentheses when it is no atom.
+    /// Do not write a type that holds a comment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn viewed_receiver(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        let [
+            Part {
+                role: Role::Own(mode),
+                ..
+            },
+            Part {
+                role: Role::Operand(typed),
+                ..
+            },
+        ] = *parts
+        else {
+            return None;
+        };
+        out.token(Spelling("View"));
+        out.token(Spelling("["));
+        out.fragment(mode);
+        out.token(Spelling("]"));
+        out.gap(Spelling(" "));
+        out.place(&self.operand(typed), Band::Atom);
+        Some(Band::Application)
+    }
+
     /// Write the type application whose parts are `parts` as juxtaposition:
     /// `F(a, b)` as `F a b`, `f(a, b)` as `f a b`, `el[<](a)` as `el [<] a`,
     /// `M.F(a)` as `M.F a` and `View[m](a)` as `View[m] a`. A second list,

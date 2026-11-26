@@ -2726,7 +2726,13 @@ fn a_receiver_at_a_deduced_mode_is_written_as_a_view()
 ";
     let only = Selection::Only(&[RewriteName::ModedReceiver]);
     let moved = spelled(&grammar, source, Form::Sugared, only);
-    expect![[r#""#]].assert_eq(&moved);
+    expect![[r#"
+        module Places where
+          type Places = List Integer;
+          def first[m : Mode](self : View[m] (List Integer)) -> View[m] Integer = self.#[0];
+          def nth[m : Mode](self : View[m] Places, i : Integer) -> View[m] Integer = self.#[i];
+          def size(self : shared List Integer) -> Integer = pure 2;
+    "#]].assert_eq(&moved);
     for form in [Form::Sugared, Form::Explicit] {
         assert_eq!(
             spelled(&grammar, source, form, only),
