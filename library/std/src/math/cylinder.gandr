@@ -33,7 +33,7 @@
 // - see: #4198 — suspension, opposites and the interchangers
 
 // `assoc`, `join`, `whiskerLeft`, `whiskerRight`.
-import math.path (assoc, join, whiskerLeft, whiskerRight);
+import math.path (assoc, join, whiskerLeft, whiskerRight)
 
 /// Two squares side by side compose to a square: Catt's `cylcomp(2,1,2)`.
 pub def cylinderComposite2(

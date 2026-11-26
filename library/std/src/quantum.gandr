@@ -43,7 +43,7 @@ def rec lift(n : Integer, k : Scale) -> Integer =
     | Halved(m) => 2 * lift[<] n m
 
 /// Whether `n` is even.
-def even(n : Integer) -> Bool = int.mod n 2 == 0;
+def even(n : Integer) -> Bool = int.mod n 2 == 0
 
 /// Whether all four integers are even.
 def allEven(a : Integer, b : Integer, c : Integer, d : Integer) -> Bool =
@@ -66,19 +66,19 @@ pub def rec amplitude(a : Integer, b : Integer, c : Integer, d : Integer, k : Sc
       | false => Amp a b c d k
 
 /// Zero.
-pub def zero : Amplitude = Amp 0 0 0 0 Whole;
+pub def zero : Amplitude = Amp 0 0 0 0 Whole
 
 /// One.
-pub def one : Amplitude = Amp 1 0 0 0 Whole;
+pub def one : Amplitude = Amp 1 0 0 0 Whole
 
 /// `i`, the square root of minus one.
-pub def imaginary : Amplitude = Amp 0 0 1 0 Whole;
+pub def imaginary : Amplitude = Amp 0 0 1 0 Whole
 
 /// `1/√2 = √2/2`, the entry of the Hadamard gate.
-pub def sqrtHalf : Amplitude = Amp 0 1 0 0 (Halved Whole);
+pub def sqrtHalf : Amplitude = Amp 0 1 0 0 (Halved Whole)
 
 /// `ω = e^{iπ/4} = (√2 + √2 i)/2`, the phase of the gate `T`.
-pub def omega : Amplitude = Amp 0 1 0 1 (Halved Whole);
+pub def omega : Amplitude = Amp 0 1 0 1 (Halved Whole)
 
 /// The exact sum: both amplitudes at the sum of their scales, then one
 /// reduction.
@@ -115,7 +115,7 @@ pub def conjugate(x : Amplitude) -> Amplitude =
     | Amp(a, b, c, d, k) => Amp a b (0 - c) (0 - d) k
 
 /// The squared modulus `x · x̄`, an amplitude with no imaginary part.
-pub def norm(x : Amplitude) -> Amplitude = times x (conjugate x);
+pub def norm(x : Amplitude) -> Amplitude = times x (conjugate x)
 
 /// The state of one qubit: the amplitudes of `|0⟩` and of `|1⟩`.
 pub data Ket : Type where
@@ -123,7 +123,7 @@ pub data Ket : Type where
   | Ket : (x : Amplitude, y : Amplitude) --> Ket
 
 /// The state `|0⟩`.
-pub def ground : Ket = Ket one zero;
+pub def ground : Ket = Ket one zero
 
 /// The Hadamard gate `H`: `x|0⟩ + y|1⟩` goes to `((x + y)|0⟩ + (x − y)|1⟩)/√2`.
 pub def hadamard(s : Ket) -> Ket =

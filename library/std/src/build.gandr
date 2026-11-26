@@ -223,7 +223,7 @@ pub def encode(presented : Theory, v : modelType presented) -> String =
 
 /// The presentation of [`Gandr.Package`], from which its entries' type is
 /// computed.
-pub def packagePresentation : Theory = Gandr.Package;
+pub def packagePresentation : Theory = Gandr.Package
 
 /// The entries of the package model `m`, in the order of the presentation.
 @[inert]

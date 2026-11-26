@@ -15,7 +15,7 @@
 //   against a row
 
 // `Scalar`, `Fields`, `Variants`, `structLayout`, `enumLayout`.
-import "./layout.gandr";
+import "./layout.gandr"
 
 /// A type at the row, as Rust's default layout codes it.
 pub data Code : Type where

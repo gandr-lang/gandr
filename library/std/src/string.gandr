@@ -10,11 +10,11 @@
 // - see: #318
 
 /// The empty string, the unit of joining.
-pub def empty : String = "";
+pub def empty : String = ""
 
 /// The string `a` followed by the string `b`, as the native table joins them.
 @[builtin("string.append")]
-pub def append : (String, String) -> String;
+pub def append : (String, String) -> String
 
 /// The string `a` followed by the string `b`.
 pub def concat(a : String, b : String) -> String =

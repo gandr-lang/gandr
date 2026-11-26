@@ -24,7 +24,7 @@
 //   keeps
 
 // The bytes of a buffer and of a tape.
-import std.list (List);
+import std.list (List)
 
 /// One line, written to standard output through `console`.
 pub def print(console : Cap { print }, line : String) -> [std.io.Console.Eff] Unit =
@@ -69,11 +69,11 @@ pub theory Io.Eff where
 
 /// The completion of a read or a write under `Scripted`, as the program holds
 /// it: it gives the count, then the buffer back, and it ends.
-pub type Returned = (Integer * List u8) >? end;
+pub type Returned = (Integer * List u8) >? end
 
 /// The completion of a close under `Scripted`, as the program holds it: it
 /// gives the status, and it ends.
-pub type Shut = Integer >? end;
+pub type Shut = Integer >? end
 
 /// The state of the kernel of `Scripted`: the input that no read took yet,
 /// and the output of the writes, in their order.
@@ -83,7 +83,7 @@ pub data Tape : Type where
 
 /// The count of an operation on a file that `Scripted` does not hold: the
 /// error number 9, `EBADF`, as a negative count.
-def bad_file() -> Integer = 0 - 9;
+def bad_file() -> Integer = 0 - 9
 
 /// The bytes of `input` placed over the start of `buffer`, as many as both
 /// hold. The rest of the buffer keeps its bytes.

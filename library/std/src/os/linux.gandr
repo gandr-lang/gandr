@@ -19,7 +19,7 @@ pub data Answer : Type where
   | Error : (number : u64) --> Answer
 
 /// The least word that is an error: `-4095` as a word.
-def least_error() -> u64 = 18446744073709547521u64;
+def least_error() -> u64 = 18446744073709547521u64
 
 /// The answer of a system call as the kernel gives `word`: an error number
 /// when the word is from `-4095` to `-1`, and the result otherwise.
@@ -32,15 +32,15 @@ pub def split(word : u64) -> Answer =
 
 /// `-4096` is one word below the errors, so it is a result.
 @[runs("Value 18446744073709547520u64")]
-def below_the_errors() -> Answer = split 18446744073709547520u64;
+def below_the_errors() -> Answer = split 18446744073709547520u64
 
 /// `-4095` is the greatest error number.
 @[runs("Error 4095u64")]
-def greatest_error() -> Answer = split 18446744073709547521u64;
+def greatest_error() -> Answer = split 18446744073709547521u64
 
 /// `-1` is the error number 1, `EPERM`.
 @[runs("Error 1u64")]
-def least_error_number() -> Answer = split 18446744073709551615u64;
+def least_error_number() -> Answer = split 18446744073709551615u64
 
 /// `0` is a result.
 @[runs("Value 0u64")]

@@ -18,7 +18,7 @@
 //!   size and each offset with a `#[repr(C)]` declaration of Rust
 
 // The fields of a structure.
-import std.list (List);
+import std.list (List)
 
 /// A field of a structure: its name, its offset in bytes from the start of
 /// the structure, and its width in bytes.
@@ -144,11 +144,11 @@ def rec counted(fields : List Field) -> Integer =
 
 /// The size in bytes of the structure `structure`, or `-1` when the ring has
 /// no structure of the name.
-pub def size(structure : String) -> Integer = size_of structures structure;
+pub def size(structure : String) -> Integer = size_of structures structure
 
 /// The count of the fields of the structure `structure`, or `0` when the ring
 /// has no structure of the name.
-pub def count(structure : String) -> Integer = counted (fields_of structures structure);
+pub def count(structure : String) -> Integer = counted (fields_of structures structure)
 
 /// The offset in bytes of the field `field` of the structure `structure`, or
 /// `-1` when the structure has no field of the name.

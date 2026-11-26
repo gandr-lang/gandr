@@ -20,7 +20,7 @@
 //! - see: #7836 — a source handler shadows a block
 
 // The bytes of the memory of `Extent`.
-import std.list (List);
+import std.list (List)
 
 /// A load and a store of a word at an address. Each member is a member of
 /// the block `Ptr`.

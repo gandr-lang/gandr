@@ -5,7 +5,7 @@
 //
 // - see: `README.md` — the map of modules and host seams
 // - owes: #533 — a package importing another by name
-import build (Gandr);
+import build (Gandr)
 
 /// The package: `std`, at the version `package.gandr.toml` records.
 pub module Package : Model(Gandr.Package) where

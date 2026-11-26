@@ -39,7 +39,7 @@
 //! [Niu-2024-costsensitive_computational_adequacy_higherorder_recursion_synthetic_domain_theory]: https://doi.org/10.46298/entics.14732 "Niu, Sterling and Harper, Cost-Sensitive Computational Adequacy of Higher-Order Recursion in Synthetic Domain Theory"
 
 // `Count`, whose sum counts and whose order bounds.
-import "./grade.gandr";
+import "./grade.gandr"
 
 /// decalf's cost effect: a charge, and the cost monoid's unit and sum. The
 /// theory lives in the module `Cost`, as a host effect does.

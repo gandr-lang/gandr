@@ -22,7 +22,7 @@
 //! [Dershowitz-1979-proving_termination_multiset_orderings]: https://doi.org/10.1145/359138.359142 "Dershowitz and Manna, Proving Termination with Multiset Orderings"
 
 // `Count`, the order of the binary naturals.
-import "./grade.gandr";
+import "./grade.gandr"
 
 /// The labels of the steps of a path, in order, or a multiset of labels.
 pub data Labels : Type where
@@ -110,30 +110,30 @@ pub def atMost(a : Labels, b : Labels) -> Bool =
 /// the labels `0` and `21` give `[0, 2]` (Example 3.3.12).
 def peakMeasureOfX : Labels = union
   (measure (Then (0 : Nat) Done))
-  (measure (Then (2 : Nat) (Then (1 : Nat) Done)));
+  (measure (Then (2 : Nat) (Then (1 : Nat) Done)))
 
 /// The measure of the peak `(v', v ⋆ u)` of `X`, run.
 @[runs("Then Zero (Then (Positive (Bit0 One)) Done)")]
-def peakOfX() -> Labels = peakMeasureOfX;
+def peakOfX() -> Labels = peakMeasureOfX
 
 /// The measure of the peak `(u ⋆ v, u')` of the system `Y` of Example 3.3.2:
 /// the labels `12` and `1` give `[1, 2, 1]`, the multiset `[1, 1, 2]`
 /// (Example 3.3.12).
 def peakMeasureOfY : Labels = union
   (measure (Then (1 : Nat) (Then (2 : Nat) Done)))
-  (measure (Then (1 : Nat) Done));
+  (measure (Then (1 : Nat) Done))
 
 /// The measure of the peak `(u ⋆ v, u')` of `Y`, run.
 @[runs("Then (Positive One) (Then (Positive (Bit0 One)) (Then (Positive One) Done))")]
-def peakOfY() -> Labels = peakMeasureOfY;
+def peakOfY() -> Labels = peakMeasureOfY
 
 /// The labels of the side `u ⋆ v ⋆ u ⋆ v'` of the peak `(u ⋆ v, u')` of `Y`:
 /// `1210`.
-def sideOfY : Labels = Then (1 : Nat) (Then (2 : Nat) (Then (1 : Nat) (Then (0 : Nat) Done)));
+def sideOfY : Labels = Then (1 : Nat) (Then (2 : Nat) (Then (1 : Nat) (Then (0 : Nat) Done)))
 
 /// Example 3.4.6: the measure of the side, `[1, 2]`, is at most the measure of
 /// the peak, `[1, 1, 2]`.
-def boundOfY : Path[.A = Bool] (atMost (measure sideOfY) peakMeasureOfY) true = Path.here true;
+def boundOfY : Path[.A = Bool] (atMost (measure sideOfY) peakMeasureOfY) true = Path.here true
 
 /// The converse: the measure of the peak is not below the measure of the side.
 def peakNotBelowSideOfY : Path[.A = Bool] (lower peakMeasureOfY (measure sideOfY)) false = Path.here
