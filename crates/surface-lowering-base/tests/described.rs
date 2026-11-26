@@ -901,7 +901,7 @@ fn a_codata_observation_s_type_answers_at_its_universe()
         )
     };
 
-    let head = entry(&types, span(": a;", "a"), DescribedRole::Type);
+    let head = entry(&types, span(": a\n", "a"), DescribedRole::Type);
     assert!(value(ty(head)), "a parameter read as a type at `Type`");
     assert_eq!(context(&types, head), ["a"], "under the parameters");
     let tail = entry(
@@ -919,7 +919,7 @@ fn a_codata_observation_s_type_answers_at_its_universe()
         ),
         "the family itself at its kind, `Type[-]`"
     );
-    let argument = entry(&types, span("a;\n}", "a"), DescribedRole::Type);
+    let argument = entry(&types, span("a\n}", "a"), DescribedRole::Type);
     assert_eq!(
         ty(argument),
         ty(head),
@@ -955,7 +955,7 @@ fn a_second_order_law_answers_at_its_written_sorts()
         DescribedRole::Term,
     );
     assert!(code(applied).is_some(), "an application at its sort");
-    for (around, inner) in [("zeta : let u", "u"), ("<=> t u", "t u"), ("t u;", "u")] {
+    for (around, inner) in [("zeta : let u", "u"), ("<=> t u", "t u"), ("t u\n", "u")] {
         assert_eq!(
             code(entry(&types, span(around, inner), DescribedRole::Term)),
             code(applied),

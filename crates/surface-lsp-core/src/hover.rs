@@ -2211,7 +2211,7 @@ mod tests
             ),
             (
                 "../../corpus/pathological/worlds/rewritten.gandr",
-                "k;",
+                "k\n}",
                 "def put(key : V, value : V, k : C) -> C = k",
             ),
         ] {

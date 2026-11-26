@@ -7533,13 +7533,13 @@ mod tests
             "../../../corpus/model/extension/generated.gandr"
         ));
         let table = table(source);
-        let keyword = found(source, SourceText::from("ext Cell = Val on left is zero;"));
+        let keyword = found(source, SourceText::from("ext Cell = Val on left is zero\n"));
         assert!(
             !matches!(
                 answer(
                     &table,
                     source,
-                    SourceText::from("ext Cell = Val on left is zero;")
+                    SourceText::from("ext Cell = Val on left is zero\n")
                 ),
                 Maybe::Present(Answer {
                     subject: Subject::Binder,
@@ -10287,7 +10287,7 @@ mod tests
             ("Hom(dom", Subject::Binder, "+U (Ob -> Ob -> -F Type)"),
             ("dom", Subject::Binder, "Ob"),
             ("id :", Subject::Binder, "+U ((a : Ob) -> -F (Hom a a))"),
-            ("Hom a a;", Subject::Type, "Type"),
+            ("Hom a a\n", Subject::Type, "Type"),
             ("id a ==>", Subject::Term, "+U ((a : Ob) -> -F (Hom a a))"),
             (" a ==>", Subject::Term, "Hom a a"),
         ];

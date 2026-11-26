@@ -968,7 +968,7 @@ fn a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635()
     let model = std::fs::read_to_string(copy.join("package.gandr")).expect("the model reads");
     std::fs::write(
         copy.join("package.gandr"),
-        model.replace("def name = \"std\";", "def name = \"other\";"),
+        model.replace("def name = \"std\"", "def name = \"other\""),
     )
     .expect("the model is written");
     assert!(

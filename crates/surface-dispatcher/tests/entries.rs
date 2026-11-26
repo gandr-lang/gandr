@@ -702,7 +702,8 @@ fn gated(
     // The ports that bind or abstract, `t` in `t : pi+ (x : Tm) . Tm` and `p`
     // in `p : bind (a : Name) . Proc`, and the operations declaring an
     // abstracting one, `nu` in `oper nu : (p : bind …) --> Proc`, by name; and
-    // the bytes of every rule a theory writes, `rule` to its `;`.
+    // the bytes of every rule a theory writes, `rule` to its `;` or to the
+    // next line that stands at its column or left of it.
     let binding: BTreeSet<String> = source
         .match_indices(": pi+")
         .map(|(at, _)| (at, false))
@@ -738,7 +739,23 @@ fn gated(
     let rules: Vec<(usize, usize)> = source
         .match_indices("rule ")
         .filter_map(|(at, _)| {
-            let end = source.get(at ..)?.find(';')?;
+            let line = source
+                .get(.. at)?
+                .rfind('\n')
+                .map_or(0_usize, |end| end.saturating_add(1));
+            let column = at.saturating_sub(line);
+            let rest = source.get(at ..)?;
+            let next = rest.match_indices('\n').map(|(end, _)| end).find(|&end| {
+                rest.get(end.saturating_add(1) ..).is_some_and(|after| {
+                    let text = after.trim_start_matches(' ');
+                    !text.starts_with('\n') && after.len().saturating_sub(text.len()) <= column
+                })
+            });
+            let end = [rest.find(';'), next]
+                .into_iter()
+                .flatten()
+                .min()
+                .unwrap_or(rest.len());
             Some((at, at.saturating_add(end)))
         })
         .collect();

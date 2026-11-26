@@ -360,8 +360,8 @@ fn a_rule_s_freshness_conditions_stay_on_its_line()
         include_str!("format/unformatted/a-rule-s-freshness-conditions-stay-on-its-line.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu (bind a. q) <=> q where {| a # q | a # q};\n}\n",
-        "a theory's members end at `;`, so the comma between two conditions keeps them on the rule's line"
+        "theory Gc where {\n  sort Name : Atom\n  sort Proc : Type\n  oper nu : (p : bind (a : Name). Proc) --> Proc\n  rule gc : nu (bind a. q) <=> q where {| a # q | a # q};\n}\n",
+        "a member ends at its line, and the rule's `;` after the `}}` of its conditions stays, so the comma between two conditions keeps them on the rule's line"
     );
 }
 
@@ -505,7 +505,7 @@ fn a_member_after_a_column_zero_comment_starts_a_statement_2950()
             include_str!(
                 "format/unformatted/a-member-after-a-column-zero-comment-starts-a-statement-2950-1.gandr"
             ),
-            "/// T.\ntheory T where {\n  /// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
+            "/// T.\ntheory T where {\n  /// The state.\n  sort S : Type+\n  oper get : (k : S) --> S\n}\n",
         ),
         (
             include_str!(

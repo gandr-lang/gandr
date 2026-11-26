@@ -163,9 +163,9 @@ def lazy : +U (-F Integer & -F Integer)
 def noted : +U[/* every use */ ω] (-F Integer)
 def once : +U[1] (Integer -> -F Integer)
 theory Counting where {
-  sort T : Type;
-  oper next : T -> T;
-  oper add : +U (T -> T -> -F T);
+  sort T : Type
+  oper next : T -> T
+  oper add : +U (T -> T -> -F T)
 }
 ",
         ),
@@ -177,9 +177,9 @@ def lazy : +U &{-F Integer, -F Integer};
 def noted : +U[/* every use */ ω] (-F Integer)
 def once : +U[1] (Integer -> -F Integer)
 theory Counting where {
-  sort T : Type;
-  oper next : +U (T -> -F T);
-  oper add : +U (T -> T -> -F T);
+  sort T : Type
+  oper next : +U (T -> -F T)
+  oper add : +U (T -> T -> -F T)
 }
 ",
         ),
