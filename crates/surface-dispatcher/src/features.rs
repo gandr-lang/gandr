@@ -381,8 +381,8 @@ fn read_features<'census>(
 ///   answers.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — four sources with a declaration are written, and a
-///   source of one import is a fault with its text unchanged.
+/// - hypothesis: L3 — four sources with a declaration are written, and a source
+///   of one import is a fault with its text unchanged.
 /// - witness: `gandr-surface-driver::tests::cli::features_writes_the_declaration_of_each_source`
 /// - witness: `gandr-surface-driver::tests::cli::features_leaves_a_source_whose_head_takes_no_attribute`
 ///

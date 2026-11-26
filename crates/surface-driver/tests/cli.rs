@@ -2465,7 +2465,11 @@ fn features_leaves_a_source_whose_head_takes_no_attribute()
         .expect("the scratch source is written");
     std::fs::write(&importer, text).expect("the scratch source is written");
 
-    let wrote = ran(gandr(&[Path::new("features"), Path::new("--write"), &importer]));
+    let wrote = ran(gandr(&[
+        Path::new("features"),
+        Path::new("--write"),
+        &importer,
+    ]));
     assert_eq!(code(&wrote), Code(2_i32), "{}", stderr(&wrote));
     assert!(
         stderr(&wrote).starts_with(&format!("gandr: {}: not written: ", importer.display())),
