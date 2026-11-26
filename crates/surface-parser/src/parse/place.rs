@@ -113,6 +113,8 @@ use crate::MeldState;
 use crate::Molder;
 use crate::TokenIndex;
 use crate::TokenRun;
+use crate::TokenText;
+use crate::candidate_labels;
 use crate::closing::LeadingSlot;
 use crate::closing::push_closing;
 use crate::label::Bracket;
@@ -739,7 +741,10 @@ fn earlier<'source>(
 /// left out. It takes only a keyword that another member of its block starts
 /// with, a member inside it that a `;` after it leaves there included, and a
 /// form at the root on a line indented past the declaration's head counts as
-/// such a member. Its copy spans the member.
+/// such a member. The member's first word takes a keyword that any label of
+/// the word follows, since the melder reads the member in the sort of its
+/// block, `Same(a : Type)` as a constructor pattern. Its copy spans the
+/// member.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
@@ -987,15 +992,30 @@ fn headed<'source>(
                 run.start() <= obligation.span.start() && obligation.span.end() <= run.end()
             });
             let (lead, lead_span) = first_tile(tree, position)?;
-            let keywords: Vec<SourceText<'static>> = heads(pbg, lead)
+            let lead_label = pbg.mold(lead).ok()?.label;
+            let keywords: Vec<SourceText<'static>> = heads(pbg, &[lead_label])
                 .into_iter()
                 .filter(|&keyword| repaired || <&str>::from(keyword) == "def")
                 .collect();
             Some((run, lead_span, keywords, false))
         })
         .chain(members.into_iter().filter_map(|(position, span, spelt)| {
-            let (lead, lead_span) = first_tile(tree, position)?;
-            let keywords: Vec<SourceText<'static>> = heads(pbg, lead)
+            // The melder reads a member whose keyword is left out in the sort
+            // of its block, so its first word can carry another label than a
+            // declaration's name: `Same(a : Type) = a;` reads as a constructor
+            // pattern. The member takes each keyword that a label of that word
+            // follows.
+            let (_, lead_span) = first_tile(tree, position)?;
+            let word = <&str>::from(source)
+                .get(usize::from(lead_span.start()) .. usize::from(lead_span.end()))?;
+            let lexeme = label(SourceFragment::from(word)).first()?.lexeme;
+            let menu = candidate_labels(lexeme, TokenText::from(word));
+            let labels: Vec<&str> = menu
+                .as_slice()
+                .iter()
+                .map(|&candidate| <&str>::from(candidate))
+                .collect();
+            let keywords: Vec<SourceText<'static>> = heads(pbg, &labels)
                 .into_iter()
                 .filter(|&keyword| {
                     spelt
@@ -1080,13 +1100,13 @@ fn first_tile(
     }
 }
 
-/// The declaration keywords whose next tile `lead`'s label spells, in mold
+/// The declaration keywords whose next tile spells one of `labels`, in mold
 /// order, each once.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the reserved spellings of the molds [`declaration_head`] accepts
-///   that a `≐`-successor with `lead`'s label follows, first occurrence kept.
+///   that a `≐`-successor with one of `labels` follows, first occurrence kept.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
@@ -1094,15 +1114,12 @@ fn first_tile(
 /// # Adequacy
 /// - hypothesis: L3 — as [`headed`].
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+/// - witness: `parse::place::tests::a_member_keyword_left_out_is_minted_at_its_name_6323`
 fn heads(
     pbg: &Pbg,
-    lead: MoldId,
+    labels: &[&str],
 ) -> Vec<SourceText<'static>>
 {
-    let Ok(lead) = pbg.mold(lead).map(|def| def.label)
-    else {
-        return Vec::new();
-    };
     let adjacencies = pbg.adjacencies();
     let named = |mold: MoldId| {
         let from = adjacencies.partition_point(|&(left, _right)| left < mold);
@@ -1111,7 +1128,10 @@ fn heads(
             .unwrap_or_default()
             .iter()
             .take_while(|&&(left, _right)| left == mold)
-            .any(|&(_left, right)| pbg.mold(right).is_ok_and(|next| next.label == lead))
+            .any(|&(_left, right)| {
+                pbg.mold(right)
+                    .is_ok_and(|next| labels.contains(&next.label))
+            })
     };
     let mut keywords: Vec<(MoldId, SourceText<'static>)> = RESERVED_WORDS
         .iter()
@@ -3116,10 +3136,10 @@ mod tests
 
     /// #6323: a member of a module's block whose `type` is left out. The
     /// melder closes the block over it, so the root holds the module, and the
-    /// member reads as a type. The member takes the `type` that another member
-    /// of its block starts with, minted empty at its name, and the parse owes
-    /// that one repair. A theory's member whose block spells no keyword that a
-    /// declaration's head takes before it gets no keyword.
+    /// member reads as a constructor pattern. The member takes the `type` that
+    /// another member of its block starts with, minted empty at its name, and
+    /// the parse owes that one repair. A theory's member whose block spells no
+    /// keyword that a declaration's head takes before it gets no keyword.
     #[test]
     fn a_member_keyword_left_out_is_minted_at_its_name_6323()
     {
