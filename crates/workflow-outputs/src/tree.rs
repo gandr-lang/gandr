@@ -95,6 +95,20 @@ const FIXTURE: (&str, &str) = ("corpus/", "fixture/");
 /// reads: the ledgers and the sketch set.
 const FIXTURE_HELD_OUT: [&str; 2] = ["corpus/ledger/", "corpus/sketch/"];
 
+/// The roots of the sources that state refusals: the pathological twins,
+/// and one exemplar for each refusal name.
+const REFUSING: [&str; 2] = ["corpus/pathological/", "corpus/ledger/diagnostics/"];
+
+/// The paths at the root that a refusal reads: the corpus, the library, and
+/// the workspace of the library with its lock.
+const REFUSAL_INPUTS: [&str; 5] = [
+    "corpus",
+    "library",
+    "workspace.gandr",
+    "workspace.gandr.lock",
+    "workspace.gandr.toml",
+];
+
 impl Tree
 {
     /// The git tree identifier of the tree, in hexadecimal.
@@ -167,9 +181,14 @@ impl Tree
         })
     }
 
-    /// The digest of the tool of a kind in this tree: the git tree identifier
-    /// of each directory of `packages`, in the order given, then the root
-    /// manifest, the lock and the toolchain file.
+    /// The digest of the tool of a kind in this tree.
+    ///
+    /// The parts are the git tree identifier of each directory of
+    /// `packages`, in the order given, the manifest of each directory of
+    /// `manifests`, then the root manifest, the lock and the toolchain file.
+    /// The packages are those that compute the kind. The manifests are those
+    /// of each package that builds the binary: a manifest can turn a feature
+    /// of a package of the kind on.
     ///
     /// # Specification
     /// trivial.
@@ -180,6 +199,7 @@ impl Tree
     pub fn tool(
         &self,
         packages: &[&str],
+        manifests: &[&str],
     ) -> Result<Digest, TreeError>
     {
         let listed = git(&self.repository, &[], &[
@@ -192,6 +212,18 @@ impl Tree
             "Cargo.lock",
             "rust-toolchain.toml",
         ])?;
+        let paths: Vec<String> = manifests
+            .iter()
+            .map(|package| format!("crates/{package}/Cargo.toml"))
+            .collect();
+        let mut arguments = vec!["ls-tree", "-z", self.id.as_str(), "--"];
+        arguments.extend(paths.iter().map(String::as_str));
+        let features = if paths.is_empty() {
+            String::new()
+        }
+        else {
+            git(&self.repository, &[], &arguments)?
+        };
         let entries: Vec<(&str, &str)> = listed
             .split('\0')
             .filter_map(|entry| {
@@ -212,7 +244,8 @@ impl Tree
         let parts = directories
             .iter()
             .map(|directory| object(directory))
-            .chain(["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"].map(object));
+            .chain(["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"].map(object))
+            .chain([features.as_bytes()]);
         Ok(Digest::of_parts(parts))
     }
 
@@ -235,9 +268,70 @@ impl Tree
     #[inline]
     pub fn sources(&self) -> Result<Vec<Source>, TreeError>
     {
-        let listed = git(&self.repository, &[], &[
-            "ls-tree", "-r", "-z", &self.id, "--", STRICT.0, FIXTURE.0,
-        ])?;
+        self.below(&[STRICT.0, FIXTURE.0], &FIXTURE_HELD_OUT)
+    }
+
+    /// The sources of this tree that state refusals, in name order: each
+    /// `.gandr` file below the pathological twins and below the exemplars of
+    /// the refusal names, and not a symbolic link.
+    ///
+    /// # Specification
+    /// - ensures: the sources are in name order.
+    ///
+    /// # Errors
+    /// [`TreeError::Git`] when git cannot list the tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pathological source and an exemplar of a refusal
+    ///   name are refusing sources, and a model source and a source of another
+    ///   ledger are not.
+    /// - witness: `tree::tests::the_refusing_sources_are_the_twins_and_the_exemplars`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |sources| sources.is_sorted()))]
+    #[inline]
+    pub fn refusing(&self) -> Result<Vec<Source>, TreeError>
+    {
+        self.below(&REFUSING, &[])
+    }
+
+    /// The git objects that a refusal of this tree reads, as git lists them.
+    ///
+    /// They are the corpus, the library, and the workspace of the library
+    /// with its lock. Two trees with one such text give each refusing source
+    /// one refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`TreeError::Git`] when git cannot list the tree.
+    #[inline]
+    pub fn refusal_inputs(&self) -> Result<String, TreeError>
+    {
+        let mut arguments = vec!["ls-tree", "-z", self.id.as_str(), "--"];
+        arguments.extend(REFUSAL_INPUTS);
+        git(&self.repository, &[], &arguments)
+    }
+
+    /// Each `.gandr` file below `roots` and outside `held_out` that is not a
+    /// symbolic link, in name order.
+    ///
+    /// The name of a file below the strict root starts with `strict/`, and
+    /// of a file below the corpus with `fixture/`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`TreeError::Git`] when git cannot list the tree.
+    fn below(
+        &self,
+        roots: &[&str],
+        held_out: &[&str],
+    ) -> Result<Vec<Source>, TreeError>
+    {
+        let mut arguments = vec!["ls-tree", "-r", "-z", self.id.as_str(), "--"];
+        arguments.extend(roots);
+        let listed = git(&self.repository, &[], &arguments)?;
         let mut sources: Vec<Source> = listed
             .split('\0')
             .filter_map(|entry| {
@@ -249,7 +343,7 @@ impl Tree
                     || Path::new(path)
                         .extension()
                         .is_none_or(|extension| extension != "gandr")
-                    || FIXTURE_HELD_OUT.iter().any(|held| path.starts_with(held))
+                    || held_out.iter().any(|held| path.starts_with(held))
                 {
                     return None;
                 }
@@ -431,6 +525,13 @@ mod tests
     use super::Tree;
     use super::scratch_repository;
 
+    /// A source that parses whole.
+    const WHOLE: &str = include_str!("compute/fixtures/a-definition-of-one.gandr");
+
+    /// A source that stops in an open parenthesis.
+    const CUT: &str =
+        include_str!("compute/unformatted/a-definition-that-stops-in-a-parenthesis.gandr");
+
     /// A strict source, a fixture source, a source of the ledgers and a file
     /// that is not a source give the first two, in name order, and the work
     /// tree gives a source that no commit holds.
@@ -438,9 +539,9 @@ mod tests
     fn the_sources_are_the_gandr_files_outside_the_held_out_directories()
     {
         let root = scratch_repository("tree", &[
-            ("crates/surface-corpus/strict/values.gandr", "def one = 1\n"),
-            ("corpus/model/circle.gandr", "def two = 2\n"),
-            ("corpus/ledger/syntax/rule.gandr", "def three = 3\n"),
+            ("crates/surface-corpus/strict/values.gandr", WHOLE),
+            ("corpus/model/circle.gandr", CUT),
+            ("corpus/ledger/syntax/rule.gandr", WHOLE),
             ("corpus/model/notes.md", "notes\n"),
         ]);
         let tree = Tree::of_revision(&root, "HEAD").expect("the commit has a tree");
@@ -453,14 +554,41 @@ mod tests
             .collect();
         let contents = tree.contents(&objects).expect("the objects read");
         assert_eq!(contents, [
-            b"def two = 2\n".to_vec(),
-            b"def one = 1\n".to_vec()
+            CUT.as_bytes().to_vec(),
+            WHOLE.as_bytes().to_vec()
         ]);
-        std::fs::write(root.join("corpus/model/new.gandr"), "def four = 4\n")
-            .expect("the file is written");
+        std::fs::write(root.join("corpus/model/new.gandr"), WHOLE).expect("the file is written");
         let scratch = root.join(".git");
         let work = Tree::of_work_tree(&root, &scratch).expect("the work tree has a tree");
         assert_eq!(work.sources().expect("the tree lists").len(), 3);
+        std::fs::remove_dir_all(root).expect("the repository is removed");
+    }
+
+    /// A pathological source and an exemplar of a refusal name are refusing
+    /// sources. A model source and a source of another ledger are not. The
+    /// inputs of a refusal change with a file of the library.
+    #[test]
+    fn the_refusing_sources_are_the_twins_and_the_exemplars()
+    {
+        let root = scratch_repository("refusing", &[
+            ("corpus/pathological/circuit/cyclic.gandr", CUT),
+            ("corpus/ledger/diagnostics/unclosed.gandr", CUT),
+            ("corpus/ledger/syntax/rule.gandr", WHOLE),
+            ("corpus/model/circle.gandr", WHOLE),
+            ("library/std/one.gandr", WHOLE),
+        ]);
+        let tree = Tree::of_revision(&root, "HEAD").expect("the commit has a tree");
+        let sources = tree.refusing().expect("the tree lists");
+        let names: Vec<&str> = sources.iter().map(|source| source.name.as_str()).collect();
+        assert_eq!(names, [
+            "fixture/ledger/diagnostics/unclosed.gandr",
+            "fixture/pathological/circuit/cyclic.gandr"
+        ]);
+        let inputs = tree.refusal_inputs().expect("the tree lists");
+        std::fs::write(root.join("library/std/one.gandr"), CUT).expect("the file is written");
+        let work = Tree::of_work_tree(&root, &root.join(".git")).expect("the work tree has a tree");
+        assert_ne!(inputs, work.refusal_inputs().expect("the tree lists"));
+        assert_eq!(sources, work.refusing().expect("the tree lists"));
         std::fs::remove_dir_all(root).expect("the repository is removed");
     }
 }

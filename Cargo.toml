@@ -859,6 +859,7 @@ path = "crates/surface-corpus"
 # - surface-repl
 # - surface-session (dev)
 # - workflow-ledger-tasks
+# - workflow-outputs
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
 
@@ -875,6 +876,7 @@ path = "crates/surface-diagnostics"
 # - surface-session
 # - surface-tui
 # - workflow-ledger-tasks
+# - workflow-outputs
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
@@ -890,6 +892,7 @@ path = "crates/surface-dispatcher"
 # - surface-repl
 # - surface-session
 # - workflow-ledger-tasks
+# - workflow-outputs
 [workspace.dependencies.gandr-surface-evaluate]
 path = "crates/surface-evaluate"
 
@@ -1132,6 +1135,7 @@ path = "crates/surface-render-remote"
 # - surface-repl
 # - surface-session (dev)
 # - surface-tui
+# - workflow-outputs
 [workspace.dependencies.gandr-surface-render-terminal]
 path = "crates/surface-render-terminal"
 
@@ -1535,6 +1539,13 @@ path = "crates/workflow-github"
 # - workflow-parser-report
 [workspace.dependencies.gandr-workflow-ledger-tasks]
 path = "crates/workflow-ledger-tasks"
+
+# The writer of each kind of output: a value that a program computes from
+# the tree and that the tree does not hold.
+# consumers:
+# - surface-render-terminal (dev)
+[workspace.dependencies.gandr-workflow-outputs]
+path = "crates/workflow-outputs"
 
 # The corpus sources a sweep test visits: the stated sample under every
 # pull-request profile, the whole corpus under `sweeps`.

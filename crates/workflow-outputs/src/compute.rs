@@ -1,16 +1,23 @@
 //! The values of one kind of output for a tree: each read from the store, or
 //! computed by the writer of the kind and written to the store.
+//!
+//! The writer of the records and the writer of the roles compute one value
+//! from one source. The refusals of a source read the library and the other
+//! sources, so one walk computes them for each source of a tree.
 
 use core::fmt;
 use core::num::NonZeroUsize;
 use core::time::Duration;
 use std::io;
+use std::path::Path;
 use std::time::Instant;
 
 use anodized::spec;
 
 use crate::recovery::RecordError;
 use crate::recovery::Recorder;
+use crate::refusals;
+use crate::refusals::RefusalsError;
 use crate::roles::Roles;
 use crate::roles::RolesError;
 use crate::store::Digest;
@@ -24,15 +31,58 @@ use crate::tree::TreeError;
 /// The kind of the recovery records.
 pub const RECOVERY: Kind = Kind("recovery");
 
+/// The kind of the refusals that `gandr check` prints for a refusing source.
+pub const REFUSALS: Kind = Kind("refusals");
+
 /// The kind of the roles that the highlight gives a source.
 pub const ROLES: Kind = Kind("roles");
 
 /// Each kind, in the order of the names.
-pub const KINDS: [Kind; 2] = [RECOVERY, ROLES];
+pub const KINDS: [Kind; 3] = [RECOVERY, REFUSALS, ROLES];
 
-/// The package that computes each kind. Its closure in the workspace is the
-/// tool of each kind.
+/// The package that holds the writer of each kind. Its closure in the
+/// workspace builds the binary.
 pub const TOOL_PACKAGE: &str = "gandr-workflow-outputs";
+
+/// The directory below `crates/` of the package that holds each writer.
+pub const TOOL_DIRECTORY: &str = "workflow-outputs";
+
+/// The packages that compute the kind `kind`, beside the package of the
+/// writers.
+///
+/// Their closure in the workspace is the tool of the kind, so a change of a
+/// package that only another kind reads moves no key of `kind`.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn packages(kind: Kind) -> &'static [&'static str]
+{
+    if kind == RECOVERY {
+        &[
+            "gandr-surface-grammar",
+            "gandr-surface-parser",
+            "gandr-surface-syntax",
+        ]
+    }
+    else if kind == ROLES {
+        &[
+            "gandr-surface-grammar",
+            "gandr-surface-parser",
+            "gandr-surface-render-remote",
+            "gandr-surface-syntax",
+        ]
+    }
+    else {
+        &[
+            "gandr-surface-diagnostics",
+            "gandr-surface-dispatcher",
+            "gandr-surface-evaluate",
+            "gandr-surface-render-terminal",
+        ]
+    }
+}
 
 /// The writer of the values of one kind, under one grammar.
 #[derive(Debug)]
@@ -115,6 +165,8 @@ pub enum ComputeError
         /// The refusal of the writer.
         error: RolesError,
     },
+    /// The walk of the refusing sources could not read a path.
+    Refusals(RefusalsError),
     /// The store could not be read or written.
     Store(io::Error),
 }
@@ -141,6 +193,7 @@ impl fmt::Display for ComputeError
                 ref name,
                 ref error,
             } => write!(f, "{name}: {error}"),
+            Self::Refusals(ref error) => write!(f, "{error}"),
             Self::Store(ref error) => write!(f, "the store: {error}"),
         }
     }
@@ -444,25 +497,155 @@ pub fn listed(
     kind: Kind,
 ) -> Result<Option<Valued>, ComputeError>
 {
-    let Some(entries) = store.listed(kind, tree.id()).map_err(ComputeError::Store)?
+    Ok(read_list(store, kind, tree.id())?.map(|(_, values)| values))
+}
+
+/// The entries of a list, and the value of each entry.
+type ListedValues = (Vec<Listed>, Valued);
+
+/// The list of `kind` that `store` holds at `name`, with the value of each
+/// entry, or `None` when the store has no such list or lacks a value of it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ComputeError::Store`] when the store refuses.
+fn read_list(
+    store: &Store,
+    kind: Kind,
+    name: &str,
+) -> Result<Option<ListedValues>, ComputeError>
+{
+    let Some(entries) = store.listed(kind, name).map_err(ComputeError::Store)?
     else {
         return Ok(None);
     };
     let mut values = Vec::with_capacity(entries.len());
-    for entry in entries {
+    for entry in &entries {
         let Some(value) = store.get(kind, &entry.key).map_err(ComputeError::Store)?
         else {
             return Ok(None);
         };
         values.push((
             Source {
-                name: entry.name,
-                object: entry.object,
+                name: entry.name.clone(),
+                object: entry.object.clone(),
             },
             value,
         ));
     }
-    Ok(Some(values))
+    Ok(Some((entries, values)))
+}
+
+/// The refusals of each refusing source of `tree` under the tool `tool`.
+///
+/// One walk computes them all, because a refusal reads the library and the
+/// other sources. The store holds each text at the digest of its bytes, so
+/// two trees share a text that did not change. It holds the list of the
+/// texts at the digest of the tool with the inputs of the walk, so a tree
+/// with those inputs needs no walk. `checkout` is a directory that holds the
+/// files of `tree`. With no such directory and no list, the run gives
+/// `None`.
+///
+/// # Specification
+/// - ensures: the values are in name order.
+///
+/// # Errors
+/// [`ComputeError`] when the tree, the walk or the store refuses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run with no directory and no list gives nothing; a run
+///   with the directory walks one time; a second tree with the same corpus
+///   needs no directory and no walk.
+/// - witness: `compute::tests::one_walk_serves_each_tree_with_its_inputs`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |values| values.as_ref().is_none_or(|values| values.values.is_sorted_by(|left, right| left.0 <= right.0))))]
+#[inline]
+pub fn refusals(
+    store: &Store,
+    tree: &Tree,
+    tool: &Digest,
+    checkout: Option<&Path>,
+) -> Result<Option<Values>, ComputeError>
+{
+    let mut parts = Vec::new();
+    let started = Instant::now();
+    let sources = tree.refusing().map_err(ComputeError::Tree)?;
+    let inputs = tree.refusal_inputs().map_err(ComputeError::Tree)?;
+    let walk = Digest::of_parts([b"walk".as_slice(), tool.0.as_slice(), inputs.as_bytes()]).hex();
+    parts.push(Part {
+        name: "list the sources",
+        count: sources.len(),
+        time: started.elapsed(),
+    });
+    let started = Instant::now();
+    let held = read_list(store, REFUSALS, &walk)?;
+    parts.push(Part {
+        name: "read the list",
+        count: held.as_ref().map_or(0, |held| held.1.len()),
+        time: started.elapsed(),
+    });
+    if let Some((entries, values)) = held {
+        store
+            .list(REFUSALS, tree.id(), &entries)
+            .map_err(ComputeError::Store)?;
+        return Ok(Some(Values {
+            values,
+            computed: 0,
+            parts,
+        }));
+    }
+    let Some(checkout) = checkout
+    else {
+        return Ok(None);
+    };
+    let started = Instant::now();
+    let roots = refusals::REFUSING
+        .iter()
+        .map(|directory| checkout.join("corpus").join(directory))
+        .filter(|root| root.exists())
+        .collect();
+    let rendered = refusals::rendered(checkout, roots).map_err(ComputeError::Refusals)?;
+    parts.push(Part {
+        name: "walk the sources",
+        count: rendered.len(),
+        time: started.elapsed(),
+    });
+    let started = Instant::now();
+    let mut entries = Vec::with_capacity(sources.len());
+    let mut values = Vec::with_capacity(sources.len());
+    for source in sources {
+        let text = source
+            .name
+            .strip_prefix("fixture/")
+            .and_then(|below| rendered.get(Path::new(below)))
+            .map_or("", String::as_str);
+        let key = Digest::of_parts([b"text".as_slice(), text.as_bytes()]);
+        store
+            .put(REFUSALS, &key, text.as_bytes())
+            .map_err(ComputeError::Store)?;
+        entries.push(Listed {
+            key,
+            object: source.object.clone(),
+            name: source.name.clone(),
+        });
+        values.push((source, text.as_bytes().to_vec()));
+    }
+    for name in [walk.as_str(), tree.id()] {
+        store
+            .list(REFUSALS, name, &entries)
+            .map_err(ComputeError::Store)?;
+    }
+    parts.push(Part {
+        name: "write the store",
+        count: values.len(),
+        time: started.elapsed(),
+    });
+    Ok(Some(Values {
+        computed: values.len(),
+        values,
+        parts,
+    }))
 }
 
 #[cfg(test)]
@@ -471,10 +654,12 @@ mod tests
     use gandr_surface_grammar::built_in;
 
     use super::RECOVERY;
+    use super::REFUSALS;
     use super::ROLES;
     use super::Writer;
     use super::held;
     use super::listed;
+    use super::refusals;
     use super::values;
     use crate::recovery::Recorder;
     use crate::roles::Roles;
@@ -616,6 +801,45 @@ mod tests
             None,
             "the list of the records is no list of the roles"
         );
+        std::fs::remove_dir_all(root).expect("the repository is removed");
+    }
+
+    /// A run with no directory of the tree and no list gives nothing. A run
+    /// with the directory walks one time and lists the tree. A second tree
+    /// with the same corpus and another file needs no directory and no walk.
+    #[test]
+    fn one_walk_serves_each_tree_with_its_inputs()
+    {
+        let root = scratch_repository("refusals", &[(
+            "corpus/pathological/unformatted/open.gandr",
+            CUT,
+        )]);
+        let store = Store::at(root.join(".git/store"));
+        let tree = Tree::of_revision(&root, "HEAD").expect("the commit has a tree");
+        let tool = Digest::of_parts([b"tool".as_slice()]);
+        assert!(
+            refusals(&store, &tree, &tool, None)
+                .expect("the store reads")
+                .is_none(),
+            "no directory and no list give nothing"
+        );
+        let walked = refusals(&store, &tree, &tool, Some(&root))
+            .expect("the walk reads the source")
+            .expect("the directory gives the values");
+        assert_eq!(walked.computed, 1);
+        assert_eq!(
+            listed(&store, &tree, REFUSALS).expect("the store reads"),
+            Some(walked.values.clone())
+        );
+        std::fs::write(root.join("notes.md"), "notes\n").expect("the file is written");
+        let other =
+            Tree::of_work_tree(&root, &root.join(".git")).expect("the work tree has a tree");
+        assert_ne!(other.id(), tree.id());
+        let read = refusals(&store, &other, &tool, None)
+            .expect("the store reads")
+            .expect("the list of the inputs gives the values");
+        assert_eq!(read.computed, 0);
+        assert_eq!(read.values, walked.values);
         std::fs::remove_dir_all(root).expect("the repository is removed");
     }
 }

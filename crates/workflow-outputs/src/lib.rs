@@ -3,6 +3,8 @@
 //! digest of its tool and its input, so a run computes each value one time.
 //!
 //! - [`recovery`] writes the recovery record of a corpus source.
+//! - [`refusals`] writes the refusals that `gandr check` prints for each
+//!   refusing source of a checkout.
 //! - [`roles`] writes the roles that the highlight gives a corpus source.
 //! - [`store`] holds each value in one file, named by its key.
 //! - [`tree`] reads a tree of the repository from git: its sources and the tool
@@ -18,9 +20,10 @@
 //! - [`gauge`] watches the size of the store and the values that a run computes
 //!   again, each with its bound and its event.
 //!
-//! The recovery sweep of `gandr-surface-parser` compares the record of each
-//! source with this writer's record, so the sweep and the store cannot hold
-//! two different records.
+//! The golden test of `gandr-surface-render-terminal` compares the refusals
+//! of each refusing source with a file, and takes each text from the writer
+//! of [`refusals`]. So the files and the store cannot hold two different
+//! texts.
 
 extern crate alloc;
 
@@ -29,6 +32,7 @@ pub mod compute;
 pub mod difference;
 pub mod gauge;
 pub mod recovery;
+pub mod refusals;
 pub mod roles;
 pub mod store;
 pub mod tree;

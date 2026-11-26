@@ -34,7 +34,8 @@ quenchant-shape.workspace = true
 # golden cuts a checker refusal's origin table down to its primary node, which
 # names the refusal's node through the checker's and the corpus's types; it
 # parses the JSON image back; and the corpus's refusing sources each pin their
-# rendered refusals in a golden `expect-test` rewrites.
+# rendered refusals in a golden `expect-test` rewrites, with each text from the
+# writer of the outputs crate.
 [dev-dependencies]
 expect-test.workspace = true
 gandr-core-checker.workspace = true
@@ -43,6 +44,7 @@ gandr-surface-dispatcher.workspace = true
 gandr-surface-evaluate.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
+gandr-workflow-outputs.workspace = true
 serde_json.workspace = true
 
 [lints]

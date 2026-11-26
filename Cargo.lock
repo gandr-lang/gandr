@@ -2278,6 +2278,7 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-syntax",
+ "gandr-workflow-outputs",
  "quenchant-anodized",
  "quenchant-shape",
  "serde_json",
@@ -2757,9 +2758,13 @@ name = "gandr-workflow-outputs"
 version = "0.0.0"
 dependencies = [
  "blake3",
+ "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
+ "gandr-surface-evaluate",
  "gandr-surface-grammar",
  "gandr-surface-parser",
  "gandr-surface-render-remote",
+ "gandr-surface-render-terminal",
  "gandr-surface-syntax",
  "quenchant-anodized",
  "serde_json",

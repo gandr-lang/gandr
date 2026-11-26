@@ -1,33 +1,17 @@
 //! The rendered refusals of the corpus's refusing sources, each pinned as
-//! the text a face prints.
+//! the text a face prints. The writer of the outputs crate gives each text,
+//! so the goldens and the store of outputs hold one text for a source.
 //!
 //! The cases, in a `cfg(test)` module so the crate's lint wall reads them as
 //! test code rather than as shipping code.
 
-use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use core::convert::Infallible;
-use core::ops::ControlFlow;
 use std::path::Path;
 use std::path::PathBuf;
 
 use expect_test::expect_file;
-use gandr_surface_diagnostics::Verbosity;
-use gandr_surface_dispatcher::Goals;
-use gandr_surface_dispatcher::Pool;
-use gandr_surface_dispatcher::Refusals;
-use gandr_surface_dispatcher::Step;
-use gandr_surface_dispatcher::Verb;
-use gandr_surface_dispatcher::Walk;
-use gandr_surface_dispatcher::Width;
-use gandr_surface_dispatcher::entries;
-use gandr_surface_evaluate::Evaluator;
-use gandr_surface_render_terminal::RenderStyle;
-use gandr_surface_render_terminal::render;
-
-/// The corpus directories whose sources state refusals: the pathological
-/// twins, and one exemplar per refusal name.
-const REFUSING: [&str; 2] = ["pathological", "ledger/diagnostics"];
+use gandr_workflow_outputs::refusals::REFUSING;
+use gandr_workflow_outputs::refusals::rendered;
 
 /// The checkout's root, as the walk reaches it.
 ///
@@ -68,57 +52,6 @@ fn goldens_under(dir: &Path) -> Vec<PathBuf>
     files
 }
 
-/// The refusals of each refusing source under `roots`, each a path under the
-/// repository's `corpus/`, as `gandr check` prints an unexpected one, by the
-/// source's path under `corpus/`: each diagnostic plain at the user's
-/// verbosity, in the order the source prints them, a blank line between two.
-/// A source that prints nothing has no entry.
-///
-/// # Specification
-/// trivial.
-fn rendered(
-    repository: &Path,
-    roots: Vec<PathBuf>,
-) -> BTreeMap<PathBuf, String>
-{
-    let corpus = repository.join("corpus");
-    let prefix = format!("{}/", repository.display());
-    let mut rendered = BTreeMap::new();
-    let mut faults = Vec::new();
-    let ControlFlow::Continue(_report) = Walk::new(roots).visit::<Evaluator, _, _>(
-        &Pool::new(Width::PerformanceCores),
-        |step| -> ControlFlow<Infallible> {
-            match step {
-                Step::Source { path, .. } => {
-                    let mut text = String::new();
-                    for diagnostic in entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
-                        .refusals(Refusals::Every)
-                    {
-                        if !text.is_empty() {
-                            text.push('\n');
-                        }
-                        text.push_str(
-                            render(&diagnostic, RenderStyle::Plain, Verbosity::User).as_ref(),
-                        );
-                        text.push('\n');
-                    }
-                    if !text.is_empty() {
-                        let relative = path
-                            .strip_prefix(&corpus)
-                            .expect("a walked source lies under the corpus")
-                            .to_path_buf();
-                        drop(rendered.insert(relative, text.replace(&prefix, "")));
-                    }
-                },
-                Step::Fault { path, .. } => faults.push(path.to_path_buf()),
-            }
-            ControlFlow::Continue(())
-        },
-    );
-    assert!(faults.is_empty(), "every refusing source reads: {faults:?}");
-    rendered
-}
-
 /// Every refusing source's rendered refusals match its golden under
 /// `tests/golden/corpus/`, at its path in the corpus, so the text a reader
 /// is shown for each refusal name is a reviewed public surface. A golden
@@ -135,7 +68,8 @@ fn every_refusing_source_renders_as_its_golden()
         .iter()
         .map(|directory| repository.join("corpus").join(directory))
         .collect();
-    for (relative, text) in rendered(&repository, roots) {
+    let refusals = rendered(&repository, roots).expect("every refusing source reads");
+    for (relative, text) in refusals {
         let golden = goldens.join(relative).with_extension("txt");
         if update && let Some(parent) = golden.parent() {
             std::fs::create_dir_all(parent).expect("the golden's directory is created");
@@ -171,7 +105,8 @@ fn cyclic_circuit_wiring_names_its_port_5805()
 {
     let source = "pathological/circuit/circuit-cyclic-wiring.gandr";
     let repository = repository();
-    let refusals = rendered(&repository, vec![repository.join("corpus").join(source)]);
+    let refusals = rendered(&repository, vec![repository.join("corpus").join(source)])
+        .expect("the cyclic circuit fixture reads");
     let rendered = refusals
         .get(Path::new(source))
         .expect("the cyclic circuit fixture is refused");

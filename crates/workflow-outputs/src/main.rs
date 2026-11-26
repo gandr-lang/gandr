@@ -6,10 +6,15 @@
 //! outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]
 //! ```
 //!
-//! A kind is `recovery`, the recovery record of a source, or `roles`, the
+//! A kind is `recovery`, the recovery record of a source, `refusals`, the
+//! refusals that `gandr check` prints for a refusing source, or `roles`, the
 //! roles that the highlight gives a source. `<kinds>` is one kind, two or
 //! more kinds with a comma between them, or `all`. One run answers each kind
 //! that it names, and reads each tree one time. `--print` takes one kind.
+//!
+//! One walk computes the refusals of each source of a tree, and it reads the
+//! files of a checkout. The run walks its own work tree. The binary of a
+//! commit walks any other tree, in the checkout below the target directory.
 //!
 //! With no revision, the tree is the work tree with its changes. The store is
 //! the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs`.
@@ -60,7 +65,6 @@ use gandr_workflow_outputs::roles::Roles;
 use gandr_workflow_outputs::store::Digest;
 use gandr_workflow_outputs::store::Kind;
 use gandr_workflow_outputs::store::Store;
-use gandr_workflow_outputs::tree::Source;
 use gandr_workflow_outputs::tree::Tree;
 use gandr_workflow_outputs::word;
 use gandr_workflow_outputs::workspace;
@@ -69,7 +73,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is recovery or roles; <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
+const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is recovery, refusals or roles; <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
 
 /// How many changes `difference` prints when the command line names no
 /// count.
@@ -198,13 +202,18 @@ struct Run
     root: PathBuf,
     /// The store.
     store: Store,
-    /// The directories of the packages that build the tool of the kind.
-    packages: Vec<String>,
+    /// For each kind, the directories of the packages that compute it.
+    packages: Vec<(Kind, Vec<String>)>,
+    /// The directories of the packages that build the binary.
+    manifests: Vec<String>,
     /// The grammar, built when the run first computes a value.
     pbg: Option<Pbg>,
-    /// Each tree that the run has read, with its revision and its tool. The
-    /// work tree has no revision.
-    trees: Vec<(Option<String>, Tree, Digest)>,
+    /// Each tree that the run has read, with its revision. The work tree has
+    /// no revision.
+    trees: Vec<(Option<String>, Tree)>,
+    /// The tool of each kind in each tree that the run has asked for, by the
+    /// git tree identifier.
+    tools: Vec<(String, Kind, Digest)>,
     /// The parts of the run, in their order.
     parts: Vec<Part>,
 }
@@ -231,24 +240,39 @@ impl Run
             .map_err(|error| format!("cargo metadata: {error}"))?;
         let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout)
             .map_err(|error| format!("cargo metadata: {error}"))?;
-        let packages = workspace::closure(&metadata, compute::TOOL_PACKAGE);
+        let manifests = workspace::closure(&metadata, compute::TOOL_PACKAGE);
+        let packages = compute::KINDS
+            .iter()
+            .map(|&kind| {
+                let mut directories: Vec<String> = compute::packages(kind)
+                    .iter()
+                    .flat_map(|package| workspace::closure(&metadata, package))
+                    .chain([compute::TOOL_DIRECTORY.to_owned()])
+                    .collect();
+                directories.sort();
+                directories.dedup();
+                (kind, directories)
+            })
+            .collect();
         let parts = vec![Part {
             name: "read the workspace",
-            count: packages.len(),
+            count: manifests.len(),
             time: started.elapsed(),
         }];
         Ok(Self {
             store: Store::asked(&root),
             root,
             packages,
+            manifests,
             pbg: None,
             trees: Vec::new(),
+            tools: Vec::new(),
             parts,
         })
     }
 
-    /// The tree of `revision`, or of the work tree, and its tool. A run reads
-    /// each tree one time.
+    /// The tree of `revision`, or of the work tree. A run reads each tree one
+    /// time.
     ///
     /// # Specification
     /// trivial.
@@ -258,14 +282,14 @@ impl Run
     fn tree(
         &mut self,
         revision: Option<&str>,
-    ) -> Result<(Tree, Digest), String>
+    ) -> Result<Tree, String>
     {
-        if let Some(&(_, ref tree, tool)) = self
+        if let Some(&(_, ref tree)) = self
             .trees
             .iter()
-            .find(|&&(ref read, ..)| read.as_deref() == revision)
+            .find(|&&(ref read, _)| read.as_deref() == revision)
         {
-            return Ok((tree.clone(), tool));
+            return Ok(tree.clone());
         }
         let started = Instant::now();
         let tree = revision
@@ -274,33 +298,82 @@ impl Run
                 |revision| Tree::of_revision(&self.root, revision),
             )
             .map_err(|error| error.to_string())?;
-        let packages: Vec<&str> = self.packages.iter().map(String::as_str).collect();
-        let tool = tree.tool(&packages).map_err(|error| error.to_string())?;
         self.parts.push(Part {
             name: "read a tree",
             count: 1,
             time: started.elapsed(),
         });
-        self.trees
-            .push((revision.map(str::to_owned), tree.clone(), tool));
-        Ok((tree, tool))
+        self.trees.push((revision.map(str::to_owned), tree.clone()));
+        Ok(tree)
     }
 
-    /// The values of the kind `kind` of `tree` under `tool`, computed in this
-    /// run.
+    /// The tool of the kind `kind` in `tree`. A run reads each tool one time.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// The refusal of the grammar, of the tree or of the store.
+    /// The refusal of git.
+    fn tool(
+        &mut self,
+        tree: &Tree,
+        kind: Kind,
+    ) -> Result<Digest, String>
+    {
+        if let Some(&(_, _, tool)) = self
+            .tools
+            .iter()
+            .find(|&&(ref id, held, _)| id == tree.id() && held == kind)
+        {
+            return Ok(tool);
+        }
+        let started = Instant::now();
+        let packages: Vec<&str> = self
+            .packages
+            .iter()
+            .find(|&&(held, _)| held == kind)
+            .map_or_else(Vec::new, |&(_, ref directories)| {
+                directories.iter().map(String::as_str).collect()
+            });
+        let manifests: Vec<&str> = self.manifests.iter().map(String::as_str).collect();
+        let tool = tree
+            .tool(&packages, &manifests)
+            .map_err(|error| error.to_string())?;
+        self.parts.push(Part {
+            name: "read a tool",
+            count: packages.len(),
+            time: started.elapsed(),
+        });
+        self.tools.push((tree.id().to_owned(), kind, tool));
+        Ok(tool)
+    }
+
+    /// The values of the kind `kind` of `tree` under `tool`, computed in this
+    /// run, or `None` when the kind needs the files of the tree and the work
+    /// tree does not hold them.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The refusal of the grammar, of the tree, of the walk or of the store.
     fn compute(
         &mut self,
         tree: &Tree,
         tool: &Digest,
         kind: Kind,
-    ) -> Result<compute::Values, String>
+    ) -> Result<Option<compute::Values>, String>
     {
+        if kind == compute::REFUSALS {
+            let work = self.tree(None)?;
+            let checkout = (work.id() == tree.id()).then(|| self.root.clone());
+            let values = compute::refusals(&self.store, tree, tool, checkout.as_deref())
+                .map_err(|error| error.to_string())?;
+            if let Some(ref values) = values {
+                self.parts.extend(values.parts.iter().copied());
+            }
+            return Ok(values);
+        }
         if self.pbg.is_none() {
             let started = Instant::now();
             self.pbg = Some(built_in().map_err(|error| format!("the built-in grammar: {error}"))?);
@@ -323,7 +396,7 @@ impl Run
         let values =
             compute::values(&self.store, tree, tool, &writer).map_err(|error| error.to_string())?;
         self.parts.extend(values.parts.iter().copied());
-        Ok(values)
+        Ok(Some(values))
     }
 
     /// The values of the kind `kind` of the side `revision`, and how many
@@ -344,9 +417,11 @@ impl Run
         kind: Kind,
     ) -> Result<(Valued, usize), String>
     {
-        let (tree, tool) = self.tree(revision)?;
-        if revision.is_none() || *own == tool {
-            let values = self.compute(&tree, &tool, kind)?;
+        let tree = self.tree(revision)?;
+        let tool = self.tool(&tree, kind)?;
+        if (revision.is_none() || *own == tool)
+            && let Some(values) = self.compute(&tree, &tool, kind)?
+        {
             return Ok((values.values, values.computed));
         }
         let started = Instant::now();
@@ -360,53 +435,24 @@ impl Run
         if let Some(values) = listed {
             return Ok((values, 0));
         }
-        // A binary with no list wrote each value at the key that this run
-        // gives it, when the packages of the tool are the same in both trees.
-        let held =
-            compute::held(&self.store, &tree, &tool, kind).map_err(|error| error.to_string())?;
-        let missing = held.missing();
-        if missing == 0 {
-            return Ok((held_values(held), 0));
-        }
         let commit = revision.unwrap_or("HEAD");
         let started = Instant::now();
-        let known = checkout::compute(&self.root, &self.store, kind, commit)?;
+        let values = if checkout::compute(&self.root, &self.store, kind, commit)? {
+            compute::listed(&self.store, &tree, kind)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| format!("the tool of {commit} wrote no list of its tree"))?
+        }
+        else {
+            Vec::new()
+        };
+        let count = values.len();
         self.parts.push(Part {
             name: "run the other tool",
-            count: missing,
+            count,
             time: started.elapsed(),
         });
-        if !known {
-            return Ok((Vec::new(), 0));
-        }
-        if let Some(values) =
-            compute::listed(&self.store, &tree, kind).map_err(|error| error.to_string())?
-        {
-            return Ok((values, missing));
-        }
-        let held =
-            compute::held(&self.store, &tree, &tool, kind).map_err(|error| error.to_string())?;
-        let left = held.missing();
-        if left > 0 {
-            return Err(format!(
-                "the tool of {commit} wrote no list of its tree and {left} values fewer than the tree has"
-            ));
-        }
-        Ok((held_values(held), missing))
+        Ok((values, count))
     }
-}
-
-/// The values of `held`, each source with its value.
-///
-/// # Specification
-/// trivial.
-fn held_values(held: compute::Held) -> Vec<(Source, Vec<u8>)>
-{
-    held.sources
-        .into_iter()
-        .zip(held.values)
-        .map(|(source, value)| (source, value.unwrap_or_default()))
-        .collect()
 }
 
 /// The difference of the kind `kind` between the base and the head of
@@ -430,7 +476,8 @@ fn differ(
     let name = kind.0;
     let base = asked.base.as_deref().unwrap_or("HEAD");
     let head = asked.revision.as_deref();
-    let own = run.tree(None)?.1;
+    let work = run.tree(None)?;
+    let own = run.tool(&work, kind)?;
     let (head_values, head_computed) = run.side(head, &own, kind)?;
     let (base_values, base_computed) = run.side(Some(base), &own, kind)?;
     let changes = difference::changes(&base_values, &head_values);
@@ -483,8 +530,14 @@ fn computed(
 ) -> Result<(), String>
 {
     let name = kind.0;
-    let (tree, tool) = run.tree(asked.revision.as_deref())?;
-    let values = run.compute(&tree, &tool, kind)?;
+    let tree = run.tree(asked.revision.as_deref())?;
+    let tool = run.tool(&tree, kind)?;
+    let values = run.compute(&tree, &tool, kind)?.ok_or_else(|| {
+        format!(
+            "{name}: the work tree does not hold the files of {}, and the store has no list of them",
+            asked.revision.as_deref().unwrap_or("the tree")
+        )
+    })?;
     if asked.print {
         for &(ref source, ref value) in &values.values {
             let value = String::from_utf8_lossy(value);
