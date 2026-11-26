@@ -5723,9 +5723,9 @@ fn deployed(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `declared` holds one more entry for each key of a source that
-///   the lowering read, in the order of the keys. A fault and a source that
-///   the lowering refused whole add nothing.
+/// - ensures: `declared` holds one more entry for each key of a source that the
+///   lowering read, in the order of the keys. A fault and a source that the
+///   lowering refused whole add nothing.
 /// - provides: the keys that [`known`] compares after the walk.
 /// - fails: never.
 /// - panics: none.
@@ -5767,8 +5767,8 @@ fn read_declared(
 /// - requires: nothing.
 /// - ensures: a key that is no row of the ledger is one line `gandr: <path>:
 ///   ToolchainUnmet.feature.<key>: …` on standard error and unsettles the run.
-///   A run with no declared key reads no ledger and settles. A ledger that
-///   does not read is one line on standard error, and faults.
+///   A run with no declared key reads no ledger and settles. A ledger that does
+///   not read is one line on standard error, and faults.
 /// - provides: the check that `gandr check` and `gandr test` make of each
 ///   declaration of features.
 /// - fails: the first write error.

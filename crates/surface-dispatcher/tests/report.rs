@@ -188,6 +188,7 @@ fn each_count_decides_its_verdict()
         deprecated: Vec::new(),
         parted: Vec::new(),
         marks: Vec::new(),
+        declared: Vec::new(),
         unused: Vec::new(),
         unreached: Vec::new(),
         program,
