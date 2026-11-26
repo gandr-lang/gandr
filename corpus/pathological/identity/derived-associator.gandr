@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "modules", "pattern-matching"))]
+
 /// A model that writes a derived filler is refused, naming the derivation.
 ///
 /// The associator of four is the monoid's derived filler, so a model owes

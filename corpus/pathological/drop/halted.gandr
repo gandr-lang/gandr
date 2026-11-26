@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "signatures-as-values", "temporary-access", "universes"))]
+
 // `halted` performs an operation with no continuation inside an unwind.
 //
 // An unwind runs to completion under the empty row. It must not stop on an

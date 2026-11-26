@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 // An update of one field of a wide record copies every other field, and its
 // cost is the record's width.
 

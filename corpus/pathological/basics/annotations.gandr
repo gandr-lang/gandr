@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "explicit-exits", "let-statements", "products-and-sums", "records", "thunks-and-force"))]
+
 // What an annotation states is checked, not trusted: wherever it stands, the
 // value it ascribes is checked against it. An annotated value is still a
 // value, and stands only where a value does.

@@ -11,6 +11,8 @@
 //! - see: file-base.gandr — the file protocol
 //!
 //! [Rust-std]: https://doc.rust-lang.org/std/ "The Rust Project, The Rust Standard Library"
+@![features(("call-by-push-value", "imports", "let-statements", "modules", "records", "session-types"))]
+
 import "../../model/moves/file-base.gandr"
 
 /// `leaked` returns with a handle in its linear slot.

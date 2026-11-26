@@ -1,3 +1,5 @@
+@![features(("data-parameters", "mutual-recursion", "nominal-data", "universes"))]
+
 // Codes `Eq.generic` reads but derives no equality from yet. `List`'s
 // code is `1` for `Nil` and `field(a) × var List` for `Cons`: the leaf reads
 // the parameter, whose equality the derivation would need supplied. A `rec`

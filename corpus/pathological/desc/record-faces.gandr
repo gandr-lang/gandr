@@ -1,3 +1,5 @@
+@![features(("codata", "data-parameters", "deduced-receivers", "extension-types", "indexed-data", "lazy-records", "let-statements", "modules", "native-primitives", "records", "universes"))]
+
 // A record type's faces refused: one face holds a label the record lacks, and
 // one face is named twice. An extension type is refused when it names a field
 // or a face that the record type lacks. Another fixes a field at a value of

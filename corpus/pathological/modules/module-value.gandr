@@ -1,3 +1,5 @@
+@![features(("data-parameters", "modules", "native-primitives", "signatures-as-values", "universes"))]
+
 /// A module no model type ascribes is no value.
 ///
 /// A module's name stands as a value only through the model type its header

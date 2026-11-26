@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching"))]
+
 // Matches of no arm over a free type whose endpoints are not shown apart:
 // the first difference, read side by side, is a variable, which may be the
 // term on the other side.

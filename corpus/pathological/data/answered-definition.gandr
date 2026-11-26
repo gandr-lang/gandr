@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "universes"))]
+
 // A constructor ending a body whose result decodes what the lowering cannot
 // read through states no type it can carry: it is refused as unannotated
 // where it is written, never dropped.

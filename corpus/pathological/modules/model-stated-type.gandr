@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "identity-types", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "universes"))]
+
 // This source shows two stated types that compare through a model slot. Two
 // modules answer the first slot, and no module answers the second.
 //

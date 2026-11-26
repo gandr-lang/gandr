@@ -1,3 +1,5 @@
+@![features("records")]
+
 // A record update of a value that is no record is refused: the base's type is
 // read before the fields the update writes, and an integer is no record.
 

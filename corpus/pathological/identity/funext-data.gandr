@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching"))]
+
 // What function extensionality at data types refuses: two functions that
 // differ at a constructor are refused at that pattern, and a type holding
 // itself, whose coverage would recur, is outside the vocabulary.

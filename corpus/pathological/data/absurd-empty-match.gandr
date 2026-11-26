@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 data Empty : Type where {}
 
 def absurd(v : Empty) -> Integer =

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "modules"))]
+
 // A bisimilarity that leaves out the path its payloads owe.
 
 // The judges and the path between their verdicts' nestings.

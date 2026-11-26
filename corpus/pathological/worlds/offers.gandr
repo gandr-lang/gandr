@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "deployment-offers", "imports", "modules", "native-lists", "signature-models", "signatures-as-values", "universes", "visibility"))]
+
 // Deployments the check refuses before any process starts.
 //
 // A deployment pairs a role's requirement with a site's offer, and a mismatch

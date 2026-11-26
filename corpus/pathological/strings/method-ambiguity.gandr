@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "modules"))]
+
 // A method name two modules declare: a call resolves its name among the
 // methods of every module in scope, and refuses it when more than one module
 // declares it, naming each.

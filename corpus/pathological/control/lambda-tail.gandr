@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "nominal-data", "universes"))]
+
 // Two tail lambdas keep their `return`, and the checker refuses each one.
 //
 // The checker reads a bare tail lambda as a returned box only where the

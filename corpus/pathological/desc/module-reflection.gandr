@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "modules"))]
+
 // A model does not reach a function through a theory variable, nor an inert
 // field or a package's entries outside an inert declaration.
 //

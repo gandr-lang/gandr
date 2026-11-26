@@ -1,3 +1,5 @@
+@![features(("imports", "module-nesting", "modules"))]
+
 // The refusals beside `../../model/modules/model-nested.gandr`: a nested model
 // answered by a nested module with no ascription is refused at the outer
 // module's header, the attribute before the module stating its expectation

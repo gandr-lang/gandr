@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "implicit-arguments", "imports", "let-statements", "native-primitives", "pattern-matching", "records", "universes"))]
+
 // The refusals of implicit parameters: a call omitting an implicit
 // nothing determines, one whose only solution names a binder of an
 // argument's own lambda, a call whose argument and expected type disagree on

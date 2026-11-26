@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "imports", "modules", "native-primitives"))]
+
 // The refusal beside `../../model/modules/functor-pair.gandr`: an argument
 // component at another type than its parameter states is refused at the
 // witness that checks it. The attribute before the application states the

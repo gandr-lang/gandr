@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "indexed-data", "let-statements", "products-and-sums", "universes"))]
+
 // The twin of `model/interop/thir/example.gandr`: where a claim on
 // `example`'s precondition is refused.
 //

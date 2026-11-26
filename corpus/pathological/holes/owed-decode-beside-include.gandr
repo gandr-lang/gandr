@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 // An owed code's decode beside a theory that includes another. A model of the
 // including theory stands at a model of the included one by its reduct, and
 // the bridge looks for that crossing only between types it can decide: the

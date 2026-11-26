@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "interop-boundary"))]
+
 // An `extern "rust"` block outside the form or its row, and an undeclared
 // call, each refused where it stands.
 //

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "session-types", "temporary-access"))]
+
 // An unwind is a shielded section: it runs to completion under the empty row,
 // which carries no abandonment, so a cancellation written inside one is
 // refused, and no cancellation reaches a cancellation already running.

@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 // A pattern hole inside a constructor's payload leaves which values of the
 // payload the arm covers undecided, and the checker refuses the match.
 //

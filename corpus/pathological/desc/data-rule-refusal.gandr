@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "nominal-data", "universes"))]
+
 // A data type's attribute states a refusal in its rule.
 //
 // The rule applies `L`, which its signature does not declare. The data type

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 // An endpoint named inside a capability scope's body: the scope's clause
 // receives the rest of the body as its continuation, and may drop it or
 // resume it twice, so an end the body acts on after an operation could be

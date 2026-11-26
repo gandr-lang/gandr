@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "thunks-and-force", "universes"))]
+
 @[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
 def comp(
   a : Type,

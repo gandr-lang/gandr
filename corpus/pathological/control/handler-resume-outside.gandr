@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records"))]
+
 // A continuation named outside its clause.
 //
 // An operation clause binds the continuation it resumes, and no other place

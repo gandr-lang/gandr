@@ -1,3 +1,5 @@
+@![features(("imports", "second-order-rules", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/freshness.gandr`: a rule whose variable crosses an
 // abstraction with no condition, and a condition naming an atom the rule does
 // not abstract.

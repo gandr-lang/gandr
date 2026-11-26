@@ -1,3 +1,5 @@
+@![features(("modules", "nominal-data", "universes"))]
+
 // Two data types with one shape are distinct: a `Celsius` value is no
 // `Fahrenheit`, whether the source ascribes it the other type, names that
 // type through an alias or ascribes it in a definition; its twin,

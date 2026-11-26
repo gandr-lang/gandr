@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "effect-rows", "identity-types", "let-statements", "loops", "native-primitives", "pattern-matching", "thunks-and-force", "universes"))]
+
 // What divergence as a row entry refuses: a loop at a row without
 // `Partial`, a call of a diverging function from one, a handler of
 // `Partial`, and an

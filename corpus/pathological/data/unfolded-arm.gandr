@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements"))]
+
 // The twin of `model/data/unfolded-arm.gandr`: the endpoint an arm hands to
 // another definition reads as that definition's call over the stuck call,
 // never as the stuck call alone, so a step that drops the call, or one that

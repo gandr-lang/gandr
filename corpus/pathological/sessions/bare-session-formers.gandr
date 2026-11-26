@@ -1,3 +1,5 @@
+@![features(("data-parameters", "modules", "session-types"))]
+
 // A session former written with no import of its home names no type.
 //
 // `Run`, `Prefix` and `Dialogue` live in `std.session`, and the ambient

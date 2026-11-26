@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "thunks-and-force", "type-codes", "universes"))]
+
 // Each declaration here is a point where the port of Ahman and Bauer's oracle
 // sheaves stops.
 //

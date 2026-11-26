@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A clause that neither resumes nor abandons it would leave the
 // end open with no one left to close it, so the clause is refused.

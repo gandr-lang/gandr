@@ -10,6 +10,8 @@
 //!
 //! - see: #8299
 
+@![features(("data-parameters", "identity-types", "signatures-as-values", "universes"))]
+
 /// The theory of two switches in a series, with no law of commutativity.
 theory Series where
   /// The states of a switch.

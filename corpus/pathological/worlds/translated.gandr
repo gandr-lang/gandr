@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "deployment-offers", "imports", "modules", "native-lists", "signature-models", "visibility"))]
+
 // A translation the default policy refuses before any process starts.
 //
 // A translation is code at a site's boundary, so a manifold admits one only

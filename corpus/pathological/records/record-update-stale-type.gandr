@@ -1,3 +1,5 @@
+@![features("records")]
+
 // A record update that gives a field a value of another type makes a record
 // of the new type, not of the old one.
 

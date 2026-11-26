@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-handlers", "explicit-exits", "imports", "modules", "records"))]
+
 // A capability returned out of the scope that minted it.
 //
 // A handled scope mints its capability in a region, and the capability lives

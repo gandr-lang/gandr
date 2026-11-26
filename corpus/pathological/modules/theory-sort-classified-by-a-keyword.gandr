@@ -1,3 +1,5 @@
+@![features("signatures-as-values")]
+
 @[refuses("MalformedForm")]
 theory Magma where
   sort M : type;

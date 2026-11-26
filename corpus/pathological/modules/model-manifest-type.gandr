@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "records", "signature-models"))]
+
 // What a manifest model type refuses: a model whose carrier is not the one
 // the type fixes, a name that is no sort of the theory, a sort fixed twice, a
 // sort fixed after a head other than `Model`, and a `with` whose right is no

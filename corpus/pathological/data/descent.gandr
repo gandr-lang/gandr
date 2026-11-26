@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // What descent refuses. A claim at the parameter's own value stands at
 // its stage, not below it; claims under matches on two parameters descend on
 // two at once, which is the sized rung's. The twin of

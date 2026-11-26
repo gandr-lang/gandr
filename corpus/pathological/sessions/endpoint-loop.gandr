@@ -1,3 +1,5 @@
+@![features(("effect-rows", "lazy-records", "let-statements", "loops", "pattern-matching", "session-types"))]
+
 // A loop hands its endpoint on at its head's state, and spends it to leave.
 //
 // A pass that runs again before it finishes a turn of the protocol hands the

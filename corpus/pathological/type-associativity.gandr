@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "products-and-sums", "records", "thunks-and-force"))]
+
 def product_chain : Integer * Unit * Integer * String = *{1, *{}, 2, "text"};
 
 def sum_chain : Integer + Unit + Integer + String = +{.2 = 2};

@@ -8,6 +8,8 @@
 //!
 //! - see: corpus/model/regions/lent.gandr — a thunk at the caller region
 
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "thunks-and-force"))]
+
 /// `stash` returns a thunk that forces its region-bound input.
 @[refuses("KeptEscaped")]
 def stash[r : Region](k : (() -> Integer) at r) -> () -> Integer =

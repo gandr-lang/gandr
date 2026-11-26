@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "nominal-data", "universes"))]
+
 // What a motive refuses when its body writes a type with no `return`.
 //
 // A type family's application in a computation's place must refuse by its

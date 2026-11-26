@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 // A pattern hole before an arm may shadow it: whether `Blue` reaches its own
 // arm or the hole is undecided, and the checker refuses the match.
 //

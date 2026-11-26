@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "pattern-matching", "records", "structural-recursion", "tarski-universes", "type-codes", "universes"))]
+
 // The steps of normalisation by evaluation for the simply typed lambda
 // calculus that the checker refuses today.
 //

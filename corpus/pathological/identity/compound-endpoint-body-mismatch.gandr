@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "native-primitives"))]
+
 def dbl(x : Integer) -> Integer =
   x + x
 

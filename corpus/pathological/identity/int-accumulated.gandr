@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // A sum by recursion on its second summand into an accumulator that the
 // integers' rules do not cancel: the fold past its leading accumulator owes
 // each rule as the fold over the first parameter does.

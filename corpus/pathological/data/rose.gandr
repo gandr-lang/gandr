@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // What a rose tree refuses. A family nested in another family's arguments
 // stands below its node only through a parameter the other family holds
 // strictly positively, as `List` holds its elements; a parameter its

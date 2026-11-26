@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "explicit-exits", "imports", "let-statements", "modules", "records"))]
+
 // A `become` inside a handled subject.
 //
 // A handled scope holds its handler until its subject returns, so a tail

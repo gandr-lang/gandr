@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "deduced-receivers", "dependent-functions", "imports", "let-statements", "modules", "native-lists", "pattern-matching", "places", "sized-types", "temporary-access"))]
+
 // What a method answering a place may not be: a method at a deduced mode
 // answers a view of its receiver at that mode and ends in the place itself,
 // its view type stands only as such a method's result, and its element type is

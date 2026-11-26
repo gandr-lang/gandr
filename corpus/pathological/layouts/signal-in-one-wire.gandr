@@ -10,6 +10,8 @@
 //!
 //! - see: #8333
 
+@![features(("data-parameters", "imports", "let-statements", "modules", "pattern-matching"))]
+
 // `Signal` and `Wire`.
 import "../../model/desc/rule-keeps-count.gandr"
 

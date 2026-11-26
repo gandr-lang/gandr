@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "imports", "modules", "native-primitives"))]
+
 // The refusal beside `../../model/modules/functor-pair.gandr`: an argument
 // that does not export a component its parameter states is refused at the
 // application's binding. The attribute before the application states the

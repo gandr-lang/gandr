@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "records"))]
+
 /// The retired constructor-block spelling: a parameter without its type and
 /// constructors listed by comma. A data declaration reads neither, and is
 /// refused at its first parameter.

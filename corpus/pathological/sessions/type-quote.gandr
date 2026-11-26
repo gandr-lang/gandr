@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "identity-types", "let-statements", "session-types", "type-codes"))]
+
 // The twin of `../../model/sessions/type-quote.gandr`: a type quote is the
 // code of the type it quotes and of no other.
 //

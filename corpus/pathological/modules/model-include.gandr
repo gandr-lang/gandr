@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "model-include", "modules", "native-primitives"))]
+
 // Model includes that do not stand. A second `Eq` model at the
 // integers that includes nothing and states its own equality is another
 // elaboration, so `==` there stays ambiguous; an include naming no module is

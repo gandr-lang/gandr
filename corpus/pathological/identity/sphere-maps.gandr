@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching"))]
+
 // This source states a dependent case over the 2-sphere that its cell
 // refuses.
 //

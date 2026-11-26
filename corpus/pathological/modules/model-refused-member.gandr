@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "modules", "signatures-as-values", "universes"))]
+
 // A member of a `Model(T)` module whose body is refused is refused once,
 // where it is written: the model's witness of it owes nothing more.
 //

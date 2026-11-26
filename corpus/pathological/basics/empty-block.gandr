@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 // A block of no statements computes nothing: it is refused by its arity, as
 // a definition's body here.
 

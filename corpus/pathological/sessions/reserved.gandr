@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "records", "session-types", "shared-endpoints"))]
+
 @[refuses("OutOfFragment.fork_expression.shared")]
 def shared_fork() -> Unit =
   fork !(seat : end) { close seat }

@@ -1,3 +1,5 @@
+@![features("records")]
+
 // A `deprecated` payload is no payload or a record of the texts `since` and
 // `note`: a bare text, a field outside the two and a field that is no text are
 // each refused as ill-typed.

@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values", "universes"))]
+
 // A law of joining written over `std.string`'s `concat` itself, which the
 // checker refuses until a law may name a definition.
 //

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "universes"))]
+
 // A constructor's field is checked at the type its family's argument gives
 // it: `Some("hello")` is no `Maybe(Integer)`.
 

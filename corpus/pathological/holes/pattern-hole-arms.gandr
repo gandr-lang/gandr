@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 // A pattern hole leaves the arm that runs undecided: the match's tree has a
 // leaf no arm owns, so the match is not shown to cover its scrutinee, and the
 // checker refuses it by name. The twin in `model/holes/` writes every

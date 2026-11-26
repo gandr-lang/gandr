@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-rows", "let-statements", "loops", "native-primitives", "temporary-access"))]
+
 /// A loop inside another loop's body carries no slot through its passes: the
 /// outer body's ends continue what follows the outer loop, so the inner loop
 /// reads the slot it names inside a fixpoint. The loops may run

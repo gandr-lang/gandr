@@ -1,3 +1,5 @@
+@![features("interop-boundary")]
+
 // A C string with an interior NUL handed to a foreign function: the string
 // would end early at the seam, so the call is to be refused. The
 // lowering does not reach the extern block yet.

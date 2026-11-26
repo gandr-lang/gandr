@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "imports", "located-judgements", "modules", "signature-models", "signatures-as-values", "universes", "visibility"))]
+
 // A world's requirement is a row, each entry refused as a row refuses it.
 //
 // A role's requirement must name what a site can answer. That is a host

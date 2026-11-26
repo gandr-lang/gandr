@@ -5,6 +5,8 @@
 //! `TypeMismatch`.
 //!
 //! - see: #2136 — `noZero`
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "records"))]
+
 // The source imports the included theories and their endomorphism models.
 import "../../model/include/monoid.gandr"
 import "../../model/include/reduct.gandr"

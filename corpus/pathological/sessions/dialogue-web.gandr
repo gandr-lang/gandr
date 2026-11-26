@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "modules", "session-types", "traces"))]
+
 // The twin of `../../model/sessions/dialogue-web.gandr`: a dialogue is
 // admitted when each endpoint's moves replay against its side of the
 // protocol, every send meets an agreeing receipt and the log records each

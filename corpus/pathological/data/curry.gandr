@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 // Curry's paradox, refused at its consumer. A family whose node holds
 // a function from the family itself declares: the function's domain stands
 // strictly below the node, a stratified definition. What refuses is the

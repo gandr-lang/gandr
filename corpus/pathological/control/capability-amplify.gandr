@@ -1,3 +1,5 @@
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
+
 // A capability passed where one granting more is expected.
 //
 // A capability grants the operations its type names, and a narrower one

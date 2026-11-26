@@ -1,3 +1,5 @@
+@![features(("imports", "nominal-data", "universes"))]
+
 // An import whose path names no source in the root refuses the source that
 // writes it: `circle-elim.gandr` imports `circle-base.gandr`, which
 // sits beside it; here the sibling is absent.

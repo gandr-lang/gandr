@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "signature-translation", "signatures-as-values"))]
+
 // An import read through a flow whose domain its source does not answer.
 //
 // The flow reads a `label` the newer source does not publish. Reading the

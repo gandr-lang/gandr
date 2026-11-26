@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "native-lists", "nominal-data", "pattern-matching", "records", "universes"))]
+
 // Cases over the circle its loop refuses, and one it admits that looks as
 // though it should not. A case over the circle owes its loop: carried along
 // the loop, its answer at the point must be that answer, by conversion or by

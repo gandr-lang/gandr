@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "conditionals", "let-statements", "native-primitives"))]
+
 // An `else if` chain whose answer is written on a later rung alone. A rung's
 // written answer types that rung's case; the chain is the head's case, whose
 // head writes none, so where nothing states its type, as at a `run` binding

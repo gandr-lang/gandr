@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/second-order-rules.gandr`: β, whose instantiated
 // variable stands under a binder the order cannot see past; β's first-order
 // shadow, which loses the binding; an instantiation at the wrong count; a rule

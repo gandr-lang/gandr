@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 // A qualified constructor names one of its family's own constructors, and
 // nothing else.
 //

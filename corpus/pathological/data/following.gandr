@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // What a following result refuses. A recursive definition whose
 // result can stand above the argument it recurses on returns at no stage, and
 // a recursion through it is refused at the top. The twin of

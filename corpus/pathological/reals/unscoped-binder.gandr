@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "modules", "records", "visibility"))]
+
 // A program hands the host a plan whose bound variable stands outside its
 // binder, and `admit` refuses the plan.
 //

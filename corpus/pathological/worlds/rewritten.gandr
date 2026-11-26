@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "deployment-offers", "imports", "modules", "native-lists", "signature-models", "signature-translation", "visibility"))]
+
 // A flow with code, which `Path` refuses at its member.
 //
 // `Path` admits a translation only when each of its members renames one

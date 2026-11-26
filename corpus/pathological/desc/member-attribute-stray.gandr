@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 // An attribute block before a data family's member stands on that member's
 // constructor. An attribute that stands on a declaration alone is refused
 // there by its name and its place.

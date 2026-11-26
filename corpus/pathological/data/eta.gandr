@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "products-and-sums", "records"))]
+
 // The twin of `model/data/eta.gandr`: η reads a neutral as the tuple of its
 // own projections at their own positions, so a tuple of them in another
 // order, a record with its fields crossed, or the projections of another

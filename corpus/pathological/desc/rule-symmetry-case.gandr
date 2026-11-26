@@ -9,6 +9,8 @@
 //!
 //! - see: #8385
 
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching"))]
+
 // `Beacon` with its symmetry.
 import "../../model/desc/rule-symmetry-case.gandr"
 

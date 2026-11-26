@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types", "thunks-and-force"))]
+
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A thunk may be forced twice or never, so a resumption inside one
 // is refused, however the thunk is forced.

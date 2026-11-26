@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "modules", "native-lists", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/relative-monad.gandr`: an associativity that drops
 // the inner continuation, whose overlap with the left unit law parts. Its
 // carriers answer their sorts in the other ground sort.

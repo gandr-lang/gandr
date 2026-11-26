@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+
 // What the cumulative hierarchy refuses. A fold through a set's picking
 // function answers at its motive, so a member returned where its rank is
 // expected is refused; the recursion descends only to a member, so a call on

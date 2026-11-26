@@ -9,6 +9,8 @@
 //!
 //! [Slattery-2026-bidirectional_elaborators_carte]: https://arxiv.org/abs/2607.09564 "Slattery and Sterling, Bidirectional Elaborators à la Carte"
 
+@![features(("products-and-sums", "records", "universes"))]
+
 /// A code the module owes.
 @[owes(1)]
 def code : Type

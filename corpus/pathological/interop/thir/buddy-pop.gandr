@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "records"))]
+
 // The checker refuses `pop`'s claims at a shared root and at the wrong list.
 //
 // The model proves `pop` holding the whole root, against the list it pops.

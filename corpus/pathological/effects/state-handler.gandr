@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "modules", "named-instances", "native-primitives", "records", "signature-models", "universes"))]
+
 // The twin of `model/effects/state-handler.gandr`: where a scope cannot take
 // a theory as its interface, where a model cannot answer it, and where the
 // models in scope do not answer it as one.

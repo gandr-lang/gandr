@@ -1,3 +1,5 @@
+@![features("records")]
+
 // A record two names share, then updated: the update copies, so neither name
 // sees it. The cost of the copy is what this source measures.
 

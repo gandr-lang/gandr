@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "second-order-rules", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/binding-field.gandr`: a freshness condition names
 // an atom, and the variable a binding field binds is none.
 

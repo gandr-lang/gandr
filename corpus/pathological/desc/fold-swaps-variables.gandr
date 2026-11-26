@@ -13,6 +13,8 @@
 //! - see: `model/desc/fold-swaps-variables.gandr` — the folds that respect
 //!   the rule
 
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // `Purse` with its symmetry.
 import "../../model/desc/fold-swaps-variables.gandr"
 

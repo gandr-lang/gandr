@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 @[refuses("UndescribedMember.HigherCell")]
 theory Invertible where
   sort Bit : Type

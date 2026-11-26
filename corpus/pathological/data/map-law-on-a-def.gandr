@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 // `map`'s functoriality written over the list `map` of
 // `../../model/data/recursive-lists.gandr`, a `def`: a rule names only the
 // operations of its own block, so `map` and `compose` here are no operation

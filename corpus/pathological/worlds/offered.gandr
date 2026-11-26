@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "deployment-offers", "imports", "modules", "signatures-as-values", "universes", "visibility"))]
+
 // A site's offer is a row, each entry refused where it answers nothing.
 //
 // A site's file answers the rows of the worlds placed at it with one

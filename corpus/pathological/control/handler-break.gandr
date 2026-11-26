@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "loops", "modules", "records"))]
+
 // A `break` and a `continue` inside a handled subject.
 //
 // A handled scope holds its handler until its subject returns, so no jump

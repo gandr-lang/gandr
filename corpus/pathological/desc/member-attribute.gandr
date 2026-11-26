@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 // A data family's member that the cell gate refuses is held apart: the
 // family and its other members keep checking, and the refused member is a
 // declaration of its own under the family's name. The attribute block written

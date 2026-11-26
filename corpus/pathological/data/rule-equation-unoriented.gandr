@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 @[refuses("RulesUnoriented")]
 data Marks : Type where {
   | Aye : Marks

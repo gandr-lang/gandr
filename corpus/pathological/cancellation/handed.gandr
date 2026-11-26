@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A function handed the rest could resume it twice or never, so
 // a continuation that owes an end is never handed on.

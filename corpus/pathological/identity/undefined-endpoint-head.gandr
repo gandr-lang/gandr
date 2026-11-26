@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "identity-types", "let-statements"))]
+
 @[refuses("UnresolvedName")]
 def refuted(x : Integer) -> Path (nosuch x) x =
   return Path.here x

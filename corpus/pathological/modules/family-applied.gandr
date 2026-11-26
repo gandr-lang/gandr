@@ -1,3 +1,5 @@
+@![features(("data-parameters", "modules", "universes"))]
+
 // A module's family applied through its name with a count it does not bind.
 //
 // An application through a module's name states the arguments its family

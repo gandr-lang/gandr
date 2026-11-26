@@ -1,3 +1,5 @@
+@![features(("bridge-types", "data-parameters", "dependent-functions", "directed-paths", "identity-types", "let-statements", "records"))]
+
 // Each declaration here is refused at its carrier.
 //
 // A head takes only its own implicit `A`, so a supply of another name is an

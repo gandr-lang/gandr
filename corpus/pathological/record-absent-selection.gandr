@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 /// A selection of a label the record lacks is refused as the record pattern
 /// naming it is in `record-absent-label.gandr`: the record has no such field,
 /// so the printer's selection reads back to the same refusal.

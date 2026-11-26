@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements"))]
+
 // Two reflexivities whose points no rule relates are not one path: the twin
 // of the model's `peak_is_here` (the HoTT book's § 1.12, `refl`, under
 // judgmental equality). `S(x)` and `P(x)` share no normal form under the

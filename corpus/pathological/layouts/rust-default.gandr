@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements"))]
+
 // The twin of `model/layouts/rust-default.gandr`: a field that is itself a
 // struct is no scalar, so its type has no code yet. rustc groups such a
 // field by a pseudo-alignment its size derives, which the program models

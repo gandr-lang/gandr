@@ -11,6 +11,8 @@
 //!
 //! - see: #8288
 
+@![features(("data-parameters", "identity-types", "let-statements", "modules", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "universes"))]
+
 /// The theory of a truth value: two constants and no rule.
 theory Truth where
   /// The sort of truth values.

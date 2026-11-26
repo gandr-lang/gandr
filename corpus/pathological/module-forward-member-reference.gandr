@@ -1,3 +1,5 @@
+@![features(("modules", "native-primitives"))]
+
 module Bad where {
   @[refuses("ForwardMemberReference")]
   def first = second + 1

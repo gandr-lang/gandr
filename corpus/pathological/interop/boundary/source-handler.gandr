@@ -1,3 +1,5 @@
+@![features(("effect-handlers", "effect-rows", "imports", "interop-boundary", "let-statements", "native-primitives"))]
+
 // Each handler below answers an `extern` block's interface in gandr.
 // The checker refuses each one where it leaves the block's members.
 //

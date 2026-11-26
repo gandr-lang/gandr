@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "temporary-access", "thunks-and-force"))]
+
 /// A view captured by a thunk: the thunk may be forced after the access that
 /// lent the view has ended, so the view would outlive its access.
 ///

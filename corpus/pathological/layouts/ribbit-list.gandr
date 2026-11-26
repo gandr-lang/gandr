@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 // The twin of `model/layouts/ribbit-list.gandr`: a layout is admitted only
 // by an equivalence with the list (vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576,
 // § layouts-ribbit), so a layout that loses elements is refused at its round

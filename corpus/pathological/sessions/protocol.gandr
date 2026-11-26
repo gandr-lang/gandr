@@ -1,3 +1,5 @@
+@![features(("lazy-records", "let-statements", "products-and-sums", "session-types"))]
+
 @[refuses("SessionMismatch")]
 def desk_receives_first() -> Unit =
   let desk = fork (seat : String >? end) { let task = recv seat; close seat }

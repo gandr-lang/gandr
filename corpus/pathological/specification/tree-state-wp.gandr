@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "records", "universes"))]
+
 // The twin of `model/specification/tree-state-wp.gandr`: where a program's
 // evidence against its specification is refused.
 //

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "native-lists"))]
+
 // A universe equivalence over lists is certified one cell deep: the empty
 // list, then each cell with its tail a fresh variable. A round trip that does
 // not return a cell is refused by the list's stratum, naming the list: with

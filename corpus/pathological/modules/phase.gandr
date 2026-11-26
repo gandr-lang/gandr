@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "modules"))]
+
 // The refusals beside `../../model/modules/phase.gandr`: a type member that
 // reads a module's or a parameter's value is refused by name at the value
 // (`PhaseDependence`). The attribute before the member states that refusal,

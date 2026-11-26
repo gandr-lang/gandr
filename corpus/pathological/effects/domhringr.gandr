@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "second-order-rules", "signatures-as-values", "universes"))]
+
 // The twin of `model/effects/domhringr.gandr`: a law over continuations that
 // names the value an operation answers where its sort does not stand. The
 // name `bind x . …` binds is a value of the sort the operation answers, and

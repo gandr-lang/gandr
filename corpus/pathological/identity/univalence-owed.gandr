@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "modules", "universes"))]
+
 // What `univalence`'s owed laws need and the checker does not have.
 // `ua` after `idtoequiv` is the path once `J` reaches reflexivity, where `ua`
 // of the identity record is not reflexivity: two paths between types that

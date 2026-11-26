@@ -8,6 +8,8 @@
 //!
 //! - see: #2713 — `halt`
 
+@![features("imports")]
+
 // The paints and the lamps, which share `Red`.
 import "../../model/data/constructor-shared-name.gandr"
 // The signals, whose `Red` the lamps share too.

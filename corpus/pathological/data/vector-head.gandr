@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching"))]
+
 // What a case cannot prune: an arm left out whose constructor may stand at
 // the scrutinee's index, because the path its branch eliminates has ends that
 // are not apart.

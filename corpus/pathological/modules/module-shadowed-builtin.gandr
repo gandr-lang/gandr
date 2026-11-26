@@ -1,3 +1,5 @@
+@![features("records")]
+
 // A definition named like a builtin namespace shadows it: `list.each` then
 // reads the record's field, not the builtin.
 

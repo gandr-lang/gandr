@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/second-order-signatures.gandr`: a binder over an
 // ordinary sort, a binder where a sort's index is written, and the universe of
 // representable sorts outside the `theory` block that reads it.

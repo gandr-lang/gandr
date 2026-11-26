@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "native-primitives", "records", "temporary-access"))]
+
 /// The successor, a call whose type synthesises where a statement binds it.
 def succ(n : Integer) -> Integer =
   pure n + 1

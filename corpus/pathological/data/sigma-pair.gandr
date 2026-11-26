@@ -1,3 +1,5 @@
+@![features(("data-parameters", "indexed-data", "let-statements", "nominal-data", "records", "universes"))]
+
 data Ix(n : Integer) : Type where
   | MkIx : Ix n
 

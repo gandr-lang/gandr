@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "nominal-data", "universes"))]
+
 // `Eq.generic` where it derives nothing: a field with no equality, a
 // type the derivation does not yet cover, the derivation read
 // anywhere but as a definition's whole body, and a stated type the derived

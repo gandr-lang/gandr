@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "native-lists", "nominal-data", "universes"))]
+
 // Two data types with one shape stay distinct under a type former: a list of
 // `Celsius` is no list of `Fahrenheit`, in any definition that ascribes it.
 //

@@ -1,3 +1,5 @@
+@![features(("derived-rules", "imports"))]
+
 // A statement a theory's completed rules rewrite to two normal forms is no
 // rule the theory derives: the twin of the model's `invMul`. Commutativity
 // holds in the parity group, but the group's rules leave its two sides apart,

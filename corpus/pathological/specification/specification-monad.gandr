@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "second-order-rules", "signatures-as-values", "universes"))]
+
 // The twin of `model/specification/specification-monad.gandr`: where a
 // specification monad's laws are refused.
 //

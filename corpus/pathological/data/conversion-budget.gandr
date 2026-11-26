@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // A true path the conversion cannot settle within its step budget is refused.
 //
 // The refusal must say the budget ran out, never that the endpoints are apart.

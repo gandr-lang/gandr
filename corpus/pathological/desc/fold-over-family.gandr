@@ -12,6 +12,8 @@
 //! - see: `model/desc/fold-over-family.gandr` — the folds that respect each
 //!   rule
 
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // `Width` and `Gate`.
 import "../../model/desc/family-with-rules.gandr"
 import "../../model/desc/fold-over-family.gandr"

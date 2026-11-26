@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "modules", "records", "visibility"))]
+
 // A program hands the host a checkpoint whose certificate evidence is false,
 // and `restore` refuses it. `gandr run false-checkpoint.gandr` writes the
 // refusal as one line on standard error. The run stops at `restore`, and it

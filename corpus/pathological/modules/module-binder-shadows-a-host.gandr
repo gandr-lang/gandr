@@ -1,3 +1,5 @@
+@![features("let-statements")]
+
 @[refuses("OutOfFragment.projection_expression")]
 def lookup(env : Integer) -> String =
   env.get "HOME"

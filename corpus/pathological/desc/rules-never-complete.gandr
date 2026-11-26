@@ -1,3 +1,5 @@
+@![features(("second-order-rules", "signatures-as-values", "universes"))]
+
 // `gc` collects an empty restriction and `scope` extrudes one past a parallel
 // component. They overlap at `par(nu(nil), q)`, which completion joins by
 // the rule `nu(par(nil, q)) ==> par(nil, q)`; that rule and `scope` overlap

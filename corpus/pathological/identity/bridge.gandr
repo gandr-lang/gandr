@@ -1,3 +1,5 @@
+@![features(("bridge-types", "data-parameters", "imports", "modules", "native-lists", "products-and-sums", "records"))]
+
 // A bridge whose introduction the bridge fold refuses, one refusal an item.
 //
 // A bridge relates its endpoints and never identifies them. So it has no

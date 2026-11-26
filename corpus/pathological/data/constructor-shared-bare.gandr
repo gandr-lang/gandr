@@ -8,6 +8,8 @@
 //!
 //! - see: #2713 — `lamp`, `pause`
 
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 /// A colour.
 data Color : Type where
   /// The red colour.

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // A constructor passed as an argument is checked at the type of the
 // parameter it is passed to: a list of strings is no list of integers, and
 // the checker, not the lowering, refuses it, where the parameter's

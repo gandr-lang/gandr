@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "nominal-data", "universes"))]
+
 /// This source declares families whose named index telescope is refused.
 ///
 /// It pins the refusals a named telescope adds, so a misstated index stays

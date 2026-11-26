@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 @[refuses("RuleNotPresentable")]
 data Tally : Type where {
   | Empty : Tally

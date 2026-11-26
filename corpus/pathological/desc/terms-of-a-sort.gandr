@@ -13,6 +13,8 @@
 //! - owes: #4150 — an operation across two plain sorts, and an index with a
 //!   variable
 
+@![features(("data-parameters", "modules", "signatures-as-values", "universes"))]
+
 /// A signature of two plain sorts, a point and a pair of them.
 theory Pair where
   /// The points.

@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 // An invertible cell between two distinct points: a segment, whose paths
 // would be words indexed by their endpoints, which the lowering does not mint.
 

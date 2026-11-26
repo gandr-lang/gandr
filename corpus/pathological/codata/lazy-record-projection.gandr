@@ -8,6 +8,8 @@
 //!
 //! - see: typed-parameters.gandr — a lazy-record projection
 
+@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "lazy-records", "let-statements", "thunks-and-force"))]
+
 /// `wrong_side` requests an Integer from the String put entry.
 @[refuses("TypeMismatch")]
 def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> Integer =

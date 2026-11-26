@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "nominal-data", "pattern-matching", "records", "thunks-and-force", "universes", "visibility"))]
+
 // A map sending two points to one, ascribed an equivalence. `A ≃ B` is the
 // bi-invertible map, whose left inverse undoes the map at every point of
 // `A`; a map that collapses two points has no such inverse, and the round

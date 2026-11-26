@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "native-lists", "nominal-data", "pattern-matching", "universes"))]
+
 // Matches of no arm over paths whose endpoints are not apart. Each is refused
 // by the apartness rule, naming why.
 

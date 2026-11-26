@@ -1,3 +1,5 @@
+@![features("records")]
+
 // A field is read only where the record has it: a label the record lacks
 // names no field, and a value that is no record has none.
 

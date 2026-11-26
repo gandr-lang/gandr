@@ -9,6 +9,8 @@
 //!
 //! [Plotkin-2013-handling_algebraic_effects]: https://doi.org/10.2168/LMCS-9(4:23)2013 "Plotkin and Pretnar, Handling Algebraic Effects"
 
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr"
 // Early exit's host interface.

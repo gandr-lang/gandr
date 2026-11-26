@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+
 // The family a code defines, and its decoder, with each refusal.
 //
 // The family holds the arguments its code asks for. Those arguments range

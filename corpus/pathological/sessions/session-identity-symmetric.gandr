@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "directed-paths", "lazy-records", "let-statements", "modules", "products-and-sums", "session-types", "type-codes"))]
+
 module Evolution where {
   type SeatEnd = String >? rec turn => +{
     report : String >! &{next : turn, retire : end},

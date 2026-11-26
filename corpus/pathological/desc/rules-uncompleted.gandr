@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 // Two rules of one operation that overlap at `pick(Zero, n)` and leave it at
 // `plus(Zero, n)` and at `plus(n, Zero)`, one call with its arguments
 // swapped. Neither normal form is a value, so completion would join them by a

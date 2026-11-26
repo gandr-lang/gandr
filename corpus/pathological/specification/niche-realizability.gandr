@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "records", "type-codes", "universes"))]
+
 // A C function whose pointer must not be null, bound to `Option<&int>`:
 // the niche's null owns nothing, and the function has no precondition
 // there, so the boundary check refuses the binding instead of a crash

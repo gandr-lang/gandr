@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "modules", "signatures-as-values", "tactics-over-goals", "universes"))]
+
 // Three routes by which a theory could smuggle axiom K past the identity,
 // each refused by name.
 //

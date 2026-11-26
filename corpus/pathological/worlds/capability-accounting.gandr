@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "modules", "records", "thunks-and-force"))]
+
 // A migration spends the capability its entry holds for its world, once.
 // What spends it again, or could run it other than once, is refused at the
 // migration.

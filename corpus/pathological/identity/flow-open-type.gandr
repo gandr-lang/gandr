@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "directed-paths", "let-statements", "universes"))]
+
 @[refuses("ForwardUnsupported")]
 def lift(t : Type, f : t -> t) -> Flow[.A = Type](t, t) =
   Flow.into f

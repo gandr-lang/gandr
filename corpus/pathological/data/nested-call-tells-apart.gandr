@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 /// The integers presented by their two cancellations: `S(P(x))` and
 /// `P(S(x))` are each `x`.
 data Int : Type where {

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "identity-types", "let-statements"))]
+
 // The identity and flow operations stand under their formers, `Path.here`
 // and `Flow.stay` among them. A bare spelling names no operation: it is an
 // ordinary name, refused where no binder declares it.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "records", "temporary-access", "thunks-and-force"))]
+
 // What a string's view may not do: outlive its access, be ended twice or be
 // left unended. A view lives for its access, so these are refused with no
 // annotation saying how long it lives. A view kept in the region of a scope

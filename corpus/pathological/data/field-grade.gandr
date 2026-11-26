@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "universes"))]
+
 // A constructor field's grade: `1` and `ω` are read, any other numeral is not.
 //
 // - see: #2033 — `Twice`

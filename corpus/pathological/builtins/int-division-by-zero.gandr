@@ -1,3 +1,5 @@
+@![features("native-primitives")]
+
 // Integer division by zero checks, its operands being integers, and is stuck
 // where it runs: the machine's native division refuses a zero divisor.
 

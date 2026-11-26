@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "explicit-exits", "imports", "let-statements", "products-and-sums", "signature-models"))]
+
 // What a written forgetting map refuses: a map at another carrier
 // than the model's is a map the model does not stand at, a sort the theory
 // does not have is no member of it, and a sort written twice, a bracket entry

@@ -12,6 +12,8 @@
 //! - see: `model/desc/fold-drops-variable.gandr` — the fold that respects each
 //!   rule
 
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+
 // `Width` and `Fragment`.
 import "../../model/desc/family-with-rules.gandr"
 

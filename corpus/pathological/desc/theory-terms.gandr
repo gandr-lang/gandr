@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "signatures-as-values", "universes"))]
+
 // A theory's terms where its rules present no type, or where the slice of
 // theories with terms ends.
 //

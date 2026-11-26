@@ -6,6 +6,8 @@
 //!
 //! - see: #1225
 
+@![features(("signatures-as-values", "universes"))]
+
 /// `Pointed` defines a carrier with a unit.
 theory Pointed where
   sort M : Type

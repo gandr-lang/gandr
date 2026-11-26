@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "directed-paths", "let-statements", "modules", "pattern-matching", "products-and-sums", "records"))]
+
 module Schema where {
   type Old = String * Integer
   type New = Integer * String

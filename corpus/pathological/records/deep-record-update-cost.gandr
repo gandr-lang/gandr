@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 // An update three records deep rebuilds each record on the path, and its cost
 // grows with the depth, not with the records' width.
 

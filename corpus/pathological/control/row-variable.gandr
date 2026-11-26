@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-rows", "imports", "let-statements", "records", "row-kind", "thunks-and-force"))]
+
 // What `../../model/control/row-variable.gandr` proves, refused: a row
 // variable is solved where something reads the call's row, and a row
 // without the interface `log` performs is not `log`'s row.

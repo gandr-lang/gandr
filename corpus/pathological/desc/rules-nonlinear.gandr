@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 // A rule whose left side names one variable twice matches only equal
 // arguments, and matching them needs a copy of the matched value: a
 // comonoid the sort may not have. The law is refused by name at its second

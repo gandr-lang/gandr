@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "universes"))]
+
 // A function row's precondition chosen through the layout program, refused by
 // the checker.
 //

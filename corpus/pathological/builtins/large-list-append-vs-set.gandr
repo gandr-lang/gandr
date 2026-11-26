@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "native-lists"))]
+
 // Appending to a list copies it, and setting one element of the result copies
 // it again: the cost of each is the list's length.
 

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-rows", "imports", "let-statements", "located-judgements", "modules", "records", "visibility"))]
+
 // A migration's body checks under the row that its world requires.
 //
 // A world's requirement states what code at the world may perform. So the

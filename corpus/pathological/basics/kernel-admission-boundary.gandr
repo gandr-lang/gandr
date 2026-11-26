@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 // What the kernel admits stops at its value forms: a string, a pair, a
 // function check and a number at an integer width; a number past its width
 // does not lower.

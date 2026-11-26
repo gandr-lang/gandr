@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "list-case", "native-lists", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // Two proofs by induction over the loops at the book circle's point that
 // prove nothing. The first forgets to carry the loop: its loop arm answers
 // with the rest's path, whose endpoints are not the loop's. The second

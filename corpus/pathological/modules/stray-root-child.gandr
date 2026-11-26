@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "native-primitives"))]
+
 // A root child that is no declaration is refused alone, where it stands:
 // the declarations around it are collected, lowered and checked as if it
 // were not there.

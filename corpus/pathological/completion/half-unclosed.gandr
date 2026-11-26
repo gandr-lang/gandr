@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "modules", "session-types"))]
+
 // A fork's half that ends in a statement without closing its endpoint: the
 // statement runs and the half returns the unit with the endpoint still open,
 // which the checker refuses as the residue it is.

@@ -1,3 +1,5 @@
+@![features("modules")]
+
 module Counter :> *{type T, zero : T} where {
   type T = Integer
   @[runs("0")]

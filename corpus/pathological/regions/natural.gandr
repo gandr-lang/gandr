@@ -7,6 +7,8 @@
 //! interface.
 //!
 //! - see: corpus/model/regions/natural.gandr — valid widening squares
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "identity-types", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+
 import "../../model/regions/passed.gandr"
 import "../../model/regions/natural.gandr"
 // The source imports the early exit host interface.

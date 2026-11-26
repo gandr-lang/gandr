@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "effect-rows", "implicit-arguments", "imports", "let-statements", "modules", "named-instances", "records", "thunks-and-force"))]
+
 // What `../../model/control/named-instances.gandr` proves, refused: a call
 // omitting an instance passes the one instance of its interface in scope,
 // never a guess among several or a default; a row holds each label once;

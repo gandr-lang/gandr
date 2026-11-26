@@ -12,6 +12,8 @@
 //! - see: #392 — `fibs`
 //! - see: #2188 — `Swap`, `Twisted`
 
+@![features(("codata", "corecursion", "data-parameters", "explicit-exits", "lazy-records", "let-statements", "native-primitives", "thunks-and-force", "universes"))]
+
 /// A stream provides an integer head and its tail stream.
 codata Stream : Type[-] where
   head : Integer

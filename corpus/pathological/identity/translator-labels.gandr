@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "equivalence-record", "let-statements", "pattern-matching", "records", "universes"))]
+
 // A pattern that reads a translator by a label its record lacks is refused.
 //
 // A relation's record names every pair of translators `into` and `from`, so

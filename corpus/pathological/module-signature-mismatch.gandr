@@ -1,3 +1,5 @@
+@![features("modules")]
+
 module Bad : *{x : String} where {
   @[refuses("TypeMismatch")]
   def x = 1

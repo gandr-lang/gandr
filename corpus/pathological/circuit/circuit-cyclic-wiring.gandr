@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 @[refuses("MalformedForm")]
 theory Loop where
   sort Nat : Type

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "lazy-records", "let-statements", "modules", "products-and-sums", "run-prefixes", "session-types"))]
+
 // A run ridden along a flow whose target drops the move it took is refused.
 //
 // The run took `retire`, which the narrowed protocol no longer offers, so no

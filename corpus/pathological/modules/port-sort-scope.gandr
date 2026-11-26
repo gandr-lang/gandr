@@ -1,3 +1,5 @@
+@![features(("imports", "modules"))]
+
 // A model that reads a port at its own scope's `Integer`.
 //
 // A port reads the binding of the theory's source, and never the binding of

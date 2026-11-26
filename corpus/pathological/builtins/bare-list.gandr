@@ -1,3 +1,5 @@
+@![features(("data-parameters", "native-lists"))]
+
 // A list type written with no import of its home names no type.
 //
 // `List` lives in `std.list`, and the ambient scope answers it nowhere. A

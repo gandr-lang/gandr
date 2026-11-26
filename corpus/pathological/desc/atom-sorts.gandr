@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/atom-sorts.gandr`: an operation returning an atom,
 // and an atom sort as the domain of a restricted binder.
 

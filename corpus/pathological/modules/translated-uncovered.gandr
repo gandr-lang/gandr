@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values"))]
+
 // An import read through a flow that does not produce the signature it is
 // read at.
 //

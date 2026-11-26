@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "records", "thunks-and-force", "universes", "wildcards"))]
+
 // What `ua` refuses. `ua(e)` is admitted on the record's laws as its
 // evidence, so a record whose law does not hold builds no path: the law is a
 // field that does not check. The codes `ua` relates are codes of `Type`, so a

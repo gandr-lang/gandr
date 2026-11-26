@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 // A pattern hole holds the one constructor no written arm covers, `Green`,
 // so which arm runs for it is undecided and the checker refuses the match.
 

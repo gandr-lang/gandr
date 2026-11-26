@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+
 data Outer : Type where
   | None : Outer
   | Some : (n : Integer) --> Outer

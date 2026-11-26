@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements"))]
+
 def constantly(x : Integer, y : Integer) -> Integer =
   x
 

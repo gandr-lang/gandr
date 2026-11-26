@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 // A rule that reads an introduced cell's value on the face it is fixed on
 // violates the boundary its `ext` member generates: the boundary law and the
 // rule rewrite one term to `zero` and to a variable, no rule the path order

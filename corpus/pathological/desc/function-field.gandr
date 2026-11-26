@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion"))]
+
 // A fold over a presented type with a continuation field still answers to
 // the type's rule: counting stores reaches a read's rest through its
 // continuation, as the state-passing handler does, and it tells put-put's two

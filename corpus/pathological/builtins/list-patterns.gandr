@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "imports", "let-statements", "list-case", "native-lists", "pattern-matching"))]
+
 // A list pattern's refusals: a match that leaves a list shape unmatched, and
 // a list pattern beside a pattern of another kind in one column.
 

@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 // A cell introduced with a value on the face it is fixed on violates its
 // boundary: the boundary law and β at that point rewrite one term to two
 // normal forms, a variable and `zero`, no rule the path order orients joins

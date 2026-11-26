@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 // The count a cell reports is of its right side alone: a rule whose left side
 // binds one hole twice is a copy the redex would have to compare, and the
 // rule is refused at admission whatever its right side writes, while the

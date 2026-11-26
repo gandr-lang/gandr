@@ -1,3 +1,5 @@
+@![features(("imports", "nominal-data", "universes"))]
+
 // The second member of the cycle `import-cycle-a.gandr` opens.
 //
 // - see: #434

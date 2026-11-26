@@ -10,6 +10,8 @@
 //!
 //! - see: #8338
 
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "universes"))]
+
 // `Width` and `Fragment`.
 import "../../model/desc/family-with-rules.gandr"
 

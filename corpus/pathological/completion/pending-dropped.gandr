@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "imports", "let-statements", "modules", "records", "session-types"))]
+
 // A pending completion dropped: a read is submitted and its completion is
 // never reaped, though the kernel posts "exactly one matching CQE for every
 // SQE" (io_uring(7)). The pending end stays open when the program ends.

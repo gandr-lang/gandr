@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 @[refuses("RulesUnoriented")]
 data NatGrow : Type where {
   | Zero : NatGrow

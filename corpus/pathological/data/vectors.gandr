@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "nominal-data", "universes"))]
+
 // The checker refuses a vector at a length that its value does not stand at.
 //
 // A vector's type states its length. A length that disagrees is a mismatch,

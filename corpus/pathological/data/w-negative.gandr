@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "mutual-recursion", "nominal-data", "universes"))]
+
 // What a function-typed field refuses. A W-type's node may hold a function
 // into its own family, and one from it whose domain stands strictly below the
 // node (`./curry.gandr`); a family to the left of the arrow where no

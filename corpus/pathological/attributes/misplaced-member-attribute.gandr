@@ -11,6 +11,8 @@
 //!
 //! - see: #6404
 
+@![features(("signatures-as-values", "universes"))]
+
 /// `deprecated` stands before a declaration, and not before an operation.
 @[refuses("MisplacedAttribute")]
 theory Deprecated where

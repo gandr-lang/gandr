@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "conditionals", "let-statements", "native-primitives"))]
+
 // An `if` whose written answer disagrees with its arms. The case is ascribed
 // the answer it writes, so each arm is checked against that answer and the
 // first that disagrees is refused where it stands.

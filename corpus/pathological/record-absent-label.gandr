@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "records"))]
+
 @[refuses("AbsentRecordField")]
 def absent(r : *{n : Integer, s : String}) -> Integer =
   match r where

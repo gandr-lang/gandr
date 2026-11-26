@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "universes"))]
+
 // A generator whose result does not apply its family to its parameters.
 //
 // Head uniformity binds each parameter once, for the whole family. A result

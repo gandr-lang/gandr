@@ -1,3 +1,5 @@
+@![features(("modules", "native-primitives", "signatures-as-values", "universes", "visibility"))]
+
 // What sealing a module by a theory hides: outside, the sealed
 // counter's carrier is abstract, so its operations take and give no
 // integer. `../../model/modules/model-ascription.gandr` runs the same

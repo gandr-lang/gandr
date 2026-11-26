@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+
 // A task runs as its parent's peer, and no region bounds it: a task naming a
 // capability its scope introduced could run past the scope's end, so the fork
 // refuses it whether or not the task still holds its end.

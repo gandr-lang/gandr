@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "nominal-data", "universes"))]
+
 // A refused declaration's parameters type no argument: their types never
 // lower, so a bare constructor passed to it is refused as unannotated, never
 // dropped as an engine fault.

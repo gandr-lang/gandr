@@ -1,3 +1,5 @@
+@![features(("imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion"))]
+
 // Folds over the programs that only store that tell put-put's two sides apart
 // : read as their fixpoints, their arms send `Store(s, Store(u, k))`
 // and `Store(u, k)` to different numbers, so each case is refused at the law.

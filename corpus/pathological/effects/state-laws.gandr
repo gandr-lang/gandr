@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "native-primitives", "records", "thunks-and-force"))]
+
 // A handler that does not satisfy a law of the theory it handles is refused
 // where it stands: put-get asks a read after a store to see the stored
 // value, and neither handler here lets it.

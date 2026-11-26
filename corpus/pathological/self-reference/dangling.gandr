@@ -8,6 +8,8 @@
 //!
 //! Rust `Pin` prevents a moved future from dangling self-reference.
 //! - see: #1183 — `dangling`
+@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives", "records", "temporary-access", "thunks-and-force"))]
+
 import std.process
 
 /// `dangling` returns a thunk that captures the access view.

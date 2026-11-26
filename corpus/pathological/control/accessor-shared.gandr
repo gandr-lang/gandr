@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "records", "temporary-access"))]
+
 /// An exclusive access inside a shared one: the held value is frozen for the
 /// shared access's body, so it is not lent exclusively there.
 @[refuses("HeldLent")]

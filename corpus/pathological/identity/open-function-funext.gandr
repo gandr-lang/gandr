@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements"))]
+
 /// Past the first-order boundary: `f` is a variable, so its inputs are free
 /// variables no coverage reaches, and the rule decides closed functions only.
 @[refuses("FunextUnsupported")]

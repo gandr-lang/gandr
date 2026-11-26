@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "modules", "records", "temporary-access", "thunks-and-force"))]
+
 // What does not cross, refused where it would. A migration's result comes
 // back to the world it left, and only what is mobile and open comes back: an
 // unmarked abstract type stays with its seal, a handle stays when what it

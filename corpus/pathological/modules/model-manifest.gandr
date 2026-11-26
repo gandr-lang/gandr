@@ -1,3 +1,5 @@
+@![features(("modules", "signatures-as-values", "universes"))]
+
 // The refusals beside `../../model/modules/model-manifest.gandr`: a model
 // sealed at `Model(T)` alone keeps its sort abstract, and a manifest naming a
 // sort its theory does not present is refused at the module's header, the

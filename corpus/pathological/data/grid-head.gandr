@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching"))]
+
 // A case at a family of two indices that cannot omit an arm.
 //
 // The constructor of the arm can stand at the indices of the scrutinee. So

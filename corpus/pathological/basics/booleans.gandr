@@ -1,3 +1,5 @@
+@![features("native-primitives")]
+
 // Booleans as values, misused: a literal is a value of `Bool` and of no other
 // type.
 

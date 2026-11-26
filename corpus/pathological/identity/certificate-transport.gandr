@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "imports"))]
+
 // Two certificates no rule relates are not one path: the twin of the model's
 // `identified`. The circle's loop and the reflexivity at its point are both
 // paths from the point to itself, and nothing converts one to the other, so

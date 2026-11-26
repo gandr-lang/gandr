@@ -10,6 +10,8 @@
 //!
 //! - see: #8311
 
+@![features(("data-parameters", "identity-types", "imports", "signatures-as-values", "universes"))]
+
 // `Tally` with its symmetry.
 import "../../model/desc/rule-symmetry.gandr"
 

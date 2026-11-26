@@ -1,3 +1,5 @@
+@![features("native-lists")]
+
 // A list updated at an index past its end has no element there to replace.
 // The lowering admits no member selection on a module yet, so that
 // refusal stands in front of this one.

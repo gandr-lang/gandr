@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "conditionals", "lazy-records", "let-statements", "records", "session-types", "thunks-and-force"))]
+
 @[refuses("LinearResidue")]
 def seat_left_open() -> Unit =
   let desk = fork (seat : end) { pure *{} }

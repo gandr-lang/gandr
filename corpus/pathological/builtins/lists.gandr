@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "native-lists"))]
+
 // A list literal refused at the element type it is stated at: the twin of
 // `model/builtins/lists.gandr`.
 //

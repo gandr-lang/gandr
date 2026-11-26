@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "temporary-access"))]
+
 // The write that reads no holder count, kept from a string that may have been
 // copied: a grade-one hold takes only a string made where it stands, so a copy,
 // whose buffer the original holds too, is refused before any write reaches it.

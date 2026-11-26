@@ -1,3 +1,5 @@
+@![features(("modules", "native-primitives", "signature-translation", "signatures-as-values"))]
+
 // A path whose way back moves a member.
 //
 // The way back defines `answer` as the reply plus one. The answer brought

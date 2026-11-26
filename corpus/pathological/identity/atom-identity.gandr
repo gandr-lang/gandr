@@ -11,6 +11,8 @@
 //!
 //! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
+@![features(("atom-identity", "data-parameters", "identity-types", "imports", "modules", "records"))]
+
 // The relation, its reflexivity and its transport law over the unit type.
 import "../../model/identity/atom-identity.gandr"
 

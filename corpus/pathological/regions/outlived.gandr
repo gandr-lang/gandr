@@ -8,6 +8,8 @@
 //! its source. The source imports the early exit host interface.
 //!
 //! - see: corpus/model/regions/passed.gandr — a result inside its region
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+
 import std.process
 
 /// `pass` returns a thunk at the same region.

@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 // The twin of `model/desc/shaped-signature.gandr`, one refusal per block. A
 // face holds a name its boundary lacks, a face is named twice, and a boundary
 // lists a name twice. A signature states two boundaries, and one spells the

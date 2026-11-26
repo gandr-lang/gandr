@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "floating-point", "identity-types", "modules", "native-primitives", "nominal-data", "signatures-as-values", "stated-laws", "tactics-over-goals", "universes"))]
+
 // The refusals beside `../../model/modules/model-laws.gandr`: a model that
 // leaves out a law whose sides do not convert is refused `NoFiller.Omitted` by
 // the law's name, at the module, whose attributes state the expectation; an

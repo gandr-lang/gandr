@@ -1,3 +1,5 @@
+@![features(("data-parameters", "inert-fields", "modules", "signatures-as-values", "universes"))]
+
 // The reads of an inert field that are refused, and the marks that stand
 // nowhere.
 //

@@ -8,6 +8,8 @@
 //!
 //! - see: #1224
 
+@![features(("imports", "signatures-as-values"))]
+
 // The source imports the semigroup and monoid theories.
 import "../../model/include/monoid.gandr"
 

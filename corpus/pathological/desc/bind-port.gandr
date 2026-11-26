@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "imports", "modules", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/bind-port.gandr`: an abstraction over a sort that is
 // not an atom sort, an abstraction written inside a restricted binder, and the
 // models of an abstracting operation.

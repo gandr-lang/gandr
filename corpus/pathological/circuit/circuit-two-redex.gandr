@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 @[refuses("UndescribedMember.ParallelRedexes")]
 theory Nat where
   sort Nat : Type

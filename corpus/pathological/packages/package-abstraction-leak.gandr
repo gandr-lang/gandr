@@ -1,3 +1,5 @@
+@![features(("data-parameters", "let-statements", "modules", "signatures-as-values", "universes"))]
+
 /// An opened model's sort cannot leave its block.
 ///
 /// Each `module m = p ;` binds a fresh sort. A seed read at the integers the

@@ -1,3 +1,5 @@
+@![features(("imports", "second-order-rules", "signatures-as-values", "universes"))]
+
 // The twin of `model/desc/atom-occurrence.gandr`: an atom named where no port
 // of its sort stands, a conditioned overlap whose rewrites part under the
 // freshness it composes, and a variable split across an abstraction that no

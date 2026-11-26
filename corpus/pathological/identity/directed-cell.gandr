@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 // The circle's loop with the single directed shaft: a cell that only runs one
 // way, which the lowering does not mint.
 

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "lazy-records", "modules", "products-and-sums", "run-prefixes", "session-types"))]
+
 // The twin of `../../model/sessions/seat-prefix.gandr`: an open record is no
 // run, and a move the protocol refuses is refused at a prefix as at a run.
 

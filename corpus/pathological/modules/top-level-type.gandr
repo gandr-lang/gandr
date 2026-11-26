@@ -1,3 +1,5 @@
+@![features(("modules", "records"))]
+
 // A type member at a source's top level, misused: it names its type only for
 // the declarations written after it.
 

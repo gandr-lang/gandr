@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "tarski-universes", "thunks-and-force", "universes"))]
+
 // What an inductive-recursive block refuses. The block is one admission, so
 // one refused member refuses every member with it: accessibility is checked
 // across the block, so a family named to the left of an arrow where no stage

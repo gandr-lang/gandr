@@ -1,3 +1,5 @@
+@![features(("data-parameters", "equivalence-record", "identity-types", "imports", "let-statements", "modules"))]
+
 // A bisimilarity paid with a univalence over a record a parameter binds: the
 // kernel checks a session's payload paths in the empty context, so a payload
 // path reads no variable, and an open univalence names no certificate.

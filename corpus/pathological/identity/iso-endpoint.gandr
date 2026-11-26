@@ -1,3 +1,5 @@
+@![features(("data-parameters", "equivalence-record", "identity-types", "imports", "records"))]
+
 // A quasi-inverse whose section is stated at the wrong endpoint. `A ≅ B`'s
 // section reads `Path[.A = A](from(into(a)), a)`, the round trip
 // through `B`; the

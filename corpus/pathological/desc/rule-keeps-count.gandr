@@ -11,6 +11,8 @@
 //!
 //! - see: #8330
 
+@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "signatures-as-values", "universes"))]
+
 // `Hollow`.
 import "../../model/desc/rule-symmetry-apart.gandr"
 

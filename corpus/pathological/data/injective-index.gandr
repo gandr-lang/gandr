@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+
 // A case arm that cannot learn its fields from a constructor equation.
 //
 // The constructor has a later field whose type reads an earlier field. A path

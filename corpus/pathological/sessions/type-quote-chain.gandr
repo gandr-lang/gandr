@@ -1,3 +1,5 @@
+@![features(("directed-paths", "native-primitives", "products-and-sums"))]
+
 // A product written as a chain where an expression stands, unquoted: an
 // expression reads `*` as multiplication of the two components, which are
 // codes, not numbers.

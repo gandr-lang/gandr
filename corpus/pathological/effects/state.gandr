@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "second-order-rules", "signatures-as-values", "universes"))]
+
 // The twin of `model/effects/state.gandr`: where the State laws are refused.
 //
 // - see: #1934 — `StateAllLaws`

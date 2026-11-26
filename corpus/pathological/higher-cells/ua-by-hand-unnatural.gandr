@@ -1,3 +1,5 @@
+@![features(("data-parameters", "identity-types", "let-statements", "modules", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+
 theory Rig where
   sort R : Type
   oper plus : (x : R, y : R) --> (z : R)

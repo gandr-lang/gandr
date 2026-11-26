@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "typed-holes", "universes"))]
+
 // A named pattern hole as a match's only arm leaves every colour to the hole,
 // so which arm runs is undecided and the checker refuses the match.
 // `pattern-hole-arms.gandr` refuses the same leaf beside written arms.

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "let-statements", "products-and-sums", "session-types"))]
+
 @[refuses("OutOfFragment.Endpoint")]
 def parameter_as_endpoint(rounds : Integer) -> Unit =
   close rounds

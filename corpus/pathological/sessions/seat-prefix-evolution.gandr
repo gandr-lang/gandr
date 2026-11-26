@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "lazy-records", "let-statements", "modules", "products-and-sums", "run-prefixes", "session-types"))]
+
 // An open play ridden along a flow whose target drops an offer: a play that
 // has not reached the offer rides, one that took the dropped branch is no
 // prefix of the target and is refused at that move, and a play held by a

@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 @[refuses("MalformedForm")]
 theory Unmarked where
   sort Q : Type

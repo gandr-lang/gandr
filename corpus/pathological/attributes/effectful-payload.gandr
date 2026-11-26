@@ -1,3 +1,5 @@
+@![features("call-by-push-value")]
+
 @[refuses("NonValuePayload")]
 @[doc(pure 1)]
 def f = 42;

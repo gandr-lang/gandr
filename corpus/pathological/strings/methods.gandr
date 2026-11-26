@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "let-statements", "pattern-matching", "temporary-access", "thunks-and-force"))]
+
 // What a method call may not do: read a string its hold no longer holds,
 // run inside a thunk that may run it other than once, write back to a string
 // no hold holds, lend a string already lent, or read a string after a match

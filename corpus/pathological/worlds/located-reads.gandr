@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "imports", "let-statements", "located-judgements", "modules", "records", "temporary-access"))]
+
 // A value is read at the world it stands at. What reads one elsewhere, makes
 // a handle for another world, or names a world nothing declares is refused
 // where it does.

@@ -11,6 +11,8 @@
 //!
 //! - see: #6403
 
+@![features("records")]
+
 // No payload: the record is the payload, and it is missing.
 @[refuses("MissingPayload")]
 @[format]

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "explicit-exits", "imports", "let-statements", "modules", "pattern-matching", "records", "signature-models", "signatures-as-values", "universes"))]
+
 // What forgetting a manifest carrier refuses: a model of a theory with the
 // counter's carrier but not its reading is no counter once forgotten, and a
 // model fixing one sort is no model fixing another. Two counters

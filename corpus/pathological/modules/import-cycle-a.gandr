@@ -1,3 +1,5 @@
+@![features(("imports", "nominal-data", "universes"))]
+
 // Two sources importing each other refuse every member of the cycle:
 // neither can be checked before the other. `import-cycle-b.gandr` is the
 // other member.

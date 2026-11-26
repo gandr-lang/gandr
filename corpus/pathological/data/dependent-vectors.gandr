@@ -1,3 +1,5 @@
+@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "universes"))]
+
 // Vector programs as they should read, and what refuses each of them.
 //
 // A case on a vector binds each arm's index equation, prunes an arm whose ends

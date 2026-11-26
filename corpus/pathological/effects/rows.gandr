@@ -1,3 +1,5 @@
+@![features(("imports", "signatures-as-values", "universes"))]
+
 // The twin of `model/effects/rows.gandr`: rules under rows whose overlap
 // parts in the rows both describe, and rows naming a theory no block
 // presents or one theory twice.

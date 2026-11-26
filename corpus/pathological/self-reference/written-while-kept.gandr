@@ -9,6 +9,8 @@
 //! Rust refuses a write through a value borrowed from itself.
 //! - see: #1183 — `writtenWhileKept`
 
+@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "temporary-access", "thunks-and-force"))]
+
 /// `writtenWhileKept` writes its hold while a thunk retains its view.
 @[refuses("HeldKept")]
 def writtenWhileKept() -> Integer =

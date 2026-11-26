@@ -1,3 +1,5 @@
+@![features(("imports", "nominal-data", "universes"))]
+
 // A declaration an unqualified import already binds is refused: the
 // circle is `circle-base.gandr`'s, and a source importing it states it once
 // more. The importer's own `Circle` would hide the one every imported

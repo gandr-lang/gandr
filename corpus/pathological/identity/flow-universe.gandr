@@ -1,3 +1,5 @@
+@![features(("directed-paths", "imports", "modules"))]
+
 // A flow between types whose written endpoints disagree with its translator:
 // `A ⇝ B` abbreviates `Flow[.A = Type](A, B)`, and `Flow.into` introduces
 // it at the
