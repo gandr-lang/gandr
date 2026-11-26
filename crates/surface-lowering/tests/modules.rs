@@ -2138,12 +2138,17 @@ fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
             .module
             .declarations()
             .iter()
-            .filter_map(|declaration| match declaration.outcome() {
-                DeclarationOutcome::Refused(LoweringRefusal::FeatureUndeclared {
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(LoweringRefusal::FeatureUndeclared {
                     span,
                     feature,
-                }) => Some((feature, span)),
-                _ => None,
+                }) = declaration.outcome()
+                {
+                    Some((feature, span))
+                }
+                else {
+                    None
+                }
             })
             .collect()
     };
@@ -2168,8 +2173,10 @@ fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
     );
 
     assert!(
-        refused("@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer = 1;")
-            .is_empty(),
+        refused(
+            "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer = 1;"
+        )
+        .is_empty(),
         "a source that declares each feature that it uses is not refused"
     );
     assert!(

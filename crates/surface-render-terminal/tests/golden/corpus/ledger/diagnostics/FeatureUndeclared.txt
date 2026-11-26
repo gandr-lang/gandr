@@ -1,0 +1,8 @@
+error[FeatureUndeclared]: the source uses the language feature `deprecation` and does not declare it
+  ╭▸ corpus/ledger/diagnostics/FeatureUndeclared.gandr:7:3
+  │
+7 │ @[deprecated]
+  │   ━━━━━━━━━━ a feature that the source does not declare
+  │
+  ├ note: `one` is refused with FeatureUndeclared, as its expectation states
+  ╰ help: add "deprecation" to the attribute `features` at the head of the source

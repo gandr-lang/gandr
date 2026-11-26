@@ -19718,13 +19718,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Specification
     /// - requires: the attributes of each slot and of each source are filed in
     ///   `table`, with their payloads in `arena`.
-    /// - ensures: for each source whose head has the attribute `features`,
-    ///   the first slot of the source is offered
+    /// - ensures: for each source whose head has the attribute `features`, the
+    ///   first slot of the source is offered
     ///   [`LoweringRefusal::FeatureUndeclared`] at the attribute, with the
     ///   feature and the span that
     ///   [`gandr_surface_lowering_base::gate::undeclared_feature`] answers. A
-    ///   source with no such attribute, and a source that declares each
-    ///   feature that it uses, is offered nothing.
+    ///   source with no such attribute, and a source that declares each feature
+    ///   that it uses, is offered nothing.
     /// - provides: the judgement of a declaration of features.
     /// - fails: never.
     /// - panics: none.
@@ -19766,10 +19766,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 &(start .. end),
             ) && let Some(slot) = slots.get_mut(usize::from(module.first))
             {
-                slot.refuse(
-                    written.at.node,
-                    LoweringRefusal::FeatureUndeclared { span, feature },
-                );
+                slot.refuse(written.at.node, LoweringRefusal::FeatureUndeclared {
+                    span,
+                    feature,
+                });
             }
         }
     }

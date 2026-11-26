@@ -255,9 +255,8 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
 ///   `tree` inside `within`, of each attribute that `table` files under a key
 ///   of `source`, and of each builtin row whose key a `builtin` attribute of
 ///   `source` states. A rule, an attribute or a row of tier zero adds nothing.
-///   The span of an id is the span of the node or of the attribute that
-///   starts first among those that use it, and the longest of those that
-///   start there.
+///   The span of an id is the span of the node or of the attribute that starts
+///   first among those that use it, and the longest of those that start there.
 /// - provides: the set that the keys of [`declared_features`] are compared
 ///   with, and the place of a refusal.
 /// - fails: never.
@@ -323,10 +322,10 @@ pub fn used_features(
 /// # Specification
 /// - requires: as [`used_features`].
 /// - ensures: nothing for a source with no `features` attribute at its head,
-///   and nothing for a source that declares each feature that it uses; else
-///   the feature of [`used_features`] that [`declared_features`] does not
-///   hold and whose span starts first, and the first by its id among those
-///   that start at one byte.
+///   and nothing for a source that declares each feature that it uses; else the
+///   feature of [`used_features`] that [`declared_features`] does not hold and
+///   whose span starts first, and the first by its id among those that start at
+///   one byte.
 /// - provides: the refusal of a source that uses a feature that it does not
 ///   declare.
 /// - fails: never.
@@ -339,8 +338,8 @@ pub fn used_features(
 /// - witness: `gandr-surface-lowering::tests::modules::a_source_is_refused_for_a_feature_that_it_does_not_declare`
 ///
 /// # Cost
-/// - time: as [`used_features`], for a source with the attribute; one pass
-///   over the keys of the sources for a source with none.
+/// - time: as [`used_features`], for a source with the attribute; one pass over
+///   the keys of the sources for a source with none.
 #[inline]
 #[must_use]
 pub fn undeclared_feature(
