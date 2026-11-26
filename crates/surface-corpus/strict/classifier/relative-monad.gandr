@@ -16,7 +16,7 @@ def unit_and_bind : raw_rel_monad (fun (X) { type(-F (X * X)) }) Integer Integer
 
 def unit_and_bind_elided : raw_rel_monad_elided (fun (X) {
   type(-F (X * X))
-}) Integer Integer = unit_and_bind;
+}) Integer Integer = unit_and_bind
 
 def unit_and_bind_spelled : (Integer -> Integer * Integer) * ((
   () -> Integer * Integer,
