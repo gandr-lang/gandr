@@ -14,7 +14,7 @@
 @[refuses("RulesUnoriented")]
 theory Beta where
   sort Tm : Type+
-  oper lam : (t : pi+ (x : Tm). Tm) --> Tm
+  oper lam : (t : (x : Tm) -> Tm) --> Tm
   oper app : (t : Tm, u : Tm) --> Tm
   rule beta : app (lam t) u <=> t u
 
@@ -24,7 +24,7 @@ theory Beta where
 @[refuses("IllFormedDescription")]
 theory BetaShadow where
   sort Tm : Type+
-  oper lam : (t : pi+ (x : Tm). Tm) --> Tm
+  oper lam : (t : (x : Tm) -> Tm) --> Tm
   oper app : (t : Tm, u : Tm) --> Tm
   rule betaShadow : app (lam t) u <=> app t u
 
@@ -33,7 +33,7 @@ theory BetaShadow where
 @[refuses("IllFormedDescription")]
 theory LetTwice where
   sort Tm : Type+
-  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm
+  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm
   rule zeta : let u t <=> t u u
 
 /// `putPut` applies `f`, which no operation declares, once on each side: the
@@ -43,7 +43,7 @@ theory LetTwice where
 theory Undeclared where
   sort S : Type+
   sort C : Type
-  oper get : (k : pi+ (s : S). C) --> C
+  oper get : (k : (s : S) -> C) --> C
   oper put : (s : S, k : C) --> C
   rule putPut : put s (put (f s) k) <=> put (f s) k
 
@@ -53,6 +53,6 @@ theory Undeclared where
 theory LetToZero where
   sort Tm : Type+
   oper zero : Tm
-  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm
+  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm
   rule zeta : let u t <=> t u
   rule toZero : let zero t <=> zero

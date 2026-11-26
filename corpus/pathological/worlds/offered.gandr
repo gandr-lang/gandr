@@ -21,7 +21,7 @@ pub theory Kept where
   /// What a computation over them answers.
   sort C : Type
   /// Reads the value at `key`.
-  oper get : (key : V, k : pi+ (v : V). C) --> C
+  oper get : (key : V, k : (v : V) -> C) --> C
   /// Keeps `value` at `key`.
   oper put : (key : V, value : V, k : C) --> C
 

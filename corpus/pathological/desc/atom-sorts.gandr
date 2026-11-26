@@ -16,4 +16,4 @@ theory Minting where
 theory AtomBinder where
   sort Name : Atom
   sort Tm : Type
-  oper abs : (t : pi+ (x : Name). Tm) --> Tm
+  oper abs : (t : (x : Name) -> Tm) --> Tm

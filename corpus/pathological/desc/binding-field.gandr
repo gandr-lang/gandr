@@ -11,5 +11,5 @@
 theory Unknown where
   sort Val : Type+
   sort Proc : Type
-  oper new : (body : pi+ (x : Val). Proc) --> Proc
+  oper new : (body : (x : Val) -> Proc) --> Proc
   rule gc : new (bind x. q) <=> q where {| x # q};

@@ -77,7 +77,7 @@ theory Skipping where
   /// The computation the store runs in.
   sort C : Type
   /// Read the stored value.
-  oper get : (k : pi+ (s : S). C) --> C
+  oper get : (k : (s : S) -> C) --> C
   /// Store a value.
   oper put : (s : S, k : C) --> C
   /// A write leaves what follows it as it is.

@@ -9,7 +9,7 @@
 theory StateObserved where
   sort S : Type+
   sort C : Type
-  oper get : (k : pi+ (s : S). C) --> C
+  oper get : (k : (s : S) -> C) --> C
   oper put : (s : S, k : C) --> C
   oper peek : (c : C) --> S
   rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
@@ -21,7 +21,7 @@ theory StateObserved where
 theory StatePutKeepsFirst where
   sort S : Type+
   sort C : Type
-  oper get : (k : pi+ (s : S). C) --> C
+  oper get : (k : (s : S) -> C) --> C
   oper put : (s : S, k : C) --> C
   rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
   rule putFirst : put s (put u k) <=> put s k
@@ -33,7 +33,7 @@ theory StatePutKeepsFirst where
 theory StateAllLaws where
   sort S : Type+
   sort C : Type
-  oper get : (k : pi+ (s : S). C) --> C
+  oper get : (k : (s : S) -> C) --> C
   oper put : (s : S, k : C) --> C
   rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
   rule putPut : put s (put u k) <=> put u k
