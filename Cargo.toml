@@ -96,6 +96,7 @@ members = [
   "crates/workflow-build-state",
   "crates/workflow-coverage-guard",
   "crates/workflow-debt-ledger",
+  "crates/workflow-feature-tiers",
   "crates/workflow-gate",
   "crates/workflow-github",
   "crates/workflow-host-tools",
