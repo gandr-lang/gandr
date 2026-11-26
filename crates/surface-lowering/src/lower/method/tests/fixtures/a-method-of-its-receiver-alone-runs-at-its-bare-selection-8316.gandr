@@ -1,0 +1,31 @@
+module Counter where
+  def read(self : shared Integer) -> -F Integer = pure self
+  def bump(self : Integer, by : Integer) -> -F Unit =
+    access self as v { resume v (v + by) }
+  def spend(self : consumed Integer) -> -F Integer = pure self + 1
+
+def called() -> -F Integer =
+  var s = 1
+  let n = s.read ()
+  let _ = s.bump 2
+  let m = s.spend ()
+  pure n + m
+
+def bare() -> -F Integer =
+  var s = 1
+  let n = s.read
+  let _ = s.bump 2
+  let m = s.spend
+  pure n + m
+
+def readCalled(t : Integer) -> -F Integer = t.read ()
+
+def readBare(t : Integer) -> -F Integer = t.read
+
+def spentCalled(t : Integer) -> -F Integer = t.spend ()
+
+def spentBare(t : Integer) -> -F Integer = t.spend
+
+def bound() -> -F Integer =
+  let f = Counter.read
+  f 3

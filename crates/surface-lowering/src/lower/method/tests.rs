@@ -745,3 +745,50 @@ fn a_pipeline_field_refuses_what_names_no_method_call_7981()
         refusal_of(&module, SurfaceName::from("summed"))
     );
 }
+
+#[test]
+fn a_method_of_its_receiver_alone_runs_at_its_bare_selection_8316()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/a-method-of-its-receiver-alone-runs-at-its-bare-selection-8316.gandr"
+        )),
+        &mut arena,
+    );
+    for pair in [
+        ("called", "bare"),
+        ("readCalled", "readBare"),
+        ("spentCalled", "spentBare"),
+    ] {
+        assert!(
+            one_core(&module, &arena, pair),
+            "`{}` and `{}` lower to one core term",
+            pair.0,
+            pair.1
+        );
+    }
+    let report = judged(&module, &mut arena);
+    assert_eq!(
+        report.judged().len(),
+        module.declarations().iter().count(),
+        "{report:?}"
+    );
+    assert_accepted(&report);
+    // A method that answers a place runs at its bare selection too, with a
+    // view block after it and without one.
+    let mut arena = CoreArena::new();
+    let source = listing(format!(
+        "{PLACES}def headBare() -> -F Integer = {{ var xs = pair; let h = xs.first; pure h }};\n\
+         def doubledBare() -> -F Integer = {{ var xs = pair; (xs.first) as w {{ pure w + w }} }};\n"
+    ));
+    let module = listed(&source, &mut arena);
+    for pair in [("head", "headBare"), ("doubled", "doubledBare")] {
+        assert!(
+            one_core(&module, &arena, pair),
+            "`{}` and `{}` lower to one core term",
+            pair.0,
+            pair.1
+        );
+    }
+}

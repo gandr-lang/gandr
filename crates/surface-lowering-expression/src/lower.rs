@@ -10191,14 +10191,16 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   `Native::construct` reads it; a bare selection `x.op` of an operation
     ///   of no input that a capability or a host interface offers performs it
     ///   with the unit as its payload, as `Capability::exercise_bare` reads it;
-    ///   a selection `C(a, …).l` off a multi-output constructor is its port
-    ///   `l`, as `Native::port` reads it; a selection by position projects the
-    ///   entry at that place of the type written for its operand, or of the
-    ///   pair the operand is when no type is written, as `Models::positional`
-    ///   reads it; a selection read as a computation off a name whose written
-    ///   type is a thunked lazy record over labels observes the entry its label
-    ///   names; a selection off a name whose written type is a type over labels
-    ///   projects the entry its label names, as `Models::selection` reads it; a
+    ///   a bare selection `s.m` of a method whose one input is its receiver
+    ///   calls it on `s`, as `Capability::method_bare` reads it; a selection
+    ///   `C(a, …).l` off a multi-output constructor is its port `l`, as
+    ///   `Native::port` reads it; a selection by position projects the entry at
+    ///   that place of the type written for its operand, or of the pair the
+    ///   operand is when no type is written, as `Models::positional` reads it;
+    ///   a selection read as a computation off a name whose written type is a
+    ///   thunked lazy record over labels observes the entry its label names; a
+    ///   selection off a name whose written type is a type over labels projects
+    ///   the entry its label names, as `Models::selection` reads it; a
     ///   selection off a name whose written type is a data family without
     ///   indices reads the field its label names off every constructor, as
     ///   `Native::data_field` reads it; a selection off a flattened model
@@ -10269,12 +10271,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_of_no_input_is_performed_by_its_bare_name_7935`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_of_its_receiver_alone_runs_at_its_bare_selection_8316`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.cx().plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Forced(_) | Plan::Invoked(..) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Exercise(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Forced(_) | Plan::Invoked(..) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -10303,6 +10306,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         }
         // `fs.cwd` performs an operation of no input by its bare name.
         if Capability::new(self.host()).exercise_bare(site)? == arity::Planned(true) {
+            return Ok(());
+        }
+        // `s.len` calls the method `len` of its receiver alone.
+        if Capability::new(self.host()).method_bare(site)? == arity::Planned(true) {
             return Ok(());
         }
         // `C(a, …).l` names the port `l` of the multi-output constructor `C`.

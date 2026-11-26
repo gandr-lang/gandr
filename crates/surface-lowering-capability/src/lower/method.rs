@@ -539,15 +539,16 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
 
     /// Classify the view block `e as w { b }` at `site`: `e` a call of a
     /// method answering a place, which the block's view lends. The call is
-    /// written between parentheses, `(xs.first ()) as w { b }`, since an
+    /// written between parentheses, `(xs.first) as w { b }`, since an
     /// application binds looser than the block's `as`: a parenthesis that
     /// holds one operand is read through to it.
     ///
     /// # Specification
     /// - requires: `site` is a view block and `pieces` its own.
     /// - ensures: the block stands as the call [`Self::method_at`] plans of
-    ///   `e`, read through every parenthesis around it, lending the place to
-    ///   `b` under `w`.
+    ///   `e`, or that [`Self::method_bare`] plans of a bare selection `e`, read
+    ///   through every parenthesis around it, lending the place to `b` under
+    ///   `w`.
     /// - fails: [`LoweringRefusal::ViewOfNoPlace`] at `e` when it is no call of
     ///   a method, or one of a method answering no place; the call's own
     ///   refusals.
@@ -562,7 +563,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block after a call of a method answering a place,
-    ///   in either spelling, and after one of a method that reads its receiver.
+    ///   in either spelling and at its bare selection, and after one of a
+    ///   method that reads its receiver.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_after_no_place_is_refused`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Method(_))))]
@@ -579,14 +581,19 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         else {
             return Err(refused);
         };
-        let Some((_, Former::Call)) = self.cx().form_at(call)?
-        else {
-            return Err(refused);
+        let planned = match self.cx().form_at(call)? {
+            Some((_, Former::Call)) => {
+                let mut called = Pieces::new();
+                read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut called)?;
+                let head = Cursor::new(&called.pieces, call.span);
+                self.method_at(site, &head, Some((call.node, &mut cursor)))?
+            },
+            Some((_, Former::Projection)) => {
+                self.method_bare_at(site, call, Some((call.node, &mut cursor)))?
+            },
+            _ => return Err(refused),
         };
-        let mut called = Pieces::new();
-        read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut called)?;
-        let head = Cursor::new(&called.pieces, call.span);
-        match self.method_at(site, &head, Some((call.node, &mut cursor)))? {
+        match planned {
             Planned(true) => Ok(()),
             Planned(false) => Err(refused),
         }
@@ -1060,6 +1067,141 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             (!pieces.pieces.is_empty()).then_some(&mut inputs),
             None,
         )
+    }
+
+    /// Plan the bare selection `s.f` at `site` as the call of the method `f`
+    /// on `s`, when `f` takes its receiver alone.
+    ///
+    /// # Specification
+    /// - requires: `site` stands at a projection.
+    /// - ensures: a selection `s.f` whose `s` is a name that a binder or a
+    ///   declaration answers, and whose `f` one module in scope declares as a
+    ///   method whose one explicit parameter is its receiver, stands as the
+    ///   call that [`Self::method_at`] plans of `s.f ()`, with no argument. A
+    ///   selection off a module's path, `M.f`, and a selection of a method of
+    ///   more inputs are left unplanned, as is any other selection.
+    /// - fails: [`LoweringRefusal::AmbiguousMethod`] at `f` when more than one
+    ///   module in scope declares a method `f` and one of them takes its
+    ///   receiver alone; the refusals of [`Self::method_call`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Cost
+    /// - allocation: the selection's pieces and the candidates of its name,
+    ///   growth within the methods of that name
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare selection at each mode lowers as the call `s.f
+    ///   ()` does; a method of more inputs and a selection through the module's
+    ///   path keep their readings.
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_of_its_receiver_alone_runs_at_its_bare_selection_8316`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Method(_))))]
+    #[inline]
+    pub fn method_bare(
+        &mut self,
+        site: Site,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        self.method_bare_at(site, site.at, None)
+    }
+
+    /// Plan the bare selection at `at` as [`Self::method_bare`] does, at
+    /// `site`, lending a view block the place a method answering one answers.
+    ///
+    /// # Specification
+    /// - requires: `at` stands at a projection; `view`, when given, names the
+    ///   projection's node and stands at the `as` of the view block it heads.
+    /// - ensures: as [`Self::method_bare`], the call planned at `site` with the
+    ///   view block `view` names.
+    /// - fails: as [`Self::method_bare`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Cost
+    /// - allocation: as [`Self::method_bare`]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::method_bare`] and [`Self::view_call`].
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_of_its_receiver_alone_runs_at_its_bare_selection_8316`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Method(_))))]
+    fn method_bare_at(
+        &mut self,
+        site: Site,
+        at: Placed,
+        view: Option<(NodeIndex, &mut Cursor<'_>)>,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
+        let Maybe::Present(Link {
+            operand: target,
+            name: selected,
+            label: TileName::IDENTIFIER,
+        }) = link(&pieces.pieces)
+        else {
+            return Ok(Planned(false));
+        };
+        let Some((_, Former::Name)) = self.cx().form_at(target)?
+        else {
+            return Ok(Planned(false));
+        };
+        let method = self.cx().name_at(selected);
+        let Container::TopLevel(here) = self.cx().collected.top(selected.span.start())
+        else {
+            return Ok(Planned(false));
+        };
+        let candidates = self.methods_named(method, here)?;
+        let alone = |slot: SlotIndex| {
+            self.cx()
+                .collected
+                .parameters
+                .get(&slot)
+                .is_some_and(|parameters| parameters.len() == 1)
+        };
+        let (slot, mode) = match *candidates.as_slice() {
+            [ref only] if alone(only.slot) => (only.slot, only.mode),
+            [ref first, ref second, ref rest @ ..]
+                if candidates.iter().any(|candidate| alone(candidate.slot)) =>
+            {
+                return Err(LoweringRefusal::AmbiguousMethod {
+                    span: selected.span,
+                    method,
+                    first: first.module,
+                    second: second.module,
+                    more: CandidateCount::from(rest.len()),
+                });
+            },
+            _ => return Ok(Planned(false)),
+        };
+        let frame = self.host().require(site, Produced::Computation)?;
+        // A module's name answers no value: `M.f` is the method itself.
+        let resolved = self.receiver_resolved(target, frame)?;
+        if let Maybe::Absent(_) = resolved {
+            return Ok(Planned(false));
+        }
+        self.method_call(
+            site,
+            frame,
+            Chosen {
+                slot,
+                mode,
+                method,
+                selected,
+                head: selected.node,
+            },
+            Received {
+                at: target,
+                resolved,
+                skipped: 0,
+            },
+            None,
+            view,
+        )?;
+        Ok(Planned(true))
     }
 }
 
