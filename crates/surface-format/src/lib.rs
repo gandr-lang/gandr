@@ -176,7 +176,8 @@
 //! from what the source uses. A rewrite changes the forms of a source, so it
 //! can change that set. The declaration is no part of what a declaration of
 //! the source means. So the source and each rewritten text lower with that
-//! block read as spaces ([`unjudged`]), which the lowering does not judge.
+//! block read as spaces ([`gandr_surface_syntax::unjudged`]), which the
+//! lowering does not judge.
 //! The formatted text keeps the block as the source writes it: the caller
 //! writes the declaration of the text that it keeps.
 //!
@@ -354,6 +355,7 @@ use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_surface_syntax::unjudged;
 
 pub use crate::attach::Attachment;
 pub use crate::attach::Column;
@@ -2986,167 +2988,4 @@ fn strip_bare_checks(source: SourceText<'_>) -> alloc::string::String
         }
     }
     out
-}
-
-/// `source` with each block of its head that declares the features of the
-/// source read as spaces, or nothing when the head has no such block.
-///
-/// The head of a source is its lines before the first line that is not
-/// blank, not a line comment, not the shebang and not a line of an inner
-/// attribute block. A block declares the features when it holds the
-/// attribute `features` alone. A block that holds a second attribute keeps
-/// its text, and the lowering judges it.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: `Some` exactly when the head holds such a block. The answer has
-///   the length of `source` in bytes and each line break of `source`. Each
-///   other byte of such a block is a space, and each byte outside such a block
-///   is the byte of `source`.
-/// - provides: a text whose declarations stand at the offsets of `source`, and
-///   whose declaration of features the lowering does not judge. The formatter
-///   and each reader that compares two spellings of one source lower it.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a rewrite that changes the features of a declared source
-///   enters each declaration of the source, and the first declaration among
-///   them. With the block judged, the lowering refuses the first declaration of
-///   the rewritten text, and the rewrite is withdrawn there.
-/// - witness: `tests::rewrite::a_rewrite_enters_a_source_that_declares_its_features`
-#[spec(ensures: |ret| ret.as_ref().is_none_or(|held| held.len() == <&str>::from(source).len()))]
-#[inline]
-#[must_use]
-pub fn unjudged(source: SourceText<'_>) -> Option<alloc::string::String>
-{
-    let text = <&str>::from(source);
-    let mut blocks: Vec<core::ops::Range<usize>> = Vec::new();
-    let mut at = 0_usize;
-    while let Some(rest) = text.get(at ..).filter(|rest| !rest.is_empty()) {
-        let line = rest.split_inclusive('\n').next().unwrap_or(rest);
-        let content = line.trim();
-        if content.is_empty() || content.starts_with("//") || (at == 0 && content.starts_with("#!"))
-        {
-            at = at.saturating_add(line.len());
-            continue;
-        }
-        let Some(length) = line.starts_with("@![").then(|| inner_block(rest)).flatten()
-        else {
-            break;
-        };
-        let end = at.saturating_add(length);
-        if text
-            .get(at.saturating_add(3) .. end.saturating_sub(1))
-            .is_some_and(features_alone)
-        {
-            blocks.push(at .. end);
-        }
-        at = text
-            .get(end ..)
-            .and_then(|after| after.find('\n'))
-            .map_or(text.len(), |ahead| {
-                end.saturating_add(ahead).saturating_add(1)
-            });
-    }
-    if blocks.is_empty() {
-        return None;
-    }
-    let mut out = alloc::string::String::with_capacity(text.len());
-    for (offset, glyph) in text.char_indices() {
-        if !matches!(glyph, '\n' | '\r') && blocks.iter().any(|block| block.contains(&offset)) {
-            out.extend(core::iter::repeat_n(' ', glyph.len_utf8()));
-        }
-        else {
-            out.push(glyph);
-        }
-    }
-    Some(out)
-}
-
-/// The length in bytes of the inner attribute block that `text` opens on, as
-/// far as the bracket that closes it.
-///
-/// # Specification
-/// - requires: `text` starts with `@![`.
-/// - ensures: the offset after the bracket that closes the block, where a
-///   bracket inside a quoted text closes nothing; nothing when no bracket
-///   closes it.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`unjudged`], over a block of one line and a block of
-///   four lines.
-/// - witness: `tests::rewrite::a_rewrite_enters_a_source_that_declares_its_features`
-fn inner_block(text: &str) -> Option<usize>
-{
-    let mut depth = 0_usize;
-    let mut quoted = false;
-    let mut escaped = false;
-    for (at, glyph) in text.char_indices() {
-        match glyph {
-            _ if escaped => escaped = false,
-            '\\' if quoted => escaped = true,
-            '"' => quoted = !quoted,
-            '[' if !quoted => depth = depth.saturating_add(1),
-            ']' if !quoted => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(at.saturating_add(1));
-                }
-            },
-            _ => {},
-        }
-    }
-    None
-}
-
-/// Whether `inner`, the text between the brackets of an inner attribute
-/// block, is the attribute `features` with its payload and no second
-/// attribute.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: true exactly when `inner` is the word `features`, one
-///   parenthesised payload, and at most one comma after it, with white space
-///   between them.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`unjudged`]; a block that holds a second attribute
-///   keeps its text.
-/// - witness: `tests::rewrite::a_rewrite_enters_a_source_that_declares_its_features`
-fn features_alone(inner: &str) -> bool
-{
-    let Some(payload) = inner
-        .trim()
-        .strip_prefix("features")
-        .map(str::trim_start)
-        .filter(|payload| payload.starts_with('('))
-    else {
-        return false;
-    };
-    let mut depth = 0_usize;
-    let mut quoted = false;
-    let mut escaped = false;
-    for (at, glyph) in payload.char_indices() {
-        match glyph {
-            _ if escaped => escaped = false,
-            '\\' if quoted => escaped = true,
-            '"' => quoted = !quoted,
-            '(' if !quoted => depth = depth.saturating_add(1),
-            ')' if !quoted => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return payload
-                        .get(at.saturating_add(1) ..)
-                        .is_some_and(|after| matches!(after.trim(), "" | ","));
-                }
-            },
-            _ => {},
-        }
-    }
-    false
 }

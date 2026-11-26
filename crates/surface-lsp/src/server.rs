@@ -20231,6 +20231,13 @@ mod tests
         let written = std::fs::read_to_string(&path)
             .expect("the fixture is read")
             .replacen("  loop ∷ p\n", "  loop ∷ ?\n", 1);
+        // The edit puts a hole into a source that declares no typed hole. The
+        // buffer holds the text with its declaration of features read as
+        // spaces, so the trial judges the hole and not the declaration.
+        let written = gandr_surface_syntax::unjudged(gandr_surface_syntax::SourceText::from(
+            written.as_str(),
+        ))
+        .unwrap_or(written);
         let opened = format!(
             r#","version":1,"text":{}}}"#,
             serde_json::to_string(&written).expect("the text serialises")

@@ -135,6 +135,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::unjudged;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Composed;
@@ -1974,16 +1975,17 @@ impl Offering<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the program's text, followed by an import of the site's file
-    ///   by its path from the program's directory, under [`SITE_ALIAS`] and
-    ///   listing each module of `bound`, and per label the functor [`REQUIRED`]
-    ///   over a model of the label's theory at the entry's sorts and
-    ///   [`OFFERED`] applying it to the module as the label reads it, judged at
-    ///   the program's path as [`stepped_alone`] judges a text; each label
-    ///   whose lines a diagnostic marks, with that diagnostic spelled. A label
-    ///   read through a translation is read as [`TRANSLATED`], written before
-    ///   its lines: for a flow, the flow applied to the module; for a renaming,
-    ///   a module whose every member is the module's member of the name the
+    /// - ensures: the program's text, with its declaration of features read as
+    ///   spaces ([`unjudged`]), followed by an import of the site's file by its
+    ///   path from the program's directory, under [`SITE_ALIAS`] and listing
+    ///   each module of `bound`, and per label the functor [`REQUIRED`] over a
+    ///   model of the label's theory at the entry's sorts and [`OFFERED`]
+    ///   applying it to the module as the label reads it, judged at the
+    ///   program's path as [`stepped_alone`] judges a text; each label whose
+    ///   lines a diagnostic marks, with that diagnostic spelled. A label read
+    ///   through a translation is read as [`TRANSLATED`], written before its
+    ///   lines: for a flow, the flow applied to the module; for a renaming, a
+    ///   module whose every member is the module's member of the name the
     ///   renaming reads, under the name it gives, each type member a type and
     ///   each value member a definition. The modules are imported by their bare
     ///   names because a functor applies a module by its name, so a program
@@ -2024,9 +2026,10 @@ impl Offering<'_>
             .iter()
             .map(|label| label.answer.module.as_str())
             .collect();
+        let read = unjudged(self.program);
         let mut written = format!(
             include_str!("manifold/unformatted/modelled-written.gandr"),
-            program = self.program,
+            program = read.as_deref().map_or(self.program, SourceText::from),
             modules = modules.into_iter().collect::<Vec<_>>().join(", "),
             SITE_ALIAS = SITE_ALIAS,
             address = address,
@@ -2083,7 +2086,8 @@ impl Offering<'_>
     ///
     /// # Specification
     /// - requires: `site` is the text of the site's file.
-    /// - ensures: `site`, followed per interface of `listed` holding an
+    /// - ensures: `site`, with its declaration of features read as spaces
+    ///   ([`unjudged`]), followed per interface of `listed` holding an
     ///   operation by [`GRANTED`], a function from `Authority` to the
     ///   capability holding the interface's operations, judged at the site's
     ///   path as [`stepped_alone`] judges a text; each interface whose line a
@@ -2106,7 +2110,8 @@ impl Offering<'_>
     where
         E: Engine,
     {
-        let mut written = format!("{site}\n");
+        let read = unjudged(site);
+        let mut written = format!("{}\n", read.as_deref().map_or(site, SourceText::from));
         let mut wrote = Vec::with_capacity(listed.len());
         for interface in listed {
             let mut operations = interface.signature.operations();

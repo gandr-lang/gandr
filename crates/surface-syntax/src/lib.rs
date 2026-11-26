@@ -88,6 +88,7 @@ mod label;
 mod mold;
 mod span;
 mod tree;
+mod unjudged;
 
 pub use crate::build::StagedId;
 pub use crate::build::TreeBuilder;
@@ -126,6 +127,7 @@ pub use crate::tree::NodeIndices;
 pub use crate::tree::Positions;
 pub use crate::tree::SyntaxTree;
 pub use crate::tree::TreeSlice;
+pub use crate::unjudged::unjudged;
 
 /// Equality observed without invoking a non-const trait method.
 ///

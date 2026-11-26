@@ -1,0 +1,9 @@
+//! The sample holds the value one.
+
+@![features((
+  "modules",
+  "deprecation"
+))]
+
+/// The value one.
+def one() -> Integer = 1;

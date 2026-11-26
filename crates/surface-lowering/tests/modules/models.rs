@@ -20,6 +20,8 @@ use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::TelescopeFault;
 use gandr_surface_lowering::derive::DeriveFault;
 use gandr_surface_lowering::model::ModelFault;
+use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::unjudged;
 
 use super::Amounts;
 use super::Judgement;
@@ -139,6 +141,17 @@ fn a_lowered_theory_exposes_its_description_and_its_model()
 /// two extensions at once, and the endomorphism monoid.
 const INCLUDED: &str = include_str!("../../../../corpus/model/include/monoid.gandr");
 
+/// [`INCLUDED`] with its declaration of features read as spaces. A test puts
+/// declarations of its own after the base, and they use a feature that the
+/// base does not declare.
+///
+/// # Specification
+/// trivial.
+fn included() -> String
+{
+    unjudged(SourceText::from(INCLUDED)).unwrap_or_else(|| String::from(INCLUDED))
+}
+
 #[test]
 fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
 {
@@ -146,7 +159,7 @@ fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
         include_str!(
             "models/unformatted/a-model-of-an-extension-stands-where-the-included-model-is-asked.gandr"
         ),
-        INCLUDED = INCLUDED
+        INCLUDED = included()
     );
     let mut lowered = lower(source.as_str());
     let listed: BTreeSet<_> = lowered.module.reducts().iter().collect();
@@ -262,7 +275,7 @@ fn a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_213
         include_str!(
             "models/unformatted/a-manifest-model-of-an-extension-stands-where-the-included-model-is-asked-2136.gandr"
         ),
-        INCLUDED = INCLUDED
+        INCLUDED = included()
     );
     let mut lowered = lower(source.as_str());
     let listed: BTreeSet<_> = lowered.module.forgets().iter().collect();

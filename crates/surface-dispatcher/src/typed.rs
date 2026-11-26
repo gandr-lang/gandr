@@ -101,6 +101,7 @@
 //!   event a diagnostic reports, never a prohibition, so the table answers each
 //!   binder's hidden binding and refuses nothing for it.
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -235,6 +236,7 @@ use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::unjudged;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Checking;
@@ -4294,6 +4296,51 @@ impl TypeTable
             .map(SourceText::from)
     }
 
+    /// The text of the unit, with the declaration of features of the source
+    /// that the table types read as spaces.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the text of the unit, byte for byte, but for the source that
+    ///   the table types: that source is as [`unjudged`] reads it. The text of
+    ///   the unit as it is when the head of that source declares no features.
+    /// - provides: the text that the table puts declarations of its own after:
+    ///   the probes of a read-back and a reprinted value. Such a declaration
+    ///   can use a feature that the source does not declare, and the lowering
+    ///   would refuse the first declaration of the source for it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a comparison that the checker decodes prints with an
+    ///   operator that its source does not write. The source declares its
+    ///   features, and the probe reads back equal.
+    /// - witness: `tests::census::a_comparison_in_a_decoded_type_reads_back_6229`
+    fn derived(&self) -> Cow<'_, str>
+    {
+        let text = <&str>::from(self.naming.text());
+        let own = self.own_source();
+        let Some(start) = self
+            .unit
+            .sources()
+            .get(usize::from(own))
+            .map(|source| usize::from(source.start()))
+        else {
+            return Cow::Borrowed(text);
+        };
+        let Some(read) = self.source_text(own).and_then(unjudged)
+        else {
+            return Cow::Borrowed(text);
+        };
+        match (
+            text.get(.. start),
+            text.get(start.saturating_add(read.len()) ..),
+        ) {
+            (Some(above), Some(below)) => Cow::Owned([above, read.as_str(), below].concat()),
+            _ => Cow::Borrowed(text),
+        }
+    }
+
     /// Each name the table's unit declares, a family's constructors included,
     /// with what it names, ascending by where it is written.
     ///
@@ -5508,7 +5555,8 @@ impl TypeTable
     ///   read is printed again under the same binders, with the names, labels,
     ///   relations and model types the reread recorded for it, standing also at
     ///   every copy the put-back binders made of it, a model type's carriers at
-    ///   their copies.
+    ///   their copies. The text that the probes stand in is [`Self::derived`]:
+    ///   the declaration of features of the source is read as spaces there.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
@@ -5676,7 +5724,8 @@ impl TypeTable
         // Each function's name with how many binders its parameters declare
         // before the read type's.
         let mut parameterised: BTreeMap<String, usize> = BTreeMap::new();
-        let mut augmented = String::from(<&str>::from(self.naming.text()));
+        let derived = self.derived();
+        let mut augmented = String::from(&*derived);
         // The names of the probes read at the top level.
         let mut top: Vec<String> = Vec::new();
         // A type printed inside a module reads back inside it, after its last
@@ -5827,7 +5876,7 @@ impl TypeTable
                 window: None,
             });
         }
-        let own = <&str>::from(self.naming.text());
+        let own = &*derived;
         for (scope, (probes, names)) in scoped {
             let Some((before, after)) = self
                 .scopes
@@ -6298,11 +6347,12 @@ impl TypeTable
             NAME = NAME,
             written = written
         );
-        let mut unsigned = String::from(<&str>::from(self.naming.text()));
+        let derived = self.derived();
+        let mut unsigned = String::from(&*derived);
         unsigned.push_str(&body);
         match self.lowered_reprint(grammar, SourceText::from(unsigned.as_str())) {
             Maybe::Absent(reprinted::Absent::Unlowered) if !signature.is_empty() => {
-                let mut signed = String::from(<&str>::from(self.naming.text()));
+                let mut signed = String::from(&*derived);
                 signed.push_str(&signature);
                 signed.push_str(&body);
                 self.run_reprinted::<E>(grammar, SourceText::from(signed.as_str()))

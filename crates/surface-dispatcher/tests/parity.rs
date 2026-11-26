@@ -883,7 +883,7 @@ fn unfaithful(
 /// The text `written` lays out — the prelude, its import closure, then the
 /// source — the unit that lowers it and where the source starts in that
 /// text. The source stands there with its declaration of features read as
-/// spaces ([`gandr_surface_format::unjudged`]): the parity writes a source
+/// spaces ([`gandr_surface_syntax::unjudged`]): the parity writes a source
 /// in another spelling, which uses other features than the source declares,
 /// and the lowering refuses the first declaration of such a text.
 ///
@@ -894,7 +894,7 @@ fn laid(
     written: Written<'_>,
 ) -> (String, Unit, ByteOffset)
 {
-    let unjudged = gandr_surface_format::unjudged(written.text);
+    let unjudged = gandr_surface_syntax::unjudged(written.text);
     let text = unjudged.as_deref().map_or(written.text, SourceText::from);
     let laid = lay_out(grammar, written.path, classify(written.path), text);
     (laid.text, laid.unit, laid.base)
