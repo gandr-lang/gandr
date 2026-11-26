@@ -35,6 +35,10 @@
 //! The block stands before a `///` comment, and not after it. A `///` comment
 //! documents the declaration that follows it, and an inner block between the
 //! two parts them.
+//!
+//! A source that states the refusal of its declaration of features shows a
+//! head that differs from what it uses. The census leaves that source
+//! ([`Head::Kept`]).
 
 use core::ops::Range;
 use std::path::Path;
@@ -161,6 +165,9 @@ pub enum Head
     /// The head stated a different declaration, and the census wrote the
     /// declaration of the step into the source.
     Written,
+    /// A declaration of the source states that the lowering refuses its
+    /// declaration of features, and the census leaves the head as it is.
+    Kept,
 }
 
 /// One step of a census of features.
@@ -334,11 +341,14 @@ fn read_features<'census>(
         &mut LoweringCount::default(),
     )
     .map_err(CensusFault::Composed)?;
-    let (used, site) = match features {
-        SourceFeatures::Used { used, site } => (used, site),
+    let (used, site, shown) = match features {
+        SourceFeatures::Used { used, site, shown } => (used, site, shown),
         SourceFeatures::Refused(refusal) => return Err(CensusFault::Refused(refusal)),
     };
     let declaration = Declaration(used);
+    if shown {
+        return Ok((declaration, Head::Kept));
+    }
     let own = laid.get(base ..).unwrap_or_default();
     // The lowering measures the attribute in the text of the unit, and the
     // write is in the text of the source.
@@ -402,7 +412,7 @@ fn reads_back(
     );
     matches!(
         read,
-        Ok(SourceFeatures::Used { ref used, ref site })
+        Ok(SourceFeatures::Used { ref used, ref site, .. })
             if used.as_slice() == declaration.features()
                 && site.is_some() != declaration.features().is_empty()
     )

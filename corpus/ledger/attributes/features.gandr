@@ -1,7 +1,8 @@
 /// `features`: the language features that its source declares, each by its
 /// key. It stands at the head of a source.
-@![features("attributes")]
+@![features("deprecation")]
 
 /// The value one.
 @[runs("1")]
+@[deprecated]
 def one() -> Integer = 1;

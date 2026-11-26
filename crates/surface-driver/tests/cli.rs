@@ -2502,6 +2502,39 @@ fn features_writes_a_source_of_imports()
     );
 }
 
+/// `gandr features --write` leaves a source that shows the refusal of its
+/// declaration of features: its head states a feature that it does not use,
+/// and a declaration of it states `refuses("FeatureUndeclared")`.
+#[test]
+fn features_keeps_a_source_that_shows_the_refusal_of_its_declaration()
+{
+    let scratch = Scratch::new(Path::new("features-kept"));
+    let shown = scratch.0.join("shown.gandr");
+    let text = "@![features(\"modules\")]\n\n@[refuses(\"FeatureUndeclared\")]\n@[deprecated]\ndef \
+                one() -> Integer = 1;\n";
+    std::fs::write(&shown, text).expect("the scratch source is written");
+
+    let wrote = ran(gandr(&[
+        Path::new("features"),
+        Path::new("--write"),
+        &shown,
+    ]));
+    assert_eq!(code(&wrote), Code(0_i32), "{}", stderr(&wrote));
+    assert_eq!(stdout(&wrote), "", "the source is not written");
+    assert_eq!(
+        std::fs::read_to_string(&shown).expect("the source is read back"),
+        text,
+        "the text of the source stands"
+    );
+
+    let printed = ran(gandr(&[Path::new("features"), &shown]));
+    assert_eq!(
+        stdout(&printed),
+        format!("{}: @![features(\"deprecation\")]\n", shown.display()),
+        "the line is the declaration of what the source uses"
+    );
+}
+
 /// #4906: `gandr doc` writes a page for each source of a package, an
 /// importer's beside the sibling it imports, and an index naming each page by
 /// its source and the first sentence of its own documentation; a path naming

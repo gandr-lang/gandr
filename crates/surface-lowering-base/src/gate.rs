@@ -452,6 +452,49 @@ pub fn declaration_site(
         .map(|node| (entry, node.span()))
 }
 
+/// Whether a declaration of the source `source` states that the lowering
+/// refuses the declaration of features of the source: the expectation
+/// `refuses` with a text that starts with [`FEATURE_REFUSAL`].
+///
+/// Such a source shows the refusal, so its head states a declaration that
+/// differs from what the source uses.
+///
+/// # Specification
+/// - requires: `table` holds the attributes of the unit, and `arena` their
+///   payloads.
+/// - ensures: affirmative exactly when an attribute `refuses` that `table`
+///   files under a key of `source` has a text with that start.
+/// - provides: the sources that a tool does not give their declaration.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source that states the refusal keeps its text, and four
+///   sources that state none are written.
+/// - witness: `gandr-surface-driver::tests::cli::features_keeps_a_source_that_shows_the_refusal_of_its_declaration`
+/// - witness: `gandr-surface-driver::tests::cli::features_writes_the_declaration_of_each_source`
+///
+/// # Cost
+/// - time: one pass over the entries of the table
+#[inline]
+#[must_use]
+pub fn states_feature_refusal(
+    table: &AttributeTable,
+    arena: &CoreArena,
+    source: SourceIndex,
+) -> bool
+{
+    table.of_source(source).into_iter().any(|entry| {
+        entry.name().as_ref() == "refuses"
+            && matches!(entry.payload(), Maybe::Present(payload)
+                if matches!(texts(arena, payload), Maybe::Present(ref stated)
+                    if stated.iter().any(|text| text.as_ref().starts_with(FEATURE_REFUSAL))))
+    })
+}
+
+/// The start of the name of the refusal of a declaration of features.
+pub const FEATURE_REFUSAL: &str = "FeatureUndeclared";
+
 /// The name of the rule of an inner attribute block.
 const INNER_BLOCK: &str = "inner_attribute_block";
 

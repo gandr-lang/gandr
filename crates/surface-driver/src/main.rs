@@ -4486,10 +4486,11 @@ fn kept(
 /// - ensures: under [`Rewrite::Check`], each source that the census reads is
 ///   `<path>: <declaration>` on standard output, the declaration rendered as
 ///   the dispatcher's `Declaration` renders it, sources in walk order. Under
-///   [`Rewrite::InPlace`], only a source that the census wrote has its line.
-///   Each path that the census cannot read or write is `gandr: <path>: <fault>`
-///   on standard error, and the census continues past it. The exit is two when
-///   a path faulted or a write to a stream failed, and zero otherwise.
+///   [`Rewrite::InPlace`], only a source that the census wrote has its line,
+///   and a source that the census keeps has none. Each path that the census
+///   cannot read or write is `gandr: <path>: <fault>` on standard error, and
+///   the census continues past it. The exit is two when a path faulted or a
+///   write to a stream failed, and zero otherwise.
 /// - provides: `gandr features`.
 /// - fails: never; each failure is an exit code.
 /// - panics: none.
@@ -4517,7 +4518,7 @@ fn features(
     while let Maybe::Present(step) = census.step() {
         let written = match step {
             FeatureStep::Source {
-                head: Head::Stands | Head::Differs,
+                head: Head::Stands | Head::Differs | Head::Kept,
                 ..
             } if rewrite == Rewrite::InPlace => Ok(()),
             FeatureStep::Source {

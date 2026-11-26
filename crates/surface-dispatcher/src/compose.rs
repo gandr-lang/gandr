@@ -2253,6 +2253,10 @@ pub enum SourceFeatures<'source>
         /// the inner block that holds it. Nothing for a source with no such
         /// attribute.
         site: Option<(core::ops::Range<usize>, core::ops::Range<usize>)>,
+        /// Whether a declaration of the source states that the lowering
+        /// refuses its declaration of features, so the head shows a
+        /// declaration that differs from what the source uses.
+        shown: bool,
     },
     /// The lowering refused the unit as a whole.
     Refused(LoweringRefusal<'source>),
@@ -2327,6 +2331,11 @@ pub fn unit_source_features<'source>(
     Ok(SourceFeatures::Used {
         used: used.into_keys().collect(),
         site,
+        shown: gandr_surface_lowering::gate::states_feature_refusal(
+            module.attributes(),
+            &arena,
+            own,
+        ),
     })
 }
 
