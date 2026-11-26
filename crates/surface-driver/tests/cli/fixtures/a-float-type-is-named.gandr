@@ -1,0 +1,2 @@
+/// The same float.
+def same(a : f64) -> f64 = a;

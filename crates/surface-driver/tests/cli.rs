@@ -2336,6 +2336,51 @@ fn features_prints_the_declaration_of_each_source()
     );
 }
 
+/// `gandr features` counts the builtin row that a name of a source reaches:
+/// a float primitive of the builtin namespace, the float type and a float
+/// literal each give the feature of the float row, and a primitive of the
+/// first twin gives none. `gandr check` judges a declaration by the same
+/// rows. Each source is a file of `tests/cli/fixtures`.
+#[test]
+fn features_counts_a_builtin_row_that_a_name_reaches()
+{
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cli/fixtures");
+    let named = fixtures.join("a-float-primitive-is-named.gandr");
+    let typed = fixtures.join("a-float-type-is-named.gandr");
+    let literal = fixtures.join("a-float-literal-is-written.gandr");
+    let twin = fixtures.join("a-primitive-of-the-first-twin-is-named.gandr");
+    let features = Path::new("features");
+
+    let read = ran(gandr(&[features, &named, &typed, &literal, &twin]));
+    assert_eq!(code(&read), Code(0_i32), "{}", stderr(&read));
+    let float = "@![features(\"floating-point\")]";
+    assert_eq!(
+        stdout(&read),
+        format!(
+            "{}: {float}\n{}: {float}\n{}: {float}\n{}: tier zero\n",
+            named.display(),
+            typed.display(),
+            literal.display(),
+            twin.display()
+        )
+    );
+
+    let check = Path::new("check");
+    let declared = fixtures.join("a-float-type-is-declared.gandr");
+    let settled = ran(gandr(&[check, &declared]));
+    assert_eq!(code(&settled), Code(0_i32), "{}", stderr(&settled));
+    let undeclared = fixtures.join("a-float-type-is-not-declared.gandr");
+    let refused = ran(gandr(&[check, &undeclared]));
+    assert_eq!(code(&refused), Code(1_i32), "{}", stderr(&refused));
+    assert!(
+        stdout(&refused).contains("error[FeatureUndeclared]")
+            || stderr(&refused).contains("error[FeatureUndeclared]"),
+        "{}{}",
+        stdout(&refused),
+        stderr(&refused)
+    );
+}
+
 /// `gandr check` refuses a source that declares a feature that is no row of
 /// the features ledger, by the clause `ToolchainUnmet.feature.<key>`, and it
 /// settles a source that declares a row.

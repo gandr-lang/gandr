@@ -39,6 +39,7 @@ use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::rule_gate;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -46,6 +47,7 @@ use quenchant_shape::shape::Maybe;
 use crate::attribute::AttributeTable;
 use crate::attribute::RegisteredAttribute;
 use crate::attribute::texts;
+use crate::lower::Plan;
 use crate::module::LoweredModule;
 use crate::resolve::Resolution;
 use crate::resolve::SurfaceName;
@@ -280,11 +282,13 @@ pub fn builtin_gate(row: Row) -> Option<RuleGate>
 /// - allocation: the rows, one element for each name that reaches one.
 #[inline]
 #[must_use]
-pub fn reached_rows(
+pub fn reached_rows<RowOf>(
     resolutions: &[(ByteSpan, Resolution)],
     within: &Range<ByteOffset>,
-    row_of: impl Fn(ConstantIndex) -> Option<Row>,
+    row_of: RowOf,
 ) -> Vec<(ByteSpan, Row)>
+where
+    RowOf: Fn(ConstantIndex) -> Option<Row>,
 {
     resolutions
         .iter()
@@ -292,6 +296,66 @@ pub fn reached_rows(
         .filter_map(|&(span, resolution)| match resolution {
             Resolution::Declaration(constant) => row_of(constant).map(|row| (span, row)),
             Resolution::Binder(_) | Resolution::Constructor { .. } | Resolution::Builtin => None,
+        })
+        .collect()
+}
+
+/// The builtin rows that the plans of a lowering name, with the span of the
+/// node of each plan.
+///
+/// A name of the builtin namespace, such as `float64.exp`, is no declaration
+/// of a source, so it is no resolution. The lowering plans it as its
+/// primitive. It plans a type atom and a type former in the same manner.
+///
+/// # Specification
+/// - requires: `plans` are the plans of a lowering of `tree`.
+/// - ensures: one element for each plan that is a named primitive, a type atom,
+///   a type former or a float literal, with the span of its node and the row of
+///   that primitive, atom or former; the row of a float literal is the float
+///   atom. An operation that operator syntax selects adds nothing: the rule of
+///   the operator has its own gate.
+/// - provides: the rows that [`used_features`] counts beside those of
+///   [`reached_rows`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source that names a float primitive of the builtin
+///   namespace uses the feature of the float row, and so does a source whose
+///   one float is a literal.
+/// - witness: `gandr-surface-lowering::tests::modules::a_source_uses_the_features_of_its_forms_and_of_its_attributes`
+/// - witness: `gandr-surface-driver::tests::cli::features_counts_a_builtin_row_that_a_name_reaches`
+///
+/// # Cost
+/// - time: one pass over the plans.
+/// - allocation: the rows, one element for each plan that names one.
+#[inline]
+#[must_use]
+pub fn planned_rows<'plans, Plans>(
+    tree: &SyntaxTree<'_>,
+    plans: Plans,
+) -> Vec<(ByteSpan, Row)>
+where
+    Plans: Iterator<Item = (NodeIndex, &'plans Plan)>,
+{
+    plans
+        .filter_map(|(position, plan)| {
+            let row = if let Plan::Primitive(primitive) = *plan {
+                Row::Native(primitive)
+            }
+            else if let Plan::Atom(atom) = *plan {
+                Row::Atom(atom)
+            }
+            else if let Plan::Former(former, _) = *plan {
+                Row::Former(former)
+            }
+            else if let Plan::Literal(gandr_kernel_term::Literal::Float64(_)) = *plan {
+                Row::Atom(gandr_core_term::builtin::TypeAtom::Float64)
+            }
+            else {
+                return None;
+            };
+            tree.node(position).map(|node| (node.span(), row))
         })
         .collect()
 }
@@ -431,7 +495,9 @@ pub fn used_features(
         }
     }
     for &(span, row) in reached {
-        gated(builtin_gate(row), span);
+        if within.start <= span.start() && span.end() <= within.end {
+            gated(builtin_gate(row), span);
+        }
     }
     used
 }

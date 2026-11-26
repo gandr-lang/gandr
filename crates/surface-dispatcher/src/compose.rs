@@ -2319,10 +2319,11 @@ pub fn unit_source_features<'source>(
     );
     let within = start .. gandr_surface_syntax::ByteOffset::from(usize::MAX);
     let marked = gandr_surface_lowering::gate::marked_rows(&module, &arena);
-    let reached =
+    let mut reached =
         gandr_surface_lowering::gate::reached_rows(module.resolutions(), &within, |constant| {
             marked.get(&constant).copied()
         });
+    reached.extend_from_slice(module.builtin_rows());
     let used = gandr_surface_lowering::gate::used_features(
         (grammar, &tree),
         (module.attributes(), &arena),

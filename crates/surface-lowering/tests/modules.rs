@@ -2080,11 +2080,12 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
         let first = gandr_surface_lowering::SourceIndex::from(0_usize);
         let table = lowered.module.attributes();
         let marked = gandr_surface_lowering::gate::marked_rows(&lowered.module, &lowered.arena);
-        let reached = gandr_surface_lowering::gate::reached_rows(
+        let mut reached = gandr_surface_lowering::gate::reached_rows(
             lowered.module.resolutions(),
             &whole,
             |constant| marked.get(&constant).copied(),
         );
+        reached.extend_from_slice(lowered.module.builtin_rows());
         let used: Vec<&'static str> = gandr_surface_lowering::gate::used_features(
             (&pbg, &tree),
             (table, &lowered.arena),
@@ -2106,6 +2107,13 @@ fn a_source_uses_the_features_of_its_forms_and_of_its_attributes()
         "a source of the forms of the first twin uses no feature: {used:?}"
     );
     assert_eq!(declared, None, "and it declares nothing");
+
+    let (used, _declared) = features("def grown() -> f64 = float64.exp 0.5f64;");
+    assert_eq!(
+        used,
+        ["floating-point"],
+        "a name of the builtin namespace uses the feature of its row"
+    );
 
     let (used, declared) = features(
         "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> Integer = 1;",

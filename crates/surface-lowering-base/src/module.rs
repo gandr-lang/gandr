@@ -12497,6 +12497,9 @@ pub struct LoweredModule<'source>
     /// Each written name the lowering resolved, with what it names, ascending
     /// by span.
     resolutions: Vec<(ByteSpan, Resolution)>,
+    /// Each builtin row that a plan of the lowering names, with the span of
+    /// the node of the plan.
+    builtin_rows: Vec<(ByteSpan, gandr_core_term::builtin::Row)>,
     /// Each written binder whose name an outer scope binds, with the binding
     /// it hides, kept in the form of the node that wrote the binder.
     shadows: ByForm<Shadow>,
@@ -12614,6 +12617,7 @@ impl<'source> LoweredModule<'source>
             nested: BTreeMap::new(),
             in_scope: InScope::default(),
             resolutions: Vec::new(),
+            builtin_rows: Vec::new(),
             shadows: ByForm::default(),
             reached_imports: Vec::new(),
             origins,
@@ -13353,6 +13357,34 @@ impl<'source> LoweredModule<'source>
     pub fn resolutions(&self) -> &[(ByteSpan, Resolution)]
     {
         &self.resolutions
+    }
+
+    /// This module, carrying each builtin row that a plan of the lowering
+    /// names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_builtin_rows(
+        mut self,
+        builtin_rows: Vec<(ByteSpan, gandr_core_term::builtin::Row)>,
+    ) -> Self
+    {
+        self.builtin_rows = builtin_rows;
+        self
+    }
+
+    /// Each builtin row that a plan of the lowering names, with the span of
+    /// the node of the plan: a named primitive, a type atom or a type former.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn builtin_rows(&self) -> &[(ByteSpan, gandr_core_term::builtin::Row)]
+    {
+        &self.builtin_rows
     }
 
     /// This module, carrying each written binder that hides a binding, with

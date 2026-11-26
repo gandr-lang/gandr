@@ -1,0 +1,4 @@
+/// The exponential of a half.
+def grown() -> f64 =
+  let e = float64.exp 0.5f64
+  e

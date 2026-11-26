@@ -19746,6 +19746,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         arena: &CoreArena,
     )
     {
+        let planned =
+            gandr_surface_lowering_base::gate::planned_rows(self.cx().tree, self.cx().plans.iter());
         for module in decorated {
             let Some(written) = module.attributes.iter().find(|written| {
                 written.standing == Standing::Source
@@ -19766,19 +19768,20 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             );
             let within = start .. end;
             // A name of the source reaches a builtin row through the
-            // declaration of the tool chain that has the mark of the row.
-            let reached = gandr_surface_lowering_base::gate::reached_rows(
+            // declaration of the tool chain that has the mark of the row, or
+            // through the builtin namespace.
+            let mut reached = gandr_surface_lowering_base::gate::reached_rows(
                 &self.cx().resolutions,
                 &within,
                 |constant| {
-                    slots.get(usize::from(constant)).and_then(|marked| {
-                        match self.cx().row_of(marked) {
-                            Maybe::Present(row) => Some(row),
-                            Maybe::Absent(_) => None,
-                        }
-                    })
+                    let marked = slots.get(usize::from(constant))?;
+                    match self.cx().row_of(marked) {
+                        Maybe::Present(row) => Some(row),
+                        Maybe::Absent(_) => None,
+                    }
                 },
             );
+            reached.extend_from_slice(&planned);
             let Some(slot) = slots.get_mut(usize::from(module.first))
             else {
                 continue;

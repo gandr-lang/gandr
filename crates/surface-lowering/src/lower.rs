@@ -1063,6 +1063,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut attributes = AttributeTable::new();
         Expressions::new(&mut lowerer).attribute(&mut attributes, arena)?;
         let documentation = Expressions::new(&mut lowerer).document()?;
+        let builtin_rows = crate::gate::planned_rows(lowerer.cx.tree, lowerer.cx.plans.iter());
         let inferred = ExitsRef::new(&lowerer).inferred_exits();
         let elidable = ExitsRef::new(&lowerer).elidable_exits();
         // A document resumed after its closure reads the values recorded after
@@ -1527,6 +1528,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_nested_sites(nested)
         .with_in_scope(in_scope)
         .with_resolutions(resolutions)
+        .with_builtin_rows(builtin_rows)
         .with_shadows(shadows)
         .with_reached_imports(reached)
         .with_operation_rules(operation_rules)
