@@ -2662,7 +2662,7 @@ mod tests
             }
         }
         expect![[r##"
-            "def f(x : Integer) -> -F Integer {" ‸ "\n}"
+            "def f(x : Integer) -> -F Integer = {" ‸ "\n}"
               " ${1:computation}"
               " pure ${1:value}"
               " return ${1:value}"
@@ -2697,7 +2697,7 @@ mod tests
               "send "
               "close "
               "select "
-            "def f(x : Nat) -> -F Nat {\n  match x {" ‸ " }\n}"
+            "def f(x : Nat) -> -F Nat = {\n  match x {" ‸ " }\n}"
               " | ${1:pattern} => ${2:computation}"
               " | ${1:pattern} => ${2:computation} | ${3:pattern} => ${4:computation}"
             "data Nat : Type where {\n  | Zero" ‸ "\n}"

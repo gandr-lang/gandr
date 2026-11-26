@@ -7,7 +7,7 @@ error[OutOfFragment.WrongSort.declaration]: a lambda expression cannot stand whe
    ├ note: `|` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
    ╰ help: write a declaration in this position
 
-error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's top level, where only declarations stand; a program runs the `main` it declares, so write it in `def main() -> Unit { … }`, or name it with a definition
+error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's top level, where only declarations stand; a program runs the `main` it declares, so write it in `def main() -> Unit = …`, or name it with a definition
    ╭▸ corpus/pathological/modules/stray-root-child.gandr:18:1
    │
 18 │ 1 + 2
