@@ -22,5 +22,5 @@ data FixedShfy : Type where {
   /// A continuation from the carrier.
   | FixedAsk : (k : Two -> FixedShfy) --> FixedShfy
   /// A rule that applies an undeclared constructor.
-  rule : FixedAsk k <=> k L;
+  rule : FixedAsk k <=> k L
 }

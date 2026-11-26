@@ -5,14 +5,14 @@
 
 /// A signature with one sort and one operation over it.
 theory Toggle where
-  sort T : Type;
-  oper flip : (t : T) --> T;
+  sort T : Type
+  oper flip : (t : T) --> T
 
 /// A model of `Toggle` whose one operation names nothing declared.
 module Bits : Model(Toggle) where {
-  type T = Integer;
+  type T = Integer
 
   /// Refused where it is written, and not again as its witness.
   @[refuses("UnresolvedName")]
-  def flip(n : Integer) -> Integer = return missing;
+  def flip(n : Integer) -> Integer = return missing
 }

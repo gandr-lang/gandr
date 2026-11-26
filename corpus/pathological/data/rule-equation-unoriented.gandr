@@ -2,5 +2,5 @@
 data Marks : Type where {
   | Aye : Marks
   | Nay : Marks
-  rule : Aye <=> Nay;
+  rule : Aye <=> Nay
 }

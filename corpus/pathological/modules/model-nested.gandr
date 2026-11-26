@@ -18,9 +18,9 @@ module Unascribed : Model(Faceted) where
   /// The nested module, ascribed no theory.
   module inner where
     /// The answer.
-    def answer = 41;
+    def answer = 41
   /// The total.
-  def total = 42;
+  def total = 42
 
 /// The sealed nested point read at the integers: `Sealed.inner.T` is an atom
 /// outside the seal, so the point is not an integer there.

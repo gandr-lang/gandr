@@ -1,8 +1,8 @@
 @[refuses("MalformedForm")]
 theory Unmarked where
-  sort Q : Type;
-  oper f : (a : Q) --> (b : Q);
-  oper g : (a : Q) --> (b : Q);
+  sort Q : Type
+  oper f : (a : Q) --> (b : Q)
+  oper g : (a : Q) --> (b : Q)
 
   rule merge : (data x : Q, data y : Q) <=> (z : Q) {
     node : f(x) --> (z);

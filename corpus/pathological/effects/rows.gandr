@@ -14,9 +14,9 @@ import "../../model/effects/rows.gandr"
 /// two normal forms, so the rules are refused.
 @[refuses("RulesOverlapCondition")]
 theory Unerased where
-  sort C : Type;
-  oper mark : (k : C) --> C;
-  oper flush : (k : C) --> C;
+  sort C : Type
+  oper mark : (k : C) --> C
+  oper flush : (k : C) --> C
   rule dropped : flush (mark k) <=> k where {| under [Sink | r]};
   rule kept : flush (mark k) <=> mark k where {| under [State.Eff | r]};
 
@@ -25,9 +25,9 @@ theory Unerased where
 /// parts, so the rules are refused.
 @[refuses("RulesOverlapCondition")]
 theory Overreaching where
-  sort C : Type;
-  oper mark : (k : C) --> C;
-  oper flush : (k : C) --> C;
+  sort C : Type
+  oper mark : (k : C) --> C
+  oper flush : (k : C) --> C
   rule dropped : flush (mark k) <=> k where {| under [Sink | r]};
   rule kept : flush (mark k) <=> mark k where {| under [State.Eff | r]};
   rule erased : mark k <=> k where {| under [State.Eff, Sink, Marks | r]};
@@ -36,13 +36,13 @@ theory Overreaching where
 /// A row naming a theory no block this source sees presents.
 @[refuses("UnresolvedTypeHead")]
 theory Unseen where
-  sort C : Type;
-  oper mark : (k : C) --> C;
+  sort C : Type
+  oper mark : (k : C) --> C
   rule dropped : mark k <=> k where {| under [Missing | r]};
 
 /// A row naming one theory twice: a row holds each theory once.
 @[refuses("DuplicateDefinition")]
 theory Twice where
-  sort C : Type;
-  oper mark : (k : C) --> C;
+  sort C : Type
+  oper mark : (k : C) --> C
   rule dropped : mark k <=> k where {| under [Sink, State.Eff, Sink]};

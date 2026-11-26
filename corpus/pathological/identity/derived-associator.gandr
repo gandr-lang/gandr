@@ -17,13 +17,13 @@ import "../../model/identity/derived-associator.gandr"
 /// The signs under their product, writing the derived associator too.
 module Written : Model(Monoid) where {
   /// The carrier is the signs.
-  type M = Sign;
+  type M = Sign
   /// Plus is the unit.
-  def e = Plus;
+  def e = Plus
   /// The product is the signs' product.
-  def mul(x : Sign, y : Sign) -> Sign = times x y;
+  def mul(x : Sign, y : Sign) -> Sign = times x y
   /// The left unit law, by conversion.
-  def unitL(x : Sign) -> Path (mul e x) x = Path.here x;
+  def unitL(x : Sign) -> Path (mul e x) x = Path.here x
   /// The right unit law, case by case.
   def unitR(x : Sign) -> Path (mul x e) x =
     match x where

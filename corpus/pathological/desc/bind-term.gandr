@@ -9,8 +9,8 @@ import "../../model/desc/bind-term.gandr"
 /// misplaced, an ill-formed description.
 @[refuses("IllFormedDescription")]
 theory Escape where
-  sort Name : Atom;
-  sort Proc : Type;
-  oper nil : Proc;
-  oper par : (p : Proc, q : Proc) --> Proc;
-  rule leak : par (bind a. nil) nil ==> nil;
+  sort Name : Atom
+  sort Proc : Type
+  oper nil : Proc
+  oper par : (p : Proc, q : Proc) --> Proc
+  rule leak : par (bind a. nil) nil ==> nil

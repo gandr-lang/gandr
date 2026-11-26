@@ -23,19 +23,19 @@ import "../../model/desc/rule-symmetry-apart.gandr"
 @[refuses("RulesUncompleted")]
 theory Torn where
   /// The terms.
-  sort T : Type;
+  sort T : Type
   /// The first constant.
-  oper low : T;
+  oper low : T
   /// The second constant.
-  oper high : T;
+  oper high : T
   /// A pair of two terms.
-  oper pair : (x : T, y : T) --> T;
+  oper pair : (x : T, y : T) --> T
   /// The meet of two terms.
-  oper meet : (x : T, y : T) --> T;
+  oper meet : (x : T, y : T) --> T
   /// The meet of a pair and a term is the first part of the pair.
-  rule meetPair : meet (pair x y) z <=> x;
+  rule meetPair : meet (pair x y) z <=> x
   /// The meet is commutative.
-  rule meetComm : meet x y <=> meet y x;
+  rule meetComm : meet x y <=> meet y x
 
 /// The two orders of a meet are one term, so the case needs an arm.
 ///

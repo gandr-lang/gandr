@@ -22,13 +22,13 @@ import "../../model/layouts/signal-in-one-wire.gandr"
 @[refuses("NoFiller.Omitted")]
 module SignalTorn : Model(Signal) where
   /// The carrier, a term of one wire.
-  type L = Terms Wire;
+  type L = Terms Wire
   /// Red is the high level.
-  def red : Terms Wire = Wire.high;
+  def red : Terms Wire = Wire.high
   /// Amber is the low level.
-  def amber : Terms Wire = Wire.low;
+  def amber : Terms Wire = Wire.low
   /// Green is the high level.
-  def green : Terms Wire = Wire.high;
+  def green : Terms Wire = Wire.high
 
 /// The encoder names no law, so its two arms are two names.
 ///

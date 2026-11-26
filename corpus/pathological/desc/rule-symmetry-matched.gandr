@@ -13,15 +13,15 @@
 /// The theory of two switches in a series, with no law of commutativity.
 theory Series where
   /// The states of a switch.
-  sort S : Type;
+  sort S : Type
   /// The open switch.
-  oper open : S;
+  oper open : S
   /// The shut switch.
-  oper shut : S;
+  oper shut : S
   /// Two switches in a series.
-  oper both : (x : S, y : S) --> S;
+  oper both : (x : S, y : S) --> S
   /// An open switch first opens the series.
-  rule bothOpen : both open x <=> open;
+  rule bothOpen : both open x <=> open
 
 /// The rule does not fire where the open switch stands second.
 ///

@@ -9,11 +9,11 @@
 /// names a `Digest` at the port of a `Value`.
 @[refuses("IllFormedDescription")]
 theory StoreDigestPut where
-  sort Value : Type+;
-  sort Digest : Type+;
-  sort C : Type;
-  oper put : (v : Value, k : pi+ (d : Digest). C) --> C;
-  rule again : put v (bind d. (put d k)) <=> put v k;
+  sort Value : Type+
+  sort Digest : Type+
+  sort C : Type
+  oper put : (v : Value, k : pi+ (d : Digest). C) --> C
+  rule again : put v (bind d. (put d k)) <=> put v k
 
 /// A failure's result names a type nothing declares: `Fail` answers `Void`,
 /// the builtin empty type, and `Nonsense` is neither a sort of the theory nor
@@ -21,5 +21,5 @@ theory StoreDigestPut where
 /// (`UnknownPortSort`).
 @[refuses("IllFormedDescription")]
 theory FailNonsense where
-  sort Reason : Type;
-  oper raise : (r : Reason) --> Nonsense;
+  sort Reason : Type
+  oper raise : (r : Reason) --> Nonsense

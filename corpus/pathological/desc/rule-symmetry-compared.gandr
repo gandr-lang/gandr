@@ -16,11 +16,11 @@ import "../../model/desc/rule-symmetry.gandr"
 /// The theory of a chain of links, with no law of commutativity.
 theory Chain where
   /// The chains.
-  sort C : Type;
+  sort C : Type
   /// The chain with no link.
-  oper bare : C;
+  oper bare : C
   /// Two chains, one after the other.
-  oper link : (x : C, y : C) --> C;
+  oper link : (x : C, y : C) --> C
 
 /// No pairing joins two meets that differ in one argument.
 ///

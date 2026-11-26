@@ -92,7 +92,7 @@ def inScopeAtInteger() -> Integer =
 /// and storing is forgotten.
 module Forgetting : Model(State.Eff) with sort S = Integer where
   /// A computation awaiting the current state.
-  type C = Integer -> Integer;
+  type C = Integer -> Integer
   /// Reading hands zero to what runs after.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
     k 0

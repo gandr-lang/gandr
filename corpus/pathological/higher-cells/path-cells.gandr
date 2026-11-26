@@ -17,14 +17,14 @@
 /// The globular theory at dimension one, its associator a cell.
 theory Glob where
   /// The objects.
-  sort Ob : Type;
+  sort Ob : Type
   /// The cells from one object to another.
-  sort Hom(dom : Ob, cod : Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type
 
   /// The identity cell at an object.
-  oper id : (a : Ob) --> Hom a a;
+  oper id : (a : Ob) --> Hom a a
   /// The composite of two cells end to end.
-  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c
 
   /// The associator, a cell between the two composites of three cells.
   law assoc : (
@@ -35,7 +35,7 @@ theory Glob where
     f : Hom a b,
     g : Hom b c,
     h : Hom c d
-  ) -> Path[.A = Hom a d] (comp (comp f g) h) (comp f (comp g h));
+  ) -> Path[.A = Hom a d] (comp (comp f g) h) (comp f (comp g h))
 
 /// The one object.
 data One : Type where
@@ -60,28 +60,28 @@ def rec plus(n : Nat, m : Nat) -> Nat =
 @[refuses("NoFiller.Omitted")]
 module Unwitnessed : Model(Glob) where
   /// The one object.
-  type Ob = One;
+  type Ob = One
   /// The numbers, each a cell from the object to itself.
-  type Hom(a : Ob, b : Ob) = Nat;
+  type Hom(a : Ob, b : Ob) = Nat
 
   /// Zero, the identity cell.
-  def id(a : One) -> Nat = Zero;
+  def id(a : One) -> Nat = Zero
 
   /// Addition, the composite.
-  def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat = plus f g;
+  def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat = plus f g
 
 /// A store whose write leaves the rest as it is, by a cell of the theory.
 theory Skipping where
   /// The stored value.
-  sort S : Type+;
+  sort S : Type+
   /// The computation the store runs in.
-  sort C : Type;
+  sort C : Type
   /// Read the stored value.
-  oper get : (k : pi+ (s : S). C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C
   /// Store a value.
-  oper put : (s : S, k : C) --> C;
+  oper put : (s : S, k : C) --> C
   /// A write leaves what follows it as it is.
-  law putSkip : (s : S, k : C) -> Path[.A = C] (put s k) k;
+  law putSkip : (s : S, k : C) -> Path[.A = C] (put s k) k
 
 /// Every write answers nine and drops what follows it. The cell's left side is
 /// then nine, and its right side what follows.

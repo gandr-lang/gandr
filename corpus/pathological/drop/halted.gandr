@@ -15,11 +15,11 @@ import std.process
 /// A halt with a code, which no handler resumes.
 theory Halt.Eff where
   /// The code of the halt.
-  sort R : Type+;
+  sort R : Type+
   /// The carrier, the answer of the handler.
-  sort C : Type;
+  sort C : Type
   /// Halt with `code`.
-  oper halt : (code : R) --> C;
+  oper halt : (code : R) --> C
 
 /// A halt performed inside an unwind.
 @[refuses("UnwindEffect")]

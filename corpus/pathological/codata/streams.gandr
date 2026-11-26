@@ -14,32 +14,32 @@
 
 /// A stream provides an integer head and its tail stream.
 codata Stream : Type[-] where
-  head : Integer;
-  tail : Stream;
+  head : Integer
+  tail : Stream
 
 /// Point is refused because its kind is a value universe.
 @[refuses("CodataKindNotUniverse")]
 codata Point : Type where
-  x : Integer;
-  depth : Integer;
+  x : Integer
+  depth : Integer
 
 /// Swap is refused because its recursive occurrence reverses its parameters.
 @[refuses("CodataOccurrence")]
 codata Swap(a : Type, b : Type) : Type[-] where
-  head : a;
-  tail : Swap b a;
+  head : a
+  tail : Swap b a
 
 /// Twisted is refused because its recursive occurrence nests its own argument.
 @[refuses("CodataOccurrence")]
 codata Twisted(a : Type) : Type[-] where
-  head : a;
-  tail : Twisted (Twisted a);
+  head : a
+  tail : Twisted (Twisted a)
 
 /// Spot defines three observation positions.
 codata Spot : Type[-] where
-  x : Integer;
-  y : Integer;
-  depth : Integer;
+  x : Integer
+  y : Integer
+  depth : Integer
 
 /// shallow is refused because it leaves depth unanswered.
 @[refuses("MalformedForm")]

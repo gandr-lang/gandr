@@ -26,9 +26,9 @@ import "../../model/identity/model-counter-manifest.gandr"
 
 /// A ticker: a carrier, a zero and a step, and no reading.
 theory Ticker where
-  sort C : Type;
-  oper zero : C;
-  oper incr : (c : C) --> C;
+  sort C : Type
+  oper zero : C
+  oper incr : (c : C) --> C
 
 /// A ticker over the integers, its carrier manifest, where a counter is
 /// asked: forgetting its carrier makes a ticker, which has no reading.

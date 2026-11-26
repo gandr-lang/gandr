@@ -7,20 +7,20 @@
 /// A counter: a seed and a reading of it.
 theory Seeded where
   /// What the counter counts in.
-  sort T : Type;
+  sort T : Type
   /// The reading of a count.
-  oper read : (t : T) --> Integer;
+  oper read : (t : T) --> Integer
   /// The first count.
-  oper seed : T;
+  oper seed : T
 
 /// A counter over integers.
 module Ints : Model(Seeded) where
   /// Counts are integers.
-  type T = Integer;
+  type T = Integer
   /// A count reads as itself.
-  def read(n : Integer) -> Integer = n;
+  def read(n : Integer) -> Integer = n
   /// Seven.
-  def seed = 7;
+  def seed = 7
 
 /// The counter as a value at its model type.
 def ints : Model Seeded = Ints

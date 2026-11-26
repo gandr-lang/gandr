@@ -8,24 +8,24 @@
 
 /// A tally: a carrier, a zero, a step and a reading.
 theory Tally where
-  sort C : Type;
-  oper zero : C;
-  oper incr : (c : C) --> C;
-  oper read : (c : C) --> Integer;
+  sort C : Type
+  oper zero : C
+  oper incr : (c : C) --> C
+  oper read : (c : C) --> Integer
 
 /// A tally without its reading.
 theory Stepper where
-  sort C : Type;
-  oper zero : C;
-  oper incr : (c : C) --> C;
+  sort C : Type
+  oper zero : C
+  oper incr : (c : C) --> C
 
 /// Counting up by one, with no reading.
 module Mute : Model(Stepper) where
-  type C = Integer;
+  type C = Integer
   /// Zero.
-  def zero = 0;
+  def zero = 0
   /// One count more.
-  def incr(c : Integer) -> Integer = c + 1;
+  def incr(c : Integer) -> Integer = c + 1
 
 /// The reading after one step, over any tally the slot names.
 def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c)

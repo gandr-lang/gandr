@@ -18,19 +18,19 @@
 theory Labelled where {
   /// The label.
   @[inert]
-  oper label : String;
+  oper label : String
   /// The tag.
-  oper tag : String;
+  oper tag : String
 }
 
 /// A box, whose content member reads its own label.
 module Box : Model(Labelled) where {
   /// The label.
   @[runs("\"box\"")]
-  def label = "box";
+  def label = "box"
   /// The tag, read off the label.
   @[refuses("InertRead")]
-  def tag = label;
+  def tag = label
 }
 
 /// The label, read by its path.
@@ -55,7 +55,7 @@ module Marked where {
   /// The member.
   @[refuses("MalformedForm")]
   @[inert]
-  def kept = "kept";
+  def kept = "kept"
 }
 
 /// The mark on a sort, which is no field.
@@ -63,7 +63,7 @@ module Marked where {
 theory Sorted where {
   /// The sort.
   @[inert]
-  sort T : Type;
+  sort T : Type
 }
 
 /// A declaration's attribute on an operation.
@@ -71,5 +71,5 @@ theory Sorted where {
 theory Checked where {
   /// The operation.
   @[checks]
-  oper x : String;
+  oper x : String
 }

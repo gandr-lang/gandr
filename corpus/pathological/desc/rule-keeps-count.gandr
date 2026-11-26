@@ -41,12 +41,12 @@ def joinedApart(e : Path[.A = Terms Signal] Signal.amber Signal.green) -> Hollow
 @[refuses("RulesUnoriented")]
 theory Flicker where
   /// The lamps.
-  sort L : Type;
+  sort L : Type
   /// The first lamp.
-  oper dim : L;
+  oper dim : L
   /// The second lamp.
-  oper lit : L;
+  oper lit : L
   /// The first lamp rewrites to the second one.
-  rule up : dim ==> lit;
+  rule up : dim ==> lit
   /// The second lamp rewrites to the first one.
-  rule down : lit ==> dim;
+  rule down : lit ==> dim

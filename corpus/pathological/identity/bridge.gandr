@@ -26,7 +26,7 @@ def otherDigits : Bridge[.A = List Integer] #[1] #[2] = *{*{}, *{}};
 module Hidden :> *{type T, one : T} where {
   /// The sealed points.
   @[checks]
-  type T = Unit;
+  type T = Unit
 
   /// The one point.
   @[checks]

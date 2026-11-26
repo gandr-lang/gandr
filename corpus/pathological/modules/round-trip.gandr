@@ -14,12 +14,12 @@
 /// The older signature.
 theory Older where
   /// The answer.
-  oper answer : Integer;
+  oper answer : Integer
 
 /// The newer signature.
 theory Newer where
   /// The answer, under another name.
-  oper reply : Integer;
+  oper reply : Integer
 
 /// A path whose way back moves the answer.
 path moved : Older <~> Newer where

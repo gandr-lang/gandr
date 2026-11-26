@@ -15,25 +15,25 @@
 @[refuses("MisplacedAttribute")]
 theory Deprecated where
   /// The carrier.
-  sort M : Type;
+  sort M : Type
   /// The unit, marked as a declaration is.
   @[deprecated]
-  oper unit : M;
+  oper unit : M
 
 /// `inert` stands before a declaration or an operation, and not before a sort.
 @[refuses("MisplacedAttribute")]
 theory InertSort where
   /// The carrier, marked as an operation is.
   @[inert]
-  sort M : Type;
+  sort M : Type
   /// The unit.
-  oper unit : M;
+  oper unit : M
 
 /// `frobenius` stands before a sort, and not before an operation.
 @[refuses("MisplacedAttribute")]
 theory FrobeniusOperation where
   /// The carrier.
-  sort M : Type;
+  sort M : Type
   /// The unit, marked as a sort is.
   @[frobenius]
-  oper unit : M;
+  oper unit : M

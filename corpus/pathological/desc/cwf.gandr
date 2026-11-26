@@ -25,6 +25,6 @@ import "../../model/desc/cwf.gandr"
 @[refuses("UndescribedMember.RewrittenIndex")]
 theory CwFTermComposite where
   /// The sorts, operations and laws of a category with families.
-  include CwF;
+  include CwF
   /// Two substitutions in turn move a term as their composite does.
-  rule tmComp : subTm (subTm t s) u ==> subTm t (comp s u);
+  rule tmComp : subTm (subTm t s) u ==> subTm t (comp s u)

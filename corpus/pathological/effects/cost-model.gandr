@@ -18,7 +18,7 @@ import std.cost (Cost)
 /// A model whose charge doubles its cost.
 module Doubled : Model(Cost.Eff) with sort N = Nat -> Nat where
   /// A run's count from the cost that came before it.
-  type C = (Nat -> Nat) -> Nat;
+  type C = (Nat -> Nat) -> Nat
   /// Apply each charged cost twice.
   def charge(c : Nat -> Nat, k : (Nat -> Nat) -> Nat) -> (Nat -> Nat) -> Nat =
     thunk { fun (before) { k (thunk { fun (n) { before (c (c n)) } }) } }

@@ -16,13 +16,13 @@
 /// A signature of two plain sorts, a point and a pair of them.
 theory Pair where
   /// The points.
-  sort P : Type;
+  sort P : Type
   /// The pairs.
-  sort Q : Type;
+  sort Q : Type
   /// The one point.
-  oper origin : P;
+  oper origin : P
   /// A pair of two points.
-  oper pair : (x : P, y : P) --> Q;
+  oper pair : (x : P, y : P) --> Q
 
 /// The terms of the points are a type: their one operation takes no input.
 def start() -> Terms Pair P = Pair.origin
@@ -34,15 +34,15 @@ def paired : Terms Pair Q = Pair.pair Pair.origin Pair.origin
 /// A fragment whose one operation keeps the width of its input.
 theory Open where
   /// The widths.
-  sort Width : Type;
+  sort Width : Type
   /// The terms at a width.
-  sort Term(w : Width) : Type;
+  sort Term(w : Width) : Type
   /// One bit.
-  oper bit : Width;
+  oper bit : Width
   /// The low bit.
-  oper low : Term bit;
+  oper low : Term bit
   /// The same term, at the width of its input.
-  oper same : (x : Term w) --> Term w;
+  oper same : (x : Term w) --> Term w
 
 /// A width as it is. The terms of the widths are a type.
 def openWidth(w : Terms Open Width) -> Terms Open Width = w
@@ -54,13 +54,13 @@ def kept : Terms Open Term Open.bit = Open.low
 /// A fragment whose widths no type of the source asks for.
 theory Bare where
   /// The widths.
-  sort Width : Type;
+  sort Width : Type
   /// The terms at a width.
-  sort Term(w : Width) : Type;
+  sort Term(w : Width) : Type
   /// One bit.
-  oper bit : Width;
+  oper bit : Width
   /// The low bit.
-  oper low : Term bit;
+  oper low : Term bit
 
 /// No type writes the terms of the widths before this one, so it is refused.
 @[refuses("OutOfFragment.terms_type.sorted")]

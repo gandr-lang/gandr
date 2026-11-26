@@ -11,17 +11,17 @@ import "../../model/desc/bind-port.gandr"
 /// check refuses the abstraction by name (`NonAtomAbstraction`).
 @[refuses("IllFormedDescription")]
 theory OrdinaryAbstraction where
-  sort Tm : Type;
-  oper nu : (t : bind (a : Tm). Tm) --> Tm;
+  sort Tm : Type
+  oper nu : (t : bind (a : Tm). Tm) --> Tm
 
 /// A port's abstractions stand outside its `pi+` binders, so a `bind` written
 /// inside one is malformed.
 @[refuses("MalformedForm")]
 theory InnerAbstraction where
-  sort Name : Atom;
-  sort Val : Type+;
-  sort Proc : Type;
-  oper new : (body : pi+ (x : Val). bind (c : Name). Proc) --> Proc;
+  sort Name : Atom
+  sort Val : Type+
+  sort Proc : Type
+  oper new : (body : pi+ (x : Val). bind (c : Name). Proc) --> Proc
 
 /// The restriction signature's models: `nu` abstracts an atom over its port,
 /// whose model is a nominal set's abstraction `⟨a⟩Proc`, a type the value

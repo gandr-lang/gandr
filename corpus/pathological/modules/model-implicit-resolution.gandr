@@ -8,10 +8,10 @@
 
 /// A tally: a carrier, a zero, a step and a reading.
 theory Tally where
-  sort C : Type;
-  oper zero : C;
-  oper incr : (c : C) --> C;
-  oper read : (c : C) --> Integer;
+  sort C : Type
+  oper zero : C
+  oper incr : (c : C) --> C
+  oper read : (c : C) --> Integer
 
 /// The reading after one step, over any tally the slot names.
 def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c)
@@ -22,23 +22,23 @@ def nothingYet() -> Integer = stepped 4
 
 /// Counting up by one.
 module Up : Model(Tally) where
-  type C = Integer;
+  type C = Integer
   /// Zero.
-  def zero = 0;
+  def zero = 0
   /// One count more.
-  def incr(c : Integer) -> Integer = c + 1;
+  def incr(c : Integer) -> Integer = c + 1
   /// The count as it is.
-  def read(c : Integer) -> Integer = c;
+  def read(c : Integer) -> Integer = c
 
 /// Counting up by ten.
 module Tens : Model(Tally) where
-  type C = Integer;
+  type C = Integer
   /// Zero.
-  def zero = 0;
+  def zero = 0
   /// Ten counts more.
-  def incr(c : Integer) -> Integer = c + 10;
+  def incr(c : Integer) -> Integer = c + 10
   /// The count as it is.
-  def read(c : Integer) -> Integer = c;
+  def read(c : Integer) -> Integer = c
 
 /// Text is no tally's carrier.
 @[refuses("ModelUnanswered")]

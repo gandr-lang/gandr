@@ -8,13 +8,13 @@
 
 /// A carrier with a test.
 theory Base where
-  sort Carrier : Type;
-  oper test : (a : Carrier) --> Bool;
+  sort Carrier : Type
+  oper test : (a : Carrier) --> Bool
 
 /// A carrier with a test and another, over `Base`.
 theory Wider where
-  include Base;
-  oper other : (a : Carrier) --> Bool;
+  include Base
+  oper other : (a : Carrier) --> Bool
 
 /// A code the module owes.
 @[owes(1)]
