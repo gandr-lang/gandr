@@ -2450,6 +2450,36 @@ fn features_writes_the_declaration_of_each_source()
     assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));
 }
 
+/// `gandr features --write` writes no source whose head the lowering does not
+/// file: a source of one import admits no declaration, so its head takes no
+/// attribute. The source is a fault on standard error, its text stands, and
+/// the run exits two.
+#[test]
+fn features_leaves_a_source_whose_head_takes_no_attribute()
+{
+    let scratch = Scratch::new(Path::new("features-unfiled"));
+    let imported = scratch.0.join("one.gandr");
+    let importer = scratch.0.join("importer.gandr");
+    let text = "import \"./one.gandr\" as one;\n";
+    std::fs::write(&imported, "def one() -> Integer = 1;\n")
+        .expect("the scratch source is written");
+    std::fs::write(&importer, text).expect("the scratch source is written");
+
+    let wrote = ran(gandr(&[Path::new("features"), Path::new("--write"), &importer]));
+    assert_eq!(code(&wrote), Code(2_i32), "{}", stderr(&wrote));
+    assert!(
+        stderr(&wrote).starts_with(&format!("gandr: {}: not written: ", importer.display())),
+        "{}",
+        stderr(&wrote)
+    );
+    assert_eq!(stdout(&wrote), "", "no source is written");
+    assert_eq!(
+        std::fs::read_to_string(&importer).expect("the source is read back"),
+        text,
+        "the text of the source stands"
+    );
+}
+
 /// #4906: `gandr doc` writes a page for each source of a package, an
 /// importer's beside the sibling it imports, and an index naming each page by
 /// its source and the first sentence of its own documentation; a path naming

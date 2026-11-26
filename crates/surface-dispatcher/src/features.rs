@@ -352,6 +352,11 @@ fn read_features<'census>(
         None => Head::Stands,
         Some(_) if rewrite == Rewrite::Check => Head::Differs,
         Some(text) => {
+            // A head that the lowering does not file takes no declaration:
+            // a second run would write the block again.
+            if !reads_back(grammar, path, &text, &declaration) {
+                return Err(CensusFault::Unfiled);
+            }
             reader
                 .write(path, SourceText::from(text.as_str()))
                 .map_err(CensusFault::Unwritable)?;
@@ -359,6 +364,50 @@ fn read_features<'census>(
         },
     };
     Ok((declaration, head))
+}
+
+/// Whether the lowering reads `declaration` back from the head of `text`, the
+/// text of the source at `path` with the declaration written into it.
+///
+/// # Specification
+/// - requires: `text` is [`rewritten`] of the source at `path`.
+/// - ensures: affirmative exactly when `text` lowers, uses the features of
+///   `declaration`, and has the attribute `features` at its head when
+///   `declaration` has a feature and no such attribute when it has none.
+/// - provides: the proof that a write is one that a second run leaves.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer is a lowering; the CLI witness holds both
+///   answers.
+///
+/// # Adequacy
+/// - hypothesis: L3 — four sources with a declaration are written, and a
+///   source of one import is a fault with its text unchanged.
+/// - witness: `gandr-surface-driver::tests::cli::features_writes_the_declaration_of_each_source`
+/// - witness: `gandr-surface-driver::tests::cli::features_leaves_a_source_whose_head_takes_no_attribute`
+///
+/// # Cost
+/// - time: one parse and one lowering, for a source that the census writes
+fn reads_back(
+    grammar: &Pbg,
+    path: &Path,
+    text: &str,
+    declaration: &Declaration,
+) -> bool
+{
+    let unit = component::lay_out(grammar, path, root::classify(path), SourceText::from(text));
+    let read = unit_source_features(
+        grammar,
+        SourceText::from(unit.text.as_str()),
+        &unit.unit,
+        &mut LoweringCount::default(),
+    );
+    matches!(
+        read,
+        Ok(SourceFeatures::Used { ref used, ref site })
+            if used.as_slice() == declaration.features()
+                && site.is_some() != declaration.features().is_empty()
+    )
 }
 
 /// The text of a source with `declaration` at its head, or nothing when the

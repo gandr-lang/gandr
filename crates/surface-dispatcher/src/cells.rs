@@ -94,6 +94,10 @@ pub enum CensusFault<'census>
     Refused(LoweringRefusal<'census>),
     /// The source could not be written back.
     Unwritable(std::io::Error),
+    /// The lowering does not read the declaration of features back from the
+    /// head of the source with the declaration written into it, so the source
+    /// is not written.
+    Unfiled,
 }
 
 impl core::fmt::Display for CensusFault<'_>
@@ -115,6 +119,10 @@ impl core::fmt::Display for CensusFault<'_>
             Self::Composed(ref fault) => write!(f, "not lowered: {fault}"),
             Self::Refused(ref refusal) => write!(f, "the lowering refused the source: {refusal}"),
             Self::Unwritable(ref error) => write!(f, "not written: {error}"),
+            Self::Unfiled => f.write_str(
+                "not written: the lowering does not read the declaration back from the head of \
+                 the source",
+            ),
         }
     }
 }
