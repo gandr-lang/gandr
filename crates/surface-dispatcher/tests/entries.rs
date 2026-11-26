@@ -229,6 +229,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type Unit", Standing::Owed(0)),
     ("Type Void", Standing::Owed(0)),
     ("Type [", Standing::Owed(0)),
+    ("Type _", Standing::Owed(0)),
     (
         "Type at",
         Standing::Design("a scoped capability: the capability it scopes answers, at its scope"),
@@ -454,7 +455,9 @@ enum Placed
     /// theory's operation qualified by the theory whose terms it builds,
     /// `Mag.mul(…)`: the call is the one core node, and answers. The head of
     /// a path type's spine, `Path[.A = C]` in `Path[.A = C] a b`, stands so
-    /// too.
+    /// too, and so does the descent of a word's spine in a type, `[<]` in
+    /// `el [<] a`, which the lowering reads into the head of the call
+    /// `el[<](a)`.
     Head,
     /// The name of a held slot in an element read, for example `xs` in `let
     /// y = xs.#[1] ;`. The read lends the slot shared at the index. The slot
@@ -1140,7 +1143,9 @@ fn gated(
         // `Zero h` in `viaZero Zero h`, and lowers as the one call of the
         // word, which the outermost word answers for. A path or a bridge head,
         // `Path[.A = C]` in `Path[.A = C] a b`, is no type alone: the spine
-        // lowers as one path type, which answers (#5750).
+        // lowers as one path type, which answers (#5750). The descent of a
+        // word's spine, `[<]` in `el [<] a`, is a part of the head of the call
+        // `el[<](a)`, which answers.
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             (melded
                 && def.sort == Sort::Type
@@ -1161,7 +1166,11 @@ fn gated(
                             || FORMERS.contains(&text)
                             || (label == JUXTAPOSED && def.label == "type_identifier")
                     }
-        });
+        }) || (melded
+            && def.sort == Sort::Type
+            && grammar
+                .rule_of(mold)
+                .is_ok_and(|rule| rule.name().0 == "descent_type"));
         // A model implicit's name, read inside the declaration whose
         // telescope writes it.
         let modelled = models.implicits.iter().any(|&((start, end), ref name)| {
