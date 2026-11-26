@@ -3905,14 +3905,17 @@ fn law_admission_tail() -> Regex
 /// The faces block ends the member at its `}`, as a `data` or a `module`
 /// block does, so every brace in the member closes in it.
 ///
-/// A type signature with no body, `type T(..) : K;`, takes the same head.
-/// The grammar admits it under any attribute, and the lowering refuses it
-/// unless `@[builtin]` binds it to a row of the toolchain.
+/// A type signature with no body, `type T[..](..) : K;`, takes the same head,
+/// with the static telescope of a former whose static argument is no type,
+/// `type View[m : Mode](a : Type) : Type;`. The grammar admits it under any
+/// attribute, and the lowering refuses it unless `@[builtin]` binds it to a
+/// row of the toolchain.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `type`, a type name, an optional parameter list, then `=`, a type
-///   hole and `;` or a faces block, or `:`, a type hole and `;`.
+/// - ensures: `type`, a type name, an optional static telescope, an optional
+///   parameter list, then `=`, a type hole and `;` or a faces block, or `:`, a
+///   type hole and `;`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3921,12 +3924,13 @@ fn law_admission_tail() -> Regex
 ///   The predicate observes the stated shape; source programs outside the
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref tails) if tails.len() == 2))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref tails) if tails.len() == 2))))]
 fn type_member_tail() -> Regex
 {
     seq([
         t(TileLabel("type")),
         t(TileLabel("type_identifier")),
+        opt(implicit_telescope()),
         opt(head_params()),
         alt([
             seq([

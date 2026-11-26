@@ -97,14 +97,16 @@ use crate::failure::Failure;
 /// then by a functor application whose argument is juxtaposed, `module A = F
 /// B ;`, then by a lowercase word that heads a type applying as each head
 /// does, then by the type application's second form leaving the grammar
-/// (#5330), then by the port's dotted binder leaving the grammar (#7869).
-const BUILT_IN_FINGERPRINT: u64 = 0xc69b_1b5c_7bf0_22c0;
+/// (#5330), then by the port's dotted binder leaving the grammar (#7869),
+/// then by the static telescope of a type member's head, `type View[m :
+/// Mode](a : Type) : Type;`.
+const BUILT_IN_FINGERPRINT: u64 = 0x3592_1924_fe83_ae5e;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2911);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2947);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
@@ -131,7 +133,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 11),
     ("+U", 1),
     ("+{", 3),
-    (",", 275),
+    (",", 279),
     ("-", 6),
     ("-->", 31),
     ("-=", 11),
@@ -143,10 +145,10 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (".*{", 1),
     ("..", 3),
     (".@", 1),
-    (":", 236),
+    (":", 240),
     (":>", 2),
     (";", 108),
-    ("<", 17),
+    ("<", 21),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
@@ -179,8 +181,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 55),
-    ("]", 73),
+    ("[", 57),
+    ("]", 75),
     ("_", 43),
     ("abort", 1),
     ("access", 1),
@@ -229,7 +231,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("i32", 1),
     ("i64", 1),
     ("i8", 1),
-    ("identifier", 410),
+    ("identifier", 422),
     ("if", 16),
     ("import", 12),
     ("in", 1),
@@ -277,8 +279,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 3),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 214),
-    ("type_variable", 90),
+    ("type_identifier", 218),
+    ("type_variable", 94),
     ("typed_number", 2),
     ("u16", 1),
     ("u32", 1),
