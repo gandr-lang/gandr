@@ -1022,6 +1022,86 @@ impl fmt::Display for FreeTerm
     }
 }
 
+impl FreeTerm
+{
+    /// The term as a type writes it at an operand: a variable or a nullary
+    /// application as its name, an application as its head with each argument
+    /// after it, and a results tuple as `(arg, …)`. An application or a binder
+    /// stands in parentheses, as an operand and as an argument. A sort index is
+    /// a type operand, so a description writes its indices in this spelling.
+    ///
+    /// # Specification
+    /// - ensures: deterministic text; a variable, a nullary application and a
+    ///   results tuple render as [`fmt::Display`] renders them.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk.
+    /// - intension: one pass over the table in index order, as [`fmt::Display`]
+    ///   walks it; each rendered subterm waits on a stack with whether it
+    ///   stands as an operand without parentheses.
+    ///
+    /// # Cost
+    /// - allocation: the text of each subterm, durable by the serialized
+    ///   description
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a variable index and a nested application at a sort
+    ///   index have exact rendered text; parenthesising a name or dropping the
+    ///   parentheses of a nested application changes that text.
+    /// - witness: `tests::glf::generation`
+    #[must_use]
+    pub(crate) fn as_operand(&self) -> String
+    {
+        let mut rendered: Vec<(String, bool)> = Vec::new();
+        let mut args: Vec<(String, bool)> = Vec::new();
+        for head in self.0.heads() {
+            let (name, arity) = match *head {
+                TermHead::Var(ref name) | TermHead::Atom(ref name) | TermHead::Bound(ref name) => {
+                    (Some(name), 0_usize)
+                },
+                TermHead::Abs(ref atom) | TermHead::Lam(ref atom) => {
+                    let (body, _) = rendered.pop().unwrap_or_default();
+                    rendered.push((format!("bind {atom} . {body}"), false));
+                    continue;
+                },
+                TermHead::Ctor(ref name, arity)
+                | TermHead::Op(ref name, arity)
+                | TermHead::Inst(ref name, arity) => (Some(name), usize::from(arity)),
+                TermHead::Results(arity) => (None, usize::from(arity)),
+            };
+            args.clear();
+            for _ in 0 .. arity {
+                args.push(rendered.pop().unwrap_or_default());
+            }
+            rendered.push(match name {
+                Some(name) if args.is_empty() => (name.to_string(), true),
+                Some(name) => {
+                    let operands: Vec<String> = args
+                        .iter()
+                        .map(|&(ref arg, atomic)| {
+                            if atomic {
+                                arg.clone()
+                            }
+                            else {
+                                format!("({arg})")
+                            }
+                        })
+                        .collect();
+                    (format!("{name} {}", operands.join(" ")), false)
+                },
+                None => {
+                    let items: Vec<&str> = args.iter().map(|&(ref arg, _)| arg.as_str()).collect();
+                    (format!("({})", items.join(", ")), true)
+                },
+            });
+        }
+        match rendered.pop() {
+            Some((text, true)) => text,
+            Some((text, false)) => format!("({text})"),
+            None => String::new(),
+        }
+    }
+}
+
 /// A borrowed node of a [`FreeTerm`].
 #[repr(transparent)]
 #[derive(Debug, Eq, PartialEq)]

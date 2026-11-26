@@ -923,7 +923,10 @@ fn render_port(port: &SortRef) -> String
     }
 }
 
-/// Render a sort application without discarding its dependent indices.
+/// Render a sort application without discarding its dependent indices: the
+/// sort's name with each index after it, juxtaposed as a type applies its
+/// family, an index that is an application in parentheses
+/// ([`crate::rule::FreeTerm::as_operand`]).
 ///
 /// # Specification
 /// - ensures: the sort name followed by all arguments, in order, when present.
@@ -939,14 +942,12 @@ fn render_sort(
     arguments: &[crate::rule::FreeTerm],
 ) -> String
 {
-    if arguments.is_empty() {
-        return name.to_string();
+    let mut text = name.to_string();
+    for argument in arguments {
+        text.push(' ');
+        text.push_str(&argument.as_operand());
     }
-    let arguments: Vec<String> = arguments
-        .iter()
-        .map(alloc::string::ToString::to_string)
-        .collect();
-    format!("{name}({})", arguments.join(", "))
+    text
 }
 
 /// Render a circuit rule's parameter telescope: its rewrite-sorted ports,
