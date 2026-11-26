@@ -606,6 +606,11 @@ enum Placed
     /// type holds each of the record's values by its label, and no core
     /// node holds the face or the record, so the type answers.
     Faced,
+    /// The arrow of a restricted binder of an input port, `->` in `k : (x :
+    /// V) -> C`: the theory's description reads it as the port's binder over
+    /// the port's sort, no type the lowering forms, so the binder's domain and
+    /// the port's sort answer.
+    Binder,
 }
 
 /// What the lowering knows of a source's models: each model implicit a
@@ -699,13 +704,40 @@ fn gated(
             .map_or(0_usize, |at| at.saturating_add(1));
         before.get(start ..).map(str::to_owned)
     };
-    // The ports that bind or abstract, `t` in `t : pi+ (x : Tm) . Tm` and `p`
+    // Whether the `:` at `at` writes a restricted binder after it, a
+    // parenthesised binder that an arrow follows: `: (x : Tm) -> Tm`.
+    let binds = |at: usize| {
+        let Some(after) = source
+            .get(at ..)
+            .and_then(|after| after.strip_prefix(": ("))
+        else {
+            return false;
+        };
+        let mut depth = 1_usize;
+        for (offset, letter) in after.char_indices() {
+            match letter {
+                '(' => depth = depth.saturating_add(1),
+                ')' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return after
+                            .get(offset.saturating_add(1) ..)
+                            .is_some_and(|rest| rest.trim_start().starts_with("->"));
+                    }
+                },
+                _ => {},
+            }
+        }
+        false
+    };
+    // The ports that bind or abstract, `t` in `t : (x : Tm) -> Tm` and `p`
     // in `p : bind (a : Name) . Proc`, and the operations declaring an
     // abstracting one, `nu` in `oper nu : (p : bind …) --> Proc`, by name; and
     // the bytes of every rule a theory writes, `rule` to its `;` or to the
     // next line that stands at its column or left of it.
     let binding: BTreeSet<String> = source
-        .match_indices(": pi+")
+        .match_indices(": (")
+        .filter(|&(at, _)| binds(at))
         .map(|(at, _)| (at, false))
         .chain(source.match_indices(": bind").map(|(at, _)| (at, true)))
         .flat_map(|(at, abstracting)| {
@@ -826,7 +858,7 @@ fn gated(
     };
     // Which ports of the operation `name` bind, in order, as the last
     // declaration of its name before the rule starting at `rule` writes them:
-    // a port binds when its sort is `pi+` or `bind`.
+    // a port binds when its sort writes a restricted binder or `bind`.
     let ports = |name: &str, rule: usize| -> Vec<bool> {
         let before = source.get(.. rule).unwrap_or("");
         before
@@ -849,9 +881,11 @@ fn gated(
                 parts(open)
                     .into_iter()
                     .map(|(from, to)| {
-                        source
-                            .get(from .. to)
-                            .is_some_and(|port| port.contains(": pi+") || port.contains(": bind"))
+                        source.get(from .. to).is_some_and(|port| {
+                            port.find(':')
+                                .is_some_and(|colon| binds(from.saturating_add(colon)))
+                                || port.contains(": bind")
+                        })
                     })
                     .collect()
             })
@@ -864,7 +898,7 @@ fn gated(
             .unwrap_or("")
     };
     // Each variable a rule writes bare at a binding port, `l` in `ext m l`
-    // for `oper ext : (m : C, k : pi+ (x : V) . C)`, by where it starts: the
+    // for `oper ext : (m : C, k : (x : V) -> C)`, by where it starts: the
     // variable the port binds, whatever the rule names it. Each call of a
     // rule is a juxtaposed spine, and its head names the operation.
     let mut bare: BTreeSet<usize> = BTreeSet::new();
@@ -1338,6 +1372,15 @@ fn gated(
             && source
                 .get(usize::from(span.end()) ..)
                 .is_some_and(|after| after.trim_start().starts_with('='));
+        // The arrow of a restricted binder: among an operation's ports,
+        // before its `-->`.
+        let binder = melded
+            && def.label == "->"
+            && def.sort == Sort::Type
+            && source
+                .get(.. usize::from(span.start()))
+                .and_then(|before| before.get(before.rfind("oper ")? ..))
+                .is_some_and(|within| !within.contains(';') && !within.contains("-->"));
         let placed = placed
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
@@ -1356,7 +1399,8 @@ fn gated(
             .or_else(|| conditioned.then_some(Placed::Theory))
             .or_else(|| lent.then_some(Placed::Lent))
             .or_else(|| operands.then_some(Placed::Operands))
-            .or_else(|| implicit.then_some(Placed::Implicit));
+            .or_else(|| implicit.then_some(Placed::Implicit))
+            .or_else(|| binder.then_some(Placed::Binder));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated
