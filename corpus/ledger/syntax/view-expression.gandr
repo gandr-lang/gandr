@@ -7,7 +7,7 @@ import std.list (List);
 def pair : List Integer = cons 1 (cons 2 nil);
 module Places where {
   @[checks]
-  def first[m : Mode](self : m List Integer) -> View[m] Integer = self.#[0];
+  def first[m : Mode](self : View[m] (List Integer)) -> View[m] Integer = self.#[0];
 }
 def raised() -> List Integer =
   var xs = pair
