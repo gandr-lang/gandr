@@ -153,6 +153,11 @@ pub fn digest(text: Text<'_>) -> String
 /// of a file stands after the inner attribute blocks that lead the file,
 /// where a source declares its features.
 ///
+/// The gate judges a source without the inner attribute block that stands
+/// below the `//!` lines of its head ([`without_head_block`]). A comment
+/// above the block thus runs up to the item below the block, as it does in
+/// the source that declares nothing.
+///
 /// # Specification
 /// - requires: `file` contains no colon.
 /// - ensures: one finding per uncommented item or block member, at any depth,
@@ -187,6 +192,7 @@ pub fn digest(text: Text<'_>) -> String
 /// - witness: `tests::comments::judge::tests::a_comment_before_an_arms_attribute_block_comments_the_arm_8119`
 /// - witness: `tests::comments::judge::tests::every_item_member_owes_its_own_comment`
 /// - witness: `tests::comments::judge::tests::a_leading_inner_block_is_no_item_and_stands_before_the_file_comment`
+/// - witness: `tests::comments::judge::tests::a_head_block_changes_no_finding`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|finding| finding.line.starts_with(file.0) && finding.line.contains(':'))))]
 #[inline]
 pub fn findings_of(
@@ -201,6 +207,8 @@ pub fn findings_of(
             detail: "a ledger file key cannot contain ':'".to_owned(),
         });
     }
+    let judged = without_head_block(source.0);
+    let source = judged.as_deref().map_or(source, Text);
     let opens = |source: &str| {
         let mut rest = source.trim_start();
         if rest.starts_with("#!") {
@@ -264,6 +272,48 @@ pub fn findings_of(
     found.sort_by(|left, right| left.line.cmp(&right.line));
     found.dedup_by(|left, right| left.line == right.line);
     Ok(found)
+}
+
+/// The text of `source` without the inner attribute block of its head, or
+/// nothing when the head of `source` has no such block.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: when the first line of `source` that is not blank, no `#!` line
+///   and no `//!` line opens an inner attribute block, and a line break follows
+///   the block, the text without the block, that line break and one blank line
+///   after it. Nothing for each other source.
+/// - provides: the text that the gate judges. A block of its own that a source
+///   gets at its head, with one blank line below it, changes no finding of the
+///   source.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item directly below the `//!` lines of a head keeps
+///   their comment when a block and its blank line stand between them. A blank
+///   line above the block stays in the text, and the item below owes its own
+///   comment.
+/// - witness: `tests::comments::judge::tests::a_head_block_changes_no_finding`
+fn without_head_block(source: &str) -> Option<String>
+{
+    let mut at = 0_usize;
+    for line in source.split_inclusive('\n') {
+        let text = line.trim_start();
+        if text.starts_with("@![") {
+            break;
+        }
+        if !(text.is_empty() || text.starts_with("//!") || text.starts_with("#!")) {
+            return None;
+        }
+        at = at.saturating_add(line.len());
+    }
+    let (above, block) = (source.get(.. at)?, source.get(at ..)?);
+    if !block.starts_with("@![") {
+        return None;
+    }
+    let below = past_block(block).strip_prefix('\n')?;
+    Some([above, below.strip_prefix('\n').unwrap_or(below)].concat())
 }
 
 /// The text after the inner attribute block that `text` opens on.
@@ -1220,6 +1270,27 @@ mod tests
             ],
             "a source with an item after its inner block has no leading comment, and the block \
              is no item"
+        );
+    }
+
+    #[test]
+    fn a_head_block_changes_no_finding()
+    {
+        let close = lines(Text(include_str!(
+            "unformatted/declared-close-below-the-head.gandr"
+        )));
+        assert!(
+            close.is_empty(),
+            "the `//!` lines run up to the import below the block, as they do with no block: \
+             {close:?}"
+        );
+        let apart = lines(Text(include_str!(
+            "unformatted/declared-below-a-blank-line.gandr"
+        )));
+        assert_eq!(
+            apart,
+            [key(Text("std"), Text("import std.process"))],
+            "a blank line above the block ends the run of the `//!` lines"
         );
     }
 

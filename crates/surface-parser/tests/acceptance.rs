@@ -1737,6 +1737,10 @@ fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Failure>
 /// `forget` group lost its `)`. The last `)` belongs to the outer group, so
 /// it does not reach the `(` of `forget`, and the source owes its one minted
 /// closer. A reach there leaves the outer group open, at 5 obligations.
+///
+/// The index of the dropped token does not count the tokens of the
+/// declaration of features of the source, so a change of the declaration
+/// moves no index.
 #[test]
 fn a_closer_reaches_its_open_partner_6323() -> Result<(), Failure>
 {
@@ -1748,9 +1752,21 @@ fn a_closer_reaches_its_open_partner_6323() -> Result<(), Failure>
         ("model/identity/model-counter-manifest-explicit.gandr", 142),
     ] {
         let source = std::fs::read_to_string(corpus_root().join(rel))?;
+        let declared = source.find("@![features").map_or(0 .. 0, |open| {
+            let close = source
+                .get(open ..)
+                .and_then(|rest| rest.find(']'))
+                .map_or(source.len(), |close| {
+                    open.saturating_add(close).saturating_add(1)
+                });
+            open .. close
+        });
         let token = label(SourceFragment::from(source.as_str()))
             .into_iter()
-            .filter(|token| token.lexeme != Lexeme::Space)
+            .filter(|token| {
+                token.lexeme != Lexeme::Space
+                    && !usize::try_from(token.start).is_ok_and(|start| declared.contains(&start))
+            })
             .nth(dropped)
             .ok_or("the source holds the dropped token")?;
         let (start, end) = (usize::try_from(token.start)?, usize::try_from(token.end)?);

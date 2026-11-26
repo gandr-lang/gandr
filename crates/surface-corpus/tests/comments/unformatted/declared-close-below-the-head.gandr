@@ -1,0 +1,7 @@
+//! The sample imports the process interface of the host.
+@![features(("imports", "modules"))]
+
+import std.process
+
+/// The answer.
+def answer = 1;
