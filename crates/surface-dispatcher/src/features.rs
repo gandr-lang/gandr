@@ -22,7 +22,10 @@
 //! # The write
 //!
 //! Under [`Rewrite::InPlace`] the census writes the declaration into each
-//! source whose head states a different one ([`rewritten`]).
+//! source whose head states a different one ([`rewritten`]). A head states a
+//! declaration by its keys: their order and the lines of the attribute do
+//! not count, so an attribute that the formatter laid out on more lines
+//! stands.
 //!
 //! | The head of the source | The declaration | The write |
 //! | ---------------------- | --------------- | --------- |
@@ -39,7 +42,17 @@
 //! A source that states the refusal of its declaration of features shows a
 //! head that differs from what it uses. The census leaves that source
 //! ([`Head::Kept`]).
+//!
+//! # The format verb
+//!
+//! A rewrite of the format verb changes the forms of a source, so it can
+//! change the features that the source uses. The format verb asks
+//! [`redeclared`] for the formatted text with the declaration of what that
+//! text uses. So a source that declares its features has an exact
+//! declaration after `gandr fmt` changes it. A source with no attribute
+//! `features` gets none.
 
+use alloc::collections::BTreeSet;
 use core::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
@@ -67,7 +80,7 @@ use crate::walk::walk_step;
 const INNER_DOC_LINE: &str = "//!";
 
 /// The tile that opens an inner attribute block.
-const INNER_OPEN: &str = "@![";
+pub const INNER_OPEN: &str = "@![";
 
 /// The declaration of the language features of one source: the id of each
 /// feature that the source uses.
@@ -376,6 +389,69 @@ fn read_features<'census>(
     Ok((declaration, head))
 }
 
+/// `own`, a text of the source at `path`, with the declaration of the
+/// features that it uses in place of the attribute `features` of its head.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a text exactly when each of these is true: the head of `own` has
+///   the attribute `features`; the lowering reads the features that `own` uses;
+///   the keys that the attribute states are a different set, whatever the lines
+///   of the attribute; no declaration of `own` states that the lowering refuses
+///   its declaration of features; and the lowering reads the declaration back
+///   from the text ([`reads_back`]). The text is [`rewritten`] of `own`. Else
+///   nothing.
+/// - provides: the declaration that the format verb writes for a text that it
+///   changed.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rewrite that removes one of the two features of a
+///   source, a rewrite that removes its one feature, and a source with no
+///   attribute; a declaration that keeps the removed feature, a block that
+///   stays with no feature, and a block that a source with no attribute gets
+///   are each a different text.
+/// - witness: `format::tests::a_formatted_source_keeps_an_exact_declaration`
+///
+/// # Cost
+/// - time: one parse and one lowering, and a second of each for a text whose
+///   declaration changes
+#[must_use]
+pub fn redeclared(
+    grammar: &Pbg,
+    path: &Path,
+    own: SourceText<'_>,
+) -> Option<String>
+{
+    let unit = component::lay_out(grammar, path, root::classify(path), own);
+    let base = usize::from(unit.base);
+    let features = unit_source_features(
+        grammar,
+        SourceText::from(unit.text.as_str()),
+        &unit.unit,
+        &mut LoweringCount::default(),
+    )
+    .ok()?;
+    let SourceFeatures::Used {
+        used,
+        site: Some((entry, block)),
+        shown: false,
+    } = features
+    else {
+        return None;
+    };
+    let declaration = Declaration(used);
+    // The lowering measures the attribute in the text of the unit, and the
+    // write is in the text of the source.
+    let site = (
+        entry.start.saturating_sub(base) .. entry.end.saturating_sub(base),
+        block.start.saturating_sub(base) .. block.end.saturating_sub(base),
+    );
+    let text = rewritten(<&str>::from(own), Some(&site), &declaration)?;
+    reads_back(grammar, path, &text, &declaration).then_some(text)
+}
+
 /// Whether the lowering reads `declaration` back from the head of `text`, the
 /// text of the source at `path` with the declaration written into it.
 ///
@@ -419,7 +495,8 @@ fn reads_back(
 }
 
 /// The text of a source with `declaration` at its head, or nothing when the
-/// head of `text` states it.
+/// head of `text` states it: the attribute has the keys of `declaration`, in
+/// any order and on any lines.
 ///
 /// # Specification
 /// - requires: `site` is the attribute `features` at the head of `text`, when
@@ -454,7 +531,21 @@ fn rewritten(
             let at = after_inner_docs(text);
             (at .. at, format!("{declaration}\n\n"))
         },
-        (Some(&(ref entry, _)), false) => (entry.clone(), Entry(features).to_string()),
+        (Some(&(ref entry, _)), false) => {
+            // The formatter can lay the attribute out on more lines than the
+            // census writes. The keys decide, and not the text.
+            let stated: BTreeSet<&str> = text
+                .get(entry.clone())
+                .unwrap_or_default()
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .collect();
+            if stated.iter().eq(features) {
+                return None;
+            }
+            (entry.clone(), Entry(features).to_string())
+        },
         (Some(&(ref entry, ref block)), true) => (removal(text, entry, block), String::new()),
     };
     let (before, after) = (text.get(.. cut.start)?, text.get(cut.end ..)?);
@@ -684,6 +775,19 @@ mod tests
             rewritten(stated, Some(&site(stated)), &one),
             None,
             "a head that states the declaration stands"
+        );
+        let wrapped = include_str!(
+            "features/fixtures/a-documented-definition-under-modules-and-deprecation-on-four-lines.gandr"
+        );
+        assert_eq!(
+            rewritten(wrapped, Some(&site(wrapped)), &two),
+            None,
+            "a head that states the keys stands, in any order and on any lines"
+        );
+        assert_eq!(
+            rewritten(wrapped, Some(&site(wrapped)), &one).as_deref(),
+            Some(stated),
+            "and a head that states one key more is replaced"
         );
         assert_eq!(
             rewritten(stated, Some(&site(stated)), &two).as_deref(),

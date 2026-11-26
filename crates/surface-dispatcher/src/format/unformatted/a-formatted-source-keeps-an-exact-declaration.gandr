@@ -1,0 +1,6 @@
+@![features(("explicit-exits", "nominal-data", "universes"))]
+
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+/// The declaration returns its argument.
+def stated(n : Nat) -> Nat = return n;

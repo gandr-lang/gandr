@@ -594,16 +594,27 @@ fn lay_out<'formatting>(
         .iter()
         .map(|withdrawal| Kept::located(withdrawal.clone(), text))
         .collect();
-    let laid = <&str>::from(formatted.text());
-    if laid == text.as_ref() {
+    let formatted = <&str>::from(formatted.text());
+    if formatted == text.as_ref() {
         return Ok(Laid::Unchanged(withdrawn));
     }
     if rewrite == Rewrite::InPlace {
+        // A rewrite can change the features that a source uses. A source
+        // that declares its features keeps an exact declaration: the
+        // features verb gives the formatted text with the declaration of
+        // what that text uses.
+        let redeclared = formatted
+            .contains(crate::features::INNER_OPEN)
+            .then(|| crate::features::redeclared(grammar, path, SourceText::from(formatted)))
+            .flatten();
         reader
-            .write(path, SourceText::from(laid))
+            .write(
+                path,
+                SourceText::from(redeclared.as_deref().unwrap_or(formatted)),
+            )
             .map_err(FormatFault::Unwritable)?;
     }
-    let (line, start) = first_change(text.as_ref(), laid);
+    let (line, start) = first_change(text.as_ref(), formatted);
     let declaration = declaration_at(grammar, parsed.tree(), start);
     Ok(Laid::Changed(withdrawn, (line, declaration)))
 }
@@ -867,6 +878,78 @@ mod tests
                 "the check writes nothing"
             );
         }
+    }
+
+    /// A rewrite into the sugared form removes the explicit exit of each
+    /// source. A source that declares its features has an exact declaration
+    /// after the pass: the attribute loses the key of the exit, and a block
+    /// with no key left goes. A source with no attribute gets none. A
+    /// second pass changes nothing.
+    #[test]
+    fn a_formatted_source_keeps_an_exact_declaration()
+    {
+        let scratch = Scratch::new(Path::new("format-declared"));
+        let sources = [
+            (
+                "kept.gandr",
+                include_str!(
+                    "format/unformatted/a-formatted-source-keeps-an-exact-declaration.gandr"
+                ),
+                include_str!(
+                    "format/unformatted/a-formatted-source-keeps-an-exact-declaration-sugared.gandr"
+                ),
+            ),
+            (
+                "lost.gandr",
+                include_str!("format/unformatted/a-formatted-source-loses-its-one-feature.gandr"),
+                include_str!(
+                    "format/unformatted/a-formatted-source-loses-its-one-feature-sugared.gandr"
+                ),
+            ),
+            (
+                "none.gandr",
+                include_str!("format/unformatted/a-formatted-source-with-no-attribute.gandr"),
+                include_str!(
+                    "format/unformatted/a-formatted-source-with-no-attribute-sugared.gandr"
+                ),
+            ),
+        ];
+        for &(name, source, _) in &sources {
+            scratch.file(Path::new(name), SourceText::from(source));
+        }
+        let root = scratch.root();
+        let options = FormatOptions {
+            form: gandr_surface_format::Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let pass = || {
+            let formatting = Formatting::new(
+                vec![root.to_path_buf()],
+                options,
+                Rewrite::InPlace,
+                Width::SERIAL,
+            );
+            let mut changed = Vec::new();
+            let visited = formatting.visit(&Pool::new(Width::SERIAL), |step| {
+                changed.push(matches!(step, FormatStep::Changed { .. }));
+                ControlFlow::<Infallible>::Continue(())
+            });
+            assert_eq!(visited, ControlFlow::Continue(()));
+            changed
+        };
+        assert_eq!(
+            pass(),
+            [true, true, true],
+            "each source takes the sugared form"
+        );
+        for &(name, _, sugared) in &sources {
+            assert_eq!(read(&root.join(name)), sugared, "{name}");
+        }
+        assert_eq!(
+            pass(),
+            [false, false, false],
+            "a second pass changes nothing"
+        );
     }
 
     #[test]
