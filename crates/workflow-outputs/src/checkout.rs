@@ -54,6 +54,14 @@ pub fn compute(
     .map_err(|error| format!("{revision} names no commit: {error}"))?;
     let commit = commit.trim();
     let work = place(root);
+    // Two runs do not make the checkout or build in it at the same time: the
+    // second one waits for the lock. The lock ends with its file handle.
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).map_err(|error| format!("the target directory: {error}"))?;
+    let lock = std::fs::File::create(target.join("outputs-checkout.lock"))
+        .map_err(|error| format!("the lock of the checkout: {error}"))?;
+    lock.lock()
+        .map_err(|error| format!("the lock of the checkout: {error}"))?;
     let checked_out = if work.join(".git").exists() {
         run(Command::new("git")
             .arg("-C")
@@ -86,6 +94,7 @@ pub fn compute(
         ])
         .args(["compute", kind.0, "--revision", commit]))
     .map_err(|error| format!("the tool of {commit}: {error}"))?;
+    drop(lock);
     Ok(())
 }
 

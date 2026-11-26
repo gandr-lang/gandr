@@ -1,13 +1,15 @@
-//! `outputs`: the values of one kind of output for a tree, read from the store
-//! or computed into it, and the difference of two trees.
+//! `outputs`: the values of each asked kind of output for a tree, read from
+//! the store or computed into it, and the difference of two trees.
 //!
 //! ```text
-//! outputs compute <kind> [--revision <revision>] [--print] [--cost]
-//! outputs difference <kind> --base <revision> [--head <revision>] [--lines <count>] [--cost]
+//! outputs compute <kinds> [--revision <revision>] [--print] [--cost]
+//! outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]
 //! ```
 //!
 //! A kind is `recovery`, the recovery record of a source, or `roles`, the
-//! roles that the highlight gives a source.
+//! roles that the highlight gives a source. `<kinds>` is one kind, two or
+//! more kinds with a comma between them, or `all`. One run answers each kind
+//! that it names, and reads each tree one time. `--print` takes one kind.
 //!
 //! With no revision, the tree is the work tree with its changes. The store is
 //! the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs`.
@@ -23,9 +25,10 @@
 //! another tool is computed by the binary of its commit, in a checkout below
 //! the target directory, unless the store holds each of its values.
 //!
-//! `difference` exits with 1 when values differ and no commit between the
-//! base and the head names the kind in a trailer `Changes-output: <kind>`.
-//! With no `--head`, the commits end at `HEAD`.
+//! `difference` exits with 1 when values of a kind differ and no commit
+//! between the base and the head names that kind in a trailer
+//! `Changes-output: <kind>`. It prints one refusal for each such kind. With no
+//! `--head`, the commits end at `HEAD`.
 //!
 //! `--cost` adds each part of the run with its count and its time.
 
@@ -60,7 +63,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute <kind> [--revision <revision>] [--print] [--cost]\n       outputs difference <kind> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is recovery or roles";
+const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is recovery or roles; <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
 
 /// How many changes `difference` prints when the command line names no
 /// count.
@@ -73,8 +76,9 @@ type Valued = Vec<(Source, Vec<u8>)>;
 #[derive(Debug)]
 struct Asked
 {
-    /// The kind of the values.
-    kind: Kind,
+    /// The kinds of the values, each one time, in the order of the command
+    /// line.
+    kinds: Vec<Kind>,
     /// Whether the command is `difference`; else it is `compute`.
     difference: bool,
     /// The commit of `compute`, or the head of `difference`; none for the
@@ -90,7 +94,7 @@ struct Asked
     cost: bool,
 }
 
-/// Reads the command line: the command, the kind, then the flags.
+/// Reads the command line: the command, the kinds, then the flags.
 ///
 /// # Specification
 /// trivial.
@@ -107,12 +111,23 @@ fn asked(arguments: &[String]) -> Result<Asked, String>
         _ => return Err(usage()),
     };
     let named = rest.next().ok_or_else(usage)?;
-    let kind = compute::KINDS
-        .into_iter()
-        .find(|kind| kind.0 == named.as_str())
-        .ok_or_else(usage)?;
+    let mut kinds: Vec<Kind> = Vec::new();
+    for word in named.split(',') {
+        let found: Vec<Kind> = compute::KINDS
+            .into_iter()
+            .filter(|kind| word == "all" || kind.0 == word)
+            .collect();
+        if found.is_empty() {
+            return Err(usage());
+        }
+        for kind in found {
+            if !kinds.contains(&kind) {
+                kinds.push(kind);
+            }
+        }
+    }
     let mut asked = Asked {
-        kind,
+        kinds,
         difference,
         revision: None,
         base: None,
@@ -138,6 +153,9 @@ fn asked(arguments: &[String]) -> Result<Asked, String>
         }
     }
     if asked.difference && asked.base.is_none() {
+        return Err(usage());
+    }
+    if asked.print && asked.kinds.len() > 1 {
         return Err(usage());
     }
     Ok(asked)
@@ -171,8 +189,9 @@ struct Run
     packages: Vec<String>,
     /// The grammar, built when the run first computes a value.
     pbg: Option<Pbg>,
-    /// The work tree and its tool, when the run has read them.
-    work: Option<(Tree, Digest)>,
+    /// Each tree that the run has read, with its revision and its tool. The
+    /// work tree has no revision.
+    trees: Vec<(Option<String>, Tree, Digest)>,
     /// The parts of the run, in their order.
     parts: Vec<Part>,
 }
@@ -210,13 +229,13 @@ impl Run
             root,
             packages,
             pbg: None,
-            work: None,
+            trees: Vec::new(),
             parts,
         })
     }
 
     /// The tree of `revision`, or of the work tree, and its tool. A run reads
-    /// the work tree one time.
+    /// each tree one time.
     ///
     /// # Specification
     /// trivial.
@@ -228,10 +247,12 @@ impl Run
         revision: Option<&str>,
     ) -> Result<(Tree, Digest), String>
     {
-        if revision.is_none()
-            && let Some(ref work) = self.work
+        if let Some(&(_, ref tree, tool)) = self
+            .trees
+            .iter()
+            .find(|&&(ref read, ..)| read.as_deref() == revision)
         {
-            return Ok(work.clone());
+            return Ok((tree.clone(), tool));
         }
         let started = Instant::now();
         let tree = revision
@@ -247,9 +268,8 @@ impl Run
             count: 1,
             time: started.elapsed(),
         });
-        if revision.is_none() {
-            self.work = Some((tree.clone(), tool));
-        }
+        self.trees
+            .push((revision.map(str::to_owned), tree.clone(), tool));
         Ok((tree, tool))
     }
 
@@ -353,87 +373,134 @@ fn held_values(held: compute::Held) -> Vec<(Source, Vec<u8>)>
         .collect()
 }
 
-/// The run of the command line `arguments`.
+/// The difference of the kind `kind` between the base and the head of
+/// `asked`: its lines go to `out` and its cost line to `summary`. Gives how
+/// many values of the base the run computed, and the refusal when values
+/// differ and no commit names the kind.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The refusal of a tree, of the store, of the binary of a commit or of git.
+fn differ(
+    run: &mut Run,
+    asked: &Asked,
+    kind: Kind,
+    out: &mut String,
+    summary: &mut String,
+) -> Result<(usize, Option<String>), String>
+{
+    let name = kind.0;
+    let base = asked.base.as_deref().unwrap_or("HEAD");
+    let head = asked.revision.as_deref();
+    let own = run.tree(None)?.1;
+    let (head_values, head_computed) = run.side(head, &own, kind)?;
+    let (base_values, base_computed) = run.side(Some(base), &own, kind)?;
+    let changes = difference::changes(&base_values, &head_values);
+    let lines = asked.lines.unwrap_or(LINES);
+    let _written = writeln!(
+        out,
+        "{name}: {} of {} sources differ between {base} and {}",
+        changes.len(),
+        head_values.len(),
+        head.unwrap_or("the work tree")
+    );
+    for change in changes.iter().take(lines) {
+        let _written = writeln!(out, "  {}", change.line());
+    }
+    if changes.len() > lines {
+        let _written = writeln!(out, "  … {} more", changes.len().saturating_sub(lines));
+    }
+    let _written = writeln!(
+        summary,
+        "{name}: the head computed {head_computed} values, the base {base_computed}, in {}",
+        run.store.root().display()
+    );
+    let refusal = (!changes.is_empty() && !word::named(&run.root, base, head, kind)?).then(|| {
+        format!(
+            "{name}: {} of {} sources differ, and no commit of {base}..{} has the trailer `{}: {name}`",
+            changes.len(),
+            head_values.len(),
+            head.unwrap_or("HEAD"),
+            word::TRAILER
+        )
+    });
+    Ok((base_computed, refusal))
+}
+
+/// The values of the kind `kind` of the tree of `asked`: each source with its
+/// value goes to `out` when the command line asks, and the count line to
+/// `summary`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The refusal of the grammar, of the tree or of the store.
+fn computed(
+    run: &mut Run,
+    asked: &Asked,
+    kind: Kind,
+    out: &mut String,
+    summary: &mut String,
+) -> Result<(), String>
+{
+    let name = kind.0;
+    let (tree, tool) = run.tree(asked.revision.as_deref())?;
+    let values = run.compute(&tree, &tool, kind)?;
+    if asked.print {
+        for &(ref source, ref value) in &values.values {
+            let value = String::from_utf8_lossy(value);
+            if value.lines().count() <= 1 {
+                let _written = writeln!(out, "{}\t{}", source.name, value.trim_end_matches('\n'));
+            }
+            else {
+                let _written = writeln!(out, "{}", source.name);
+                for line in value.lines() {
+                    let _written = writeln!(out, "\t{line}");
+                }
+            }
+        }
+    }
+    let _written = writeln!(
+        summary,
+        "{name}: {} sources, {} from the store, {} computed, in {}",
+        values.values.len(),
+        values.values.len().saturating_sub(values.computed),
+        values.computed,
+        run.store.root().display()
+    );
+    Ok(())
+}
+
+/// The run of the command line `arguments`: each kind in its order, then the
+/// gauges.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
 /// The refusal of the command line, of the workspace, of the grammar, of a
-/// tree or of the store, as one line; and a difference that no commit names.
+/// tree or of the store, as one line; and one line for each kind with a
+/// difference that no commit names.
 fn run(arguments: &[String]) -> Result<(), String>
 {
     let asked = asked(arguments)?;
-    let kind = asked.kind;
-    let name = kind.0;
     let mut run = Run::start()?;
     let mut out = String::new();
     let mut summary = String::new();
-    let mut recomputed = None;
-    let mut refusal = None;
-    if asked.difference {
-        let base = asked.base.as_deref().unwrap_or("HEAD");
-        let head = asked.revision.as_deref();
-        let own = run.tree(None)?.1;
-        let (head_values, head_computed) = run.side(head, &own, kind)?;
-        let (base_values, base_computed) = run.side(Some(base), &own, kind)?;
-        let changes = difference::changes(&base_values, &head_values);
-        let lines = asked.lines.unwrap_or(LINES);
-        let _written = writeln!(
-            out,
-            "{name}: {} of {} sources differ between {base} and {}",
-            changes.len(),
-            head_values.len(),
-            head.unwrap_or("the work tree")
-        );
-        for change in changes.iter().take(lines) {
-            let _written = writeln!(out, "  {}", change.line());
+    let mut recomputed: Option<usize> = None;
+    let mut refusals: Vec<String> = Vec::new();
+    for &kind in &asked.kinds {
+        if asked.difference {
+            let (base_computed, refusal) = differ(&mut run, &asked, kind, &mut out, &mut summary)?;
+            recomputed = Some(recomputed.map_or(base_computed, |most| most.max(base_computed)));
+            refusals.extend(refusal);
         }
-        if changes.len() > lines {
-            let _written = writeln!(out, "  … {} more", changes.len().saturating_sub(lines));
+        else {
+            computed(&mut run, &asked, kind, &mut out, &mut summary)?;
         }
-        let _written = writeln!(
-            summary,
-            "{name}: the head computed {head_computed} values, the base {base_computed}, in {}",
-            run.store.root().display()
-        );
-        recomputed = Some(base_computed);
-        if !changes.is_empty() && !word::named(&run.root, base, head, kind)? {
-            refusal = Some(format!(
-                "{name}: {} of {} sources differ, and no commit of {base}..{} has the trailer `{}: {name}`",
-                changes.len(),
-                head_values.len(),
-                head.unwrap_or("HEAD"),
-                word::TRAILER
-            ));
-        }
-    }
-    else {
-        let (tree, tool) = run.tree(asked.revision.as_deref())?;
-        let values = run.compute(&tree, &tool, kind)?;
-        if asked.print {
-            for &(ref source, ref value) in &values.values {
-                let value = String::from_utf8_lossy(value);
-                if value.lines().count() <= 1 {
-                    let _written =
-                        writeln!(out, "{}\t{}", source.name, value.trim_end_matches('\n'));
-                }
-                else {
-                    let _written = writeln!(out, "{}", source.name);
-                    for line in value.lines() {
-                        let _written = writeln!(out, "\t{line}");
-                    }
-                }
-            }
-        }
-        let _written = writeln!(
-            summary,
-            "{name}: {} sources, {} from the store, {} computed, in {}",
-            values.values.len(),
-            values.values.len().saturating_sub(values.computed),
-            values.computed,
-            run.store.root().display()
-        );
     }
     let started = Instant::now();
     let mut gauges = vec![Gauge {
@@ -479,5 +546,42 @@ fn run(arguments: &[String]) -> Result<(), String>
         .lock()
         .write_all(out.as_bytes())
         .map_err(|error| format!("the output: {error}"))?;
-    refusal.map_or(Ok(()), Err)
+    if refusals.is_empty() {
+        Ok(())
+    }
+    else {
+        Err(refusals.join("\noutputs: "))
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::asked;
+    use super::compute;
+
+    /// A command line names one kind, kinds with a comma between them, or
+    /// `all`. Each kind goes into the run one time, in the order of the
+    /// command line. A word that is no kind is refused, and so is `--print`
+    /// with two kinds.
+    #[test]
+    fn a_command_line_names_its_kinds()
+    {
+        let kinds = |word: &str| {
+            asked(&[String::from("compute"), String::from(word)]).map(|asked| asked.kinds)
+        };
+        assert_eq!(kinds("roles"), Ok(vec![compute::ROLES]));
+        assert_eq!(
+            kinds("roles,recovery,roles"),
+            Ok(vec![compute::ROLES, compute::RECOVERY])
+        );
+        assert_eq!(kinds("all"), Ok(compute::KINDS.to_vec()));
+        assert!(kinds("roles,molds").is_err(), "`molds` is no kind");
+        let printed = asked(&[
+            String::from("compute"),
+            String::from("all"),
+            String::from("--print"),
+        ]);
+        assert!(printed.is_err(), "`--print` takes one kind");
+    }
 }
