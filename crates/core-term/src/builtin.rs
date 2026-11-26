@@ -10,6 +10,7 @@
 //! | a native value | each row of [`PRELUDE`], keyed by its name | given: the toolchain gives the value, and the declaration is a signature with no body that states the row's type |
 //! | an atom | each nullary value type of [`TypeAtom::ALL`], keyed by its word | given: the toolchain gives the type, and the declaration is a type signature with no body that states its kind |
 //! | a former | each unary type former of [`TypeFormer::ROWS`], keyed by its word | given: the toolchain gives the former, and the declaration is a type signature with one parameter and no body |
+//! | a former of the surface | each head of [`SurfaceFormer::ROWS`], keyed by its word | given: the lowering reads the head, with no former of the core, and the declaration is a type signature with no body |
 //! | a role | each role of [`Builtin`], keyed by its word | found: the library gives the declaration with its body, and a former of the core reads it by its role |
 //!
 //! A lookup reads the table in its order, so the work of one key is bounded by
@@ -199,6 +200,43 @@ impl TypeFormer
     }
 }
 
+/// A type head that the lowering reads, with no former of the core.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SurfaceFormer
+{
+    /// `View[m] a`, a place of a value of type `a` lent at the mode `m`: the
+    /// receiver of a method at a deduced mode, and the answer of a method
+    /// that answers a place. The core writes the lent slot, and no type.
+    View,
+}
+
+impl SurfaceFormer
+{
+    /// Every head of the surface that a declaration of `std` binds, with the
+    /// word that keys its row, in the order of the table.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const ROWS: [(&'static str, Self); 1_usize] = [("view", Self::View)];
+
+    /// The key of the head's row.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn key(self) -> Key<'static>
+    {
+        Key(Self::ROWS
+            .iter()
+            .find_map(|&(word, former)| (former == self).then_some(word))
+            .unwrap_or(""))
+    }
+}
+
 /// What a row of the table is.
 ///
 /// # Specification
@@ -212,6 +250,8 @@ pub enum Kind
     Atom,
     /// A unary type former that the toolchain gives.
     Former,
+    /// A type head that the lowering reads, with no former of the core.
+    SurfaceFormer,
     /// A role that a former of the core reads.
     Role,
 }
@@ -244,6 +284,9 @@ pub enum Row
     Atom(TypeAtom),
     /// A unary type former, which the toolchain gives with no body.
     Former(TypeFormer),
+    /// A type head that the lowering reads, with no body and no former of the
+    /// core.
+    Surface(SurfaceFormer),
     /// A role that a former of the core reads, which states the canonical form
     /// of its holder.
     Role(Builtin),
@@ -251,8 +294,8 @@ pub enum Row
 
 impl Row
 {
-    /// The text that names the row: a native value's name, an atom's or a
-    /// former's word, or a role's word.
+    /// The text that names the row: a native value's name, an atom's, a
+    /// former's or a head's word, or a role's word.
     ///
     /// # Specification
     /// trivial.
@@ -264,6 +307,7 @@ impl Row
             Self::Native(primitive) => primitive.name().into(),
             Self::Atom(atom) => atom.key().0,
             Self::Former(former) => former.key().0,
+            Self::Surface(former) => former.key().0,
             Self::Role(role) => role.word().0,
         })
     }
@@ -280,12 +324,13 @@ impl Row
             Self::Native(_) => Kind::Native,
             Self::Atom(_) => Kind::Atom,
             Self::Former(_) => Kind::Former,
+            Self::Surface(_) => Kind::SurfaceFormer,
             Self::Role(_) => Kind::Role,
         }
     }
 
     /// Who gives the meaning of the row: the toolchain for a native value, an
-    /// atom and a former, the library for a role.
+    /// atom, a former and a head of the surface, the library for a role.
     ///
     /// # Specification
     /// trivial.
@@ -294,14 +339,17 @@ impl Row
     pub const fn direction(self) -> Direction
     {
         match self {
-            Self::Native(_) | Self::Atom(_) | Self::Former(_) => Direction::Given,
+            Self::Native(_) | Self::Atom(_) | Self::Former(_) | Self::Surface(_) => {
+                Direction::Given
+            },
             Self::Role(_) => Direction::Found,
         }
     }
 
     /// Every row of the table: the native values in the order of
     /// [`PRELUDE`], then the atoms in the order of [`TypeAtom::ALL`], then the
-    /// formers in the order of [`TypeFormer::ROWS`], then the roles in the
+    /// formers in the order of [`TypeFormer::ROWS`], then the heads of the
+    /// surface in the order of [`SurfaceFormer::ROWS`], then the roles in the
     /// order of [`Builtin::ALL`].
     ///
     /// # Specification
@@ -318,6 +366,11 @@ impl Row
                 TypeFormer::ROWS
                     .into_iter()
                     .map(|(_, former)| Self::Former(former)),
+            )
+            .chain(
+                SurfaceFormer::ROWS
+                    .into_iter()
+                    .map(|(_, former)| Self::Surface(former)),
             )
             .chain(Builtin::ALL.into_iter().map(Self::Role))
     }
@@ -374,6 +427,7 @@ mod tests
     use super::Key;
     use super::Kind;
     use super::Row;
+    use super::SurfaceFormer;
     use super::TypeAtom;
     use super::TypeFormer;
     use super::row;
@@ -393,7 +447,11 @@ mod tests
         }
         assert_eq!(
             keys.len(),
-            PRELUDE.len() + TypeAtom::ALL.len() + TypeFormer::ROWS.len() + Builtin::ALL.len()
+            PRELUDE.len()
+                + TypeAtom::ALL.len()
+                + TypeFormer::ROWS.len()
+                + SurfaceFormer::ROWS.len()
+                + Builtin::ALL.len()
         );
         let append = Row::named(Key("string.append"));
         assert!(
@@ -410,6 +468,10 @@ mod tests
         assert_eq!(
             Row::named(Key("list")),
             Maybe::Present(Row::Former(TypeFormer::List))
+        );
+        assert_eq!(
+            Row::named(Key("view")),
+            Maybe::Present(Row::Surface(SurfaceFormer::View))
         );
     }
 
@@ -434,6 +496,12 @@ mod tests
                     assert_eq!(
                         (row.kind(), row.direction()),
                         (Kind::Former, Direction::Given)
+                    );
+                },
+                Row::Surface(_) => {
+                    assert_eq!(
+                        (row.kind(), row.direction()),
+                        (Kind::SurfaceFormer, Direction::Given)
                     );
                 },
                 Row::Role(_) => {
@@ -497,7 +565,7 @@ mod tests
                 let kind = match row.kind() {
                     Kind::Native => "value",
                     Kind::Atom => "atom",
-                    Kind::Former => "former",
+                    Kind::Former | Kind::SurfaceFormer => "former",
                     Kind::Role => "role",
                 };
                 let direction = match row.direction() {

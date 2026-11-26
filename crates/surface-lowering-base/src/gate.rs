@@ -108,7 +108,7 @@ pub const ATTRIBUTE_GATES: [(&str, RuleGate); 26_usize] = [
 /// - hypothesis: L3 — each row of the builtin table is looked up, each line is
 ///   counted, and the integer widths of the first twin are in the core.
 /// - witness: `gate::tests::each_builtin_row_has_one_line_and_each_line_a_row`
-pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 56_usize] = [
+pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 57_usize] = [
     (Kind::Native, "add", RuleGate::Feature("native-primitives")),
     (Kind::Native, "and", RuleGate::Feature("native-primitives")),
     (Kind::Native, "bool", RuleGate::Feature("native-primitives")),
@@ -161,6 +161,11 @@ pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 56_usize] = [
     (Kind::Former, "list", RuleGate::Feature("native-lists")),
     (Kind::Former, "prefix", RuleGate::Feature("run-prefixes")),
     (Kind::Former, "run", RuleGate::Feature("run-prefixes")),
+    (
+        Kind::SurfaceFormer,
+        "view",
+        RuleGate::Feature("deduced-receivers"),
+    ),
     (
         Kind::Role,
         "irArgs",
@@ -222,7 +227,7 @@ pub fn builtin_word(row: Row) -> &'static str
         Kind::Native => key
             .split_once('.')
             .map_or(key, |(namespace, _member)| namespace),
-        Kind::Atom | Kind::Former | Kind::Role => key,
+        Kind::Atom | Kind::Former | Kind::SurfaceFormer | Kind::Role => key,
     }
 }
 

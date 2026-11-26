@@ -14842,7 +14842,8 @@ impl<'source> LoweredModule<'source>
                     Maybe::Present(
                         gandr_core_term::builtin::Row::Native(_)
                         | gandr_core_term::builtin::Row::Atom(_)
-                        | gandr_core_term::builtin::Row::Former(_),
+                        | gandr_core_term::builtin::Row::Former(_)
+                        | gandr_core_term::builtin::Row::Surface(_),
                     )
                     | Maybe::Absent(_) => {
                         Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unnamed)

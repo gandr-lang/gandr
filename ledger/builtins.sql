@@ -436,6 +436,7 @@ INSERT INTO builtin VALUES('usize.wrapping_mul','crates/core-term/src/builtin.rs
 INSERT INTO builtin VALUES('usize.wrapping_rem','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('usize.wrapping_sub','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('usize.xor','crates/core-term/src/builtin.rs','value','given','stated');
+INSERT INTO builtin VALUES('view','crates/core-term/src/builtin.rs','former','given','stated');
 INSERT INTO builtin VALUES('void','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('web','crates/core-term/src/builtin.rs','atom','given','stated');
 COMMIT;

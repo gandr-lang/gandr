@@ -224,9 +224,8 @@ impl<'source> Context<'_, 'source>
         use gandr_core_term::builtin::Row;
         match self.builtin_row(held) {
             Maybe::Present(Row::Atom(atom)) => Maybe::Present(atom),
-            Maybe::Present(Row::Native(_) | Row::Former(_) | Row::Role(_)) | Maybe::Absent(_) => {
-                Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed)
-            },
+            Maybe::Present(Row::Native(_) | Row::Former(_) | Row::Surface(_) | Row::Role(_))
+            | Maybe::Absent(_) => Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed),
         }
     }
 
@@ -260,9 +259,8 @@ impl<'source> Context<'_, 'source>
         use gandr_core_term::builtin::Row;
         match self.builtin_row(held) {
             Maybe::Present(Row::Former(former)) => Maybe::Present(former),
-            Maybe::Present(Row::Native(_) | Row::Atom(_) | Row::Role(_)) | Maybe::Absent(_) => {
-                Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed)
-            },
+            Maybe::Present(Row::Native(_) | Row::Atom(_) | Row::Surface(_) | Row::Role(_))
+            | Maybe::Absent(_) => Maybe::Absent(gandr_core_term::builtin::row::Absent::Unkeyed),
         }
     }
 
