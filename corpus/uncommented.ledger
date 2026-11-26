@@ -79,7 +79,7 @@ fragment/exits.gandr:skimmed:421884487cf4f3ec uncommented
 fragment/exits.gandr:skimmed_elided:44a6d77a84b39ee1 uncommented
 fragment/exits.gandr:stated:d1529112c2c66c2e uncommented
 fragment/exits.gandr:stated_elided:52e766e63366fed7 uncommented
-fragment/exits.gandr:stream:196e111630372225 uncommented
+fragment/exits.gandr:stream:feadceaa3a2737c7 uncommented
 fragment/exits.gandr:twice:ace5da8fa60e0879 uncommented
 fragment/exits.gandr:twice_elided:b3f819f2f4af5de7 uncommented
 fragment/exits.gandr:twice_nested:eeecf19f35aa41f2 uncommented
@@ -1823,6 +1823,8 @@ pending/surface/desc-declined-metadata.gandr:Declared:3c7079fcd8fbb7e1 uncomment
 sketch/environments/tactics.gandr:module_declaration:60fba5b69a59e301 uncommented
 sketch/environments/tactics.gandr:module_declaration:a93c288035ae3d0e uncommented
 sketch/foreign/mlir.gandr:module_declaration:4d448e00aa27c165 uncommented
+sketch/grades/expected.gandr:Retrying.onceMore:dbbac5635210e7fa uncommented
+sketch/grades/expected.gandr:Retrying.thrice:e604b9916b5441b2 uncommented
 sketch/model-refinement/forgetting.gandr:T:f7d85ed8d2c13eaf uncommented
 sketch/model-refinement/operations.gandr:size:0a036c2d7559492b uncommented
 sketch/model-refinement/operations.gandr:size:af4420db78c0d725 uncommented
@@ -1957,9 +1959,8 @@ surface/def-rec-and-copatterns.gandr:<file> uncommented
 surface/def-rec-and-copatterns.gandr:bounded:55a1a6478a742941 uncommented
 surface/def-rec-and-copatterns.gandr:explicit:e6768d37e52562f7 uncommented
 surface/def-rec-and-copatterns.gandr:fact:bde9a087ad487d7d uncommented
-surface/def-rec-and-copatterns.gandr:loopy:02bb7a341b7fda84 uncommented
 surface/def-rec-and-copatterns.gandr:measured:1df4f0a419e13242 uncommented
-surface/def-rec-and-copatterns.gandr:nats:72765900610c0587 uncommented
+surface/def-rec-and-copatterns.gandr:nats:63ae90275707e9e0 uncommented
 surface/def-rec-and-copatterns.gandr:sized:74f355fd48dc08b5 uncommented
 surface/def-rec-and-copatterns.gandr:tailing:9e27b16b8bee4939 uncommented
 surface/higher-cells/cat-shape.gandr:CatShape.Hom:063688045af813a9 uncommented

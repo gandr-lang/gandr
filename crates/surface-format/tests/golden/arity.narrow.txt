@@ -29,9 +29,7 @@ def renamed(r : *{
   s : String
 }) -> -F Integer =
   match r { | *{.n = m} => return m }
-def absurd(x : +{}) -> -F Integer {
-  match x {}
-}
+def absurd(x : +{}) -> -F Integer = match x {};
 def only : +{Integer};
 def only = +{.0 = 1};
 def failed : +{
@@ -64,7 +62,7 @@ def binary : +U (-F Integer & -F String)
 def observe(m : +U &{
   get : -F Integer,
   put : -F String
-}) -> -F Integer { become m.get }
+}) -> -F Integer = become m.get
 def nothing : () -> Integer
 def unary : (Integer) -> Integer
 def two : (

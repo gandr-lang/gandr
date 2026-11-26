@@ -43,7 +43,6 @@ definition Member capability_type
 definition Member codata_declaration
 definition Member constructor_pattern
 definition Member data_declaration
-definition Member def_value
 definition Member glob_expression
 definition Member import_declaration
 definition Member labelled_sum_expression
@@ -94,7 +93,6 @@ definition TypeVariable type_variable
 definition Variable access_expression
 definition Variable bind_expression
 definition Variable cons_pattern
-definition Variable def_value
 definition Variable identifier.expression
 definition Variable identifier.pattern
 definition Variable import_declaration
@@ -111,7 +109,6 @@ hover FunctionDef handle_expression
 hover Member attributed_module_member
 hover Member capability_type
 hover Member codata_declaration
-hover Member def_value
 hover Member glob_expression
 hover Member lazy_record_expression
 hover Member module_type_member
@@ -132,7 +129,6 @@ hover TypeVariable mu_session_type
 hover TypeVariable type_path
 hover TypeVariable type_variable
 hover Variable access_expression
-hover Variable def_value
 hover Variable identifier.expression
 hover Variable identifier.pattern
 hover Variable wildcard
