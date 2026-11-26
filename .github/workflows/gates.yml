@@ -193,8 +193,8 @@ jobs:
       # The slowest tests start first. The store of nextest keeps the JUnit
       # report of the last run of the suite, and `test-timing` turns it into a
       # nextest tool configuration with the priority of each slow test
-      # (`.config/nextest.toml`). With no report, or when the tool fails, the
-      # suite runs in the order of nextest.
+      # (`.config/nextest.toml`). With no report, the configuration holds no
+      # priority. When the tool fails, the suite runs in the order of nextest.
       - name: set the priorities
         if: ${{ matrix.nextest }}
         env:
@@ -202,10 +202,10 @@ jobs:
           KACHE_OCI_PASSWORD: ${{ github.token }}
           REPORT: ${{ github.workspace }}/target/nextest/default/junit.xml
         run: |
-          if [ -f "$REPORT" ] && ${{ matrix.timing }} --junit "$REPORT" --write "$RUNNER_TEMP/priorities.toml"; then
+          if ${{ matrix.timing }} --junit "$REPORT" --write "$RUNNER_TEMP/priorities.toml"; then
             echo "PRIORITIES=--tool-config-file test-timing:$RUNNER_TEMP/priorities.toml" >> "$GITHUB_ENV"
           else
-            echo "::notice title=priorities::no report of the last run, so the suite runs in the order of nextest"
+            echo "::notice title=priorities::test-timing failed, so the suite runs in the order of nextest"
           fi
       - name: run the gate
         env:
