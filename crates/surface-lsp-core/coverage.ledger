@@ -12,7 +12,6 @@ binder FunctionDef path_declaration
 binder FunctionDef theory_declaration
 binder VariableDef access_expression
 binder VariableDef block
-binder VariableDef def_value
 binder VariableDef handle_expression
 binder VariableDef import_declaration
 binder VariableDef nested_module_member
@@ -88,10 +87,8 @@ definition TypeBuiltin unknown_type
 definition TypeVariable attributed_module_member
 definition TypeVariable codata_declaration
 definition TypeVariable data_declaration
-definition TypeVariable moded_type
 definition TypeVariable module_type_member
 definition TypeVariable mu_session_type
-definition TypeVariable type_application
 definition TypeVariable type_path
 definition TypeVariable type_variable
 definition Variable access_expression
@@ -104,6 +101,7 @@ definition Variable import_declaration
 definition Variable offers_declaration
 definition Variable wildcard
 definition Variable wildcard.expression
+definition Variable wildcard.type
 hover Constructor constructor.expression
 hover Constructor constructor_pattern
 hover Constructor projection_expression
@@ -140,7 +138,7 @@ hover Variable identifier.pattern
 hover Variable wildcard
 hover Variable wildcard.expression
 hover VariableDef access_expression
-hover VariableDef def_value
+hover VariableDef block
 hover VariableDef handle_expression
 hover VariableDef theory_declaration
 hover VariableDef view_expression

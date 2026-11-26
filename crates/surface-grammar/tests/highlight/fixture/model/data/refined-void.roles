@@ -63,6 +63,7 @@
 925..927 Operator "->"
 928..929 Other "("
 929..935 TypeVariable "isVoid"
+936..936 Other ""
 936..937 TypeVariable "n"
 937..938 Other ")"
 939..941 Operator "->"

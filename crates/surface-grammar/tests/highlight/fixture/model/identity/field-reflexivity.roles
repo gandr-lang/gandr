@@ -61,6 +61,7 @@
 684..685 VariableParam "y"
 686..687 Other ":"
 688..689 TypeVariable "b"
+690..690 Other ""
 690..691 TypeVariable "x"
 691..692 Other ")"
 693..696 Operator "-->"

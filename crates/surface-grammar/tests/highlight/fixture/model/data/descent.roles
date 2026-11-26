@@ -564,6 +564,7 @@
 3186..3188 Operator "->"
 3189..3190 Other "("
 3190..3196 TypeVariable "isZero"
+3197..3197 Other ""
 3197..3201 Type "Zero"
 3201..3202 Other ")"
 3203..3205 Operator "->"

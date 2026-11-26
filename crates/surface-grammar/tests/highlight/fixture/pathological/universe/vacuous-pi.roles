@@ -104,6 +104,7 @@
 865..867 Keyword "-F"
 868..869 Other "("
 869..873 TypeVariable "pick"
+874..874 Other ""
 874..875 TypeVariable "x"
 875..876 Other ")"
 876..877 Other ")"

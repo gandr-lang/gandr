@@ -79,6 +79,7 @@
 1065..1066 VariableParam "y"
 1067..1068 Other ":"
 1069..1070 TypeVariable "b"
+1071..1071 Other ""
 1071..1072 TypeVariable "x"
 1072..1073 Other ")"
 1074..1077 Operator "-->"

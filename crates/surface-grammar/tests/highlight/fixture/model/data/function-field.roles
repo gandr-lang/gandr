@@ -90,6 +90,7 @@
 940..941 VariableParam "y"
 942..943 Other ":"
 944..945 TypeVariable "b"
+946..946 Other ""
 946..947 TypeVariable "x"
 947..948 Other ")"
 949..952 Operator "-->"

@@ -62,6 +62,7 @@
 1282..1283 Other ":"
 1284..1285 Other "("
 1285..1293 TypeVariable "elSigRun"
+1294..1294 Other ""
 1294..1295 TypeVariable "a"
 1295..1296 Other ")"
 1297..1299 Operator "->"

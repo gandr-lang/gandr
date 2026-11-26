@@ -164,6 +164,7 @@
 1840..1841 Other ")"
 1842..1844 Operator "->"
 1845..1853 TypeVariable "maybeRun"
+1854..1854 Other ""
 1854..1861 TypeBuiltin "Integer"
 1862..1863 Other "="
 1864..1868 Constructor "Some"

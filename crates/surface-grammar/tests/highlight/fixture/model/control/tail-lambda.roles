@@ -286,6 +286,7 @@
 2132..2134 VariableParam "_x"
 2135..2136 Other ":"
 2137..2142 TypeVariable "natOr"
+2143..2143 Other ""
 2143..2144 TypeVariable "n"
 2144..2145 Other ")"
 2146..2148 Operator "->"
