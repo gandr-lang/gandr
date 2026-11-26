@@ -42,9 +42,9 @@ pub module Str where
 @[runs("7")]
 def lengths() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
-  let n = s.len ()
+  let n = s.len
   s.push 33
-  let m = s.len ()
+  let m = s.len
   pure n + m
 
 /// `lengthsByPath` calls each method through its path. `Str.push s 33` is
@@ -62,14 +62,14 @@ def lengthsByPath() -> Integer =
 def taken() -> List Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   s.push 33
-  s.bytes ()
+  s.bytes
 
 /// `takenInOneArm` uses a separate match hold in each arm.
 /// The match ends both holds.
 def takenInOneArm(t : Repr) -> List Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   match t where
-    | Inline(bs) => s.bytes ()
+    | Inline(bs) => s.bytes
     | Shared(n, bs) => bs
 
 /// `takenOnInline` runs the arm that takes the string.
@@ -89,8 +89,8 @@ def keptOnShared() -> List Integer =
 def readWhereNotTaken() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   match Shared 1 (Nil : List Integer) where
-    | Inline(bs) => { count (s.bytes ()) }
-    | Shared(n, bs) => s.len ()
+    | Inline(bs) => { count (s.bytes) }
+    | Shared(n, bs) => s.len
 
 /// `lenBound` binds the shared method `len` as a value, then applies it.
 /// A shared receiver needs no hold, so the value reads the length.

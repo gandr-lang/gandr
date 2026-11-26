@@ -39,11 +39,11 @@ pub module Places where {
 @[runs("1")]
 def head() -> Integer =
   var xs = pair
-  let h = xs.first ()
+  let h = xs.first
   pure h
 
 /// The first element, read through the method's path: `Places.first xs` is
-/// the call `xs.first ()`, so it reads the element and not its index.
+/// the call `xs.first`, so it reads the element and not its index.
 @[runs("1")]
 def headByPath() -> Integer =
   var xs = pair
@@ -107,7 +107,7 @@ def unheldFirst() -> Integer =
 @[runs("2")]
 def readTwice() -> Integer =
   var xs = pair
-  (xs.first ()) as w { pure w + w }
+  (xs.first) as w { pure w + w }
 
 /// The element at an index written back through a view the block lends
 /// exclusively: the resume asks it, and only that element moved.
@@ -129,5 +129,5 @@ def raisedByPath() -> List Integer =
 @[runs("cons 1 (cons 2 nil)")]
 def abandonedView() -> List Integer =
   var xs = pair
-  (xs.first ()) as w { abort w }
+  (xs.first) as w { abort w }
   pure xs
