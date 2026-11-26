@@ -67,6 +67,7 @@ use super::ExemplarFault;
 use super::ExemplarFinding;
 use super::ExemplarReport;
 use super::listed;
+use super::past_declaration;
 use crate::ledger::LedgerFault;
 
 /// The directory of diagnostics exemplars under the exemplar directory.
@@ -680,7 +681,7 @@ fn refused(
 {
     let text = std::fs::read_to_string(path).map_err(ExemplarFault::Unreadable)?;
     let named = format!("`{}`", subject.name());
-    if !text
+    if !past_declaration(&text)
         .lines()
         .next()
         .is_some_and(|first| first.starts_with("///") && first.contains(&named))

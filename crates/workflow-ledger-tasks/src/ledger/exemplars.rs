@@ -630,6 +630,37 @@ pub(super) fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
     Ok(paths)
 }
 
+/// The text of an exemplar after the declaration of features at its head,
+/// which `gandr features --write` writes: an inner attribute block of the one
+/// attribute `features`, on its own line, and one blank line.
+///
+/// The declaration states what the exemplar uses. It is no part of what the
+/// exemplar shows.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a suffix of `text`: the whole of a text that does not open with
+///   `@![features(`, or whose block closes on no line; otherwise the text after
+///   the line of the block and after one blank line.
+/// - provides: the text that each check of an exemplar reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a text with no declaration, with a declaration of one key
+///   and of two keys, and with a block that does not close.
+/// - witness: `ledger::exemplars::tests::the_text_of_an_exemplar_starts_after_its_declaration`
+#[spec(ensures: |ret| text.ends_with(ret))]
+pub(super) fn past_declaration(text: &str) -> &str
+{
+    if !text.starts_with("@![features(") {
+        return text;
+    }
+    text.split_once("]\n").map_or(text, |(_block, rest)| {
+        rest.strip_prefix('\n').unwrap_or(rest)
+    })
+}
+
 /// Verify the one exemplar at `path` shows `subject`.
 ///
 /// # Specification
@@ -657,7 +688,8 @@ fn exemplar(
     subject: Subject,
 ) -> Result<(), ExemplarFault>
 {
-    let text = std::fs::read_to_string(path).map_err(ExemplarFault::Unreadable)?;
+    let read = std::fs::read_to_string(path).map_err(ExemplarFault::Unreadable)?;
+    let text = past_declaration(&read);
     let named = format!("`{}`", subject.name());
     let commented = text
         .lines()
@@ -668,10 +700,9 @@ fn exemplar(
             subject: subject.to_string(),
         });
     }
-    let parsed =
-        parse(pbg, SourceText::from(text.as_str())).map_err(|error| ExemplarFault::Unparsed {
-            error: error.to_string(),
-        })?;
+    let parsed = parse(pbg, SourceText::from(text)).map_err(|error| ExemplarFault::Unparsed {
+        error: error.to_string(),
+    })?;
     let count = parsed.obligations().len();
     if count != 0 {
         return Err(ExemplarFault::Obligations { count });
@@ -1106,6 +1137,7 @@ mod tests
 
     use super::ExemplarFault;
     use super::ExemplarReport;
+    use super::past_declaration;
     use crate::ledger::LedgerRun;
     use crate::ledger::LedgerTask;
 
@@ -1282,6 +1314,44 @@ mod tests
             "doc.gandr: the attribute `doc` is filed on no declaration",
             "entry.gandr: the lowering refuses it: no declaration or binder answers `seat`",
         ]);
+    }
+
+    #[test]
+    fn the_text_of_an_exemplar_starts_after_its_declaration()
+    {
+        let body = "/// `def_value`: a definition.\ndef answer = 42 ;\n";
+        assert_eq!(past_declaration(body), body);
+        assert_eq!(
+            past_declaration(&format!("@![features(\"modules\")]\n\n{body}")),
+            body
+        );
+        assert_eq!(
+            past_declaration(&format!(
+                "@![features((\"modules\", \"records\"))]\n\n{body}"
+            )),
+            body
+        );
+        let open = "@![features(\"modules\")";
+        assert_eq!(past_declaration(open), open);
+    }
+
+    /// A declaration of features at the head of each exemplar of a rule and
+    /// of an attribute changes no finding.
+    #[test]
+    fn an_exemplar_is_verified_after_its_declaration_of_features()
+    {
+        let directory = copied(Path::new("declared"));
+        for folder in ["syntax", "attributes"] {
+            for entry in std::fs::read_dir(directory.join(folder)).expect("the folder lists") {
+                let path = entry.expect("the entry reads").path();
+                let text = std::fs::read_to_string(&path).expect("the exemplar reads");
+                if past_declaration(&text).len() == text.len() {
+                    std::fs::write(&path, format!("@![features(\"modules\")]\n\n{text}"))
+                        .expect("the exemplar is written");
+                }
+            }
+        }
+        assert_eq!(named(&verified(&directory)), named(&verified(&committed())));
     }
 
     #[test]

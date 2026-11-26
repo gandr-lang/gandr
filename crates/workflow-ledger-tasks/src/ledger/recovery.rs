@@ -108,6 +108,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::LedgerFault;
 use super::exemplars::listed;
+use super::exemplars::past_declaration;
 
 /// The directory of rule exemplars under the exemplar directory.
 const SYNTAX: &str = "syntax";
@@ -759,9 +760,18 @@ pub(super) fn sweep(
             path: path.clone(),
             error: error.to_string(),
         })?;
+        // The declaration of features is no part of what the exemplar
+        // shows, and a mutant changes the features that the source uses. Its
+        // bytes are spaces in the swept text, so each offset is one of the
+        // file.
+        let body = past_declaration(&text);
+        let swept = format!(
+            "{}{body}",
+            " ".repeat(text.len().saturating_sub(body.len()))
+        );
         made.extend(mutants(
             &path,
-            SourceText::from(text.as_str()),
+            SourceText::from(swept.as_str()),
             &literals,
             &mut report.near_misses,
         ));
@@ -1111,6 +1121,38 @@ mod tests
             "each tile, written once, is deleted, and missed where it has a miss: {report}"
         );
         assert!(report.findings.is_empty(), "{report}");
+    }
+
+    /// The declaration of features at the head of an exemplar is not swept:
+    /// the sweep of an exemplar with one is the sweep of the exemplar with
+    /// none.
+    #[test]
+    fn a_declaration_of_features_is_not_swept()
+    {
+        let swept = |name: &str, head: &str| {
+            let scratch = std::env::temp_dir()
+                .join(format!("gandr-recovery-test-{}-{name}", std::process::id()));
+            let folder = scratch.join("syntax");
+            std::fs::create_dir_all(&folder).expect("the scratch folder");
+            std::fs::write(
+                folder.join("def-value.gandr"),
+                format!("{head}/// `def_value`: a definition.\n@[ checks ]\ndef answer = 42 ;\n"),
+            )
+            .expect("the exemplar is written");
+            let pbg = built_in().expect("the built-in grammar builds");
+            let report = sweep(&pbg, &scratch).expect("the sweep runs");
+            std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+            report
+        };
+        let plain = swept("undeclared", "");
+        let declared = swept("declared", "@![features(\"modules\")]\n\n");
+        assert_eq!(declared.swept, plain.swept, "{declared}");
+        assert_eq!(
+            declared.near_misses.keys().collect::<Vec<_>>(),
+            plain.near_misses.keys().collect::<Vec<_>>(),
+            "no tile of the declaration is a tile of the sweep"
+        );
+        assert!(declared.findings.is_empty(), "{declared}");
     }
 
     /// An opener deleted leaves its closer with nothing to close. The first
