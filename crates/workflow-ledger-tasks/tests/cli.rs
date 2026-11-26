@@ -297,7 +297,7 @@ fn the_features_ledger_lists_and_shows_1827()
     assert_eq!(code(&listed), Code(0_i32), "{}", stderr(&listed));
     assert_eq!(
         stdout(&listed),
-        "answers [implemented] Answers: A definition's answer.\nquestions [planned] Questions: A question.\n"
+        "answers [implemented, tier 1] Answers: A definition's answer.\nquestions [planned, tier 1] Questions: A question.\n"
     );
     let planned = ran(&[
         Path::new("list"),
@@ -309,7 +309,7 @@ fn the_features_ledger_lists_and_shows_1827()
     assert_eq!(code(&planned), Code(0_i32), "{}", stderr(&planned));
     assert_eq!(
         stdout(&planned),
-        "questions [planned] Questions: A question.\n"
+        "questions [planned, tier 1] Questions: A question.\n"
     );
 
     let shown = ran(&[Path::new("show"), Path::new("answers"), root, &scratch.0]);

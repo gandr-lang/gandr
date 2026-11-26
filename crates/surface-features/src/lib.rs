@@ -29,6 +29,15 @@
 //! any other shape refuses the ledger naming its file and its line
 //! ([`FeaturesFault::Features`]). A file of rows holds one row, whose id is
 //! the name of the file.
+//!
+//! The needs of the rows are a second table of the dump, `requires`.
+//! `ledger/requires-schema.sql` defines it, and `ledger/requires/<id>.sql`
+//! holds one `INSERT INTO requires VALUES('<id>','<need>');` for each row
+//! that the row `<id>` needs. A row with no need has no file, and a tree
+//! with no directory `ledger/requires/` states no need. A need that names no
+//! row refuses the ledger ([`FeaturesFault::Need`]), and so do needs that
+//! come back to their row ([`FeaturesFault::Cycle`]). The tier of a row is 1
+//! with no need, and 1 more than the largest tier of a need.
 
 use core::fmt;
 use core::str::FromStr;
@@ -83,6 +92,21 @@ pub enum FeaturesFault
         /// The id asked for.
         id: String,
     },
+    /// A line of the table `requires` names an id that no feature has.
+    Need
+    {
+        /// The feature that the line is of.
+        feature: String,
+        /// What the line says it needs.
+        needs: String,
+    },
+    /// The needs of a feature do not end: they come back to a feature that
+    /// they started from.
+    Cycle
+    {
+        /// The first feature, in the ledger's order, whose needs do not end.
+        id: String,
+    },
 }
 
 impl fmt::Display for FeaturesFault
@@ -119,6 +143,17 @@ impl fmt::Display for FeaturesFault
                 "no feature is in the area `{area}`; the areas are {areas}"
             ),
             Self::NoFeature { ref id } => write!(f, "no feature is `{id}`"),
+            Self::Need {
+                ref feature,
+                ref needs,
+            } => write!(
+                f,
+                "the feature `{feature}` needs `{needs}`, and one of the two is no feature"
+            ),
+            Self::Cycle { ref id } => write!(
+                f,
+                "the needs of the feature `{id}` do not end: a need comes back to its feature"
+            ),
         }
     }
 }
@@ -139,6 +174,22 @@ const CREATE: &str = "CREATE TABLE feature(";
 
 /// The statement that opens a row.
 const INSERT: &str = "INSERT INTO feature VALUES(";
+
+/// The schema of the table of the needs, from a tree's root.
+const NEEDS_SCHEMA: &str = "ledger/requires-schema.sql";
+
+/// The directory of the needs, from a tree's root: one file `<id>.sql` for
+/// each row that has a need.
+const NEEDS: &str = "ledger/requires";
+
+/// The statement that opens the definition of the table of the needs.
+const CREATE_NEEDS: &str = "CREATE TABLE requires(";
+
+/// The statement that opens a need.
+const INSERT_NEEDS: &str = "INSERT INTO requires VALUES(";
+
+/// The columns of the table of the needs, in the order the dump writes them.
+const NEED_COLUMNS: [&str; 2] = ["feature", "needs"];
 
 /// What a row's `exemplar` holds when the crate tests are its evidence.
 const CRATE_TESTS: &str = "crate-tests";
@@ -285,6 +336,11 @@ pub struct Feature
     exemplar: Option<String>,
     /// `issue`.
     issue: Option<String>,
+    /// The ids of the rows that this one needs, in byte order: its lines of
+    /// the table `requires`.
+    requires: Vec<String>,
+    /// The tier: 1 with no need, and 1 more than the largest tier of a need.
+    tier: usize,
 }
 
 /// The value of a cell: the closed set of the kinds a row holds.
@@ -385,20 +441,23 @@ impl Feature
         ]
     }
 
-    /// The row as a JSON object: each column that holds a value, by name.
+    /// The row as a JSON object: each column that holds a value, by name,
+    /// then its tier and its needs.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: an object with `id`, `area`, `name`, `status`, `notability`
-    ///   and `line`, and each other column that holds a value.
+    ///   and `line`, each other column that holds a value, `tier`, and
+    ///   `requires` when the row has a need.
     /// - provides: the rows the Model Context Protocol server's `ledger_list`
     ///   and `ledger_show` answer.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a row with and without its optional columns is read
-    ///   back from its object.
+    ///   back from its object, and a row with a need states it.
     /// - witness: `tests::a_row_is_its_object`
+    /// - witness: `tests::a_tier_is_one_more_than_the_largest_tier_of_a_need`
     ///
     /// # Cost
     /// - allocation: the object and each value's text, growth within the row's
@@ -416,13 +475,41 @@ impl Feature
                 let _replaced = object.insert(String::from(cell.column), json!(value.to_string()));
             }
         }
+        let _tier = object.insert(String::from("tier"), json!(self.tier));
+        if !self.requires.is_empty() {
+            let _needs = object.insert(String::from("requires"), json!(self.requires));
+        }
         Value::Object(object)
+    }
+
+    /// The tier of the row: 1 with no need, and 1 more than the largest tier
+    /// of a need.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn tier(&self) -> usize
+    {
+        self.tier
+    }
+
+    /// The ids of the rows that this one needs, in byte order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn requires(&self) -> &[String]
+    {
+        self.requires.as_slice()
     }
 }
 
 impl fmt::Display for Feature
 {
-    /// Writes the row as `ledger list` prints it: `id [status] name: line`.
+    /// Writes the row as `ledger list` prints it:
+    /// `id [status, tier n] name: line`.
     ///
     /// # Specification
     /// trivial.
@@ -434,8 +521,8 @@ impl fmt::Display for Feature
     {
         write!(
             f,
-            "{} [{}] {}: {}",
-            self.id, self.status, self.name, self.line
+            "{} [{}, tier {}] {}: {}",
+            self.id, self.status, self.tier, self.name, self.line
         )
     }
 }
@@ -532,6 +619,9 @@ pub enum Malformed
     /// A file of rows holds not one row, or its row's id is not the name of
     /// the file.
     File,
+    /// A file of needs holds no need, or the need of a row that the name of
+    /// the file does not name.
+    Needs,
 }
 
 impl fmt::Display for Malformed
@@ -554,6 +644,9 @@ impl fmt::Display for Malformed
             Self::Required => "a column the table requires is NULL",
             Self::Columns => "the table's columns are not the ones the reader reads",
             Self::File => "the file holds not one row, or its row's id is not the file's name",
+            Self::Needs => {
+                "the file holds no need, or the need of a row that its name does not name"
+            },
         })
     }
 }
@@ -615,7 +708,51 @@ fn feature(values: Vec<Option<String>>) -> Result<Feature, Malformed>
         corpus,
         exemplar,
         issue,
+        requires: Vec::new(),
+        tier: 1,
     })
+}
+
+/// A line of the table `requires` read from its values: the feature, then
+/// the feature that it needs.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the two values, in the order of [`NEED_COLUMNS`].
+/// - fails: not two values, or a `NULL`.
+/// - panics: none.
+///
+/// # Errors
+/// What the line is malformed by.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the needs of a scratch ledger read whole, and a line of
+///   one value is refused.
+/// - witness: `tests::a_tier_is_one_more_than_the_largest_tier_of_a_need`
+/// - witness: `tests::a_need_of_no_row_and_a_cycle_refuse_the_ledger`
+#[spec(ensures: |ref ret| matches!(*ret, Ok(_) | Err(Malformed::Width | Malformed::Required)))]
+fn need(values: Vec<Option<String>>) -> Result<(String, String), Malformed>
+{
+    let Ok([feature, needs]) = <[Option<String>; 2]>::try_from(values)
+    else {
+        return Err(Malformed::Width);
+    };
+    let (Some(feature), Some(needs)) = (feature, needs)
+    else {
+        return Err(Malformed::Required);
+    };
+    Ok((feature, needs))
+}
+
+/// What a text of the dump holds: the rows of the table `feature`, and the
+/// lines of the table `requires`, each a feature and a feature it needs.
+#[derive(Debug, Default)]
+struct Tables
+{
+    /// The rows.
+    features: Vec<Feature>,
+    /// The needs.
+    needs: Vec<(String, String)>,
 }
 
 /// The features ledger: every row, in the dump's order, which is by `id`.
@@ -654,33 +791,39 @@ pub struct ShownFeature
 impl FeatureLedger
 {
     /// Read the ledger under the tree `root`: the schema at
-    /// `ledger/features-schema.sql`, and each row file of `ledger/features/`.
+    /// `ledger/features-schema.sql`, each row file of `ledger/features/`,
+    /// and, when the tree has the directory `ledger/requires/`, the schema at
+    /// `ledger/requires-schema.sql` and each file of needs.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one feature per row file, in the order of the ids, each
-    ///   column read from its value.
-    /// - fails: a file cannot be read; the schema's columns are not
-    ///   [`COLUMNS`]; a row is not one `NULL` or quoted string per column with
+    ///   column read from its value, with its needs and its tier.
+    /// - fails: a file cannot be read; the columns of a schema are not the
+    ///   reader's; a row is not one `NULL` or quoted string per column with
     ///   every required column set and a status of the four; a file of rows
-    ///   holds not one row, or a row that its name does not name.
+    ///   holds not one row, or a row that its name does not name; a file of
+    ///   needs holds no need, or a need of a row that its name does not name;
+    ///   a need names no row; the needs of a row do not end.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`FeaturesFault::Unread`] naming the file, or
+    /// [`FeaturesFault::Unread`] naming the file,
     /// [`FeaturesFault::Features`] naming the file, the line and what is
-    /// wrong with it.
+    /// wrong with it, [`FeaturesFault::Need`] or [`FeaturesFault::Cycle`].
     ///
     /// # Cost
     /// - allocation: the text of each file and the paths of the rows, setup
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the committed ledger reads every row file, a scratch
-    ///   ledger with a malformed row is refused naming its line, and a file
-    ///   whose row its name does not name is refused.
+    ///   ledger with a malformed row is refused naming its line, a file whose
+    ///   row its name does not name is refused, and so is a file of needs of
+    ///   a different row.
     /// - witness: `tests::the_committed_ledger_reads_every_row`
     /// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
     /// - witness: `tests::a_row_stands_in_the_file_of_its_id`
+    /// - witness: `tests::a_need_of_no_row_and_a_cycle_refuse_the_ledger`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == root))]
     #[inline]
     pub fn read(root: &Path) -> Result<Self, FeaturesFault>
@@ -691,21 +834,11 @@ impl FeatureLedger
         };
         let schema = root.join(SCHEMA);
         let text = std::fs::read_to_string(&schema).map_err(unread(&schema))?;
-        let _columns = Self::parsed(root, &schema, Dump(&text))?;
-        let directory = root.join(ROWS);
-        let mut paths: Vec<PathBuf> = std::fs::read_dir(&directory)
-            .and_then(|entries| {
-                entries
-                    .map(|entry| entry.map(|entry| entry.path()))
-                    .collect()
-            })
-            .map_err(unread(&directory))?;
-        paths.retain(|path| path.extension().is_some_and(|extension| extension == "sql"));
-        paths.sort_by(|left, right| left.file_stem().cmp(&right.file_stem()));
-        let mut features = Vec::with_capacity(paths.len());
-        for path in paths {
+        let _columns = Self::parsed(&schema, Dump(&text))?;
+        let mut tables = Tables::default();
+        for path in Self::files(&root.join(ROWS))? {
             let text = std::fs::read_to_string(&path).map_err(unread(&path))?;
-            let mut rows = Self::parsed(root, &path, Dump(&text))?.features;
+            let mut rows = Self::parsed(&path, Dump(&text))?.features;
             let named = match *rows.as_slice() {
                 [ref row] => path.file_stem().is_some_and(|stem| stem == row.id.as_str()),
                 _ => false,
@@ -717,7 +850,164 @@ impl FeatureLedger
                     malformed: Malformed::File,
                 });
             }
-            features.append(&mut rows);
+            tables.features.append(&mut rows);
+        }
+        let directory = root.join(NEEDS);
+        if directory.is_dir() {
+            let schema = root.join(NEEDS_SCHEMA);
+            let text = std::fs::read_to_string(&schema).map_err(unread(&schema))?;
+            let _columns = Self::parsed(&schema, Dump(&text))?;
+            for path in Self::files(&directory)? {
+                let text = std::fs::read_to_string(&path).map_err(unread(&path))?;
+                let mut needs = Self::parsed(&path, Dump(&text))?.needs;
+                let named = !needs.is_empty()
+                    && needs.iter().all(|need| {
+                        path.file_stem()
+                            .is_some_and(|stem| stem == need.0.as_str())
+                    });
+                if !named {
+                    return Err(FeaturesFault::Features {
+                        path,
+                        line: 1,
+                        malformed: Malformed::Needs,
+                    });
+                }
+                tables.needs.append(&mut needs);
+            }
+        }
+        Self::settled(root, tables)
+    }
+
+    /// The files `*.sql` of `directory`, in the order of their names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each file of the directory whose extension is `sql`, in the
+    ///   byte order of the file stems.
+    /// - fails: the directory cannot be read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`FeaturesFault::Unread`] naming the directory.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the committed ledger reads its rows in the order of
+    ///   their ids.
+    /// - witness: `tests::the_committed_ledger_reads_every_row`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |paths| paths.is_sorted_by(|left, right| left.file_stem() <= right.file_stem())))]
+    fn files(directory: &Path) -> Result<Vec<PathBuf>, FeaturesFault>
+    {
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(directory)
+            .and_then(|entries| {
+                entries
+                    .map(|entry| entry.map(|entry| entry.path()))
+                    .collect()
+            })
+            .map_err(|error| FeaturesFault::Unread {
+                path: directory.to_path_buf(),
+                error,
+            })?;
+        paths.retain(|path| path.extension().is_some_and(|extension| extension == "sql"));
+        paths.sort_by(|left, right| left.file_stem().cmp(&right.file_stem()));
+        Ok(paths)
+    }
+
+    /// The ledger of `tables`, under `root`: each row with its needs and its
+    /// tier.
+    ///
+    /// # Specification
+    /// - requires: the rows of `tables` are in the byte order of their ids.
+    /// - ensures: each row holds the needs that the lines of `tables` give
+    ///   it, in byte order, and its tier: 1 with no need, and 1 more than the
+    ///   largest tier of a need.
+    /// - fails: a line names an id that no row has, or the needs of a row do
+    ///   not end.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`FeaturesFault::Need`] naming the line, or [`FeaturesFault::Cycle`]
+    /// naming the first row whose needs do not end.
+    ///
+    /// # Termination
+    /// - reason: each pass over the rows gives a tier to one row or more, or
+    ///   it ends the loop with the refusal of a cycle.
+    /// - measure: the rows with no tier.
+    ///
+    /// # Cost
+    /// - allocation: one list of needs and one tier for each row, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of three rows has the tiers 1, 2 and 3, a
+    ///   need of no row is refused by its line, and two rows that need each
+    ///   other are refused by the first of them.
+    /// - witness: `tests::a_tier_is_one_more_than_the_largest_tier_of_a_need`
+    /// - witness: `tests::a_need_of_no_row_and_a_cycle_refuse_the_ledger`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == root
+        && ledger.features.iter().all(|feature| feature.tier > feature.requires.len().min(1))))]
+    fn settled(
+        root: &Path,
+        tables: Tables,
+    ) -> Result<Self, FeaturesFault>
+    {
+        let Tables {
+            mut features,
+            needs,
+        } = tables;
+        let at = |features: &[Feature], id: &str| {
+            features
+                .binary_search_by(|row| row.id.as_str().cmp(id))
+                .ok()
+        };
+        let mut edges: Vec<Vec<usize>> = Vec::new();
+        edges.resize_with(features.len(), Vec::new);
+        for (feature, need) in needs {
+            let (Some(from), Some(to)) = (at(&features, &feature), at(&features, &need))
+            else {
+                return Err(FeaturesFault::Need {
+                    feature,
+                    needs: need,
+                });
+            };
+            if let Some(below) = edges.get_mut(from) {
+                below.push(to);
+            }
+            if let Some(row) = features.get_mut(from) {
+                row.requires.push(need);
+            }
+        }
+        // A tier of 0 is a row that no pass gave a tier yet.
+        let mut tiers: Vec<usize> = vec![0_usize; features.len()];
+        let mut tiered = 0_usize;
+        while tiered < features.len() {
+            let before = tiered;
+            for (row, below) in edges.iter().enumerate() {
+                if tiers.get(row).is_none_or(|&tier| tier != 0_usize) {
+                    continue;
+                }
+                let tier = below
+                    .iter()
+                    .try_fold(1_usize, |tier, &need| match tiers.get(need) {
+                        Some(&under) if under != 0_usize => Some(tier.max(under.saturating_add(1))),
+                        _ => None,
+                    });
+                if let (Some(tier), Some(slot)) = (tier, tiers.get_mut(row)) {
+                    *slot = tier;
+                    tiered = tiered.saturating_add(1);
+                }
+            }
+            if tiered == before {
+                let id = features
+                    .iter()
+                    .zip(&tiers)
+                    .find(|&(_row, &tier)| tier == 0_usize)
+                    .map(|(row, _tier)| row.id.clone())
+                    .unwrap_or_default();
+                return Err(FeaturesFault::Cycle { id });
+            }
+        }
+        for (row, tier) in features.iter_mut().zip(tiers) {
+            row.tier = tier;
+            row.requires.sort_unstable();
         }
         Ok(Self {
             root: root.to_path_buf(),
@@ -731,15 +1021,17 @@ impl FeatureLedger
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::read`] reads the tree's own ledger, over the
-    ///   schema and the rows of `ledger/features/` as the binary was built.
+    ///   schemas, the rows of `ledger/features/` and the needs of
+    ///   `ledger/requires/` as the binary was built.
     /// - provides: what the running toolchain implements, read wherever the
     ///   checked package stands.
-    /// - fails: as [`Self::read`] for a malformed row; never for the file,
-    ///   which is the binary's own.
+    /// - fails: as [`Self::read`] for a malformed row, a need of no row and
+    ///   needs that do not end; never for the file, which is the binary's own.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`FeaturesFault::Features`] naming the line and what is wrong with it.
+    /// [`FeaturesFault::Features`] naming the line and what is wrong with it,
+    /// [`FeaturesFault::Need`] or [`FeaturesFault::Cycle`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the built-in ledger is the committed one, row for
@@ -749,15 +1041,19 @@ impl FeatureLedger
     #[inline]
     pub fn built_in() -> Result<Self, FeaturesFault>
     {
-        Self::parsed(Path::new("."), Path::new(ROWS), Dump(BUILT_IN))
+        Self::settled(
+            Path::new("."),
+            Self::parsed(Path::new(ROWS), Dump(BUILT_IN))?,
+        )
     }
 
-    /// The ledger `dump` holds, read from `path` under `root`.
+    /// The tables `dump` holds, read from `path`.
     ///
     /// # Specification
     /// - requires: `dump` is the file at `path`.
-    /// - ensures: as [`Self::read`], over `dump`.
-    /// - fails: as [`Self::read`], for a malformed row.
+    /// - ensures: each row and each need of `dump`, in the order of its lines;
+    ///   the columns of each table that `dump` defines are the reader's.
+    /// - fails: as [`Self::read`], for a malformed line.
     /// - panics: none.
     ///
     /// # Errors
@@ -767,48 +1063,58 @@ impl FeatureLedger
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::read`].
     /// - witness: `tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
-    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == root))]
+    /// - witness: `tests::a_tier_is_one_more_than_the_largest_tier_of_a_need`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |tables| tables.features.iter().all(|feature| !feature.id.is_empty())))]
     fn parsed(
-        root: &Path,
         path: &Path,
         dump: Dump<'_>,
-    ) -> Result<Self, FeaturesFault>
+    ) -> Result<Tables, FeaturesFault>
     {
         let refused = |line: usize, malformed: Malformed| FeaturesFault::Features {
             path: path.to_path_buf(),
             line: line.saturating_add(1),
             malformed,
         };
-        let mut features = Vec::new();
-        let mut columns: Option<Vec<&str>> = None;
+        let mut tables = Tables::default();
+        let mut columns: Option<(Vec<&str>, &[&str])> = None;
         for (number, line) in dump.0.lines().enumerate() {
-            if let Some(read) = columns.as_mut() {
+            if let Some(&mut (ref mut read, expected)) = columns.as_mut() {
                 let trimmed = line.trim_start();
                 if trimmed.starts_with(')') {
-                    if read.as_slice() != COLUMNS.as_slice() {
+                    if read.as_slice() != expected {
                         return Err(refused(number, Malformed::Columns));
                     }
                     columns = None;
                 }
-                else if !trimmed.starts_with("CHECK(") {
+                else if !trimmed.starts_with("CHECK(") && !trimmed.starts_with("PRIMARY KEY(") {
                     read.extend(trimmed.split_whitespace().next());
                 }
             }
             else if line == CREATE {
-                columns = Some(Vec::with_capacity(COLUMNS.len()));
+                columns = Some((Vec::with_capacity(COLUMNS.len()), COLUMNS.as_slice()));
+            }
+            else if line == CREATE_NEEDS {
+                columns = Some((
+                    Vec::with_capacity(NEED_COLUMNS.len()),
+                    NEED_COLUMNS.as_slice(),
+                ));
             }
             else if let Some(values) = line.strip_prefix(INSERT) {
                 let feature = Values(values)
                     .read()
                     .and_then(feature)
                     .map_err(|malformed| refused(number, malformed))?;
-                features.push(feature);
+                tables.features.push(feature);
+            }
+            else if let Some(values) = line.strip_prefix(INSERT_NEEDS) {
+                let need = Values(values)
+                    .read()
+                    .and_then(need)
+                    .map_err(|malformed| refused(number, malformed))?;
+                tables.needs.push(need);
             }
         }
-        Ok(Self {
-            root: root.to_path_buf(),
-            features,
-        })
+        Ok(tables)
     }
 
     /// Where the ledger's feature `id` stands.
@@ -1139,6 +1445,28 @@ mod tests
             )
             .expect("the scratch row is written");
         }
+
+        /// Write `lines` as the file of needs `<file>.sql`, with the schema
+        /// of the table of the needs.
+        ///
+        /// # Specification
+        /// trivial.
+        fn needs(
+            &self,
+            file: &str,
+            lines: &str,
+        )
+        {
+            std::fs::create_dir_all(self.0.join(super::NEEDS))
+                .expect("the scratch directory of the needs is created");
+            std::fs::write(
+                self.0.join(super::NEEDS_SCHEMA),
+                "CREATE TABLE requires(\n  feature TEXT,\n  needs TEXT,\n  PRIMARY KEY(feature, needs),\n  CHECK(needs <> feature)\n) WITHOUT ROWID;\n",
+            )
+            .expect("the scratch schema of the needs is written");
+            std::fs::write(self.0.join(super::NEEDS).join(format!("{file}.sql")), lines)
+                .expect("the scratch needs are written");
+        }
     }
 
     impl Drop for Scratch
@@ -1328,12 +1656,98 @@ mod tests
             listed.iter().map(super::Feature::json).collect::<Vec<_>>(),
             vec![json!({
                 "id": "a", "area": "syntax", "name": "A", "status": "planned",
-                "notability": "ordinary", "line": "What a is.", "issue": "#1",
+                "notability": "ordinary", "line": "What a is.", "issue": "#1", "tier": 1,
             })]
         );
         assert_eq!(
             listed.iter().map(ToString::to_string).collect::<Vec<_>>(),
-            vec!["a [planned] A: What a is."]
+            vec!["a [planned, tier 1] A: What a is."]
+        );
+    }
+
+    /// The three rows of a scratch ledger whose needs are a chain or a cycle.
+    const THREE: &str = "INSERT INTO feature VALUES('a','syntax','A',NULL,'planned','ordinary',NULL,'What a is.',NULL,NULL,NULL,'#1');\nINSERT INTO feature VALUES('b','syntax','B',NULL,'planned','ordinary',NULL,'What b is.',NULL,NULL,NULL,'#1');\nINSERT INTO feature VALUES('c','syntax','C',NULL,'planned','ordinary',NULL,'What c is.',NULL,NULL,NULL,'#1');\n";
+
+    #[test]
+    fn a_tier_is_one_more_than_the_largest_tier_of_a_need()
+    {
+        let scratch = Scratch::new(Path::new("tiers"), Rows(THREE));
+        scratch.needs("b", "INSERT INTO requires VALUES('b','a');\n");
+        scratch.needs(
+            "c",
+            "INSERT INTO requires VALUES('c','b');\nINSERT INTO requires VALUES('c','a');\n",
+        );
+        let ledger = FeatureLedger::read(&scratch.0).expect("the scratch ledger reads");
+        let listed = ledger.listed(None, None).expect("it lists");
+        assert_eq!(
+            listed
+                .iter()
+                .map(|feature| (feature.tier(), feature.requires().to_vec()))
+                .collect::<Vec<_>>(),
+            vec![
+                (1, vec![]),
+                (2, vec![String::from("a")]),
+                (3, vec![String::from("a"), String::from("b")]),
+            ],
+            "each row has its needs in byte order and its tier"
+        );
+        assert_eq!(
+            listed.last().map(super::Feature::json),
+            Some(json!({
+                "id": "c", "area": "syntax", "name": "C", "status": "planned",
+                "notability": "ordinary", "line": "What c is.", "issue": "#1", "tier": 3,
+                "requires": ["a", "b"],
+            })),
+            "the object of a row states its tier and its needs"
+        );
+    }
+
+    #[test]
+    fn a_need_of_no_row_and_a_cycle_refuse_the_ledger()
+    {
+        let absent = Scratch::new(Path::new("need-of-no-row"), Rows(THREE));
+        absent.needs("b", "INSERT INTO requires VALUES('b','z');\n");
+        let refused = FeatureLedger::read(&absent.0);
+        assert!(
+            matches!(refused, Err(FeaturesFault::Need { ref feature, ref needs }) if feature == "b" && needs == "z"),
+            "{refused:?}"
+        );
+
+        let cycle = Scratch::new(Path::new("need-cycle"), Rows(THREE));
+        cycle.needs("b", "INSERT INTO requires VALUES('b','c');\n");
+        cycle.needs("c", "INSERT INTO requires VALUES('c','b');\n");
+        let refused = FeatureLedger::read(&cycle.0);
+        assert!(
+            matches!(refused, Err(FeaturesFault::Cycle { ref id }) if id == "b"),
+            "{refused:?}"
+        );
+
+        let misfiled = Scratch::new(Path::new("need-misfiled"), Rows(THREE));
+        misfiled.needs("b", "INSERT INTO requires VALUES('c','a');\n");
+        let refused = FeatureLedger::read(&misfiled.0);
+        assert!(
+            matches!(
+                refused,
+                Err(FeaturesFault::Features {
+                    malformed: Malformed::Needs,
+                    ..
+                })
+            ),
+            "{refused:?}"
+        );
+
+        let short = Scratch::new(Path::new("need-short"), Rows(THREE));
+        short.needs("b", "INSERT INTO requires VALUES('b');\n");
+        let refused = FeatureLedger::read(&short.0);
+        assert!(
+            matches!(
+                refused,
+                Err(FeaturesFault::Features {
+                    malformed: Malformed::Width,
+                    ..
+                })
+            ),
+            "{refused:?}"
         );
     }
 
