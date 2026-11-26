@@ -1,8 +1,8 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/dependent-vectors.gandr:35:38
    │
-35 │ def headOfEmpty() -> Integer = head (VNil : Vec Integer Zero);
-   │ ┬──────────────────────────────┬─────┯━━━───┬─────────────────
+35 │ def headOfEmpty() -> Integer = head (VNil : Vec Integer Zero)
+   │ ┬──────────────────────────────┬─────┯━━━───┬────────────────
    │ │                              │     │      │
    │ │                              │     │      the type it synthesises
    │ │                              │     its type does not convert: expected `Vec ? (Succ ?)`, found `Vec Integer Zero`

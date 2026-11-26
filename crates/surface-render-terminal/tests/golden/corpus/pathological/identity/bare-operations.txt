@@ -1,7 +1,7 @@
 error[UnresolvedName]: `here` is not defined
   ╭▸ corpus/pathological/identity/bare-operations.gandr:7:27
   │
-7 │ def bareHere : Path 4 4 = here 4;
+7 │ def bareHere : Path 4 4 = here 4
   │                           ━━━━ not found in this scope
   │
   ├ note: `bareHere` is refused with UnresolvedName, as its expectation states
@@ -10,7 +10,7 @@ error[UnresolvedName]: `here` is not defined
 error[UnresolvedName]: `transport` is not defined
    ╭▸ corpus/pathological/identity/bare-operations.gandr:11:31
    │
-11 │ def bareTransport : Integer = transport (fun (X) { X }) (Path.here Integer) 2;
+11 │ def bareTransport : Integer = transport (fun (X) { X }) (Path.here Integer) 2
    │                               ━━━━━━━━━ not found in this scope
    │
    ├ note: `bareTransport` is refused with UnresolvedName, as its expectation states

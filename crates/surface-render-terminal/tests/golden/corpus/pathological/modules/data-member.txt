@@ -1,7 +1,7 @@
 error[UnknownMember]: the module `M` has no member `Nope`
    ╭▸ corpus/pathological/modules/data-member.gandr:22:22
    │
-22 │ def nope : M.Box = M.Nope 1;
+22 │ def nope : M.Box = M.Nope 1
    │                      ━━━━ no member of this name
    │
    ├ note: `nope` is refused with UnknownMember, as its expectation states
@@ -10,7 +10,7 @@ error[UnknownMember]: the module `M` has no member `Nope`
 error[UnknownMember]: the module `Box` has no member `Nope`
    ╭▸ corpus/pathological/modules/data-member.gandr:26:27
    │
-26 │ def under : M.Box = M.Box.Nope 1;
+26 │ def under : M.Box = M.Box.Nope 1
    │                           ━━━━ no member of this name
    │
    ├ note: `under` is refused with UnknownMember, as its expectation states

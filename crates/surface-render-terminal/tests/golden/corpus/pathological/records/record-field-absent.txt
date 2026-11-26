@@ -1,8 +1,8 @@
 error[AbsentRecordField]: the record has no such field
   ╭▸ corpus/pathological/records/record-field-absent.gandr:9:28
   │
-9 │ def lacking() -> Integer = pair.z;
-  │ ┬──────────────────────────┯━━━━━─
+9 │ def lacking() -> Integer = pair.z
+  │ ┬──────────────────────────┯━━━━━
   │ │                          │
   │ │                          no field of the record type
   │ checked against `() -> Integer`; while checking the body of this thunk

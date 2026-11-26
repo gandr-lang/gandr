@@ -1,7 +1,7 @@
 error[ModelAmbiguous]: more than one module in scope answers the model implicit `e` this call to `eq` omits: `Always` and `ByCode`; supply the one meant as `eq[.e = …](…)`
    ╭▸ corpus/pathological/modules/model-stated-type.gandr:78:30
    │
-78 │ def twice : decoded (ofFlag (Yes == No)) = "x";
+78 │ def twice : decoded (ofFlag (Yes == No)) = "x"
    │                              ━━━━━━━━━ a model implicit more than one module answers
    │
    ├ note: `twice` is refused with ModelAmbiguous, as its expectation states

@@ -28,8 +28,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:43:113
    │
-43 │ def countsForReadings(m : Model ReadCounter with sort C = Integer) -> Model ReadCounter with sort R = Integer = m;
-   │ ┬─────────────────────┬───┬───────────────────────────────────────────┬─────────────────────────────────────────┯─
+43 │ def countsForReadings(m : Model ReadCounter with sort C = Integer) -> Model ReadCounter with sort R = Integer = m
+   │ ┬─────────────────────┬───┬───────────────────────────────────────────┬─────────────────────────────────────────┯
    │ │                     │   │                                           │                                         │
    │ │                     │   │                                           │                                         its type does not convert: expected `Model ReadCounter with sort R = Integer`, found `Model ReadCounter with sort C = Integer`
    │ │                     │   │                                           the type it is checked against
@@ -83,7 +83,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[UnknownMember]: the module `a` has no member `Nope`
    ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:60:45
    │
-60 │ def countOfNothing(a : Model Counter, c : a.Nope) -> Integer = return 0;
+60 │ def countOfNothing(a : Model Counter, c : a.Nope) -> Integer = return 0
    │                                             ━━━━ no member of this name
    │
    ├ note: `countOfNothing` is refused with UnknownMember, as its expectation states

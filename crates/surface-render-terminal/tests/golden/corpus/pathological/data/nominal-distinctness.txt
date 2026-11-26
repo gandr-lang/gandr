@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/nominal-distinctness.gandr:23:17
    │
-23 │ def ascribed = (Cel 20 : Fahrenheit);
+23 │ def ascribed = (Cel 20 : Fahrenheit)
    │                 ┯━━━━━   ────────── the type it is checked against
    │                 │
    │                 its type does not convert: expected `Fahrenheit`, found `Celsius`
@@ -12,10 +12,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/nominal-distinctness.gandr:27:16
    │
-18 │ type Temp = Fahrenheit;
+18 │ type Temp = Fahrenheit
    │             ────────── the type it is checked against
    ┆
-27 │ def aliased = (Cel 20 : Temp);
+27 │ def aliased = (Cel 20 : Temp)
    │                ━━━━━━ its type does not convert: expected `Fahrenheit`, found `Celsius`
    │
    ├ note: `aliased` is refused with TypeMismatch, as its expectation states

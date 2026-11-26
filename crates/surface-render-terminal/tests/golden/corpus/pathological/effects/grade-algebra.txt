@@ -1,7 +1,7 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/effects/grade-algebra.gandr:21:54
    │
-21 │ def manyUnderOnce : Path (Usage.le Many Once) true = Path.here true;
+21 │ def manyUnderOnce : Path (Usage.le Many Once) true = Path.here true
    │                           ┬─────────────────  ┬───   ━━━━━━━━━━━━━━ not both endpoints of the path
    │                           │                   │
    │                           │                   an endpoint the point does not convert to
@@ -13,7 +13,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/effects/grade-algebra.gandr:25:85
    │
-25 │ def eightUnderTwoGiB : Path (Count.le (8589934592 : Nat) (2147483648 : Nat)) true = Path.here true;
+25 │ def eightUnderTwoGiB : Path (Count.le (8589934592 : Nat) (2147483648 : Nat)) true = Path.here true
    │                              ┬─────────────────────────────────────────────  ┬───   ━━━━━━━━━━━━━━ not both endpoints of the path
    │                              │                                               │
    │                              │                                               an endpoint the point does not convert to

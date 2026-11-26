@@ -1,7 +1,7 @@
 error[ShapeMismatch]: expected an element path type `Path[.A = A](a, b)`
    ╭▸ corpus/pathological/identity/bridge.gandr:19:29
    │
-19 │ def fourHere : Bridge 4 4 = Path.here 4;
+19 │ def fourHere : Bridge 4 4 = Path.here 4
    │                             ━━━━━━━━━━━ its type is not of the required shape: found `Bridge[.A = Integer] 4 4`
    │
    ├ note: `fourHere` is refused with ShapeMismatch, as its expectation states

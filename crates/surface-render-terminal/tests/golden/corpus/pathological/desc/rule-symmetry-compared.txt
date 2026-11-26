@@ -9,9 +9,10 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │ │┌─┘              checked; while checking the body of this function; binds x : Terms Tally
    │ ││
 30 │ ││   x
-31 │ ││   y) (Tally.meet y z) = Path.here (Tally.meet x y);
-   │ │└───│───┬─────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━┘ checked; while checking the body of this thunk
-   │ │    │   │                 │
+31 │ ││   y) (Tally.meet y z) = Path.here (Tally.meet x y)
+   │ ││   │   ┬─────────────    ┯━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ │└───│───│─────────────────│────────────────────────┤
+   │ │    │   │                 │                        checked; while checking the body of this thunk
    │ │    │   │                 not both endpoints of the path
    │ └────┤   an endpoint the point does not convert to
    │      an endpoint the point does not convert to

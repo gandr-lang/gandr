@@ -1,7 +1,7 @@
 error[RoundTripDistinct]: `equiv` needs each round trip to return its input
    ╭▸ corpus/pathological/identity/equiv-data.gandr:21:17
    │
-21 │ def flattened = equiv Shapes.toFigure rounded;
+21 │ def flattened = equiv Shapes.toFigure rounded
    │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ translators that are not inverse
    │
    ├ note: `flattened` is refused with RoundTripDistinct, as its expectation states

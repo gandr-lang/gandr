@@ -1,7 +1,7 @@
 error[GenericUncovered]: `Eq.generic` derives no equality for `List`: it takes parameters or indices
    ╭▸ corpus/pathological/metaprograms/derive-eq-over-codes.gandr:35:25
    │
-35 │ def eqList = Eq.generic List;
+35 │ def eqList = Eq.generic List
    │                         ━━━━ a type with no derived equality
    │
    ├ note: `eqList` is refused with GenericUncovered, as its expectation states

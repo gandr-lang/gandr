@@ -1,7 +1,7 @@
 error[ImplicitUnsolved]: the implicit `r` this call to `log` omits is determined by neither its arguments nor the type it is checked against
    ╭▸ corpus/pathological/control/row-variable.gandr:24:41
    │
-24 │ def unread() -> Unit = ignored (thunk { log "unread" });
+24 │ def unread() -> Unit = ignored (thunk { log "unread" })
    │                                         ━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `unread` is refused with ImplicitUnsolved, as its expectation states

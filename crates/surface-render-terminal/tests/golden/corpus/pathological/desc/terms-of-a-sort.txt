@@ -1,7 +1,7 @@
 error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
    ╭▸ corpus/pathological/desc/terms-of-a-sort.gandr:32:14
    │
-32 │ def paired : Terms Pair Q = Pair.pair Pair.origin Pair.origin;
+32 │ def paired : Terms Pair Q = Pair.pair Pair.origin Pair.origin
    │              ━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `paired` is refused with OutOfFragment.terms_type.sorted, as its expectation states
@@ -10,7 +10,7 @@ error[OutOfFragment.terms_type.sorted]: the type application is not supported ye
 error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
    ╭▸ corpus/pathological/desc/terms-of-a-sort.gandr:52:12
    │
-52 │ def kept : Terms Open Term Open.bit = Open.low;
+52 │ def kept : Terms Open Term Open.bit = Open.low
    │            ━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `kept` is refused with OutOfFragment.terms_type.sorted, as its expectation states
@@ -19,7 +19,7 @@ error[OutOfFragment.terms_type.sorted]: the type application is not supported ye
 error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
    ╭▸ corpus/pathological/desc/terms-of-a-sort.gandr:67:24
    │
-67 │ def alone(w : Type) -> Terms Bare Term w = Bare.low;
+67 │ def alone(w : Type) -> Terms Bare Term w = Bare.low
    │                        ━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `alone` is refused with OutOfFragment.terms_type.sorted, as its expectation states

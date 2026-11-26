@@ -19,7 +19,7 @@ error[InertRead]: `tag` reads the inert `label`; only another inert declaration 
 error[InertRead]: `shown` reads the inert `label`; only another inert declaration reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:38:13
    │
-38 │ def shown = Box.label;
+38 │ def shown = Box.label
    │             ━━━━━━━━━ an inert read
    │
    ├ note: `shown` is refused with InertRead, as its expectation states
@@ -28,7 +28,7 @@ error[InertRead]: `shown` reads the inert `label`; only another inert declaratio
 error[InertRead]: `labelOf` reads the inert `label`; only another inert declaration reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:42:45
    │
-42 │ def labelOf(l : Model Labelled) -> String = l.label;
+42 │ def labelOf(l : Model Labelled) -> String = l.label
    │                                             ━━━━━━━ an inert read
    │
    ├ note: `labelOf` is refused with InertRead, as its expectation states
@@ -37,7 +37,7 @@ error[InertRead]: `labelOf` reads the inert `label`; only another inert declarat
 error[InertRead]: `boxShown` reads the inert `boxLabel`; only another inert declaration reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:51:16
    │
-51 │ def boxShown = boxLabel;
+51 │ def boxShown = boxLabel
    │                ━━━━━━━━ an inert read
    │
    ├ note: `boxShown` is refused with InertRead, as its expectation states

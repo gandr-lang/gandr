@@ -1,7 +1,7 @@
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:34:15
    │
-34 │ def neutral : Terms Mon = Mon.one;
+34 │ def neutral : Terms Mon = Mon.one
    │               ━━━━━━━━━ rules that do not present the datatype
    │
    ├ note: `Terms Mon` is refused with RuleNotPresentable, as its expectation states
@@ -10,7 +10,7 @@ error[RuleNotPresentable]: these rules do not present the datatype
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:34:15
    │
-34 │ def neutral : Terms Mon = Mon.one;
+34 │ def neutral : Terms Mon = Mon.one
    │               ━━━━━━━━━ rules that do not present the datatype
    │
    ├ note: `neutral` is refused with RuleNotPresentable, as its expectation states
@@ -19,7 +19,7 @@ error[RuleNotPresentable]: these rules do not present the datatype
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:34:15
    │
-34 │ def neutral : Terms Mon = Mon.one;
+34 │ def neutral : Terms Mon = Mon.one
    │               ━━━━━━━━━ rules that do not present the datatype
    │
    ├ note: `product` is refused with RuleNotPresentable, as its expectation states
@@ -28,7 +28,7 @@ error[RuleNotPresentable]: these rules do not present the datatype
 error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
    ╭▸ corpus/pathological/desc/theory-terms.gandr:53:14
    │
-53 │ def paired : Terms Pair = Pair.origin;
+53 │ def paired : Terms Pair = Pair.origin
    │              ━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `paired` is refused with OutOfFragment.terms_type.sorted, as its expectation states

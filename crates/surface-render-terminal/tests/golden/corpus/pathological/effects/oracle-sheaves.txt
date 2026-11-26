@@ -1,7 +1,7 @@
 error[OutOfFragment.WrongSort]: a type application cannot stand where a computation is expected
    ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:83:73
    │
-83 │ def staticOpenMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { type(Tree s p q) });
+83 │ def staticOpenMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { type(Tree s p q) })
    │                                                                         ━━━━━━━━━━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `staticOpenMode` is refused with OutOfFragment.WrongSort, as its expectation states
@@ -47,7 +47,7 @@ error[LevelMismatch]: this code lives in a larger universe than the one expected
 28 │ data Tree(s : Type, p : +U (s -> -F Type), x : Type) : Type where
    │               ──── the type it is checked against
    ┆
-68 │ def lemTree : Tree Type decides Two = Leaf L;
+68 │ def lemTree : Tree Type decides Two = Leaf L
    │               ┬────┯━━━────────────
    │               │    │
    │               │    a universe at a level not admitted: expected `Type`, found `Type[+, 1]`
@@ -59,8 +59,8 @@ error[LevelMismatch]: this code lives in a larger universe than the one expected
 error[NotSynthesisable]: the type of a function cannot be inferred where it stands
    ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:78:57
    │
-78 │ def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s p q) });
-   │ ┬────────────┬─────────┬────────────────────────┬───────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
+78 │ def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s p q) })
+   │ ┬────────────┬─────────┬────────────────────────┬───────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─
    │ │            │         │                        │       │
    │ │            │         │                        │       needs a type to be checked against
    │ │            │         │                        checked against `-F Mode`; while finishing the type of this
@@ -80,7 +80,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 89 │ def treesNamed(q : Type) -> Type = return (Tree Two branches q)
    │ ─────────────────────────────────────────────────────────────── the type it synthesises
    ┆
-93 │ def namedMode : Mode = MkMode treesNamed;
+93 │ def namedMode : Mode = MkMode treesNamed
    │                        ┬──────┯━━━━━━━━━
    │                        │      │
    │                        │      its type does not convert: expected `Type -> Type`, found `+U (Type -> -F Type)`

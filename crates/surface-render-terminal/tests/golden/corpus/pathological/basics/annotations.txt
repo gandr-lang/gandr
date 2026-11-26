@@ -10,7 +10,7 @@ error[OutOfFragment.WrongSort]: a parenthesized expression cannot stand where a 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
   ╭▸ corpus/pathological/basics/annotations.gandr:9:18
   │
-9 │ def misstated = ("three" : Integer);
+9 │ def misstated = ("three" : Integer)
   │                  ┯━━━━━━   ─────── the type it is checked against
   │                  │
   │                  its type does not convert: expected `Integer`, found `String`
@@ -64,7 +64,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/basics/annotations.gandr:26:28
    │
-26 │ def disagreeing : String = (3 : Integer);
+26 │ def disagreeing : String = (3 : Integer)
    │                   ┬─────   ┯━━━━┬──────━
    │                   │        │    │
    │                   │        │    the type it synthesises
