@@ -55,6 +55,12 @@
 //! open frontier meets every opener's; a window that gathers so is exposed,
 //! and the openers of its class mold their own windows.
 //!
+//! A separator that ends a declaration reads two facts of the frontier it
+//! closes: whether the frontier keeps a bracket open, and whether the
+//! frontier's rule ends a form at the separator's labels. A theory's member
+//! and a top-level rule can share every successor and still part there, so
+//! the signature reads both facts at each node, for each window position.
+//!
 //! The signatures are canonical numbers: the window's nodes, one per
 //! successor and position reached, are numbered level by level from the
 //! window's end, each by its encoding — its observation and the numbered
@@ -120,7 +126,10 @@ use gandr_surface_grammar::MoldWordIndex;
 use gandr_surface_grammar::Observation;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
+use gandr_surface_grammar::TileKind;
 use gandr_surface_grammar::TileSet;
+use gandr_surface_syntax::ClosingClass;
+use gandr_surface_syntax::DelimSpelling;
 use gandr_surface_syntax::MoldId;
 
 use crate::meld::Frontier;
@@ -471,8 +480,10 @@ impl SettleChain
 /// - hypothesis: L3 — the differential witness compares the window verdicts the
 ///   classes reach with the dry runs' over every windowed tie of the corpus,
 ///   the drop matrix and the editor scenario; a signature that drops a
-///   position, a label or an identity merges openers whose windows differ.
+///   position, a label, an identity or a fact a separator reads merges openers
+///   whose windows differ.
 /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+/// - witness: `tests::sweeps::a_separator_reads_the_frontier_each_window_shares`
 #[derive(Clone, Debug, Default)]
 pub struct WindowClasses
 {
@@ -620,10 +631,10 @@ impl WindowClasses
             }
         }
         // Number: from the last level down, each node by its encoding — its
-        // observation, then each edge's position, label, identity when the
-        // successor can open its form, and the successor's number. Edges are
-        // listed alike for every node, so equal encodings are equal
-        // signatures.
+        // observation, what a separator reads of it, then each edge's
+        // position, label, identity when the successor can open its form, and
+        // the successor's number. Edges are listed alike for every node, so
+        // equal encodings are equal signatures.
         for level in (0 .. depth).rev() {
             arena.clear();
             spans.clear();
@@ -635,6 +646,16 @@ impl WindowClasses
                 };
                 let start = arena.len();
                 arena.push(pbg.observation(mold).map_or(UNNAMED, u32::from));
+                // What a separator that ends the declaration reads of the
+                // frontier it closes (`MeldState::close_at_separator`): whether
+                // the node keeps a bracket open, and whether its rule ends a
+                // form at each position's labels.
+                arena.push(u32::from(keeps_bracket(pbg, mold)));
+                arena.extend(
+                    labels
+                        .iter()
+                        .map(|token| u32::from(ends_rule_at(pbg, mold, token))),
+                );
                 let (from, to) = edge_spans
                     .get(level)
                     .and_then(|level_spans| level_spans.get(at))
@@ -696,4 +717,51 @@ impl WindowClasses
             )
         }));
     }
+}
+
+/// Whether `mold` has a closing class and a successor that closes a `(` or a
+/// `[`: a frontier at it keeps a separator inside the declaration.
+///
+/// # Specification
+/// trivial.
+fn keeps_bracket(
+    pbg: &Pbg,
+    mold: MoldId,
+) -> bool
+{
+    pbg.closing_class(mold).is_some()
+        && pbg.mold_successors(mold).iter().any(|&(_, next)| {
+            pbg.mold(next).is_ok_and(|def| {
+                matches!(
+                    ClosingClass::closing(DelimSpelling::from(def.label)),
+                    Some(ClosingClass::Paren | ClosingClass::Bracket)
+                )
+            })
+        })
+}
+
+/// Whether the rule of `mold` has a mold that ends its form among the
+/// candidates of `token`'s labels: a separator closes a declaration of that
+/// rule.
+///
+/// # Specification
+/// trivial.
+fn ends_rule_at(
+    pbg: &Pbg,
+    mold: MoldId,
+    token: &LabelIds,
+) -> bool
+{
+    let Ok(rule) = pbg.rule_of(mold).map(|rule| rule.name)
+    else {
+        return false;
+    };
+    token
+        .as_slice()
+        .iter()
+        .flat_map(|&label| pbg.label_candidates(label))
+        .any(|&other| {
+            pbg.rule_of(other).is_ok_and(|held| held.name == rule)
+                && pbg.tile_kind(other).is_ok_and(|kind| kind == TileKind::End)
+        })
 }

@@ -464,6 +464,33 @@ fn a_closer_that_reaches_its_partner_decides_as_its_dry_run_7032()
     );
 }
 
+/// A theory that lost its `where` leaves its members at the top level, and
+/// at the `<=>` of a member rule the `<=>` of a theory and of a top-level rule
+/// tie. The layout's `;` after the rule closes the top-level rule as its end,
+/// and the theory's member stays open, so the two windows score apart. Their
+/// window classes read what the separator reads of each frontier, so the
+/// tables decide as the dry runs do. Before the change, the text counts one
+/// disagreement.
+#[test]
+fn a_separator_reads_the_frontier_each_window_shares()
+{
+    let pbg = built();
+    let text =
+        include_str!("sweeps/unformatted/a-separator-reads-the-frontier-each-window-shares.gandr");
+    let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
+    let mut state = MeldState::new(pbg);
+    molder.mold_stream(
+        &mut state,
+        &label(SourceFragment::from(text)),
+        SourceText::from(text),
+    );
+    assert_eq!(
+        DisagreementCount(0),
+        molder.disagreements(),
+        "the tables decide a theory that lost its `where` as the dry runs do"
+    );
+}
+
 /// The table sweep over the sources `sweep` visits, the strays first.
 ///
 /// # Specification
