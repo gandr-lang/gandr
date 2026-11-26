@@ -35,7 +35,7 @@ theory MonadLeftUnit where
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  oper ext : (m : C, k : (x : V) -> C) --> C;
   rule unitL : ext (ret a) k <=> k a;
 
 /// The right unit: extending a computation by the unit is the computation.
@@ -45,7 +45,7 @@ theory MonadRightUnit where
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  oper ext : (m : C, k : (x : V) -> C) --> C;
   rule unitR : ext m (bind x. (ret x)) <=> m;
 
 /// The three laws together. Associativity's inner `ext(m, k)` is an instance
@@ -56,7 +56,7 @@ theory RelativeMonad where
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  oper ext : (m : C, k : (x : V) -> C) --> C;
   rule unitL : ext (ret a) k <=> k a;
   rule unitR : ext m (bind x. (ret x)) <=> m;
   rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));

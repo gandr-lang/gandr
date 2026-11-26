@@ -34,7 +34,7 @@ theory State.Eff where
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S). C) --> C;
+  oper get : (k : (s : S) -> C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
 
@@ -45,7 +45,7 @@ theory StatePutGet where
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S). C) --> C;
+  oper get : (k : (s : S) -> C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing then reading continues at the stored value, a branch selection
@@ -59,7 +59,7 @@ theory StatePutPut where
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S). C) --> C;
+  oper get : (k : (s : S) -> C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing twice keeps the second value.
@@ -73,7 +73,7 @@ theory StatePutLaws where
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S). C) --> C;
+  oper get : (k : (s : S) -> C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing then reading continues at the stored value.
@@ -89,7 +89,7 @@ theory StateGetGet where
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S). C) --> C;
+  oper get : (k : (s : S) -> C) --> C;
   /// Reading twice reads once and continues at that state for both reads.
   rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
 

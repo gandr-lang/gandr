@@ -6,7 +6,7 @@ theory T where
   sort Val : Type+;
   sort Proc : Type;
   oper nil : Proc;
-  oper new : (body : pi+ (x : Val). Proc) --> Proc;
+  oper new : (body : (x : Val) -> Proc) --> Proc;
   rule collect : new (bind x. nil) <=> nil;
 
 @[refuses("UnstatedComponent.Binding")]

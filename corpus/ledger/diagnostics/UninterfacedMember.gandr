@@ -3,7 +3,7 @@
 theory Stored where
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S). C) --> C;
+  oper get : (k : (s : S) -> C) --> C;
 
 @[refuses("UninterfacedMember")]
 def unfixed() -> Integer =
