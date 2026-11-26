@@ -1037,27 +1037,18 @@ fn module_signature_field() -> Regex
     ])
 }
 
-/// Build the `def rec` recursive tail: `rec id [implicits]? (params) -> T? {
-/// body }`, its body one expression after `=`, `rec id (params) -> T? = E ;`,
-/// as the regular tail admits, or the clauses matching the arrows after the
-/// head, with or without parameters before it: `rec id (params)? : T where {
-/// | … }`.
-///
-/// A single `{ … }` with an interior alternative separates the corecursive
-/// copattern-clause body from the ordinary statement body, so the two never
-/// expose two `{`-led branches sharing one context (the
-/// [`PbgError::DuplicateTile`] hazard). The
-/// copattern `.head => e` clause's `.` is a `≐`-successor of `{` / `,`,
-/// distinct from the postfix projection `.` (which requires a left operand), so
-/// the same `.` label molds by context. The clause block follows `where`, so
-/// its `{` stands in a context of its own.
+/// Build the `def rec` recursive tail: `rec id [implicits]? (params) -> T? = E
+/// ;`, its body one expression after `=`, as the regular tail admits, or the
+/// clauses matching the arrows after the head, with or without parameters
+/// before it: `rec id (params)? : T where { | … }`. The clause block follows
+/// `where`, so its `{` stands in a context of its own.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a rec keyword, name and optional implicit telescope (as the
 ///   regular tail admits), then parameters followed by an optional result and
-///   one brace-delimited alternative body or an expression after `=`, or by a
-///   stated type and clauses, or a stated type and clauses alone.
+///   an expression after `=`, or by a stated type and clauses, or a stated type
+///   and clauses alone.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1087,57 +1078,16 @@ fn def_rec_tail() -> Regex
                 alt([
                     seq([
                         opt(seq([t(TileLabel("->")), h(Sort::Type)])),
-                        alt([
-                            seq([
-                                t(TileLabel("{")),
-                                alt([
-                                    // corecursive body: copattern clauses
-                                    // `.head => e` (+ reserved `_ =>`).
-                                    comma1(copattern_clause()),
-                                    // ordinary statement body (the block
-                                    // interior, flat).
-                                    seq([repeat(statement_alt()), opt(h(Sort::Expression))]),
-                                ]),
-                                t(TileLabel("}")),
-                            ]),
-                            // one-expression body, as the regular tail's.
-                            seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
-                        ]),
+                        // one-expression body, as the regular tail's.
+                        t(TileLabel("=")),
+                        h(Sort::Expression),
+                        t(TileLabel(";")),
                     ]),
                     clauses(),
                 ]),
             ]),
             clauses(),
         ]),
-    ])
-}
-
-/// Build a copattern clause: `.observation => e`, or the reserved `_ => e`
-/// default arm.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: an observation arm and a default arm, each ending in an
-///   expression hole.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
-///   role observations catch changed discriminators, delimiters and hole sorts.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ".")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=>")) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "_")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=>")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))))]
-fn copattern_clause() -> Regex
-{
-    alt([
-        seq([
-            t(TileLabel(".")),
-            t(TileLabel("identifier")),
-            t(TileLabel("=>")),
-            h(Sort::Expression),
-        ]),
-        seq([t(TileLabel("_")), t(TileLabel("=>")), h(Sort::Expression)]),
     ])
 }
 
@@ -4137,10 +4087,10 @@ fn regular_def_tail() -> Regex
             ]),
             // value tail: `= E ;`
             seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
-            // function tail: `(params) -> T? { … }`, its body one expression
-            // after `=`, `(params) -> T? = E ;`, or the clauses matching the
-            // arrows after the head: `(params) : T where { | … }`. The arrow
-            // `⊸` in place of `->` binds each parameter in the linear zone.
+            // function tail: `(params) -> T? = E ;`, its body one expression
+            // after `=`, or the clauses matching the arrows after the head:
+            // `(params) : T where { | … }`. The arrow `⊸` in place of `->`
+            // binds each parameter in the linear zone.
             seq([
                 params(),
                 alt([
@@ -4149,10 +4099,9 @@ fn regular_def_tail() -> Regex
                             alt([t(TileLabel("->")), t(TileLabel("⊸"))]),
                             h(Sort::Type),
                         ])),
-                        alt([
-                            braced_statements(),
-                            seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
-                        ]),
+                        t(TileLabel("=")),
+                        h(Sort::Expression),
+                        t(TileLabel(";")),
                     ]),
                     seq([
                         t(TileLabel(":")),

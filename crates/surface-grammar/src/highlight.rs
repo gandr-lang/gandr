@@ -1207,7 +1207,6 @@ mod tests
             ("module_declaration", "module", None, HlRole::VariableDef),
             ("theory_declaration", "node", None, HlRole::VariableDef),
             ("circuit_declaration", ":", Some("("), HlRole::FunctionCall),
-            ("def_value", ".", None, HlRole::Member),
             ("telescope_expression", ".", None, HlRole::Member),
             ("telescope_expression", "|", None, HlRole::Member),
             ("glob_expression", "{", None, HlRole::Member),

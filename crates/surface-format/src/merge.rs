@@ -1054,9 +1054,9 @@ enum Alone
 ///   token, which no predicate on `body` and the result states more simply.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a body of one operand moves alone after `=`, and a body
-///   of statements moves in a block after `=`.
-/// - witness: `tests::rewrite::a_brace_body_moves_after_the_equals_6318`
+/// - hypothesis: L3 — a `become` thunk merges with its body alone after `=`,
+///   and a statement block merges with its body in a block after `=`.
+/// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
 fn alone(body: &[Leaf<'_>]) -> Alone
 {
     let mut depth = 0_usize;

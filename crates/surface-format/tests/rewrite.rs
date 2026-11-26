@@ -1594,7 +1594,6 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "function-form",
             "joined-definition",
             "type-application",
-            "body-after-equals",
             "handler-words",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
@@ -2540,64 +2539,6 @@ fn a_refusal_beside_or_at_a_respelled_form_keeps_its_site_6726()
         let formatted = format(&grammar, &parsed, options).expect("the source formats");
         assert_eq!(formatted.withdrawn(), [], "{source}");
         assert_eq!(formatted.into_text(), sugared);
-    }
-}
-
-/// A body in the braces a definition's head opens moves after `=`, in either
-/// form and alone in a selection. One expression stands alone with its `;`,
-/// and statements stand in a block. A recursive body and a module's member
-/// move too. A body after `=` stays, and a body that holds a comment keeps
-/// its braces, so the comment keeps its owner. A second pass changes nothing
-/// (#6318).
-#[test]
-fn a_brace_body_moves_after_the_equals_6318()
-{
-    let grammar = grammar();
-    let source = include_str!("rewrite/unformatted/a-brace-body-moves-after-the-equals-6318.gandr");
-    let moved = spelled(
-        &grammar,
-        source,
-        Form::Sugared,
-        Selection::Only(&[RewriteName::BodyAfterEquals]),
-    );
-    expect![[r#"
-        data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-
-        def twice(n : Nat) -> Nat = Succ (Succ n)
-
-        def block(n : Nat) -> Nat = {
-          let m = twice n
-          twice m
-        };
-
-        def noted(n : Nat) -> Nat {
-          // the count twice
-          twice n
-        }
-
-        def rec down(n : Nat) -> Nat = match n {
-          | Zero => Zero
-          | Succ(m) => down[<] m
-        };
-
-        def kept(n : Nat) -> Nat = twice n
-
-        module Inner where {
-          def inner(n : Nat) -> Nat = twice n
-        }
-    "#]]
-    .assert_eq(&moved);
-    for form in [Form::Sugared, Form::Explicit] {
-        assert_eq!(
-            spelled(&grammar, source, form, Selection::Every),
-            moved,
-            "{form}: the body moves alike"
-        );
-        assert_eq!(
-            spelled(&grammar, moved.as_str(), form, Selection::Every),
-            moved,
-            "{form}: a second pass changes nothing"
-        );
     }
 }
 
