@@ -1,4 +1,4 @@
-def quiet(n : Integer) -> -F Integer {
+def quiet(n : Integer) -> -F Integer = {
   handle c : Proc {
     c.exit(1);
     return n
@@ -6,4 +6,4 @@ def quiet(n : Integer) -> -F Integer {
     pure(x) => pure x,
     oper exit(code, k) => k(*{})
   }
-}
+};

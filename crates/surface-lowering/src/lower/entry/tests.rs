@@ -76,9 +76,9 @@ fn an_entry_returns_an_integer_after_its_arguments_1881()
 fn a_main_of_another_type_is_refused_by_name_1881()
 {
     for source in [
-        "def main() -> -F Integer { return 0 }\n",
-        "def main(args : List(String)) -> -F Integer { return 0 }\n",
-        "module Tool where { def main() -> -F String { return \"x\" } }\n",
+        "def main() -> -F Integer = return 0;\n",
+        "def main(args : List(String)) -> -F Integer = return 0;\n",
+        "module Tool where { def main() -> -F String = return \"x\"; }\n",
     ] {
         let mut arena = CoreArena::new();
         let text = listing(source);
@@ -93,11 +93,11 @@ fn a_main_of_another_type_is_refused_by_name_1881()
     }
     for (source, name) in [
         (
-            "def main() -> -F String { return \"x\" }\n",
+            "def main() -> -F String = return \"x\";\n",
             4_usize .. 8_usize,
         ),
         (
-            "def main(n : Integer) -> -F Integer { return n }\n",
+            "def main(n : Integer) -> -F Integer = return n;\n",
             4_usize .. 8_usize,
         ),
         ("def main = 0 ;\n", 4_usize .. 8_usize),
@@ -152,7 +152,7 @@ fn an_entry_returns_the_unit_2279()
         );
     }
     let source =
-        "def main() -> -F [std.io.Console.Eff] Unit { std.io.Console.print \"hello, world!\" }\n";
+        "def main() -> -F [std.io.Console.Eff] Unit = std.io.Console.print \"hello, world!\";\n";
     let text = hosting(source);
     let module = hosted(&text, &mut arena);
     assert!(
@@ -190,7 +190,7 @@ fn an_entry_takes_the_ambient_authority_2970()
         entry_shape(&arena, declared_type),
         Maybe::Present(Arguments::Authority)
     );
-    let source = "def main(authority : Cap { print }) -> -F String { return \"x\" }\n";
+    let source = "def main(authority : Cap { print }) -> -F String = return \"x\";\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(

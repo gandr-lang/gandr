@@ -1,2 +1,2 @@
-def one(n : Integer) -> &{get : -F Integer} { &{.get => return n} }
-def none(n : Integer) -> &{} { &{} }
+def one(n : Integer) -> &{get : -F Integer} = &{.get => return n};
+def none(n : Integer) -> &{} = &{};

@@ -34,7 +34,7 @@ use crate::unit::UnitSource;
 const DATA: &str = include_str!("tests/unformatted/data.gandr");
 
 /// The call a boundary check makes.
-const ADMIT: &str = "def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n";
+const ADMIT: &str = "def admitBlock(ss : Signatures, rs : Rows) -> Admission = Admitted;\n";
 
 /// A step of [`spelled`]'s walk: a value to read, or a constructor whose
 /// fields are spelled and wait to be closed over.

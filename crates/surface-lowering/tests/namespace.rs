@@ -802,13 +802,13 @@ fn a_method_of_a_source_not_imported_is_out_of_scope()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub module Str where { def len(self : shared Integer) -> -F Integer { pure self } }",
+                "pub module Str where { def len(self : shared Integer) -> -F Integer = pure self; }",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "pub module Bytes where { def len(self : shared Integer) -> -F Integer { pure 0 } }",
+                "pub module Bytes where { def len(self : shared Integer) -> -F Integer = pure 0; }",
             ),
             &[],
         ),

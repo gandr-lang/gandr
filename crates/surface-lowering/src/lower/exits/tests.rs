@@ -379,7 +379,7 @@ fn a_block_final_semicolon_returns_the_unit_in_both_spellings_7733()
 fn a_use_a_local_end_replaces_keeps_its_bytes()
 {
     let source = format!(
-        "{NAT}def twice(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; pure q }} }} ; return Succ m }}\n"
+        "{NAT}def twice(n : Nat) -> -F Nat = {{ let m = match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; pure q }} }} ; return Succ m }};\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

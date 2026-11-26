@@ -885,7 +885,7 @@ fn an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801()
 {
     let source = "def t(A : Type, x : A, y : A, f : Path[.A = A](x, y), u : A, it : Path[.A = Path[.A = A](x, y)](\
                   f, (thunk { fun (q : Path[.A = A](x, y)) { let c : Path[.A = A](x, y) = q ; c } } : \
-                  Path[.A = A](x, y) -> Path[.A = A](x, y)) f)) -> -F Unit { return *{} }\n";
+                  Path[.A = A](x, y) -> Path[.A = A](x, y)) f)) -> -F Unit = return *{};\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "t".into())
@@ -2761,7 +2761,7 @@ fn a_pattern_at_a_relation_splits_its_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { | *{.rinv = *{.from = h}} => return h } }\n",
+            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) = match e { | *{.rinv = *{.from = h}} => return h };\n",
         ),
         &mut arena,
     );
@@ -2783,7 +2783,7 @@ fn a_pattern_at_a_relation_splits_its_record()
 fn a_relation_split_names_each_written_component_665()
 {
     let source = SourceText::from(
-        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { match i { | *{t, k, s, r} => k } }\n",
+        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) = match i { | *{t, k, s, r} => k };\n",
     );
     assert_eq!(
         component_names(source),
@@ -2834,7 +2834,7 @@ fn a_let_binder_splits_the_relation_a_bare_result_returns_2255()
 fn an_unwritten_field_is_named_by_its_label_670()
 {
     let source = SourceText::from(
-        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { match i { | *{.from = k} => k } }\n",
+        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) = match i { | *{.from = k} => k };\n",
     );
     assert_eq!(
         component_names(source),

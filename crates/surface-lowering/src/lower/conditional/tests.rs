@@ -77,7 +77,7 @@ fn a_conditional_runs_the_branch_its_condition_selects()
 fn an_else_if_tests_its_own_condition_in_the_false_branch()
 {
     let source =
-        "def sign(n : Integer) -> -F Integer { if n < 0 { 0 } else if n < 1 { 1 } else { 2 } }\n";
+        "def sign(n : Integer) -> -F Integer = if n < 0 { 0 } else if n < 1 { 1 } else { 2 };\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("sign")));

@@ -771,9 +771,9 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.n } \
+        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer = return p.n; \
          def last(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> -F \
-         Path[.A = Integer](t.a, t.a) { return t.c }",
+         Path[.A = Integer](t.a, t.a) = return t.c;",
         &mut arena,
     );
 
@@ -796,8 +796,8 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
         ],
         "the last of three is the second component of the second link"
     );
-    let source = "def lacks(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return \
-                  p.w }";
+    let source = "def lacks(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer = return \
+                  p.w;";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { .. }),
         "a label the type lacks names nothing"
@@ -812,7 +812,7 @@ fn a_selection_off_a_record_projects_its_label_855()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def by_label(r : *{n : Integer, s : String}) -> -F String { return r.s }",
+        "def by_label(r : *{n : Integer, s : String}) -> -F String = return r.s;",
         &mut arena,
     );
 
@@ -832,8 +832,8 @@ fn a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "type Band = *{low : Integer, high : Integer}; def high(b : Band) -> -F Integer { return \
-         b.high }",
+        "type Band = *{low : Integer, high : Integer}; def high(b : Band) -> -F Integer = return \
+         b.high;",
         &mut arena,
     );
 
@@ -844,7 +844,7 @@ fn a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826()
     );
     assert!(
         matches!(
-            refused("type Count = Integer; def typed(n : Count) -> -F Integer { n.x }"),
+            refused("type Count = Integer; def typed(n : Count) -> -F Integer = n.x;"),
             LoweringRefusal::OutOfFragment { .. }
         ),
         "a name written at a member that is no record keeps its refusal"
@@ -861,7 +861,7 @@ fn a_field_of_a_record_no_type_states_projects_its_label_1106()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def outer = *{ .tag = \"t\", .inner = *{ .x = 1, .y = 2 } } ; def one() -> -F *{x : \
-         Integer, y : Integer} { outer.inner } def two() -> -F Integer { outer.inner.x }",
+         Integer, y : Integer} = outer.inner; def two() -> -F Integer = outer.inner.x;",
         &mut arena,
     );
 
@@ -877,7 +877,7 @@ fn a_field_of_a_record_no_type_states_projects_its_label_1106()
     );
     assert!(
         matches!(
-            refused("def typed(n : Integer) -> -F Integer { n.x }"),
+            refused("def typed(n : Integer) -> -F Integer = n.x;"),
             LoweringRefusal::OutOfFragment { .. }
         ),
         "a written type that is no record keeps the selection's refusal"
@@ -895,8 +895,8 @@ fn a_sub_record_binds_each_field_and_returns_their_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def pick(r : *{a : Integer, b : Integer, c : Integer}) -> -F *{c : Integer, a : \
-         Integer} { r.*{.c, .a} } def outer = *{ .x = 1, .y = 2 } ; def free() -> -F *{y : \
-         Integer} { outer.*{.y} }",
+         Integer} = r.*{.c, .a}; def outer = *{ .x = 1, .y = 2 } ; def free() -> -F *{y : \
+         Integer} = outer.*{.y};",
         &mut arena,
     );
 
@@ -933,7 +933,7 @@ fn a_sub_record_binds_each_field_and_returns_their_record()
     );
     assert!(
         matches!(
-            refused("def p(r : *{a : Integer}) -> -F *{a : Integer} { (r).*{.a} }"),
+            refused("def p(r : *{a : Integer}) -> -F *{a : Integer} = (r).*{.a};"),
             LoweringRefusal::OutOfFragment { .. }
         ),
         "a value that is no name is unadmitted"
@@ -948,10 +948,10 @@ fn a_selection_by_position_projects_a_pair_401()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.0 } \
+        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer = return p.0; \
          def second(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Path[.A = Integer](p.0, p.0) \
-         { return p.1 } def by_label(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F \
-         Path[.A = Integer](p.n, p.n) { return p.v }",
+         = return p.1; def by_label(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F \
+         Path[.A = Integer](p.n, p.n) = return p.v;",
         &mut arena,
     );
 
@@ -973,7 +973,7 @@ fn a_selection_by_position_projects_a_pair_401()
     );
     assert!(
         matches!(
-            refused("def third(p : Integer * String) -> -F String { return p.2 }"),
+            refused("def third(p : Integer * String) -> -F String = return p.2;"),
             LoweringRefusal::UnresolvedName { .. }
         ),
         "a pair has no third position"
@@ -989,10 +989,10 @@ fn a_selection_by_position_reads_the_written_type_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def middle(p : Integer * String * Integer) -> -F String { return p.1 } def last(p : \
-         Integer * String * Integer) -> -F Integer { return p.2 } def by_place(r : *{n : \
-         Integer, s : String}) -> -F String { return r.1 } def by_label(r : *{n : Integer, s : \
-         String}) -> -F String { return r.s }",
+        "def middle(p : Integer * String * Integer) -> -F String = return p.1; def last(p : \
+         Integer * String * Integer) -> -F Integer = return p.2; def by_place(r : *{n : \
+         Integer, s : String}) -> -F String = return r.1; def by_label(r : *{n : Integer, s : \
+         String}) -> -F String = return r.s;",
         &mut arena,
     );
 
@@ -1018,14 +1018,14 @@ fn a_selection_by_position_reads_the_written_type_1106()
     );
     assert!(
         matches!(
-            refused("def past(p : Integer * String * Integer) -> -F Integer { return p.3 }"),
+            refused("def past(p : Integer * String * Integer) -> -F Integer = return p.3;"),
             LoweringRefusal::UnresolvedName { .. }
         ),
         "a product of three has no fourth place"
     );
     assert!(
         matches!(
-            refused("def pair = *{1, 2} ; def third() -> -F Integer { pair.2 }"),
+            refused("def pair = *{1, 2} ; def third() -> -F Integer = pair.2;"),
             LoweringRefusal::OutOfFragment { .. }
         ),
         "with no written type a third place stays unadmitted"
@@ -1420,8 +1420,8 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         with("stated"),
         "indexed clauses are ordered by their indices"
     );
-    let source = "def unstated(n : Integer) -> -F Integer { &{.get => return n, .put => return n} \
-                  }\n";
+    let source = "def unstated(n : Integer) -> -F Integer = &{.get => return n, .put => return n} \
+                  ;\n";
     assert!(
         matches!(refused(source), LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Unannotated | FragmentBoundary::WrongSort,
@@ -1429,8 +1429,8 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         }),
         "labelled clauses with no lazy record stated have no order"
     );
-    let source = "def single(n : Integer) -> &{get : -F Integer, put : -F Integer} { &{.get => \
-                  return n} }\n";
+    let source = "def single(n : Integer) -> &{get : -F Integer, put : -F Integer} = &{.get => \
+                  return n};\n";
     assert!(
         matches!(refused(source), LoweringRefusal::MalformedForm {
             fault: FormFault::MissingOperand,
@@ -1462,8 +1462,8 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         "data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{maybe}def some(n : Integer) -> &{{-F Maybe(Integer), -F String}} {{ &{{.0 => return \
-         Some(n), .1 => return \"s\"}} }}\n"
+        "{maybe}def some(n : Integer) -> &{{-F Maybe(Integer), -F String}} = &{{.0 => return \
+         Some(n), .1 => return \"s\"}};\n"
     );
     let module = lowered(source.as_str(), &mut arena);
     assert!(
@@ -1476,8 +1476,8 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         outcome(&module, "some")
     );
     let source = alloc::format!(
-        "{maybe}def short(n : Integer) -> &{{-F Maybe(Integer), -F String, -F Unit}} {{ &{{.0 \
-         => return Some(n), .1 => return \"s\"}} }}\n"
+        "{maybe}def short(n : Integer) -> &{{-F Maybe(Integer), -F String, -F Unit}} = &{{.0 \
+         => return Some(n), .1 => return \"s\"}};\n"
     );
     assert!(
         matches!(
@@ -1560,7 +1560,7 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
         "clauses written out of order take the order the declaration states"
     );
     let source = alloc::format!(
-        "{pair}def stray(n : Integer) -> Duo {{ &{{.fst => return n, .third => return \"s\"}} }}\n"
+        "{pair}def stray(n : Integer) -> Duo = &{{.fst => return n, .third => return \"s\"}};\n"
     );
     assert!(
         matches!(refused(source.as_str()), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("third")),
@@ -1583,8 +1583,8 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
 #[test]
 fn an_observation_reads_through_one_thunk_only()
 {
-    let source = "def obs(m : +U (+U &{get : -F Integer, put : -F String})) -> -F Integer { become \
-                  m.get }\n";
+    let source = "def obs(m : +U (+U &{get : -F Integer, put : -F String})) -> -F Integer = become \
+                  m.get;\n";
     assert!(
         matches!(
             refused(source),
@@ -1631,8 +1631,7 @@ fn an_observation_projects_its_entry()
         ["project0", "force"],
         "the only entry of a lazy record of one is its first component"
     );
-    let source =
-        "def gone(m : +U &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.z }\n";
+    let source = "def gone(m : +U &{a : -F Integer, b : -F Integer}) -> -F Integer = become m.z;\n";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
         "a label the lazy record lacks is unresolved"
@@ -1676,13 +1675,13 @@ fn an_observation_by_position_projects_its_entry_941()
         observed("named"),
         "a codata family's observation by position is the one its label names"
     );
-    let source = "def past(m : +U (-F Integer & -F Integer)) -> -F Integer { become m.2 }\n";
+    let source = "def past(m : +U (-F Integer & -F Integer)) -> -F Integer = become m.2;\n";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("2")),
         "a position past the last component is unresolved: {:?}",
         refused(source)
     );
-    let source = "def lacked(m : +U (-F Integer & -F Integer)) -> -F Integer { become m.a }\n";
+    let source = "def lacked(m : +U (-F Integer & -F Integer)) -> -F Integer = become m.a;\n";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("a")),
         "a lazy product chain has no labels: {:?}",
@@ -1950,8 +1949,8 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def spelled : +U ((a : Type) -> (x : a) -> -F a) ; def aliased : (a : Type, x : a) -> a \
-         ; def ignored : +U ((n : Integer) -> -F Integer) ; def tail(n : Integer) -> -F Integer { \
-         return n }",
+         ; def ignored : +U ((n : Integer) -> -F Integer) ; def tail(n : Integer) -> -F Integer = \
+         return n;",
         &mut arena,
     );
     assert_eq!(
@@ -2101,7 +2100,7 @@ fn a_group_of_outputs_is_the_many_value_returner()
         ),
         "a later output may name an earlier one, {dependent:?}"
     );
-    let source = "def twice(m : Integer) -> (x : Integer, x : String) { return m }";
+    let source = "def twice(m : Integer) -> (x : Integer, x : String) = return m;";
     assert!(
         matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("x")),
         "an output is named once"
@@ -2192,7 +2191,7 @@ fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
         "tests/unformatted/a-tuple-pattern-binds-each-output-of-an-operation-4855-operation.gandr"
     );
     let source = format!(
-        "{operation}def second(a : Flag, b : Flag) -> Flag {{ let (x, y) = swap(a, b); y }}\n"
+        "{operation}def second(a : Flag, b : Flag) -> Flag = {{ let (x, y) = swap(a, b); y }};\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(source.as_str(), &mut arena);
@@ -2215,7 +2214,7 @@ fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
         "the last output is the innermost binder"
     );
     let three =
-        format!("{operation}def three(a : Flag) -> Flag {{ let (x, y, z) = swap(a, a); x }}\n");
+        format!("{operation}def three(a : Flag) -> Flag = {{ let (x, y, z) = swap(a, a); x }};\n");
     assert!(
         matches!(
             refused(three.as_str()),
@@ -2273,7 +2272,7 @@ fn an_operation_s_outputs_are_selected_and_bound_by_label_5147()
         "`.x = p` binds the first output to `p`, written last"
     );
     let stray =
-        format!("{operation}def stray(a : Flag) -> Flag {{ let *{{.z, .x}} = swap a a; x }}\n");
+        format!("{operation}def stray(a : Flag) -> Flag = {{ let *{{.z, .x}} = swap a a; x }};\n");
     assert!(
         matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
             fault: FormFault::MisplacedTile,
@@ -2282,7 +2281,7 @@ fn an_operation_s_outputs_are_selected_and_bound_by_label_5147()
         "a label names an output of the operation"
     );
     let kept = format!(
-        "{operation}def kept(a : Flag, b : Flag) -> Flag {{ let r = ~ports (swap a b); r.x }}\n"
+        "{operation}def kept(a : Flag, b : Flag) -> Flag = {{ let r = ~ports (swap a b); r.x }};\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(kept.as_str(), &mut arena);
@@ -2502,7 +2501,7 @@ fn a_labelled_group_returns_each_value_at_its_output()
         ["thunk", "lambda", "return0"],
         "`()` ending a body of no outputs returns none"
     );
-    let loose = "def loose(a : Integer) -> Integer { (.q = a, .r = a) }";
+    let loose = "def loose(a : Integer) -> Integer = (.q = a, .r = a);";
     assert!(
         matches!(refused(loose), LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::WrongSort,
@@ -2510,8 +2509,8 @@ fn a_labelled_group_returns_each_value_at_its_output()
         }),
         "a labelled group is no value"
     );
-    let stray = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.q = n, .x = \
-                 m) }";
+    let stray = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (.q = n, .x = \
+                 m);";
     assert!(
         matches!(refused(stray), LoweringRefusal::MalformedForm {
             fault: FormFault::MisplacedTile,
@@ -2547,9 +2546,10 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
         Some("#1"),
         "`.q = quo` binds the first output to `quo`, written last"
     );
-    let divmod = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\n";
-    let stray =
-        format!("{divmod}def stray(a : Integer) -> Integer {{ let (.x, .q) = divmod(a, a); q }}");
+    let divmod = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n);\n";
+    let stray = format!(
+        "{divmod}def stray(a : Integer) -> Integer = {{ let (.x, .q) = divmod(a, a); q }};"
+    );
     assert!(
         matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
             fault: FormFault::MisplacedTile,
@@ -2558,7 +2558,7 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
         "a label names an output of the call"
     );
     let mixed =
-        format!("{divmod}def mixed(a : Integer) -> Integer {{ let (.q, r) = divmod(a, a); r }}");
+        format!("{divmod}def mixed(a : Integer) -> Integer = {{ let (.q, r) = divmod(a, a); r }};");
     let mixed = refused(mixed.as_str());
     assert!(
         matches!(mixed, LoweringRefusal::OutOfFragment {
@@ -2589,7 +2589,7 @@ fn a_dependent_arrow_binds_a_type_named_binder_2179()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def named : +U ((A : Type) -> A -> -F A) ; def lower : +U ((a : Type) -> a -> -F a) ; def \
-         aliased : (A : Type, A) -> A ; def tail(A : Type, x : A) -> -F A { return x }",
+         aliased : (A : Type, A) -> A ; def tail(A : Type, x : A) -> -F A = return x;",
         &mut arena,
     );
     let signature = |name: &str| match outcome(&module, name) {

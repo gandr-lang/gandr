@@ -36,10 +36,10 @@ use crate::origin::Omitted;
 use crate::resolve::SurfaceName;
 
 /// The identity at a type supplied by name.
-const SAME: &str = "def same[a : Type](y : a) -> -F a { return y }\n";
+const SAME: &str = "def same[a : Type](y : a) -> -F a = return y;\n";
 
 /// The first of two values, both of their types implicit.
-const FIRST: &str = "def first[a : Type, b : Type](x : a, y : b) -> -F a { return x }\n";
+const FIRST: &str = "def first[a : Type, b : Type](x : a, y : b) -> -F a = return x;\n";
 
 /// The type `name`'s signature declares.
 ///
@@ -68,7 +68,7 @@ fn declared_type_of(
 #[test]
 fn plicity_is_metadata_not_type_structure()
 {
-    let source = format!("{SAME}def twin(a : Type, y : a) -> -F a {{ return y }}\n");
+    let source = format!("{SAME}def twin(a : Type, y : a) -> -F a = return y;\n");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert_eq!(
@@ -161,7 +161,7 @@ fn a_binder_of_an_implicit_s_type_mentions_no_parameter_1350()
 #[test]
 fn a_telescope_cycle_is_refused_naming_the_cycle()
 {
-    let source = "def tangled[a : b, b : a](x : a) -> -F a { return x }\n";
+    let source = "def tangled[a : b, b : a](x : a) -> -F a = return x;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(
@@ -763,7 +763,7 @@ fn a_standing_supply_opens_a_lambda_per_explicit_before_it_1498()
     // `g`'s type names `s`, so `swapAt[.g = …]` opens `λ s. λ t.`, `s`
     // outermost: the supply stands at the type binding `s` first and `v` at
     // `s`, and not at the one whose `v` is at `t`.
-    let swap = "def swapAt[g : (y : s) -> s](s : Type, t : Type, v : s) -> -F s { become g v }\n";
+    let swap = "def swapAt[g : (y : s) -> s](s : Type, t : Type, v : s) -> -F s = become g v;\n";
     // Whether every declaration checks with `standing` stated at `v : result`.
     let all_check = |result: &str| {
         let source = format!(
@@ -946,7 +946,7 @@ fn a_telescope_writes_its_model_implicit_as_one_slot_2364()
     // type it fixes.
     let source = format!(
         "{STEPPED}def fixed[s : Model(Counter) with sort C = Integer](c : Integer) -> -F \
-         Integer {{ s.read (s.incr (c + s.zero)) }}\n"
+         Integer = s.read (s.incr (c + s.zero));\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1041,7 +1041,7 @@ fn a_module_supplied_for_a_model_implicit_passes_its_members_739()
     );
     assert_checked(&module, &mut arena);
 
-    let source = format!("{STEPPED}def nowhere() -> -F Integer {{ stepped[.s = Nowhere] 4 }}\n");
+    let source = format!("{STEPPED}def nowhere() -> -F Integer = stepped[.s = Nowhere] 4;\n");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
@@ -1058,7 +1058,7 @@ fn an_omitted_model_implicit_nominates_a_hole_per_component_739()
 {
     // `stepped(4)` passes one hole per component, each naming the slot and
     // the modules that may answer it.
-    let source = format!("{STEPPED}def omitted() -> -F Integer {{ stepped 4 }}\n");
+    let source = format!("{STEPPED}def omitted() -> -F Integer = stepped 4;\n");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let holes = nominated_holes(&module, &arena, SurfaceName::from("omitted"));
@@ -1089,7 +1089,7 @@ fn the_holes_of_an_omitted_model_share_one_list_of_candidates_8284()
 {
     // The four holes of `stepped(4)` hold one list of the candidates' names,
     // and no hole holds a copy of its own.
-    let source = format!("{STEPPED}def omitted() -> -F Integer {{ stepped 4 }}\n");
+    let source = format!("{STEPPED}def omitted() -> -F Integer = stepped 4;\n");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let holes = nominated_holes(&module, &arena, SurfaceName::from("omitted"));
@@ -1215,7 +1215,7 @@ fn a_boolean_literal_forces_its_model_at_bool_3350()
     // as `3 == 3` does at `Integer`. No model in the prelude answers `Bool`,
     // so the call is unanswered, never ambiguous among the models at other
     // carriers.
-    let source = "def differ() -> Bool { true == false }\n";
+    let source = "def differ() -> Bool = true == false;\n";
     let (text, unit) = crate::prelude::lay(
         gandr_surface_syntax::SourceText::from(source),
         &crate::unit::Unit::single(),
@@ -1363,7 +1363,7 @@ fn a_model_implicit_supplied_by_a_value_is_refused_739()
     // A slot takes a module's name or a model implicit's, never a value: the
     // pack written out is refused naming the slot.
     let source = format!(
-        "{STEPPED}def packed() -> -F Integer {{ stepped[.s = pack Up at Model(Counter)] 4 }}\n"
+        "{STEPPED}def packed() -> -F Integer = stepped[.s = pack Up at Model(Counter)] 4;\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1377,7 +1377,7 @@ fn a_model_implicit_supplied_by_a_value_is_refused_739()
 }
 
 /// A line printed through the instance `out` its row names.
-const SAY: &str = "def say() -> -F [out : std.io.Console.Eff] Unit { out.print \"x\" }\n";
+const SAY: &str = "def say() -> -F [out : std.io.Console.Eff] Unit = out.print \"x\";\n";
 
 /// A handler of `Console` answering 1, around `body`.
 ///
@@ -1429,7 +1429,7 @@ fn a_row_label_naming_a_region_binder_is_its_instance_2271()
 {
     // `twin`'s labels name its region binders: they bind no parameter, and
     // every parameter it takes is written.
-    let source = "def twin[r : Region](x : Cap {print} at r) -> -F [r : std.io.Console.Eff] Unit { x.print \"x\" }\n";
+    let source = "def twin[r : Region](x : Cap {print} at r) -> -F [r : std.io.Console.Eff] Unit = x.print \"x\";\n";
     let mut arena = CoreArena::new();
     let text = hosting(source);
     let module = hosted(&text, &mut arena);

@@ -176,7 +176,7 @@ fn a_loop_body_ends_by_its_exits_or_runs_again()
 fn a_hole_ending_a_loop_body_is_left_to_be_filled()
 {
     let source =
-        format!("{PRELUDE}def holed(n : Nat) -> -F [Partial] Nat {{ loop {{ ?pending }} }}\n");
+        format!("{PRELUDE}def holed(n : Nat) -> -F [Partial] Nat = loop {{ ?pending }};\n");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("holed")));
@@ -577,7 +577,7 @@ fn a_loop_exit_off_every_loop_body_is_refused_by_name()
 fn a_loop_off_every_path_is_refused()
 {
     let source = format!(
-        "{PRELUDE}def nested(n : Nat) -> -F [Partial] Nat {{ return run loop {{ break(n) }} }}\n"
+        "{PRELUDE}def nested(n : Nat) -> -F [Partial] Nat = return run loop {{ break(n) }};\n"
     );
     let text = SourceText::from(source.as_str());
     let module = lowered(text, &mut CoreArena::new());

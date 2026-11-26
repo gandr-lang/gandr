@@ -601,7 +601,7 @@ fn a_world_named_where_none_is_declared_is_unresolved()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from("def lost() -> -F Integer { migrate [nowhere] { pure 1 } }\n"),
+        SourceText::from("def lost() -> -F Integer = migrate [nowhere] { pure 1 };\n"),
         &mut arena,
     );
     assert!(

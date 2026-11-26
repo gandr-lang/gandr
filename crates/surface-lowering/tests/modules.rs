@@ -2374,7 +2374,7 @@ fn a_sealed_atom_reads_the_identity_its_type_member_states()
 {
     let stated = |payload: &str| {
         format!(
-            "def rel(a : Integer, b : Integer) -> -F Type {{ return Integer }}\ndef refl(a : \
+            "def rel(a : Integer, b : Integer) -> -F Type = return Integer;\ndef refl(a : \
              Integer) -> -F Integer {{ return 0 }}\ndef law = 0;\nmodule M :> *{{ type T, seed : \
              T }} where {{ @[ identity({payload}) ] type T = Integer; def seed = 7; }}"
         )
@@ -3267,7 +3267,7 @@ fn a_type_member_names_a_computation_member_or_application_3089()
     );
 
     let early =
-        "module Forward where { type E = C; type C = -F Integer; def one() -> E { return 1 } }";
+        "module Forward where { type E = C; type C = -F Integer; def one() -> E = return 1; }";
     let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
         span: span_of(early, "C", 0_usize),
         head: span_of(early, "C", 0_usize),
@@ -3698,7 +3698,7 @@ fn a_nested_module_stated_at_a_non_record_type_is_the_wrong_sort()
 fn member_signature_attaches_and_wins_over_derived_function_type()
 {
     let source = "module M where { def f : +U (Integer -> -F Integer); def f(x : Integer) -> -F \
-                      Integer { return x } }";
+                      Integer = return x; }";
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -4749,8 +4749,8 @@ fn a_top_level_module_is_named_in_either_case_4529()
     for spelled in ["M", "Nat", "NatAdd", "m", "natAdd", "intadd", "io"] {
         let source = format!(
             "module {spelled} : *{{ type T = Integer, zero : T, add : +U[ω] (T -> T -> -F \
-                 T) }} where {{ def zero = 0; def add(x : Integer, y : Integer) -> -F Integer {{ return \
-                 x }} }}"
+                 T) }} where {{ def zero = 0; def add(x : Integer, y : Integer) -> -F Integer = return \
+                 x; }}"
         );
         let mut lowered = lower(source.as_str());
         assert_eq!(

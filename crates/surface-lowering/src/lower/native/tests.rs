@@ -423,7 +423,7 @@ fn reachable(
 fn an_annotation_at_a_statement_is_of_the_wrong_sort()
 {
     let source = alloc::format!(
-        "{MAYBE}def f(n : Integer) -> -F Integer {{ (None : Maybe(Integer)); return 1 }}\n"
+        "{MAYBE}def f(n : Integer) -> -F Integer = {{ (None : Maybe(Integer)); return 1 }};\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -903,7 +903,7 @@ fn a_definition_descends_on_the_parameter_its_cases_scrutinise()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec plus(m : Nat, n : Nat) -> -F Nat {{ match m {{ | Zero => return n | Succ(p) => plus[<] p (Succ n) }} }}\n"
+        "{NAT}def rec plus(m : Nat, n : Nat) -> -F Nat = match m {{ | Zero => return n | Succ(p) => plus[<] p (Succ n) }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("plus"));
@@ -987,7 +987,7 @@ fn a_varying_parameter_before_the_staged_one_is_a_leading_binder_626()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec count(acc : Nat, b : Nat) -> -F Nat {{ match b {{ | Zero => return acc | Succ(p) => count[<] (Succ acc) p }} }}\n"
+        "{NAT}def rec count(acc : Nat, b : Nat) -> -F Nat = match b {{ | Zero => return acc | Succ(p) => count[<] (Succ acc) p }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("count"));
@@ -1075,7 +1075,7 @@ fn a_rebuilt_argument_descends_on_the_same_position()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec halve(n : Nat) -> -F Nat {{ match n {{ | Zero => return Zero | Succ(m) => match m {{ | Zero => return Zero | Succ(q) => {{ let h = halve[<] (Succ q); return Succ h }} }} }} }}\n"
+        "{NAT}def rec halve(n : Nat) -> -F Nat = match n {{ | Zero => return Zero | Succ(m) => match m {{ | Zero => return Zero | Succ(q) => {{ let h = halve[<] (Succ q); return Succ h }} }} }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("halve"));
@@ -1098,7 +1098,7 @@ fn claims_under_cases_on_two_parameters_are_refused_by_name()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec both(m : Nat, n : Nat) -> -F Nat {{ match m {{ | Zero => match n {{ | Zero => return Zero | Succ(q) => both[<] m q }} | Succ(p) => both[<] p n }} }}\n"
+        "{NAT}def rec both(m : Nat, n : Nat) -> -F Nat = match m {{ | Zero => match n {{ | Zero => return Zero | Succ(q) => both[<] m q }} | Succ(p) => both[<] p n }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let start = source.rfind("both[<]").unwrap_or_default();
@@ -1229,7 +1229,7 @@ fn an_unapplied_claim_lowers_to_the_self_binder()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec loose(n : Nat) -> -F Nat {{ let held = loose[<]; return n }}\n"
+        "{NAT}def rec loose(n : Nat) -> -F Nat = {{ let held = loose[<]; return n }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("loose"));
@@ -1261,7 +1261,7 @@ fn a_definition_without_a_case_on_a_parameter_stages_its_last()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec count(n : Nat, m : Nat) -> -F Nat {{ let k = m; match k {{ | Zero => return n | Succ(p) => count[<] n p }} }}\n"
+        "{NAT}def rec count(n : Nat, m : Nat) -> -F Nat = {{ let k = m; match k {{ | Zero => return n | Succ(p) => count[<] n p }} }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("count"));
@@ -1782,7 +1782,7 @@ fn a_productive_call_is_the_whole_arm_of_a_copattern_block()
     let mut arena = CoreArena::new();
     let stream = "codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\n";
     let source = alloc::format!(
-        "{NAT}{stream}def rec upward(n : Nat, m : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => upward[>] m (Succ n)}} }}\n"
+        "{NAT}{stream}def rec upward(n : Nat, m : Nat) -> Stream(Nat) = &{{.head => return n, .tail => upward[>] m (Succ n)}};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("upward"));
@@ -3002,7 +3002,7 @@ fn an_untyped_let_reads_its_constructor_s_classifier_off_its_result_5050()
 fn an_untyped_let_of_a_parameterised_constructor_names_its_parameter_5050()
 {
     let mut arena = CoreArena::new();
-    let source = alloc::format!("{MAYBE}def kept() -> Maybe(Integer) {{ let x = Some 3; x }}\n");
+    let source = alloc::format!("{MAYBE}def kept() -> Maybe(Integer) = {{ let x = Some 3; x }};\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let refusal = refusal_of(&module, SurfaceName::from("kept"));
     let call = source.find("Some 3").unwrap_or_default();
@@ -3789,7 +3789,7 @@ fn a_pattern_variable_names_its_field_binder()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def first(m : Maybe(Integer)) -> -F Integer {{ match m {{ | Some(x) => return x | None => return 0 }} }}\n"
+        "{MAYBE}def first(m : Maybe(Integer)) -> -F Integer = match m {{ | Some(x) => return x | None => return 0 }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("first")));
@@ -3942,7 +3942,7 @@ fn a_match_without_an_answer_is_unannotated()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}def inner(c : Color) -> -F Integer {{ let n = match c {{ | Red => pure 0 | _ => pure 1 }}; return n }}\n"
+        "{COLOR}def inner(c : Color) -> -F Integer = {{ let n = match c {{ | Red => pure 0 | _ => pure 1 }}; return n }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(matches!(
@@ -4385,8 +4385,8 @@ fn an_as_pattern_names_its_match_with_a_name()
 {
     let mut arena = CoreArena::new();
     let source = listing(
-        "def whole(xs : List(Integer)) -> -F List(Integer) { match xs { | #[a, .._] @ all => \
-         return all | #[] => return #[] } }\n",
+        "def whole(xs : List(Integer)) -> -F List(Integer) = match xs { | #[a, .._] @ all => \
+         return all | #[] => return #[] };\n",
     );
     let module = listed(&source, &mut arena);
     let start = source.find("#[a, .._]").unwrap_or(0_usize);
@@ -4546,7 +4546,7 @@ fn a_match_of_no_arms_switches_on_empty_data_and_on_a_path()
     assert_accepted(&judged(&module, &mut arena));
 
     let mut arena = CoreArena::new();
-    let source = alloc::format!("{COLOR}def some(c : Color) -> -F Integer {{ match c {{}} }}\n");
+    let source = alloc::format!("{COLOR}def some(c : Color) -> -F Integer = match c {{}};\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
@@ -4725,7 +4725,7 @@ fn an_or_pattern_settles_each_alternative()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}def warm(c : Color) -> -F Integer {{ match c {{ | Red | Green => return 1 | Blue => return 0 }} }}\n"
+        "{COLOR}def warm(c : Color) -> -F Integer = match c {{ | Red | Green => return 1 | Blue => return 0 }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("warm")));
@@ -4777,8 +4777,8 @@ fn an_or_pattern_settles_each_alternative()
 fn a_binary_injection_pattern_is_kept_at_its_side()
 {
     let mut arena = CoreArena::new();
-    let source = "def not(b : +{Unit, Unit}) -> -F +{Unit, Unit} { match b { | +{.0 = u} => return \
-                  +{.1 = u} | +{.1 = u} => return +{.0 = u} } }\n";
+    let source = "def not(b : +{Unit, Unit}) -> -F +{Unit, Unit} = match b { | +{.0 = u} => return \
+                  +{.1 = u} | +{.1 = u} => return +{.0 = u} };\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("not")));
     let Maybe::Present(kept) = module.origins().case(root)
@@ -4811,7 +4811,7 @@ fn a_match_keeps_its_patterns_beside_its_tree()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def pick(m : Maybe(Integer)) -> -F Integer {{ match m {{ | Some(x) => return x | ? => return 0 }} }}\n"
+        "{MAYBE}def pick(m : Maybe(Integer)) -> -F Integer = match m {{ | Some(x) => return x | ? => return 0 }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("pick")));
@@ -4892,7 +4892,7 @@ fn a_leaf_keeps_its_arm_body_written()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def pick(m : Maybe(Integer), d : Integer) -> -F Integer {{ match m {{ | Some(x) => return x | None => return d }} }}\n"
+        "{MAYBE}def pick(m : Maybe(Integer), d : Integer) -> -F Integer = match m {{ | Some(x) => return x | None => return d }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("pick")));
@@ -4932,7 +4932,7 @@ fn a_relocated_annotation_keeps_its_bytes()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def forget(b : Type, m : Maybe(b)) -> -F Maybe(b) {{ match m {{ | Some(x) => return (None : Maybe(b)) | None => return m }} }}\n"
+        "{MAYBE}def forget(b : Type, m : Maybe(b)) -> -F Maybe(b) = match m {{ | Some(x) => return (None : Maybe(b)) | None => return m }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("forget")));
@@ -5039,7 +5039,7 @@ fn telescope_patterns_split_and_project()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def swapped(t : *{Integer, String}) -> -F Integer { match t { | *{a, b} => return b } }\n",
+            "def swapped(t : *{Integer, String}) -> -F Integer = match t { | *{a, b} => return b };\n",
         ),
         &mut arena,
     );
@@ -5053,7 +5053,7 @@ fn telescope_patterns_split_and_project()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def ragged(t : *{Integer, String}) -> -F Integer { match t { | *{a, b} => return a | *{a, b, c} => return a } }\n",
+            "def ragged(t : *{Integer, String}) -> -F Integer = match t { | *{a, b} => return a | *{a, b, c} => return a };\n",
         ),
         &mut arena,
     );
@@ -5068,7 +5068,7 @@ fn telescope_patterns_split_and_project()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def over(t : *{Integer, String}) -> -F Integer { match t { | *{a, b, c} => return a } }\n",
+            "def over(t : *{Integer, String}) -> -F Integer = match t { | *{a, b, c} => return a };\n",
         ),
         &mut arena,
     );
@@ -5878,7 +5878,7 @@ fn sum_patterns_case_on_the_stated_arity()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def unstated(n : Integer) -> -F Integer { match (+{.ok = n} : +{ok : Integer, err : String}) { | +{.ok = m} => return m | +{.err = s} => return 0 } }\n",
+            "def unstated(n : Integer) -> -F Integer = match (+{.ok = n} : +{ok : Integer, err : String}) { | +{.ok = m} => return m | +{.err = s} => return 0 };\n",
         ),
         &mut arena,
     );

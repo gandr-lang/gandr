@@ -835,14 +835,14 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
     let left_zero = |statement: &str| {
         format!(
             "{SIGN}module LeftZero : Model(CatShape) where {{\n  type Ob = Type;\n  type Hom(a : Ob, b \
-             : Ob) = Integer;\n  def id(a : Type) -> -F Hom a a {{ return 0 }}\n  def comp(a : \
-             Type, b : Type, c : Type, f : Hom a b, g : Hom b c) -> -F Hom a c {{ return f \
-             }}\n  def unitL(a : Type, b : Type, f : Hom a b) -> -F Path[.A = Hom a b](\
-             {statement}) {{ return Path.here f }}\n  def unitR(a : Type, b : Type, f : Hom a b) -> \
-             -F Path[.A = Hom a b](comp a b b f (id b), f) {{ return Path.here f }}\n  def assoc(a : \
+             : Ob) = Integer;\n  def id(a : Type) -> -F Hom a a = return 0;\n  def comp(a : \
+             Type, b : Type, c : Type, f : Hom a b, g : Hom b c) -> -F Hom a c = return f \
+             ;\n  def unitL(a : Type, b : Type, f : Hom a b) -> -F Path[.A = Hom a b](\
+             {statement}) = return Path.here f;\n  def unitR(a : Type, b : Type, f : Hom a b) -> \
+             -F Path[.A = Hom a b](comp a b b f (id b), f) = return Path.here f;\n  def assoc(a : \
              Type, b : Type, c : Type, d : Type, f : Hom a b, g : Hom b c, h : Hom c d) -> \
              -F Path[.A = Hom a d](comp a c d (comp a b c f g) h, comp a b d f (comp b \
-             c d g h)) {{ return Path.here f }}\n}}\n"
+             c d g h)) = return Path.here f;\n}}\n"
         )
     };
     let judged = |source: &str| {
@@ -900,7 +900,7 @@ fn a_constant_is_a_value_of_its_type_1226()
         "a value of the carrier gives the constant: {judgements:?}"
     );
 
-    let called = pointed("def z() -> -F Integer { return 0 }");
+    let called = pointed("def z() -> -F Integer = return 0;");
     let mut function = lower(called.as_str());
     let stated = super::declaration(&function, "Zero.z", Role::Witness).constant();
     let judgements = verdicts(&mut function);
@@ -923,7 +923,7 @@ fn an_operation_at_a_builtin_type_derives_it_1226()
         )
     };
 
-    let integer = counter("def read(n : Integer) -> -F Integer { return n }");
+    let integer = counter("def read(n : Integer) -> -F Integer = return n;");
     let mut lowered = lower(integer.as_str());
     let judgements = verdicts(&mut lowered);
     assert!(
@@ -934,7 +934,7 @@ fn an_operation_at_a_builtin_type_derives_it_1226()
         "an integer result gives the operation: {judgements:?}"
     );
 
-    let string = counter("def read(n : Integer) -> -F String { return \"n\" }");
+    let string = counter("def read(n : Integer) -> -F String = return \"n\";");
     let mut lowered = lower(string.as_str());
     let stated = super::declaration(&lowered, "Count.read", Role::Witness).constant();
     let judgements = verdicts(&mut lowered);
@@ -1587,7 +1587,7 @@ fn an_operation_is_selected_off_a_model_binder_2246()
     ];
     for (model, member, refusal, why) in cases {
         let source = format!(
-            "{counter}def selected(m : {model}) -> -F Integer {{ let c = m.{member} ; 0 }}\n"
+            "{counter}def selected(m : {model}) -> -F Integer = {{ let c = m.{member} ; 0 }};\n"
         );
         let found: Vec<_> = rows(&lower(source.as_str()))
             .into_iter()
@@ -2252,10 +2252,10 @@ fn a_model_writing_a_derived_rule_is_refused_naming_it_4106()
     let model = |module: &str, extra: &str| {
         format!(
             "module {module} : Model(Mon) with sort M = Integer where {{\n  def e = 0;\n  def mul(x : \
-             Integer, y : Integer) -> Integer {{ x }}\n{extra}}}\n"
+             Integer, y : Integer) -> Integer = x;\n{extra}}}\n"
         )
     };
-    let written = "  def assoc4(a : Integer) -> Integer { a }\n";
+    let written = "  def assoc4(a : Integer) -> Integer = a;\n";
     let source = format!(
         include_str!(
             "models/unformatted/a-model-writing-a-derived-rule-is-refused-naming-it-4106.gandr"

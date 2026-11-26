@@ -60,8 +60,8 @@ fn a_value_at_no_model_type_is_refused_4788()
 {
     // An integer parameter and a name nothing declares open no model.
     for (written, opened) in [
-        ("def f(n : Integer) -> Integer { module s = n; n }", "n"),
-        ("def g() -> Integer { module s = 7; 7 }", "7"),
+        ("def f(n : Integer) -> Integer = { module s = n; n };", "n"),
+        ("def g() -> Integer = { module s = 7; 7 };", "7"),
     ] {
         let source = alloc::format!("{SEEDED}{written}");
         let mut arena = CoreArena::new();
