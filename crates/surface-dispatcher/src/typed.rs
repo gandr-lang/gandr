@@ -9949,8 +9949,8 @@ mod tests
         ));
         let table = table(source);
         for (needle, subject, ty) in [
-            ("a.C, c", Subject::Binder, "Model Counter"),
-            ("a.C) ->", Subject::Binder, "Model Counter"),
+            ("a.C,\n", Subject::Binder, "Model Counter"),
+            ("a.C\n)", Subject::Binder, "Model Counter"),
             ("f.C)", Subject::Binder, "Model Counter with sort C = x"),
             (".C) -> -F x", Subject::Type, "Type"),
             (
@@ -9958,7 +9958,7 @@ mod tests
                 Subject::Binder,
                 "Model Counter with sort C = Integer",
             ),
-            (".C) -> -F Integer { c", Subject::Type, "Type"),
+            (".C) -> -F Integer = c", Subject::Type, "Type"),
         ] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),

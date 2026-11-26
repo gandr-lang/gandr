@@ -2873,9 +2873,9 @@ mod tests
             "```gandr\nn : Integer\n```\n\nThe first summand.",
         ));
         assert_eq!(shown(text, (2.into(), 2.into())), documented, "the binder");
-        assert_eq!(shown(text, (5.into(), 9.into())), documented, "a use");
+        assert_eq!(shown(text, (4.into(), 25.into())), documented, "a use");
         assert_eq!(
-            shown(text, (8.into(), 2.into())),
+            shown(text, (6.into(), 2.into())),
             Ok(String::from("```gandr\nk : Integer\n```")),
             "an undocumented parameter"
         );
