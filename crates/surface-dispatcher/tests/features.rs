@@ -95,9 +95,11 @@ mod sweeps
     }
 
     /// The head of every source that the sweep visits states the features
-    /// that the source uses. The sweep reads each directory of the corpus,
-    /// the ones that the other sweeps hold out too: a source of the features
-    /// ledger declares its features as each other source does.
+    /// that the source uses. The sweep reads each directory of the fixture
+    /// root, the ones that the other sweeps hold out too: a source of the
+    /// features ledger declares its features as each other source does. It
+    /// reads no source of the strict root: those sources are fixtures of
+    /// the corpus crate, and none of them declares its features.
     ///
     /// # Specification
     /// trivial.
@@ -107,8 +109,13 @@ mod sweeps
         roots.fixture.held_out = &[];
         let sweep = portion(Sweep::under(&roots).expect("the run's sweep resolves"));
         eprintln!("{}", sweep.rotation());
-        let visited =
-            sweep.visit_rotating(SAMPLE, NIGHTS, &roots.sources().expect("the corpus reads"));
+        let declared: Vec<_> = roots
+            .sources()
+            .expect("the corpus reads")
+            .into_iter()
+            .filter(|source| source.name.as_ref().starts_with(roots.fixture.prefix))
+            .collect();
+        let visited = sweep.visit_rotating(SAMPLE, NIGHTS, &declared);
         assert!(
             visited.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
