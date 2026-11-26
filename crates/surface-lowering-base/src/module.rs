@@ -4349,13 +4349,8 @@ pub fn collect_source<'source>(
         if head.as_ref().is_none_or(|open| open.source != source) {
             // The strays of the source before this one are filed, so the
             // slot after them is the first this source can admit.
-            if let Some(mut closed) = head.take()
-                && let Some(stray) = collector.decorate_source(&mut closed)
-            {
-                items_refused = true;
-                first_stray.get_or_insert(stray.refusal);
-                filed = filed.saturating_add(1);
-                collector.refuse_stray(stray);
+            if let Some(mut closed) = head.take() {
+                collector.decorate_source(&mut closed);
             }
             head = Some(SourceHead {
                 source,
@@ -4614,12 +4609,6 @@ pub fn collect_source<'source>(
     for module in implied.into_iter().rev() {
         collector.close(module, &[])?;
     }
-    if let Some(mut closed) = head.take()
-        && let Some(stray) = collector.decorate_source(&mut closed)
-    {
-        items_refused = true;
-        strays.push(stray);
-    }
     if let Some(&block) = decorations.first()
         && let Some(refusal) = strayed(collector.module_child(block))?
     {
@@ -4641,6 +4630,11 @@ pub fn collect_source<'source>(
         first_stray.get_or_insert(stray.refusal);
         filed = filed.saturating_add(1);
         collector.refuse_stray(stray);
+    }
+    // Each stray of the source is filed, so the head of a source whose one
+    // item is refused whole decorates the slot of that item.
+    if let Some(mut closed) = head.take() {
+        collector.decorate_source(&mut closed);
     }
     // A source that declares nothing, not even an item out of the fragment, is
     // no list of declarations: its first stray refuses it whole.
@@ -5051,19 +5045,23 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: each root child of the source `head` is open for is
-    ///   collected, and each stray of it but the last child's is filed.
+    ///   collected, and each stray of it is filed.
     /// - ensures: with no inner block nothing changes; otherwise the source's
     ///   attributes are kept with the slots the source admitted, under the
     ///   first block, and the blocks are owned by the first of those slots; a
-    ///   source that admits no slot decorates nothing, and its first inner
-    ///   block is the stray this answers.
+    ///   source that admits no slot, such as one of imports alone, admits one
+    ///   held slot at its first inner block, which carries the refusal of an
+    ///   attribute of the head.
     /// - provides: the closing half of [`Self::source_block`].
-    /// - fails: never; the refusal is the stray's.
+    /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::source_block`].
+    /// - hypothesis: L3 — as [`Self::source_block`]; a source of one import
+    ///   with a head attribute that names no registered attribute is refused at
+    ///   that attribute, and one with a registered attribute lowers.
     /// - witness: `gandr-surface-lowering::lower::exits::tests::an_inner_attribute_decorates_its_source`
+    /// - witness: `gandr-surface-lowering::tests::modules::the_head_of_a_source_of_imports_takes_attributes`
     #[spec(
         captures: before = self.collected.decorated.len(),
         ensures: self.collected.decorated.len() <= before.saturating_add(1),
@@ -5071,19 +5069,20 @@ impl<'source> Collector<'_, 'source>
     fn decorate_source(
         &mut self,
         head: &mut SourceHead<'source>,
-    ) -> Option<Stray<'source>>
+    )
     {
         let blocks = core::mem::take(&mut head.blocks);
         let attributes = core::mem::take(&mut head.inner);
-        let &block = blocks.first()?;
-        let end = SlotIndex(self.collected.slots.len());
-        if head.first == end {
-            return Some(Stray::of(
-                block,
-                misplaced_in(FormName::ROOT, block.span),
-                Vec::new(),
-            ));
+        let Some(&block) = blocks.first()
+        else {
+            return;
+        };
+        if head.first == SlotIndex(self.collected.slots.len()) {
+            let name = first_token(self.tree, block.node);
+            let top = self.collected.top(block.span.start());
+            let _held = self.held(top, name, block, block);
         }
+        let end = SlotIndex(self.collected.slots.len());
         for written in &blocks {
             self.collected.own(written.node, head.first);
         }
@@ -5093,8 +5092,6 @@ impl<'source> Collector<'_, 'source>
             first: head.first,
             end,
         });
-
-        None
     }
 
     /// File `stray`, a root child that is no declaration, as the one held

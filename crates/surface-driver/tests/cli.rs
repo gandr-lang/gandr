@@ -2450,37 +2450,55 @@ fn features_writes_the_declaration_of_each_source()
     assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));
 }
 
-/// `gandr features --write` writes no source whose head the lowering does not
-/// file: a source of one import admits no declaration, so its head takes no
-/// attribute. The source is a fault on standard error, its text stands, and
-/// the run exits two.
+/// `gandr features --write` writes the declaration of a source that admits
+/// no declaration: a source of one import. A second run leaves the source,
+/// and `gandr check` refuses the source when its head declares a different
+/// feature.
 #[test]
-fn features_leaves_a_source_whose_head_takes_no_attribute()
+fn features_writes_a_source_of_imports()
 {
-    let scratch = Scratch::new(Path::new("features-unfiled"));
+    let scratch = Scratch::new(Path::new("features-imports"));
     let imported = scratch.0.join("one.gandr");
     let importer = scratch.0.join("importer.gandr");
-    let text = "import \"./one.gandr\" as one;\n";
+    let import = "import \"./one.gandr\" as one;\n";
     std::fs::write(&imported, "def one() -> Integer = 1;\n")
         .expect("the scratch source is written");
-    std::fs::write(&importer, text).expect("the scratch source is written");
+    std::fs::write(&importer, import).expect("the scratch source is written");
 
     let wrote = ran(gandr(&[
         Path::new("features"),
         Path::new("--write"),
         &importer,
     ]));
-    assert_eq!(code(&wrote), Code(2_i32), "{}", stderr(&wrote));
-    assert!(
-        stderr(&wrote).starts_with(&format!("gandr: {}: not written: ", importer.display())),
-        "{}",
-        stderr(&wrote)
-    );
-    assert_eq!(stdout(&wrote), "", "no source is written");
+    assert_eq!(code(&wrote), Code(0_i32), "{}", stderr(&wrote));
     assert_eq!(
         std::fs::read_to_string(&importer).expect("the source is read back"),
-        text,
-        "the text of the source stands"
+        format!("@![features(\"imports\")]\n\n{import}"),
+        "the head of the source has the declaration"
+    );
+
+    let again = ran(gandr(&[
+        Path::new("features"),
+        Path::new("--write"),
+        &importer,
+    ]));
+    assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
+    assert_eq!(stdout(&again), "", "a second run writes nothing");
+
+    let checked = ran(gandr(&[Path::new("check"), &importer]));
+    assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));
+
+    std::fs::write(
+        &importer,
+        format!("@![features(\"deprecation\")]\n\n{import}"),
+    )
+    .expect("the scratch source is written");
+    let refused = ran(gandr(&[Path::new("check"), &importer]));
+    assert_eq!(code(&refused), Code(1_i32), "{}", stdout(&refused));
+    assert!(
+        stdout(&refused).contains("error[FeatureUndeclared]"),
+        "{}",
+        stdout(&refused)
     );
 }
 

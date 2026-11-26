@@ -377,14 +377,12 @@ fn read_features<'census>(
 /// - provides: the proof that a write is one that a second run leaves.
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — the answer is a lowering; the CLI witness holds both
-///   answers.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — four sources with a declaration are written, and a source
-///   of one import is a fault with its text unchanged.
-/// - witness: `gandr-surface-driver::tests::cli::features_writes_the_declaration_of_each_source`
-/// - witness: `gandr-surface-driver::tests::cli::features_leaves_a_source_whose_head_takes_no_attribute`
+/// - hypothesis: L3 — one source, with the declaration that it uses at its head
+///   and with no declaration, and a source of tier zero with no attribute; the
+///   first and the last are read back.
+/// - witness: `features::tests::a_write_is_one_that_the_lowering_reads_back`
 ///
 /// # Cost
 /// - time: one parse and one lowering, for a source that the census writes
@@ -544,8 +542,45 @@ fn removal(
 #[cfg(test)]
 mod tests
 {
+    use std::path::Path;
+
+    use gandr_surface_grammar::built_in;
+
     use super::Declaration;
+    use super::reads_back;
     use super::rewritten;
+
+    #[test]
+    fn a_write_is_one_that_the_lowering_reads_back()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let path = Path::new("scratch/one.gandr");
+        let used = Declaration(Vec::from(["deprecation"]));
+        let body = "@[deprecated] def one() -> Integer = 1;\n";
+
+        assert!(
+            reads_back(
+                &grammar,
+                path,
+                &format!("@![features(\"deprecation\")]\n\n{body}"),
+                &used
+            ),
+            "the head states the declaration"
+        );
+        assert!(
+            !reads_back(&grammar, path, body, &used),
+            "the head states nothing"
+        );
+        assert!(
+            reads_back(
+                &grammar,
+                path,
+                "def one() -> Integer = 1;\n",
+                &Declaration(Vec::new())
+            ),
+            "a source of tier zero has no attribute"
+        );
+    }
 
     #[test]
     fn a_declaration_is_spelled_as_its_source_writes_it()

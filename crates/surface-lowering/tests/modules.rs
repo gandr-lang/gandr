@@ -2185,6 +2185,57 @@ fn a_source_is_refused_for_a_feature_that_it_does_not_declare()
     );
 }
 
+/// The head of a source that admits no declaration takes attributes: the
+/// attribute `features` is filed on the source, and an attribute that is
+/// refused refuses the one held slot of the head.
+#[test]
+fn the_head_of_a_source_with_no_declaration_takes_attributes()
+{
+    let declared = "@![features(\"modules\")]";
+    let lowered = lower(declared);
+    assert!(
+        lowered
+            .module
+            .declarations()
+            .iter()
+            .all(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_))),
+        "the head is refused nowhere: {:?}",
+        lowered.module.declarations()
+    );
+    let table = lowered.module.attributes();
+    let [source] = *table.sources()
+    else {
+        panic!("the source is kept one time: {:?}", table.sources());
+    };
+    assert!(
+        matches!(*table.entries(source), [ref entry] if entry.name().as_ref() == "features"),
+        "the source holds its one attribute: {:?}",
+        table.entries(source)
+    );
+
+    let unknown = "@![nonesuch]";
+    let lowered = lower(unknown);
+    let refused: Vec<_> = lowered
+        .module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some(refusal)
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        matches!(*refused.as_slice(), [
+            LoweringRefusal::UnknownAttribute { .. }
+        ]),
+        "the one slot of the head carries the refusal of its attribute: {refused:?}"
+    );
+}
+
 #[test]
 fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
 {
