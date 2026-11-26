@@ -556,26 +556,32 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let path = Path::new("scratch/one.gandr");
         let used = Declaration(Vec::from(["deprecation"]));
-        let body = "@[deprecated] def one() -> Integer = 1;\n";
 
         assert!(
             reads_back(
                 &grammar,
                 path,
-                &format!("@![features(\"deprecation\")]\n\n{body}"),
+                include_str!(
+                    "features/fixtures/a-deprecated-definition-under-its-declaration.gandr"
+                ),
                 &used
             ),
             "the head states the declaration"
         );
         assert!(
-            !reads_back(&grammar, path, body, &used),
+            !reads_back(
+                &grammar,
+                path,
+                include_str!("features/fixtures/a-deprecated-definition.gandr"),
+                &used
+            ),
             "the head states nothing"
         );
         assert!(
             reads_back(
                 &grammar,
                 path,
-                "def one() -> Integer = 1;\n",
+                include_str!("features/fixtures/a-definition-of-tier-zero.gandr"),
                 &Declaration(Vec::new())
             ),
             "a source of tier zero has no attribute"

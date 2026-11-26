@@ -1,0 +1,4 @@
+@![features("deprecation")]
+
+@[deprecated]
+def one() -> Integer = 1;
