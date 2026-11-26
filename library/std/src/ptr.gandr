@@ -26,37 +26,37 @@ import std.list (List)
 /// the block `Ptr`.
 pub theory Ptr.Eff where
   /// An address.
-  sort A : Type+;
+  sort A : Type+
   /// A word of 8 bits.
-  sort W8 : Type+;
+  sort W8 : Type+
   /// A word of 16 bits.
-  sort W16 : Type+;
+  sort W16 : Type+
   /// A word of 32 bits.
-  sort W32 : Type+;
+  sort W32 : Type+
   /// A word of 64 bits.
-  sort W64 : Type+;
+  sort W64 : Type+
   /// The carrier, the answer of the handler.
-  sort C : Type;
+  sort C : Type
   /// The byte at `address`.
-  oper load8 : (address : A, k : pi+ (word : W8). C) --> C;
+  oper load8 : (address : A, k : pi+ (word : W8). C) --> C
   /// The word of 16 bits at `address`.
-  oper load16 : (address : A, k : pi+ (word : W16). C) --> C;
+  oper load16 : (address : A, k : pi+ (word : W16). C) --> C
   /// The word of 32 bits at `address`.
-  oper load32 : (address : A, k : pi+ (word : W32). C) --> C;
+  oper load32 : (address : A, k : pi+ (word : W32). C) --> C
   /// The word of 64 bits at `address`.
-  oper load64 : (address : A, k : pi+ (word : W64). C) --> C;
+  oper load64 : (address : A, k : pi+ (word : W64). C) --> C
   /// Put the byte `word` at `address`.
-  oper store8 : (address : A, word : W8, k : C) --> C;
+  oper store8 : (address : A, word : W8, k : C) --> C
   /// Put the word `word` of 16 bits at `address`.
-  oper store16 : (address : A, word : W16, k : C) --> C;
+  oper store16 : (address : A, word : W16, k : C) --> C
   /// Put the word `word` of 32 bits at `address`.
-  oper store32 : (address : A, word : W32, k : C) --> C;
+  oper store32 : (address : A, word : W32, k : C) --> C
   /// Put the word `word` of 64 bits at `address`.
-  oper store64 : (address : A, word : W64, k : C) --> C;
+  oper store64 : (address : A, word : W64, k : C) --> C
   /// The address `distance` bytes after `address`.
-  oper offset : (address : A, distance : W32, k : pi+ (place : A). C) --> C;
+  oper offset : (address : A, distance : W32, k : pi+ (place : A). C) --> C
   /// The word of 64 bits whose low byte is `byte`, with zeros above it.
-  oper byte_word : (byte : W8, k : pi+ (word : W64). C) --> C;
+  oper byte_word : (byte : W8, k : pi+ (word : W64). C) --> C
 
 /// The memory of `Extent`: the address of its first byte, and its bytes.
 pub data Memory : Type where
@@ -164,7 +164,7 @@ def store(
 /// `Outside`, and no access changes a byte outside the one it names.
 pub module Extent : Model(Ptr.Eff) with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 where
   /// The carrier: a run from the memory before to its end.
-  type C = Memory -> Ended;
+  type C = Memory -> Ended
   /// The byte at `address`.
   def load8(address : u64, k : u8 -> (Memory -> Ended)) -> Memory -> Ended =
     fun (memory) { load "load8" 1 address (fun (v) { k (u8.from_integer v) }) memory }

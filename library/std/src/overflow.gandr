@@ -26,8 +26,8 @@ pub data Reason : Type where
 /// The overflow of an operation. Its one operation passes no continuation.
 pub theory Overflow.Eff where
   /// The reason, which a scope fixes to `Reason`.
-  sort R : Type+;
+  sort R : Type+
   /// The carrier, the answer of the handler.
-  sort C : Type;
+  sort C : Type
   /// The operation has no answer of its width, for `reason`.
-  oper overflow : (reason : R) --> C;
+  oper overflow : (reason : R) --> C

@@ -37,15 +37,15 @@
 /// never holds it.
 pub theory Site where
   /// The public key the site proves, 64 hexadecimal digits.
-  oper key : String;
+  oper key : String
   /// The sockets the site binds and a dialer reaches, each `ip:port`. They
   /// form one line of `,`-separated entries until an operation's port can be
   /// a list. Empty when a dialer finds the site by its key alone, over
   /// multicast DNS.
-  oper sockets : String;
+  oper sockets : String
   /// The name of the key's secret, which the hosting process reads as 64
   /// hexadecimal digits.
-  oper secret : String;
+  oper secret : String
 
 /// The binding of a program's worlds onto sites: the program it deploys,
 /// beside the `placements` its file lists. The file lists them as
@@ -54,7 +54,7 @@ pub theory Site where
 pub theory Manifold where
   /// The program the manifold deploys: the path of its source, as the
   /// manifold's file writes it.
-  oper artifact : String;
+  oper artifact : String
 
 /// One world of the program bound to a site, the site's model as its file
 /// exports it: `At("far", far.site)`. The manifold imports each site's file,

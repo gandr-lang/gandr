@@ -30,16 +30,16 @@ pub def isEmpty(s : String) -> Bool =
 @[normalizes("concat(concat(empty, empty), concat(empty, empty)) ~> empty")]
 pub theory Strings where
   /// The strings, as the sort the laws range over.
-  sort S : Type;
+  sort S : Type
 
   /// The empty string, `std.string`'s `empty`.
-  oper empty : S;
+  oper empty : S
   /// The join of two strings, `std.string`'s `concat`.
-  oper concat : (a : S, b : S) --> S;
+  oper concat : (a : S, b : S) --> S
 
   /// The empty string on the left of a join leaves the other string.
-  rule unitLeft : concat empty s <=> s;
+  rule unitLeft : concat empty s <=> s
   /// The empty string on the right of a join leaves the other string.
-  rule unitRight : concat s empty <=> s;
+  rule unitRight : concat s empty <=> s
   /// Joining is associative: a join of three strings is one string.
-  rule assoc : concat (concat x y) z <=> concat x (concat y z);
+  rule assoc : concat (concat x y) z <=> concat x (concat y z)

@@ -53,7 +53,7 @@
 pub theory Versioned where {
   /// The version, as a package's manifest records it.
   @[inert]
-  oper version : String;
+  oper version : String
 }
 
 /// What a package and a workspace ask of the toolchain that checks them.
@@ -64,20 +64,20 @@ pub theory Versioned where {
 pub theory Toolchain where
   /// The least language version the sources target, `>= 0.3`, or empty for
   /// any.
-  oper gandr : String;
+  oper gandr : String
   /// The features the sources use, each a feature's key in gandr's features
   /// ledger, which the toolchain implements whole or in part.
-  oper features : String;
+  oper features : String
   /// The systems the package builds on, each `<architecture>-<os>` as
   /// `x86_64-linux`, or empty for any.
-  oper systems : String;
+  oper systems : String
 
 /// What a package and a workspace both state: the version they release at
 /// and what they ask of the toolchain. `Gandr.Package` and `Gandr.Workspace`
 /// include it, so each takes the two theories it joins once.
 pub theory Project where
-  include Versioned;
-  include Toolchain;
+  include Versioned
+  include Toolchain
 
 /// How a package's sources look: the `[presentation]` table of its
 /// `package.gandr.toml`. The user's configuration file writes the same
@@ -88,7 +88,7 @@ pub theory Presentation where {
   /// The spelling a construct with a glyph takes, `unicode` or `ascii`, or
   /// empty to leave the reader's own.
   @[inert]
-  oper spelling : String;
+  oper spelling : String
 }
 
 /// A package: the project a `package.gandr` roots. The model its
@@ -98,31 +98,31 @@ pub theory Presentation where {
 /// and its presentation
 /// leave its address alone. What it asks of the toolchain does not.
 pub theory Gandr.Package where {
-  include Project;
-  include Presentation;
+  include Project
+  include Presentation
   /// The package's name, which the manifest records it by.
   @[inert]
-  oper name : String;
+  oper name : String
   /// Who wrote the package, as one line, `Name <address>, Name <address>`: a
   /// list once an operation's port can be one.
   @[inert]
-  oper authors : String;
+  oper authors : String
   /// The package's licence, an SPDX expression.
   @[inert]
-  oper licence : String;
+  oper licence : String
   /// Where a reader finds the package's documentation.
   @[inert]
-  oper documentation : String;
+  oper documentation : String
   /// The address a resolver may try first to fetch the package.
   @[inert]
-  oper endpoint : String;
+  oper endpoint : String
   /// The directory the package's modules sit under, a `/`-separated path
   /// from the package's root, `src`. The source `greet.gandr` in its `text`
   /// directory is the module `text.greet`. Discovery reads it as the string
   /// the model writes, before any source is checked, so the model states it as
   /// a string literal.
   @[inert]
-  oper sources : String;
+  oper sources : String
 }
 
 /// A workspace: the packages a `workspace.gandr` gathers, described by the
@@ -131,14 +131,14 @@ pub theory Gandr.Package where {
 /// workspace from this model. Its members' package sources import it and read
 /// what it states.
 pub theory Gandr.Workspace where
-  include Project;
+  include Project
 
 /// A module of a package: a source below its package source. Its path from the
 /// package's root names it, with `.` between segments, as `text.greet`. The
 /// manifest lists each in `modules`. No source declares a model of it yet.
 pub theory Gandr.Module where
   /// The module's path, with `.` between its segments.
-  oper path : String;
+  oper path : String
 
 /// The sort of a model's entry: a code for each type the encoder writes, and
 /// one for any other sort.

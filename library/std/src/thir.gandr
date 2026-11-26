@@ -56,69 +56,69 @@ pub data Expr(f : Type) : Type where
 @[normalizes("body(ret(call(identity, cond(param, lit(succ(zero)), ret(lit(zero))))), ff, bind v . post(v)) ~> post(int(zero))")]
 pub theory Thir.Wp where
   /// A natural number, which a literal carries.
-  sort Num : Type;
+  sort Num : Type
   /// A value the fragment computes, which a continuation binds.
-  sort Val : Type+;
+  sort Val : Type+
   /// A THIR value expression.
-  sort Exp : Type;
+  sort Exp : Type
   /// An item of the crate, which a call names.
-  sort Fun : Type;
+  sort Fun : Type
   /// A precondition, which each transformer computes.
-  sort Pre : Type;
+  sort Pre : Type
   /// The number zero.
-  oper zero : Num;
+  oper zero : Num
   /// The number after `n`.
-  oper succ : (n : Num) --> Num;
+  oper succ : (n : Num) --> Num
   /// The integer value `n`.
-  oper int : (n : Num) --> Val;
+  oper int : (n : Num) --> Val
   /// The boolean true.
-  oper tt : Val;
+  oper tt : Val
   /// The boolean false.
-  oper ff : Val;
+  oper ff : Val
   /// The integer literal `n`.
-  oper lit : (n : Num) --> Exp;
+  oper lit : (n : Num) --> Exp
   /// The function's parameter, read.
-  oper param : Exp;
+  oper param : Exp
   /// The conditional that runs `t` when `c` is true and `f` when it is false.
-  oper cond : (c : Exp, t : Exp, f : Exp) --> Exp;
+  oper cond : (c : Exp, t : Exp, f : Exp) --> Exp
   /// A `return` of the value of `e`.
-  oper ret : (e : Exp) --> Exp;
+  oper ret : (e : Exp) --> Exp
   /// The item `g` called at the argument `e`.
-  oper call : (g : Fun, e : Exp) --> Exp;
+  oper call : (g : Fun, e : Exp) --> Exp
   /// `identity`, an item a call names.
-  oper identity : Fun;
+  oper identity : Fun
   /// The caller's postcondition at the value `v`.
-  oper post : (v : Val) --> Pre;
+  oper post : (v : Val) --> Pre
   /// The precondition `t` or `f` that the value `v` picks.
-  oper branch : (v : Val, t : Pre, f : Pre) --> Pre;
+  oper branch : (v : Val, t : Pre, f : Pre) --> Pre
   /// What `e` needs at the parameter `x` to end in `k` or return into `r`.
-  oper vexpr : (e : Exp, x : Val, k : pi+ (v : Val). Pre, r : pi+ (v : Val). Pre) --> Pre;
+  oper vexpr : (e : Exp, x : Val, k : pi+ (v : Val). Pre, r : pi+ (v : Val). Pre) --> Pre
   /// What a call of `g` at the argument `v` needs to continue in `k`.
-  oper wpfn : (g : Fun, v : Val, k : pi+ (w : Val). Pre) --> Pre;
+  oper wpfn : (g : Fun, v : Val, k : pi+ (w : Val). Pre) --> Pre
   /// What the function body `e` needs at the argument `v` to answer `k`.
-  oper body : (e : Exp, v : Val, k : pi+ (w : Val). Pre) --> Pre;
+  oper body : (e : Exp, v : Val, k : pi+ (w : Val). Pre) --> Pre
   /// A literal ends at its integer.
-  rule literal : vexpr (lit n) x k r ==> k (int n);
+  rule literal : vexpr (lit n) x k r ==> k (int n)
   /// Reading the parameter ends at its value.
-  rule read : vexpr param x k r ==> k x;
+  rule read : vexpr param x k r ==> k x
   /// A conditional evaluates its condition, then branches on the value.
   rule conditional : vexpr (cond c t f) x k r ==> vexpr
     c
     x
     (bind v. (branch v (vexpr t x k r) (vexpr f x k r)))
-    r;
+    r
   /// True picks the first arm.
-  rule yes : branch tt t f ==> t;
+  rule yes : branch tt t f ==> t
   /// False picks the second arm.
-  rule no : branch ff t f ==> f;
+  rule no : branch ff t f ==> f
   /// A `return` sends its operand's value to the return continuation.
-  rule returned : vexpr (ret e) x k r ==> vexpr e x r r;
+  rule returned : vexpr (ret e) x k r ==> vexpr e x r r
   /// A call evaluates its argument, then needs the callee's transformer
   /// at its value.
-  rule called : vexpr (call g e) x k r ==> vexpr e x (bind v. (wpfn g v k)) r;
+  rule called : vexpr (call g e) x k r ==> vexpr e x (bind v. (wpfn g v k)) r
   /// A function's guard runs its body as a return that reaches
   /// the caller's continuation.
-  rule guarded : body e v k ==> vexpr (ret e) v k k;
+  rule guarded : body e v k ==> vexpr (ret e) v k k
 
 /// The arm a condition's value picks; an integer condition needs
 /// what nothing meets.

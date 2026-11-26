@@ -47,25 +47,25 @@ pub def read_line(console : Cap { read_line }) -> [std.io.Stdin.Eff] String =
 /// The close is `close_file`, because `close` is the keyword of a session.
 pub theory Io.Eff where
   /// A file, as the model names one.
-  sort F : Type+;
+  sort F : Type+
   /// A buffer, as the model holds one: a list of bytes, or an address and a
   /// length.
-  sort B : Type+;
+  sort B : Type+
   /// A count of bytes.
-  sort N : Type+;
+  sort N : Type+
   /// The completion of a read or a write: an endpoint that gives the count
   /// and the buffer.
-  sort D : Type+;
+  sort D : Type+
   /// The completion of a close: an endpoint that gives the status.
-  sort E : Type+;
+  sort E : Type+
   /// The carrier, the answer of the handler.
-  sort C : Type;
+  sort C : Type
   /// Read from `file` into the start of `buffer`, at most its length.
-  oper read : (file : F, buffer : B, k : pi+ (done : D). C) --> C;
+  oper read : (file : F, buffer : B, k : pi+ (done : D). C) --> C
   /// Write the first `count` bytes of `buffer` to `file`.
-  oper write : (file : F, buffer : B, count : N, k : pi+ (done : D). C) --> C;
+  oper write : (file : F, buffer : B, count : N, k : pi+ (done : D). C) --> C
   /// Close `file`.
-  oper close_file : (file : F, k : pi+ (done : E). C) --> C;
+  oper close_file : (file : F, k : pi+ (done : E). C) --> C
 
 /// The completion of a read or a write under `Scripted`, as the program holds
 /// it: it gives the count, then the buffer back, and it ends.
@@ -128,7 +128,7 @@ def rec joined(first : List u8, second : List u8) -> List u8 =
 /// the completion and ends.
 pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut where
   /// The carrier: a run from the tape before to the tape after.
-  type C = Tape -> Tape;
+  type C = Tape -> Tape
   /// A read of the file 0 places the first bytes of the input over the start
   /// of the buffer, as many as the buffer holds, and takes them from the
   /// input. Its count is the number of those bytes: 0 at the end of the

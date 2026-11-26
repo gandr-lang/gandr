@@ -22,17 +22,17 @@
 /// product, and their order.
 pub theory Grade where
   /// The grades.
-  sort G : Type;
+  sort G : Type
   /// The grade of no use.
-  oper zero : G;
+  oper zero : G
   /// The grade of one use.
-  oper one : G;
+  oper one : G
   /// The grade of two uses, one beside the other.
-  oper plus : (a : G, b : G) --> G;
+  oper plus : (a : G, b : G) --> G
   /// The grade of a use repeated as often as another grade says.
-  oper times : (a : G, b : G) --> G;
+  oper times : (a : G, b : G) --> G
   /// Whether `a` is at most `b`: whether `b` covers `a`.
-  oper le : (a : G, b : G) --> Bool;
+  oper le : (a : G, b : G) --> Bool
 
 /// How often a program uses a value: not at all, once, or any number of times.
 pub data Use : Type where
@@ -47,11 +47,11 @@ pub data Use : Type where
 /// as linear types order them.
 pub module Usage : Model(Grade) where
   /// The grades: uses.
-  type G = Use;
+  type G = Use
   /// Unused.
-  def zero = Unused;
+  def zero = Unused
   /// Once.
-  def one = Once;
+  def one = Once
   /// Unused beside anything is that thing. Any two uses are many.
   def plus(a : Use, b : Use) -> Use =
     match a where
@@ -171,17 +171,17 @@ def leNat(a : Nat, b : Nat) -> Bool =
 /// Counting: the naturals under sum and product, in their order.
 pub module Count : Model(Grade) where
   /// The grades: naturals.
-  type G = Nat;
+  type G = Nat
   /// Zero.
-  def zero = Zero;
+  def zero = Zero
   /// One.
-  def one = Positive One;
+  def one = Positive One
   /// The sum.
-  def plus(a : Nat, b : Nat) -> Nat = addNat a b;
+  def plus(a : Nat, b : Nat) -> Nat = addNat a b
   /// The product.
-  def times(a : Nat, b : Nat) -> Nat = mulNat a b;
+  def times(a : Nat, b : Nat) -> Nat = mulNat a b
   /// The order.
-  def le(a : Nat, b : Nat) -> Bool = leNat a b;
+  def le(a : Nat, b : Nat) -> Bool = leNat a b
 
 /// Usage, as an algebra a reader takes.
 pub def usage : Model Grade = pack Usage at Model Grade
