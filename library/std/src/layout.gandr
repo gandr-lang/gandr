@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 // `std.layout`: Rust's default layout as a program over codes. A type's code
 // lists its fields' scalars for a struct, or its variants' fields for an
 // enum. The program places them as rustc places a `repr(Rust)` type.

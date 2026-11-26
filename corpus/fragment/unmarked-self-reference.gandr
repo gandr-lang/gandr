@@ -1,3 +1,5 @@
+@![features(("corecursion", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // A recursive definition marks each call to itself: `f[<]` descends, `f[>]`
 // produces, and an unmarked call is refused.
 //

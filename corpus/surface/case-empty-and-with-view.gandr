@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "explicit-exits", "imports", "let-statements", "native-lists", "pattern-matching"))]
+
 // An empty case and a case read through a view.
 //
 // A value of an empty type never arrives, so its case needs no arm. A view

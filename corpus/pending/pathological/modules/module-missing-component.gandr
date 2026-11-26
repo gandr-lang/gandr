@@ -1,1 +1,3 @@
+@![features("modules")]
+
 module Bad : *{present : Integer, absent : Integer} where { def present = 1; }

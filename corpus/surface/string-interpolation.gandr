@@ -1,3 +1,5 @@
+@![features(("let-statements", "records"))]
+
 // A string interpolates `${ e }`: its text and each interpolated string are
 // appended in written order by the prelude's `string.append`. An interpolation
 // reads a `String`; no other value is formatted into one.

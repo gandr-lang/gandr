@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "explicit-exits", "for-loops", "imports", "let-statements", "loops", "modules", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "records", "thunks-and-force", "universes"))]
+
 // Loops and their exits. A `loop` or a `while` may run forever, so the
 // function holding one states `Partial` in its row, `-F [Partial] T`: the host
 // interface with no operation, which nothing handles. A caller holds

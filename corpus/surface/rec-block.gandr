@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "mutual-recursion", "structural-recursion"))]
+
 // A `rec` block whose members call each other.
 //
 // A block of plain definitions names each member before any body is read, so

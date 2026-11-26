@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "signature-models", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 // `std.grade`: grade algebras. A grade says how much of something a program
 // uses: how often it reads a value, how many bytes a site offers.
 //

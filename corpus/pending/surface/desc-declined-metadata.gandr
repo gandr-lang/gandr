@@ -1,2 +1,4 @@
+@![features(("nominal-data", "universes"))]
+
 data Declared : Type where
   | Mk : Declared [variance]

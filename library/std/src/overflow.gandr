@@ -9,6 +9,8 @@
 //!
 //! - see: #7968
 
+@![features(("nominal-data", "signatures-as-values", "universes", "visibility"))]
+
 /// Why an operation has no answer of its width.
 pub data Cause : Type where
   /// The exact result is out of the range of the width.

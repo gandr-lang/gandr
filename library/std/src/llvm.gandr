@@ -23,6 +23,8 @@
 //! an atomic read-modify-write has the prefix `rmw_`, and the block names
 //! `llvm.select` and `llvm.return` as `choose` and `ret`. The documentation of
 //! each operation gives its text in the dialect.
+@![features(("data-parameters", "dependent-functions", "signatures-as-values", "universes", "visibility"))]
+
 /// The admitted part of the `llvm` dialect.
 pub theory Llvm where
   /// The types of values.

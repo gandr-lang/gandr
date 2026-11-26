@@ -19,6 +19,8 @@
 //!   mapped extent
 //! - see: #7836 — a source handler shadows a block
 
+@![features(("call-by-push-value", "conditionals", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 // The bytes of the memory of `Extent`.
 import std.list (List)
 

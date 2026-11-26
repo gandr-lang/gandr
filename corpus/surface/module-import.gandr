@@ -1,3 +1,5 @@
+@![features("imports")]
+
 import "file:///lib/prelude.gandr" as prelude
 
 import "file:///lib/list.gandr" as list_ext;

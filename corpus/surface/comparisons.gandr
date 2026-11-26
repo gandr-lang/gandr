@@ -9,6 +9,8 @@
 //!
 //! [Kernighan-1988-the_c_programming_language]: https://openlibrary.org/isbn/0131103628 "Kernighan and Ritchie, The C Programming Language, 2nd ed."
 
+@![features(("effect-rows", "explicit-exits", "let-statements", "loops", "native-primitives"))]
+
 /// Its argument when that is not zero, else zero.
 def unlessZero(n : Integer) -> [Partial] Integer =
   while n != 0 { return n }

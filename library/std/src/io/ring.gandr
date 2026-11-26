@@ -17,6 +17,8 @@
 //! - see: `crates/surface-dispatcher/tests/ring.rs` — the comparison of each
 //!   size and each offset with a `#[repr(C)]` declaration of Rust
 
+@![features(("call-by-push-value", "conditionals", "data-parameters", "imports", "let-statements", "list-case", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "products-and-sums", "structural-recursion", "universes", "visibility"))]
+
 // The fields of a structure.
 import std.list (List)
 

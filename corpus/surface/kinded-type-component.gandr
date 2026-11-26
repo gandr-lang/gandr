@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "modules"))]
+
 module Indexed : *{type Hom : Integer -> Integer} where {
   @[refuses("StaticClassifierExpected")]
   type Hom(n : Integer) = Integer

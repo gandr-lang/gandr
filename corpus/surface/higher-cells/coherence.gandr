@@ -1,3 +1,5 @@
+@![features(("signatures-as-values", "universes"))]
+
 // A coherence cell: a rule between rules, its source a composite of two
 // laws spelled with `Path.step` in parentheses. The laws here nest no
 // operation, so the cell is the only member the cell layer does not read.

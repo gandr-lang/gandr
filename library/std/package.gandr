@@ -1,3 +1,5 @@
+@![features(("imports", "modules", "visibility"))]
+
 // `std`: the standard library, a package like any other. Its README maps its
 // modules and the host seams they stand on. Until a package imports another
 // by name, a project imports a module of `std` by the relative path to its

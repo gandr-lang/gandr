@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "identity-types", "implicit-arguments", "let-statements", "modules", "native-primitives", "pattern-matching", "records", "universes", "visibility"))]
+
 // Implicit parameters: the telescope `[a : Type]` binds parameters of the
 // function. A use supplies them in the instantiation slot. It supplies them by
 // position in the written order, `same[Integer] 3`. Or it supplies them by

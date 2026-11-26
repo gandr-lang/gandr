@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits", "let-statements", "pattern-matching", "products-and-sums", "records"))]
+
 // Sums: an injection by position or label, a match over the summands, and a
 // sum nested in a product.
 //

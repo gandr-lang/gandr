@@ -1,3 +1,5 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+
 // A marked call checks where its argument stands below the stage of the
 // parameter the recursion descends on: a field of the constructor a case on
 // that parameter opened, or a value rebuilt from one. An argument at the

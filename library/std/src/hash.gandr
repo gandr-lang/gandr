@@ -1,3 +1,5 @@
+@![features(("effect-rows", "imports", "let-statements", "modules", "native-primitives", "visibility"))]
+
 // `std.hash`: the multiply-shift family of universal hash functions. For an
 // odd multiplier `a`, `multiplyShift w m a x` sends a key `x` of `w` bits to
 // a hash of `m` bits: `(a · x mod 2^w) div 2^(w - m)`.

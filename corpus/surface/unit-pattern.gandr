@@ -5,6 +5,8 @@
 //!
 //! [Pierce-2002-types_and_programming_languages]: https://www.cis.upenn.edu/~bcpierce/tapl/ "Pierce, Types and Programming Languages"
 
+@![features(("let-statements", "pattern-matching", "records"))]
+
 /// Forty-two, read off the one arm a unit takes.
 def answer(u : Unit) -> Integer =
   match u where

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "let-statements", "products-and-sums", "thunks-and-force", "type-codes", "universes"))]
+
 @[refuses("SortMismatch")]
 def a_negative_type_in_an_eager_product_is_a_sort_mismatch : (Type -> Type[-]) -> Type -> Type = fun (T) {
   fun (A) { type(T A * A) }

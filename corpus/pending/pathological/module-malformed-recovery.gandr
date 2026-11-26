@@ -1,1 +1,3 @@
+@![features("modules")]
+
 module Bad where { def broken =; def ok = 2; }

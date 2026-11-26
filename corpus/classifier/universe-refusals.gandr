@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "let-statements", "thunks-and-force", "universes"))]
+
 @[refuses("LevelMismatch"), form(explicit)]
 def too_big : Type
 def too_big = Type

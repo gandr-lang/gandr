@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "effect-rows", "let-statements", "modules", "native-primitives", "pattern-matching", "thunks-and-force", "universes", "visibility"))]
+
 // `std.rand`: the home of randomness' host interface, `std.rand.Eff`, whose
 // operation draws fair bits from the entropy source of the operating system.
 // A source names the interface where it imports this module,

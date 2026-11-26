@@ -1,2 +1,4 @@
+@![features(("let-statements", "thunks-and-force"))]
+
 @[refuses("NotSynthesisable")]
 def suspended = thunk { 3 };

@@ -1,3 +1,5 @@
+@![features(("operations", "signatures-as-values", "universes"))]
+
 @[refuses("UndescribedMember.ParallelRedexes")]
 theory Cong where
   sort Nat : Type

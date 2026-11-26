@@ -1,1 +1,3 @@
+@![features("modules")]
+
 module Bad : *{type T, value : Integer} where { def value = 1; }

@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "universes"))]
+
 /// A list whose cons cell holds its head once: the field's grade `1` is
 /// read, and the constructor takes its fields as an ungraded one does.
 data Vec(a : Type) : Type where

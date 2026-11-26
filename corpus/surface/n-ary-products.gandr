@@ -1,3 +1,5 @@
+@![features(("let-statements", "pattern-matching", "products-and-sums", "records"))]
+
 def single = *{1,};
 
 @[refuses("ShapeMismatch")]

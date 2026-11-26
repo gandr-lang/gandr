@@ -1,3 +1,5 @@
+@![features(("data-parameters", "signatures-as-values", "universes"))]
+
 // The shape of a category, after the HoTT book's Definition 9.1.1 (a
 // precategory): objects, a hom-type between two of them, identities and
 // composition with the unit and associativity laws as rules. Its coherence

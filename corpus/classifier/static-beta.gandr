@@ -1,3 +1,5 @@
+@![features(("data-parameters", "dependent-functions", "let-statements", "native-primitives", "pattern-matching", "products-and-sums", "records", "type-codes", "universes"))]
+
 // Static β at one classifier, the type operators `Type -> Type`: an operator
 // applied in a signature reduces before the kernel reads the declaration, and
 // the run never sees it. `sum` takes a pair whose type is `apply(twice,

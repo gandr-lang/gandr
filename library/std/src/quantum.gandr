@@ -1,3 +1,5 @@
+@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 // `std.quantum`: the home of the qubit type and of the exact amplitudes of
 // Clifford+T circuits. `Qubit` is one quantum bit, and it carries no
 // comonoid: no binder copies or discards a qubit. Only a linear function's

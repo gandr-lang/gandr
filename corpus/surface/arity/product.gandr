@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits", "let-statements", "pattern-matching", "records"))]
+
 @[checks, form(explicit)]
 def none : *{};
 def none = *{};

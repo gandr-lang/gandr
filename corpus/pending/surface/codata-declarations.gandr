@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "codata", "data-parameters", "records", "universes"))]
+
 codata Stream(a : Type) : Type where
   head : a;
   tail : Stream a;

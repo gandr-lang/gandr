@@ -1,2 +1,4 @@
+@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "let-statements"))]
+
 @[refuses("NotSynthesisable"), form(explicit)]
 def applied() -> -F Integer = become (fun (x) { return x }) 3;

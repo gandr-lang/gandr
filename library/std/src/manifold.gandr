@@ -1,3 +1,5 @@
+@![features(("data-parameters", "nominal-data", "signatures-as-values", "universes", "visibility"))]
+
 // `std.manifold`: the theories a site's file and a manifold's file declare
 // models of. A site is one place a world runs at. Its file declares
 // `module Site : Model(Site)` and exports it packed as

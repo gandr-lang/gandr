@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "records", "type-codes", "universes"))]
+
 @[form(explicit)]
 def apply : (Type -> Type) -> Type -> Type
 def apply = fun (F) { fun (X) { F X } };

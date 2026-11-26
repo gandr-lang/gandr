@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 data NatOp : Type where {
   | Zero : NatOp
   | Succ : (n : NatOp) --> NatOp

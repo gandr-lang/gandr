@@ -1,3 +1,5 @@
+@![features(("module-nesting", "modules", "signatures-as-values"))]
+
 // A dotted name is read at a top-level `theory` or `module` alone.
 // Inside a module block a dotted module name is out of place and a theory is
 // no member. Each refusal is held at a member's slot, which no expectation can

@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "universes"))]
+
 @[runs("1")]
 def none() -> Integer = 1
 

@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "corecursion", "data-parameters", "explicit-exits", "lazy-records", "let-statements", "nested-runs", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+
 // Exits: `return` and `become` end a computation, each beside an elided twin
 // that leaves the keyword out.
 //

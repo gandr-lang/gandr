@@ -1,3 +1,5 @@
+@![features(("codata", "globular-structures", "let-statements", "records", "universes"))]
+
 codata Glob : Type where
   cells : Type;
   hom : (x : cells, y : cells) --> Glob;

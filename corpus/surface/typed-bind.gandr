@@ -1,3 +1,5 @@
+@![features(("dependent-functions", "let-statements", "nominal-data", "universes"))]
+
 // The typed bind `let x : A = c`: the annotation states the type the
 // computation returns, so a computation that only checks may be bound.
 

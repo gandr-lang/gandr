@@ -1,3 +1,5 @@
+@![features(("conditionals", "data-parameters", "explicit-exits", "inert-fields", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "text-primitives", "universes", "visibility"))]
+
 // `std.build`: the theories a project's manifest comes from. A package's
 // `package.gandr` declares `module Package : Model(Gandr.Package)`, and a
 // workspace's `workspace.gandr` declares a `Model(Gandr.Workspace)`.

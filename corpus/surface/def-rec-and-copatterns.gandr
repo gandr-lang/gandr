@@ -1,3 +1,5 @@
+@![features(("corecursion", "data-parameters", "explicit-exits", "implicit-arguments", "lazy-records", "let-statements", "structural-recursion"))]
+
 @[refuses("StageNotBelow")]
 def rec fact(n : Integer) -> Integer =
   fact[<] n

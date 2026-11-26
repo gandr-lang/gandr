@@ -1,3 +1,5 @@
+@![features(("nominal-data", "universes"))]
+
 data Bit : Type where {
   | Off : Bit
   | On : Bit

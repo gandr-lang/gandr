@@ -1,3 +1,5 @@
+@![features(("builtin-declarations", "dependent-functions", "let-statements", "native-primitives", "signatures-as-values", "text-primitives", "universes", "visibility"))]
+
 // `std.string`: the native string's everyday functions, each over the native
 // `string` namespace, and the laws of joining beside them. Equality and order
 // are the prelude's `==` and `<`, through its `Eq` and `Ord` models of

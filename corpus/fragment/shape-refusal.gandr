@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "let-statements", "thunks-and-force"))]
+
 @[refuses("ShapeMismatch"), form(explicit)]
 def returned : +U (Integer -> -F Integer)
 def returned = thunk { return 3 };

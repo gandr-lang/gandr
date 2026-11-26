@@ -1,3 +1,5 @@
+@![features(("builtin-declarations", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+
 // `std.ir`: Dybjer and Setzer's codes for inductive-recursive definitions,
 // as data, with the arguments a code asks for and their decode.
 //

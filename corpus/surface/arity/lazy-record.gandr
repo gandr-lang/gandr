@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "lazy-records", "let-statements", "session-types", "thunks-and-force"))]
+
 // Lazy records: a block of entries `&{.l => e}` answering each label's entry,
 // and its lazy product type.
 //

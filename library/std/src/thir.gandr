@@ -27,6 +27,8 @@
 //!
 //! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
+@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "second-order-rules", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+
 /// A value the fragment computes: an integer or a boolean.
 pub data Value : Type where
   /// The integer `n`.

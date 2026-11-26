@@ -38,6 +38,8 @@
 //! [Grodin-2026-potential_functions_types]: https://arxiv.org/abs/2607.08547 "Grodin, Chu, Li, Hoffmann and Harper, Potential Functions as Types"
 //! [Niu-2024-costsensitive_computational_adequacy_higherorder_recursion_synthetic_domain_theory]: https://doi.org/10.46298/entics.14732 "Niu, Sterling and Harper, Cost-Sensitive Computational Adequacy of Higher-Order Recursion in Synthetic Domain Theory"
 
+@![features(("call-by-push-value", "data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "modules", "signatures-as-values", "universes", "visibility"))]
+
 // `Count`, whose sum counts and whose order bounds.
 import "./grade.gandr"
 

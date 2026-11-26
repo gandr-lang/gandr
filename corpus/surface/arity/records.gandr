@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "explicit-exits", "let-statements", "pattern-matching", "records"))]
+
 // Records: a literal by label or shorthand, a pattern punning or renaming a
 // field, a field selected by label.
 //

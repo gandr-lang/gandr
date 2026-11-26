@@ -1,3 +1,5 @@
+@![features(("call-by-push-value", "dependent-functions", "lazy-records", "products-and-sums", "thunks-and-force", "typed-holes", "unknown-type"))]
+
 @[refuses("OutOfFragment.unknown_type")]
 def anything : ?
 

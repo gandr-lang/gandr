@@ -1,3 +1,5 @@
+@![features(("explicit-exits", "let-statements", "native-primitives", "records", "thunks-and-force", "typed-holes"))]
+
 def anon = ?
 
 def named = ?goal
