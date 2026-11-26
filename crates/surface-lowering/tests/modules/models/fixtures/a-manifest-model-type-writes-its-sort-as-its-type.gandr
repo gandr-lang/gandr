@@ -1,8 +1,8 @@
 theory Toggle where {
-  sort T : Type;
-  oper start : T;
-  oper step : (t : T) --> T;
-  oper read : (t : T) --> Integer;
+  sort T : Type
+  oper start : T
+  oper step : (t : T) --> T
+  oper read : (t : T) --> Integer
 }
 def derived : Model Toggle with sort T = Integer
 def written : *{

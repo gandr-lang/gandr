@@ -1,5 +1,5 @@
 theory Seeded where {
-  sort T : Type;
-  oper seed : T;
-  oper read : (t : T) --> Integer;
+  sort T : Type
+  oper seed : T
+  oper read : (t : T) --> Integer
 }

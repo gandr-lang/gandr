@@ -1,8 +1,8 @@
 theory Mag where {
-  sort M : Type;
-  oper mul : (x : M, y : M) --> M;
+  sort M : Type
+  oper mul : (x : M, y : M) --> M
 }
 module Times : Model(Mag) where {
-  type M = Integer;
-  def mul(a : Integer, b : Integer) -> Integer = a * b;
+  type M = Integer
+  def mul(a : Integer, b : Integer) -> Integer = a * b
 }

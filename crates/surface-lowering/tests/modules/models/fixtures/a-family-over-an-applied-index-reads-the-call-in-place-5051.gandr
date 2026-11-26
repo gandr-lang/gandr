@@ -1,10 +1,10 @@
 theory Scoped where {
-  sort C : Type;
-  sort T(g : C) : Type;
-  sort M(g : C, a : T g) : Type;
-  oper ext : (g : C, a : T g) --> C;
-  oper wk : (g : C, a : T g) --> T (ext g a);
-  oper q : (g : C, a : T g) --> M (ext g a) (wk g a);
+  sort C : Type
+  sort T(g : C) : Type
+  sort M(g : C, a : T g) : Type
+  oper ext : (g : C, a : T g) --> C
+  oper wk : (g : C, a : T g) --> T (ext g a)
+  oper q : (g : C, a : T g) --> M (ext g a) (wk g a)
 }
 def derived : Model Scoped
 def written : *{

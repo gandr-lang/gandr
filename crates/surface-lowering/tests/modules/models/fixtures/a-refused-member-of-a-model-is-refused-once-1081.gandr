@@ -1,9 +1,9 @@
 theory Toggle where {
-  sort T : Type;
-  oper flip : (t : T) --> T;
+  sort T : Type
+  oper flip : (t : T) --> T
 }
 module Bits : Model(Toggle) where {
-  type T = Bool;
+  type T = Bool
   def flip(b : Bool) -> -F Bool = match b {
     | true => return 0.5f32
     | false => return true

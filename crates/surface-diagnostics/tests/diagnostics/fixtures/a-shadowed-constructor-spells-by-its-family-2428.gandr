@@ -3,8 +3,8 @@ data Term : Type where {
   | App : (t : Term, u : Term) --> Term
 }
 theory Pointed where {
-  sort P : Type;
-  oper point : () --> (p : P);
+  sort P : Type
+  oper point : () --> (p : P)
 }
 def applies(link : Theory) -> Integer =
   match link {

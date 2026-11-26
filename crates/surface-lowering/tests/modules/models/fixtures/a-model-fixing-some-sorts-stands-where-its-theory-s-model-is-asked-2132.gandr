@@ -1,8 +1,8 @@
 theory Pairing where {
-  sort A : Type;
-  sort B : Type;
-  oper left : A;
-  oper right : B;
+  sort A : Type
+  sort B : Type
+  oper left : A
+  oper right : B
 }
 def any(m : Model Pairing) -> Model Pairing = m
 def both(m : Model Pairing with sort A = Integer with sort B = Unit) -> Model Pairing = become any

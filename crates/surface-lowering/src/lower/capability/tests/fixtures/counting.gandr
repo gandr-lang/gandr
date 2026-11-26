@@ -1,5 +1,5 @@
 module Counting : Model(Cost) with sort N = Integer -> Integer where {
-  type C = (Integer -> Integer) -> Integer;
+  type C = (Integer -> Integer) -> Integer
   def charge(
     c : Integer -> Integer,
     k : (Integer -> Integer) -> Integer
@@ -12,12 +12,12 @@ module Counting : Model(Cost) with sort N = Integer -> Integer where {
   };
   def chargeZero(k : (Integer -> Integer) -> Integer) -> Path[.A = (Integer -> Integer) -> Integer] (charge
     zero
-    k) k = Path.here k;
+    k) k = Path.here k
   def chargeTwice(
     a : Integer -> Integer,
     b : Integer -> Integer,
     k : (Integer -> Integer) -> Integer
   ) -> Path[.A = (Integer -> Integer) -> Integer] (charge a (charge b k)) (charge
     (plus a b)
-    k) = Path.here (charge (plus a b) k);
+    k) = Path.here (charge (plus a b) k)
 }

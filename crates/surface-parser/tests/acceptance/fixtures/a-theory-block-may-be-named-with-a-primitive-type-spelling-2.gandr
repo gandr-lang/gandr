@@ -1,3 +1,3 @@
 theory Any where {
-  sort Nat : Type;
+  sort Nat : Type
 }

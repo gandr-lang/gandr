@@ -1,4 +1,4 @@
 theory Unbindable where {
-  sort Tm : Type;
-  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
+  sort Tm : Type
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm
 }

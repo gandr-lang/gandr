@@ -13,8 +13,8 @@ pub data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S (P x) <=> x;
-  rule : P (S x) <=> x;
+  rule : S (P x) <=> x
+  rule : P (S x) <=> x
 }
 
 /// A case over the second circle's words with the first circle's letters.

@@ -1,9 +1,9 @@
 theory Open where {
-  sort Width : Type;
-  sort Term(w : Width) : Type;
-  oper bit : Width;
-  oper low : Term bit;
-  oper same : (x : Term w) --> Term w;
+  sort Width : Type
+  sort Term(w : Width) : Type
+  oper bit : Width
+  oper low : Term bit
+  oper same : (x : Term w) --> Term w
 }
 def openWidth(w : Terms Open Width) -> Terms Open Width = w
 def kept : Terms Open Term Open.bit = Open.low;

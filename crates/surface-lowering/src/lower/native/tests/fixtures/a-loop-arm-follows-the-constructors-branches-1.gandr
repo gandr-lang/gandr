@@ -8,7 +8,7 @@ module Late where {
   def kept(x : Circle) -> Circle = match x {
     | later => later
   };
-  def later : Circle = Base;
+  def later : Circle = Base
 }
 def twice(x : Circle) -> Circle = match x {
   | Base => Base

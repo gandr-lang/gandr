@@ -2,6 +2,6 @@ data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : x <=> S (P x);
-  rule : P (S x) <=> x;
+  rule : x <=> S (P x)
+  rule : P (S x) <=> x
 }

@@ -2,7 +2,7 @@ data Circle : Type where {
   | Base : Circle
   | Loop : (x : Circle) --> Circle
   | Unloop : (x : Circle) --> Circle
-  rule : Loop (Unloop x) ==> x;
-  rule : Unloop (Loop y) ==> y;
+  rule : Loop (Unloop x) ==> x
+  rule : Unloop (Loop y) ==> y
 }
 data Flag : Type where { | On : Flag | Off : Flag }

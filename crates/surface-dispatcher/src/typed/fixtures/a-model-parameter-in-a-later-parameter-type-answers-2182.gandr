@@ -1,6 +1,6 @@
 theory Counter where {
-  sort C : Type;
-  oper zero : C;
+  sort C : Type
+  oper zero : C
 }
 def shared(a : Model Counter, b : Model Counter with sort C = a.C, c : a.C) -> -F Integer {
   return 0

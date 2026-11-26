@@ -1,6 +1,6 @@
 module M where {
-  def empty() -> Type = return Integer;
-  def same(a : Type) -> Type = return a;
+  def empty() -> Type = return Integer
+  def same(a : Type) -> Type = return a
   def after(a : Type) -> +U (Integer -> -F Type) = return fun (x) { a };
 }
 def none(x : M.empty) -> Integer = x

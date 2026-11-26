@@ -1,6 +1,6 @@
 theory Counter.Eff where
-  sort C : Type;
-  oper bump : (k : C) --> C;
+  sort C : Type
+  oper bump : (k : C) --> C
 
 /// A bump, through the instance `n` its row's label binds.
 def tallied() -> [n : Counter.Eff] Integer =

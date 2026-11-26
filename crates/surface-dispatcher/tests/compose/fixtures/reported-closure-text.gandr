@@ -2,8 +2,8 @@ data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S (P x) ==> x;
-  rule : P (S x) ==> x;
+  rule : S (P x) ==> x
+  rule : P (S x) ==> x
 }
 def rec tell(n : Int) -> Int = match n {
   | Z => Z

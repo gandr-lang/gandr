@@ -16,6 +16,6 @@ rec where
   def odd_laid(n : Integer) -> Bool = even_laid n
 
 rec {
-  def even_braced(n : Integer) -> Bool = odd_braced n;
-  def odd_braced(n : Integer) -> Bool = even_braced n;
+  def even_braced(n : Integer) -> Bool = odd_braced n
+  def odd_braced(n : Integer) -> Bool = even_braced n
 }

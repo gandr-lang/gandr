@@ -1,5 +1,5 @@
 theory Counter where {
-  sort C : Type;
-  oper zero : C;
-  oper read : (c : C) --> Integer;
+  sort C : Type
+  oper zero : C
+  oper read : (c : C) --> Integer
 }

@@ -1,6 +1,6 @@
 theory Answering where {
-  oper answer : Integer;
+  oper answer : Integer
 }
 theory Faceted where {
-  oper inner : Model Answering;
+  oper inner : Model Answering
 }

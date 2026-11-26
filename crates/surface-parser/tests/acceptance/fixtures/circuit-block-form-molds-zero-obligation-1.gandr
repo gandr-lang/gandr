@@ -1,8 +1,8 @@
 theory Nat where {
-  sort Nat : Type;
-  data Zero : Nat;
-  data Succ : Nat --> Nat;
-  oper add : (Nat, Nat) --> Nat;
+  sort Nat : Type
+  data Zero : Nat
+  data Succ : Nat --> Nat
+  oper add : (Nat, Nat) --> Nat
 
   rule cong2 : (
     rule p : Nat ==> Nat,

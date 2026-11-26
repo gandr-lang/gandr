@@ -3,7 +3,7 @@ data Flat : Type where {
   | Mid : Flat
   | High : Flat
   | Pair : (x : Flat, y : Flat) --> Flat
-  rule : Low <=> Pair Low Mid;
-  rule : Pair x y <=> Pair y x;
-  rule : Mid <=> Pair Mid Low;
+  rule : Low <=> Pair Low Mid
+  rule : Pair x y <=> Pair y x
+  rule : Mid <=> Pair Mid Low
 }

@@ -1,11 +1,11 @@
 theory Named where {
   @[inert]
-  oper name : String;
-  oper greeting : String;
+  oper name : String
+  oper greeting : String
 }
 module Hello : Model(Named) where {
-  def name = "hello";
-  def greeting = "hi";
+  def name = "hello"
+  def greeting = "hi"
 }
 @[inert]
 def nameOf(n : Model Named) -> String = n.name
@@ -19,5 +19,5 @@ def shown = helloName
 def called(n : Model Named) -> String = nameOf (n)
 module Marked where {
   @[inert]
-  def kept = "kept";
+  def kept = "kept"
 }

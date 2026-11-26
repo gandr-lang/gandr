@@ -8,8 +8,8 @@ data Gate : Width -> Type where {
   | Nil : Gate Word
   | Swap : (x : Gate Word) --> Gate Word
   | Hold : (c : Gate Bit, x : Gate Word) --> Gate Word
-  rule : Swap (Swap x) <=> x;
-  rule : Hold Lit x <=> x;
+  rule : Swap (Swap x) <=> x
+  rule : Hold Lit x <=> x
 }
 
 def rec same(w : Width, t : Gate w) -> Gate w =

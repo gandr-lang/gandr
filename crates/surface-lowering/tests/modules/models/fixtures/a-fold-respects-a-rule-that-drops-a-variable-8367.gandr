@@ -8,8 +8,8 @@ data Fragment : Width -> Type where {
   | Zero : Fragment Word
   | One : Fragment Word
   | Choose : (c : Fragment Bit, x : Fragment Word, y : Fragment Word) --> Fragment Word
-  rule : Choose High x y <=> x;
-  rule : Choose Low x y <=> y;
+  rule : Choose High x y <=> x
+  rule : Choose Low x y <=> y
 }
 
 def rec copy(w : Width, t : Fragment w) -> Fragment w =

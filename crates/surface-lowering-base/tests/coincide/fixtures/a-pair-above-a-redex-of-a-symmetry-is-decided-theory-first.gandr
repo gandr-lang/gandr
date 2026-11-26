@@ -1,8 +1,8 @@
 theory Nest where {
-  sort N : Type;
-  oper z : N;
-  oper s : (N) --> N;
-  oper two : (N, N) --> N;
-  rule twoComm : two x y <=> two y x;
-  rule twoUnit : two (two x z) y ==> y;
+  sort N : Type
+  oper z : N
+  oper s : (N) --> N
+  oper two : (N, N) --> N
+  rule twoComm : two x y <=> two y x
+  rule twoUnit : two (two x z) y ==> y
 }

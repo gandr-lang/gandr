@@ -1,12 +1,12 @@
 theory Frag where {
-  sort Width : Type;
-  sort Term(w : Width) : Type;
-  oper bit : Width;
-  oper word : Width;
-  oper low : Term bit;
-  oper high : Term bit;
-  oper zero : Term word;
-  oper one : Term word;
-  oper choose : (c : Term bit, x : Term word, y : Term word) --> Term word;
-  rule chooseHigh : choose high x y <=> x;
+  sort Width : Type
+  sort Term(w : Width) : Type
+  oper bit : Width
+  oper word : Width
+  oper low : Term bit
+  oper high : Term bit
+  oper zero : Term word
+  oper one : Term word
+  oper choose : (c : Term bit, x : Term word, y : Term word) --> Term word
+  rule chooseHigh : choose high x y <=> x
 }

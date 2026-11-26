@@ -1,6 +1,6 @@
 theory Counter.Eff where {
-  sort C : Type;
-  oper bump : (k : C) --> C;
+  sort C : Type
+  oper bump : (k : C) --> C
 }
 def tallied() -> [n : Counter.Eff] Integer = { n.bump; pure 0 };
 def handled() -> Integer = effect c : Counter.Eff {

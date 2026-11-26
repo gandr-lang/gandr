@@ -1,12 +1,12 @@
 theory Pairing where {
-  sort A : Type;
-  sort B : Type;
-  oper left : A;
-  oper right : B;
+  sort A : Type
+  sort B : Type
+  oper left : A
+  oper right : B
 }
 theory Counter where {
-  sort C : Type;
-  oper zero : C;
+  sort C : Type
+  oper zero : C
 }
 def any(m : Model Pairing) -> Model Pairing = m
 def inserted(m : Model Pairing with sort A = Integer with sort B = Unit) -> Model Pairing = become any

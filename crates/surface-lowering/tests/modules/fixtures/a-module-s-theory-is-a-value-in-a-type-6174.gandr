@@ -1,5 +1,5 @@
 theory M.Shape where {
-  oper a : String;
+  oper a : String
 }
 
 def shapeOf(presented : Theory) -> Type =

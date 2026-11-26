@@ -8,5 +8,5 @@ data Fragment : Width -> Type where {
   | Zero : Fragment Word
   | One : Fragment Word
   | Choose : (c : Fragment Bit, x : Fragment Word, y : Fragment Word) --> Fragment Word
-  rule : Choose High x y <=> x;
+  rule : Choose High x y <=> x
 }

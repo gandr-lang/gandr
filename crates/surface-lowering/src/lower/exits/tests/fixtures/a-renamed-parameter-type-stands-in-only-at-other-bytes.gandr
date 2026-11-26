@@ -1,7 +1,7 @@
 module Seed :> *{type T, zero : T, next : T -> T} where {
-  type T = Integer;
-  def zero = 0;
-  def next(n : T) -> T = become n + 1;
+  type T = Integer
+  def zero = 0
+  def next(n : T) -> T = become n + 1
 }
 
 module MkCounter(S : *{type T, zero : T, next : T -> T}) :> *{
@@ -9,9 +9,9 @@ module MkCounter(S : *{type T, zero : T, next : T -> T}) :> *{
   seed : T,
   step : T -> T
 } where {
-  type T = S.T;
-  def seed = S.zero;
-  def step = S.next;
+  type T = S.T
+  def seed = S.zero
+  def step = S.next
 }
 
 module A = MkCounter Seed;

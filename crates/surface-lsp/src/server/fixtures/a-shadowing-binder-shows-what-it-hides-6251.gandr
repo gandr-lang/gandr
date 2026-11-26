@@ -4,7 +4,7 @@ data Peano : Type where {
 }
 def answer : Integer = 1
 module Counting where {
-  def two = 2;
+  def two = 2
 }
 def rec shadowed(n : Peano, m : Peano) -> -F Peano =
   match m {

@@ -6,5 +6,5 @@ data Two : Type where
 data FixedShfy : Type where {
   | FixedRet : (v : Two) --> FixedShfy
   | FixedAsk : (k : +U (Two -> -F FixedShfy)) --> FixedShfy
-  rule : FixedAsk k <=> k L;
+  rule : FixedAsk k <=> k L
 }

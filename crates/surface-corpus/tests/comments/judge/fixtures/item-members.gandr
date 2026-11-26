@@ -4,10 +4,10 @@
 module M where {
   /// one
   @[checks]
-  def one = 1;
-  def two = 2;
+  def one = 1
+  def two = 2
   @[checks]
-  def three = 3;
+  def three = 3
 }
 
 // a rec block

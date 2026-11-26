@@ -1,10 +1,10 @@
 theory Flat where {
-  sort F : Type;
-  oper low : F;
-  oper high : F;
-  oper pair : (F, F) --> F;
-  oper wrap : (F) --> F;
-  rule pairComm : pair x y <=> pair y x;
-  rule turn : wrap (pair x y) ==> pair y x;
-  rule unwrap : wrap z ==> z;
+  sort F : Type
+  oper low : F
+  oper high : F
+  oper pair : (F, F) --> F
+  oper wrap : (F) --> F
+  rule pairComm : pair x y <=> pair y x
+  rule turn : wrap (pair x y) ==> pair y x
+  rule unwrap : wrap z ==> z
 }

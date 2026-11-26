@@ -1,9 +1,9 @@
 theory Tally where {
-  sort B : Type;
-  oper none : B;
-  oper all : B;
-  oper meet : (B, B) --> B;
-  rule meetNone : meet none x <=> none;
-  rule meetAll : meet all x <=> x;
-  rule meetComm : meet x y <=> meet y x;
+  sort B : Type
+  oper none : B
+  oper all : B
+  oper meet : (B, B) --> B
+  rule meetNone : meet none x <=> none
+  rule meetAll : meet all x <=> x
+  rule meetComm : meet x y <=> meet y x
 }

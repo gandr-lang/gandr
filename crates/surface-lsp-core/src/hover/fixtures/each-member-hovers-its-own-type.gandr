@@ -1,6 +1,6 @@
 module A where {
-  def x = 1;
+  def x = 1
 }
 module B where {
-  def x = "one";
+  def x = "one"
 }

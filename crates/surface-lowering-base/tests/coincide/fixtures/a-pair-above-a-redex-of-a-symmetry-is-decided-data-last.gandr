@@ -2,6 +2,6 @@ data Nest : Type where {
   | Z : Nest
   | S : (n : Nest) --> Nest
   | Two : (x : Nest, y : Nest) --> Nest
-  rule : Two (Two x Z) y ==> y;
-  rule : Two x y <=> Two y x;
+  rule : Two (Two x Z) y ==> y
+  rule : Two x y <=> Two y x
 }

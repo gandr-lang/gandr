@@ -1,3 +1,3 @@
 theory Boolean where {
-  sort Bit : Type;
+  sort Bit : Type
 }

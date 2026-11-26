@@ -1,5 +1,5 @@
 theory Stray where {
-  sort Nat : Type;
+  sort Nat : Type
   rule stray : (data x : Nat) ==> (z : Nat) {
     node : mystery(x) --> (z);
   };

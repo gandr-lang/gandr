@@ -4,6 +4,6 @@ data N : Type where {
 }
 data Skip : N -> Type where {
   | Halt : Skip Z
-  oper skip : (k : Skip Z) --> Skip Z;
-  rule : skip k ==> k;
+  oper skip : (k : Skip Z) --> Skip Z
+  rule : skip k ==> k
 }

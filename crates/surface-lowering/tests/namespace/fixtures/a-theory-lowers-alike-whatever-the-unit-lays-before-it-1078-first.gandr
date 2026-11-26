@@ -1,4 +1,4 @@
 theory Magma where {
-  sort M : Type;
-  oper one : () --> (z : M);
+  sort M : Type
+  oper one : () --> (z : M)
 }

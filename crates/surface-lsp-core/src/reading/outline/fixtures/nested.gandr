@@ -6,7 +6,7 @@ def answer = 42
 @[checks]
 data Color : Type where { | Red : Color }
 module Outer where
-  def inner = 1;
+  def inner = 1
   module Nested where
-    def deep = 2;
+    def deep = 2
 world seat;

@@ -1,8 +1,8 @@
 codata Stream(a : Type) : Type[-] where {
-  head : a;
-  tail : Stream a;
+  head : a
+  tail : Stream a
 }
 codata Spot : Type[-] where {
-  x : Integer;
-  depth : Integer;
+  x : Integer
+  depth : Integer
 }

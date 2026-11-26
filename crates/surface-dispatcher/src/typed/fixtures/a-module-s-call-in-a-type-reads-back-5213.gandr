@@ -1,5 +1,5 @@
 module Standard where {
-  def unit() -> Type = return Unit;
+  def unit() -> Type = return Unit
   def after(a : Type) -> Integer -> Type = fun (x) { a };
 }
 def point : Standard.unit = *{};

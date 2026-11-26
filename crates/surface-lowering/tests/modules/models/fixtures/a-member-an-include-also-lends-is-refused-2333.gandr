@@ -1,7 +1,7 @@
 module Seven where {
-  def point = 7;
+  def point = 7
 }
 module Pair where {
-  include Seven;
-  def point = 8;
+  include Seven
+  def point = 8
 }

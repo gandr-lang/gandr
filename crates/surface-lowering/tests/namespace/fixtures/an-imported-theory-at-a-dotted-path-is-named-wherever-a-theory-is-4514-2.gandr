@@ -4,12 +4,12 @@ def scoped() -> Integer = effect st : Store.Eff with sort S = Integer {
   read
 } handle { | pure(x) => pure x | oper get(k) => k 4 };
 module Fixed : Model(Store.Eff) with sort S = Integer where {
-  type C = Integer;
-  def get(k : +U (Integer -> -F Integer)) -> Integer = k 4;
+  type C = Integer
+  def get(k : +U (Integer -> -F Integer)) -> Integer = k 4
 }
 def answered() -> Integer = effect st : Store.Eff with sort S = Integer { read } handle Fixed
 theory Marks where {
-  sort C : Type;
-  oper mark : (k : C) --> C;
+  sort C : Type
+  oper mark : (k : C) --> C
   rule kept : mark (mark k) <=> mark k where {| under [Store.Eff | r]};
 }

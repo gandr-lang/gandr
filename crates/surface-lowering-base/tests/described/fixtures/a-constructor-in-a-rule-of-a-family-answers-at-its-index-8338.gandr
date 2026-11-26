@@ -4,5 +4,5 @@ data Term : Width -> Type where {
   | High : Term Bit
   | One : Term Word
   | Choose : (c : Term Bit, x : Term Word, y : Term Word) --> Term Word
-  rule : Choose High x y <=> x;
+  rule : Choose High x y <=> x
 }
