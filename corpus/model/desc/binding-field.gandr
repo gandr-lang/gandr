@@ -22,7 +22,7 @@ theory Deaf where
   oper nil : Proc
   oper out : (v : Val, p : Proc) --> Proc
   oper nu : (p : bind (a : Name). Proc) --> Proc
-  oper listen : (c : Name, k : pi+ (x : Val). Proc) --> Proc
+  oper listen : (c : Name, k : (x : Val) -> Proc) --> Proc
   rule deaf : nu (bind c. (listen c (bind x. (out x nil)))) ==> nil
 
 /// The field variable `x` does not occur in `q`, so this law needs no atom
@@ -30,7 +30,7 @@ theory Deaf where
 theory Vacuous where
   sort Val : Type+
   sort Proc : Type
-  oper new : (body : pi+ (x : Val). Proc) --> Proc
+  oper new : (body : (x : Val) -> Proc) --> Proc
   rule gc : new (bind x. q) <=> q
 
 /// This recursion counts `Bind` nodes in a rule term. It ignores `Abs` nodes.

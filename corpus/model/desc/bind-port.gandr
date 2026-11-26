@@ -28,7 +28,7 @@ theory Receive where
   sort Name : Atom
   sort Val : Type+
   sort Proc : Type
-  oper new : (body : bind (c : Name). pi+ (x : Val). Proc) --> Proc
+  oper new : (body : bind (c : Name). (x : Val) -> Proc) --> Proc
 
 /// This recursion counts `Abstracted` links in a port chain. It ignores `Port`
 /// and `Bound` links.

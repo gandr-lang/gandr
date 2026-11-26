@@ -21,7 +21,7 @@ pub theory Nat where
 /// whose body binds a term, and an application.
 theory Lambda where
   sort Tm : Type+
-  oper lam : (t : pi+ (x : Tm). Tm) --> Tm
+  oper lam : (t : (x : Tm) -> Tm) --> Tm
   oper app : (t : Tm, u : Tm) --> Tm
 
 /// The identity-return signature has values, computations
@@ -35,7 +35,7 @@ theory IdentityReturn where
   oper f : (a : VTy) --> CTy
   oper arrow : (a : VTy, b : CTy) --> CTy
   oper ret : (a : VTy, t : VTm a) --> CTm (f a)
-  oper lam : (a : VTy, b : CTy, t : pi+ (x : VTm a). CTm b) --> CTm (arrow a b)
+  oper lam : (a : VTy, b : CTy, t : (x : VTm a) -> CTm b) --> CTm (arrow a b)
 
 /// Structural recursion over a sort chain: one per `Representable` link, none
 /// for an ordinary `Sort`.
