@@ -295,14 +295,8 @@ fn typed(
     written: Written<'_>,
 ) -> Option<TypeTable>
 {
-    let laid = lay_out(grammar, written.path, classify(written.path), written.text);
-    TypeTable::of_unit(
-        grammar,
-        SourceText::from(laid.text.as_str()),
-        &laid.unit,
-        laid.base,
-    )
-    .ok()
+    let (text, unit, base) = laid(grammar, written);
+    TypeTable::of_unit(grammar, SourceText::from(text.as_str()), &unit, base).ok()
 }
 
 /// `written` formatted into `form` through the rewrites `rewrites` selects,
@@ -888,7 +882,10 @@ fn unfaithful(
 
 /// The text `written` lays out — the prelude, its import closure, then the
 /// source — the unit that lowers it and where the source starts in that
-/// text.
+/// text. The source stands there with its declaration of features read as
+/// spaces ([`gandr_surface_format::unjudged`]): the parity writes a source
+/// in another spelling, which uses other features than the source declares,
+/// and the lowering refuses the first declaration of such a text.
 ///
 /// # Specification
 /// trivial.
@@ -897,7 +894,9 @@ fn laid(
     written: Written<'_>,
 ) -> (String, Unit, ByteOffset)
 {
-    let laid = lay_out(grammar, written.path, classify(written.path), written.text);
+    let unjudged = gandr_surface_format::unjudged(written.text);
+    let text = unjudged.as_deref().map_or(written.text, SourceText::from);
+    let laid = lay_out(grammar, written.path, classify(written.path), text);
     (laid.text, laid.unit, laid.base)
 }
 

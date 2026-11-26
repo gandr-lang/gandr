@@ -1,0 +1,9 @@
+@![features((
+  "universes"
+))]
+
+/// The first declaration returns its argument.
+def stated(n : Integer) -> Integer = return n;
+
+/// The second declaration returns its argument too.
+def again(n : Integer) -> Integer = return n;

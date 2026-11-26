@@ -664,6 +664,44 @@ fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
     assert_eq!(sugared(&once), once, "a second pass changes nothing");
 }
 
+/// A rewrite enters each declaration of a source that declares its features,
+/// and the block of the declaration keeps its text. The sugared text uses no
+/// explicit exit. With the block judged, the lowering refuses the first
+/// declaration of that text, and the rewrite is withdrawn there. A source
+/// whose block names a feature that it does not use is rewritten too: with
+/// the block judged, its first declaration has no meaning to compare.
+#[test]
+fn a_rewrite_enters_a_source_that_declares_its_features()
+{
+    let grammar = grammar();
+    for (source, sugared) in [
+        (
+            include_str!(
+                "rewrite/unformatted/a-rewrite-enters-a-source-that-declares-its-features.gandr"
+            ),
+            include_str!(
+                "rewrite/unformatted/a-rewrite-enters-a-source-that-declares-its-features-sugared.gandr"
+            ),
+        ),
+        (
+            include_str!(
+                "rewrite/unformatted/a-rewrite-enters-a-source-with-a-stale-declaration.gandr"
+            ),
+            include_str!(
+                "rewrite/unformatted/a-rewrite-enters-a-source-with-a-stale-declaration-sugared.gandr"
+            ),
+        ),
+    ] {
+        let once = spelled(&grammar, source, Form::Sugared, Selection::Every);
+        assert_eq!(once, sugared, "each declaration takes the sugared form");
+        assert_eq!(
+            spelled(&grammar, once.as_str(), Form::Sugared, Selection::Every),
+            sugared,
+            "a second pass changes nothing"
+        );
+    }
+}
+
 /// A parenthesised list after a rule's `<=>` is the rule's outputs, not a
 /// tuple: the explicit form keeps it, and a record read as a value beside it
 /// stays `*{…}`.
