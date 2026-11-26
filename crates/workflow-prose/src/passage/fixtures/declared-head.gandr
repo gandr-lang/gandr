@@ -1,0 +1,11 @@
+@![features(("dependent-functions", "universes"))]
+
+/// A pair has two halves.
+///
+/// The sum of the halves is the value of the pair.
+///
+/// The checker reduces each side of the equation.
+///
+/// - see: #1 — the rule of the sum
+
+def x = 1;

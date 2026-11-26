@@ -1,0 +1,5 @@
+@![features("universes")]
+
+def x = 1;
+
+// A later comment is no head of the source.

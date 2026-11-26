@@ -532,9 +532,10 @@ struct Run<'text>
 
 /// The head and the item comments of `text`, read beside `passages`.
 ///
-/// The head is the comment run that starts on the first non-empty line, a
-/// shebang left out. An item is a later `///` run. A prose passage is one
-/// `passages` already holds whose line falls in the run.
+/// The head is the comment run that starts on the first line of [`opening`]:
+/// a shebang and the inner attribute blocks that lead the source are left
+/// out. An item is a later `///` run. A prose passage is one `passages`
+/// already holds whose line falls in the run.
 ///
 /// # Specification
 /// - requires: `passages` are [`comments`] of `text`.
@@ -560,10 +561,7 @@ pub(crate) fn comment_shape(
 ) -> CommentShape
 {
     let runs = runs(text);
-    let opening = text
-        .0
-        .lines()
-        .position(|line| !line.trim().is_empty() && !line.starts_with("#!"));
+    let opening = opening(text);
     let mut runs = runs.into_iter();
     let opened = match runs.next() {
         Some(run) if Some(run.first) == opening => Opened::Run(head_of(&run)),
@@ -581,6 +579,56 @@ pub(crate) fn comment_shape(
         opened,
         items: items(runs, passages),
     }
+}
+
+/// The first line of `text` after the lines that lead it, counted from zero.
+///
+/// The lines that lead a source are its blank lines, its shebang and its
+/// inner attribute blocks `@![…]`. A source declares its features in such a
+/// block, before its head. A block ends at the bracket that closes it, on its
+/// first line or on a later one. A bracket inside a text closes nothing.
+///
+/// # Specification
+/// - ensures: the index of the first line that is not blank, starts with no
+///   `#!`, and is outside each inner attribute block that starts before it;
+///   `None` when `text` has no such line.
+/// - provides: where the head of a source can start.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the scan is the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block of one line, a block of four lines after a
+///   shebang, a second block that holds a bracket inside a text, and a block
+///   before a definition; a block that is read as the first line, or a later
+///   comment that is read as the head, changes the shape.
+/// - witness: `passage::tests::a_head_stands_after_the_inner_blocks_that_lead_its_source`
+fn opening(text: Text<'_>) -> Option<usize>
+{
+    let mut depth = 0_usize;
+    let mut quoted = false;
+    for (place, line) in text.0.lines().enumerate() {
+        if depth == 0 {
+            if line.trim().is_empty() || line.starts_with("#!") {
+                continue;
+            }
+            if !line.trim_start().starts_with("@![") {
+                return Some(place);
+            }
+        }
+        let mut escaped = false;
+        for glyph in line.chars() {
+            match glyph {
+                _ if escaped => escaped = false,
+                '\\' if quoted => escaped = true,
+                '"' => quoted = !quoted,
+                '[' if !quoted => depth = depth.saturating_add(1),
+                ']' if !quoted => depth = depth.saturating_sub(1),
+                _ => {},
+            }
+        }
+    }
+    None
 }
 
 /// The comment runs of `text`, in order.
@@ -1597,6 +1645,35 @@ mod tests
         assert!(
             matches!(shape.opened, Opened::Run(_)) && shape.items.is_empty(),
             "a `//` head is judged and a later `//` run is no item"
+        );
+    }
+
+    #[test]
+    fn a_head_stands_after_the_inner_blocks_that_lead_its_source()
+    {
+        let opened = |text: &str| {
+            let passages = comments(Text("corpus/a.gandr"), Text(text));
+            comment_shape(Text("corpus/a.gandr"), Text(text), &passages).opened
+        };
+        let Opened::Run(declared) = opened(include_str!("passage/fixtures/declared-head.gandr"))
+        else {
+            panic!("the head stands after the block of one line");
+        };
+        assert_eq!(
+            (declared.line, declared.paragraphs, declared.what),
+            (Line(3), 4, WhatLine::At(Line(3)))
+        );
+        assert_eq!(declared.references, References::Shaped);
+        let Opened::Run(wrapped) =
+            opened(include_str!("passage/fixtures/wrapped-declared-head.gandr"))
+        else {
+            panic!("the head stands after the shebang and the two blocks");
+        };
+        assert_eq!((wrapped.line, wrapped.paragraphs), (Line(8), 3));
+        assert_eq!(
+            opened(include_str!("passage/fixtures/declared-with-no-head.gandr")),
+            Opened::Absent,
+            "a comment after a definition is no head"
         );
     }
 
