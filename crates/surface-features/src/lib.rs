@@ -733,7 +733,8 @@ fn feature(values: Vec<Option<String>>) -> Result<Feature, Malformed>
 #[spec(ensures: |ref ret| matches!(*ret, Ok(_) | Err(Malformed::Width | Malformed::Required)))]
 fn need(values: Vec<Option<String>>) -> Result<(String, String), Malformed>
 {
-    let Ok([feature, needs]) = <[Option<String>; 2]>::try_from(values)
+    let mut values = values.into_iter();
+    let (Some(feature), Some(needs), None) = (values.next(), values.next(), values.next())
     else {
         return Err(Malformed::Width);
     };
@@ -1000,8 +1001,7 @@ impl FeatureLedger
                     .iter()
                     .zip(&tiers)
                     .find(|&(_row, &tier)| tier == 0_usize)
-                    .map(|(row, _tier)| row.id.clone())
-                    .unwrap_or_default();
+                    .map_or_else(String::new, |(row, _tier)| row.id.clone());
                 return Err(FeaturesFault::Cycle { id });
             }
         }
@@ -1656,7 +1656,7 @@ mod tests
             listed.iter().map(super::Feature::json).collect::<Vec<_>>(),
             vec![json!({
                 "id": "a", "area": "syntax", "name": "A", "status": "planned",
-                "notability": "ordinary", "line": "What a is.", "issue": "#1", "tier": 1,
+                "notability": "ordinary", "line": "What a is.", "issue": "#1", "tier": 1_usize,
             })]
         );
         assert_eq!(
@@ -1685,9 +1685,9 @@ mod tests
                 .map(|feature| (feature.tier(), feature.requires().to_vec()))
                 .collect::<Vec<_>>(),
             vec![
-                (1, vec![]),
-                (2, vec![String::from("a")]),
-                (3, vec![String::from("a"), String::from("b")]),
+                (1_usize, Vec::new()),
+                (2_usize, vec![String::from("a")]),
+                (3_usize, vec![String::from("a"), String::from("b")]),
             ],
             "each row has its needs in byte order and its tier"
         );
@@ -1695,7 +1695,7 @@ mod tests
             listed.last().map(super::Feature::json),
             Some(json!({
                 "id": "c", "area": "syntax", "name": "C", "status": "planned",
-                "notability": "ordinary", "line": "What c is.", "issue": "#1", "tier": 3,
+                "notability": "ordinary", "line": "What c is.", "issue": "#1", "tier": 3_usize,
                 "requires": ["a", "b"],
             })),
             "the object of a row states its tier and its needs"
