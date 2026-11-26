@@ -2048,6 +2048,74 @@ impl<'source> Collected<'source>
         Some((slot, constant))
     }
 
+    /// Whether the type name at `head` names the declaration that binds the
+    /// row `view`: the declaration of that name at the top level of the
+    /// head's source, or else the prelude's.
+    ///
+    /// # Specification
+    /// - requires: `tree` holds `head`.
+    /// - ensures: true exactly when the slot that the head's name resolves to,
+    ///   at its source's top level or else at the prelude's, carries a
+    ///   `builtin` attribute whose text keys the row `view`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a receiver and an answer written as a view under the
+    ///   prelude, and a source whose own `View` binds no row.
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_is_the_declaration_of_its_row`
+    #[inline]
+    #[must_use]
+    pub fn names_view(
+        &self,
+        tree: &SyntaxTree<'source>,
+        head: Placed,
+    ) -> bool
+    {
+        use gandr_core_term::builtin::Key;
+        use gandr_core_term::builtin::Row;
+        use gandr_core_term::builtin::SurfaceFormer;
+        let Some(fragment) = tree.fragment(head.node)
+        else {
+            return false;
+        };
+        let name = SurfaceName::from(fragment);
+        let declared = |source: SourceIndex| {
+            self.type_members_in(Container::TopLevel(source))
+                .find(|member| member.name == name)
+                .map(|member| member.held)
+                .or_else(|| {
+                    self.by_name
+                        .get(&(Container::TopLevel(source), name))
+                        .copied()
+                })
+        };
+        let slot = declared(self.unit.source_at(head.span.start()))
+            .or_else(|| self.unit.prelude().and_then(declared));
+        slot.and_then(|slot| self.slots.get(usize::from(slot)))
+            .is_some_and(|entry| {
+                entry.attributes.iter().any(|attribute| {
+                    let Payload::Written(text) = attribute.payload
+                    else {
+                        return false;
+                    };
+                    let Maybe::Present(gandr_kernel_term::Literal::Text(key)) =
+                        crate::lower::parse_literal(
+                            crate::form::Former::Text,
+                            tree.fragment(text.node)
+                                .unwrap_or_else(|| SourceFragment::from("")),
+                        )
+                    else {
+                        return false;
+                    };
+                    attribute.name.as_ref()
+                        == crate::attribute::RegisteredAttribute::BUILTIN.as_ref()
+                        && Row::named(Key(key.as_ref()))
+                            == Maybe::Present(Row::Surface(SurfaceFormer::View))
+                })
+            })
+    }
+
     /// The type members written in `container`, in source order: a module's
     /// body members, or a source's top-level ones.
     ///
@@ -6852,7 +6920,9 @@ impl<'source> Collector<'_, 'source>
                     |operand| {
                         let mut pieces = Pieces::new();
                         matches!(
-                            view_type(self.pbg, self.tree, operand, &mut pieces),
+                            view_type(self.pbg, self.tree, operand, &mut pieces, |head| {
+                                self.collected.names_view(self.tree, head)
+                            }),
                             Ok(Maybe::Present(_))
                         )
                     },

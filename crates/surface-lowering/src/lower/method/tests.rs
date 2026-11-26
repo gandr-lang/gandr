@@ -323,6 +323,31 @@ fn a_deduced_mode_is_erased_from_the_telescope()
 }
 
 #[test]
+fn a_view_is_the_declaration_of_its_row()
+{
+    // A source's own `View` binds no row: its receiver `View[m] (…)` is a
+    // view type outside a view method's result, where the prelude's `View`
+    // makes the same method answer its place.
+    let mut arena = CoreArena::new();
+    let source = prelude_listing(include_str!(
+        "tests/unformatted/a-view-is-the-declaration-of-its-row.gandr"
+    ));
+    let module = preluded_listed(&source, &mut arena);
+    let Some(written) = source.find("View[m] (List Integer)")
+    else {
+        panic!("the receiver is written")
+    };
+    let refusal = refusal_of(&module, SurfaceName::from("nth"));
+    assert!(
+        matches!(
+            refusal,
+            LoweringRefusal::ViewNotPlace { span } if usize::from(span.start()) == written
+        ),
+        "the source's own `View` is no view: {refusal:?}"
+    );
+}
+
+#[test]
 fn a_view_method_answers_its_place_index()
 {
     let mut arena = CoreArena::new();

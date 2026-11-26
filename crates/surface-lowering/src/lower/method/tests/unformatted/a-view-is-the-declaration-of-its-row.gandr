@@ -1,0 +1,4 @@
+type View(a : Type) = a ;
+module Own where {
+  def nth[m : Mode](self : View[m] (List Integer), i : Integer) -> View[m] Integer = self.#[i];
+}

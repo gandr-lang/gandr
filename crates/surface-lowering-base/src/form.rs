@@ -2686,10 +2686,11 @@ pub fn own_pieces<'source>(
 ///
 /// # Specification
 /// - requires: `view` is a form of `tree`; `pbg` interprets its molds.
-/// - ensures: for a staged type or a type's application whose head is the type
-///   name `View` with one name in its bracket and whose one argument is its
-///   element, that name's tile and the element; nothing for any other form.
-///   `read` holds pieces of the form after the call.
+/// - ensures: for a staged type or a type's application whose head names the
+///   declaration of the row `view`, as `views` answers, with one name in its
+///   bracket and whose one argument is its element, that name's tile and the
+///   element; nothing for any other form. `read` holds pieces of the form after
+///   the call.
 /// - fails: [`LoweringRefusal::UnknownMold`] on a mold lookup absent from
 ///   `pbg`.
 /// - panics: none.
@@ -2707,12 +2708,15 @@ pub fn own_pieces<'source>(
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
 #[inline]
-pub fn view_type<'source>(
+pub fn view_type<'source, Views>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
     view: Placed,
     read: &mut Pieces,
+    views: Views,
 ) -> Result<Maybe<ViewType, view_type::Absent>, LoweringRefusal<'source>>
+where
+    Views: Fn(Placed) -> bool,
 {
     let former = |at: Placed| -> Result<Option<Former>, LoweringRefusal<'source>> {
         Ok(
@@ -2795,9 +2799,7 @@ pub fn view_type<'source>(
     );
     let viewed = (listed || rest.is_empty())
         && matches!(former(head)?, Some(Former::TypeHead))
-        && tree
-            .fragment(head.node)
-            .is_some_and(|name| name.as_ref() == "View");
+        && views(head);
 
     Ok(if viewed {
         Maybe::Present(ViewType { mode, element })
