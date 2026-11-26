@@ -22,8 +22,11 @@ use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::fixture::listed;
 use crate::fixture::listing;
+use crate::fixture::prelude_listing;
+use crate::fixture::preluded_listed;
 use crate::lower::access::tests::forms;
 use crate::lower::native::tests::assert_accepted;
+use crate::lower::native::tests::assert_checked;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
 use crate::lower::native::tests::lowered;
@@ -276,8 +279,8 @@ fn a_deduced_mode_is_erased_from_the_telescope()
         PLACES = PLACES
     );
     let mut arena = CoreArena::new();
-    let source = listing(&source);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(&source);
+    let module = preluded_listed(&source, &mut arena);
     let Some(declaration) = module
         .declarations()
         .iter()
@@ -351,8 +354,8 @@ fn a_view_is_the_declaration_of_its_row()
 fn a_view_method_answers_its_place_index()
 {
     let mut arena = CoreArena::new();
-    let source = listing(PLACES);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(PLACES);
+    let module = preluded_listed(&source, &mut arena);
     for (name, place) in [("first", "literal"), ("nth", "%0")] {
         let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
         assert_eq!(
@@ -361,7 +364,7 @@ fn a_view_method_answers_its_place_index()
             "`{name}` holds its receiver and lends it shared at the place it answers"
         );
     }
-    assert_accepted(&judged(&module, &mut arena));
+    assert_checked(&module, &mut arena);
 }
 
 #[test]
@@ -372,8 +375,8 @@ fn a_view_method_answering_no_place_is_refused()
         PLACES = PLACES
     );
     let mut arena = CoreArena::new();
-    let source = listing(&source);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(&source);
+    let module = preluded_listed(&source, &mut arena);
     for name in ["valued", "computed", "crossed", "stray"] {
         assert!(
             matches!(
@@ -394,8 +397,8 @@ fn an_index_reads_its_held_element()
         PLACES = PLACES
     );
     let mut arena = CoreArena::new();
-    let source = listing(&source);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(&source);
+    let module = preluded_listed(&source, &mut arena);
     for (name, place) in [("element", "%0"), ("zeroth", "literal")] {
         let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
         assert_eq!(
@@ -404,7 +407,7 @@ fn an_index_reads_its_held_element()
             "`{name}` holds the list and answers the element its shared view sees"
         );
     }
-    assert_accepted(&judged(&module, &mut arena));
+    assert_checked(&module, &mut arena);
 }
 
 /// #2670: an index of a list no slot holds holds the list for the read
@@ -420,8 +423,8 @@ fn an_index_of_an_unheld_list_holds_it_for_the_read_2670()
         PLACES = PLACES
     );
     let mut arena = CoreArena::new();
-    let source = listing(&source);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(&source);
+    let module = preluded_listed(&source, &mut arena);
     for (name, place) in [("passed", "%0"), ("declared", "literal")] {
         let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
         assert_eq!(
@@ -430,7 +433,7 @@ fn an_index_of_an_unheld_list_holds_it_for_the_read_2670()
             "`{name}` holds its list for the read and answers the element its view sees"
         );
     }
-    assert_accepted(&judged(&module, &mut arena));
+    assert_checked(&module, &mut arena);
 }
 
 /// #4944: a bracket after the name of a value holds no static arguments. The
@@ -445,8 +448,8 @@ fn a_bare_index_is_refused_naming_the_selector_4944()
         PLACES = PLACES
     );
     let mut arena = CoreArena::new();
-    let source = listing(&source);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(&source);
+    let module = preluded_listed(&source, &mut arena);
     let text = source.as_str();
     for (name, written) in [("zeroth", "self[0]"), ("held", "xs[1]")] {
         let bracket = text
@@ -473,8 +476,8 @@ fn a_bare_index_is_refused_naming_the_selector_4944()
 fn a_view_block_lends_at_the_mode_it_asks()
 {
     let mut arena = CoreArena::new();
-    let source = listing(PLACES);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(PLACES);
+    let module = preluded_listed(&source, &mut arena);
     for (name, lent) in [
         (
             "head",
@@ -506,7 +509,7 @@ fn a_view_block_lends_at_the_mode_it_asks()
              where its block ends the view"
         );
     }
-    assert_accepted(&judged(&module, &mut arena));
+    assert_checked(&module, &mut arena);
 }
 
 #[test]
@@ -538,8 +541,8 @@ fn a_qualified_call_is_the_dot_call_at_every_mode_7974()
         COUNTER = COUNTER
     );
     let mut arena = CoreArena::new();
-    let source = listing(source.as_str());
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(source.as_str());
+    let module = preluded_listed(&source, &mut arena);
     let read = Vec::from([
         "hold",
         "access shared @0",
@@ -602,8 +605,8 @@ fn a_method_needing_its_hold_is_no_value_7980()
         PLACES = PLACES
     );
     let mut arena = CoreArena::new();
-    let source = listing(&source);
-    let module = listed(&source, &mut arena);
+    let source = prelude_listing(&source);
+    let module = preluded_listed(&source, &mut arena);
     for (name, path, method, mode) in [
         ("bumped", "Counter.bump", "bump", ReceiverMode::Exclusive),
         ("placed", "Places.first", "first", ReceiverMode::Deduced),
@@ -803,11 +806,11 @@ fn a_method_of_its_receiver_alone_runs_at_its_bare_selection_8316()
     // A method that answers a place runs at its bare selection too, with a
     // view block after it and without one.
     let mut arena = CoreArena::new();
-    let source = listing(format!(
+    let source = prelude_listing(format!(
         "{PLACES}def headBare() -> -F Integer = {{ var xs = pair; let h = xs.first; pure h }};\n\
          def doubledBare() -> -F Integer = {{ var xs = pair; (xs.first) as w {{ pure w + w }} }};\n"
     ));
-    let module = listed(&source, &mut arena);
+    let module = preluded_listed(&source, &mut arena);
     for pair in [("head", "headBare"), ("doubled", "doubledBare")] {
         assert!(
             one_core(&module, &arena, pair),

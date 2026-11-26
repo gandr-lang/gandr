@@ -97,12 +97,72 @@ where
 {
     let pbg = grammar();
     let tree = parsed(&pbg, SourceText::from(text.as_ref()));
+    lower_unit(
+        &pbg,
+        &tree,
+        &listed_unit(),
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut Decisions::none(),
+    )
+    .expect("the listed unit lowers")
+}
+
+/// The unit that [`listed`] lowers: the stand-in for the `std` modules, then
+/// the source listing their formers, which imports the stand-in twice.
+///
+/// # Specification
+/// trivial.
+fn listed_unit() -> Unit
+{
     let stand_in = ImportTarget::Source(SourceIndex::from(0_usize));
-    let unit = Unit::new(Vec::from([
+    Unit::new(Vec::from([
         UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
         UnitSource::new(ByteOffset::from(1_usize), Vec::from([stand_in, stand_in])),
     ]))
-    .expect("the listing imports the source before it");
+    .expect("the listing imports the source before it")
+}
+
+/// `source` as [`listing`] writes it, after the prelude: the text
+/// [`preluded_listed`] lowers. A source that writes `View` reads the
+/// prelude's declaration of its row there.
+///
+/// # Specification
+/// trivial.
+pub fn prelude_listing<Source>(source: Source) -> String
+where
+    Source: core::fmt::Display,
+{
+    let listed = listing(source);
+    let (laid, _unit) = crate::prelude::lay(SourceText::from(listed.as_str()), &listed_unit())
+        .expect("the listed unit lays no prelude");
+    laid
+}
+
+/// `text`, which [`prelude_listing`] made, lowered as [`listed`] lowers a
+/// listing, after the prelude.
+///
+/// # Specification
+/// - requires: `text` is what [`prelude_listing`] made and parses cleanly.
+/// - ensures: as [`listed`], in the unit the prelude is laid before.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the unit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness that writes `View` reads the prelude's
+///   declaration of its row through here.
+/// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+pub fn preluded_listed<'source>(
+    text: &'source str,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, SourceText::from(text));
+    // The laid unit follows from the listed unit's layout alone.
+    let (_laid, unit) = crate::prelude::lay(SourceText::from(""), &listed_unit())
+        .expect("the listed unit lays no prelude");
     lower_unit(
         &pbg,
         &tree,
@@ -112,7 +172,7 @@ where
         Recognition::default(),
         &mut Decisions::none(),
     )
-    .expect("the listed unit lowers")
+    .expect("the preluded listing lowers")
 }
 
 /// The lines a source writes to import the module of every host interface
