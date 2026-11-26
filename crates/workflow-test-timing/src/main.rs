@@ -168,12 +168,14 @@ fn main() -> ExitCode
 ///   newest two when asked for two; a fetch through a fake `gh` stores and
 ///   reads the runs it lists; an empty store is refused; `--times` over one run
 ///   prints each test by its slowest lane, with no configuration present; one
-///   kept report writes the overrides of its slow tests to a file.
+///   kept report writes the overrides of its slow tests to a file, and a
+///   missing one writes no override.
 /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
 /// - witness: `tests::cli::an_empty_store_is_refused`
 /// - witness: `tests::cli::times_print_each_test_by_its_slowest_lane`
 /// - witness: `tests::cli::a_kept_report_writes_the_priorities_of_the_next_run`
+/// - witness: `tests::cli::a_target_with_no_report_writes_no_priority`
 ///
 /// # Cost
 /// - allocation: the report text and the fetched run list, growth within the
@@ -182,7 +184,11 @@ fn report(cli: Cli) -> Result<(), TimingError>
 {
     let mut history = History::default();
     let runs: SmallVec<RunId, 0, Global> = if let Some(ref report) = cli.junit {
-        read_report(report, &mut history)?;
+        // A target directory with no run keeps no report. Its next run gets a
+        // configuration with no priority.
+        if cli.write.is_none() || report.exists() {
+            read_report(report, &mut history)?;
+        }
         SmallVec::<_, 0, Global>::new()
     }
     else {

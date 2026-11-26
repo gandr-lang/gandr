@@ -192,6 +192,43 @@ fn a_kept_report_writes_the_priorities_of_the_next_run()
 }
 
 #[test]
+fn a_target_with_no_report_writes_no_priority()
+{
+    let root = std::env::temp_dir().join(format!("test-timing-{}-unkept", std::process::id()));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    std::fs::create_dir_all(&root).unwrap();
+    let config = root.join("nextest.toml");
+    std::fs::write(&config, "").unwrap();
+    let priorities = root.join("priorities.toml");
+    let output = Command::new(env!("CARGO_BIN_EXE_test-timing"))
+        .arg("--junit")
+        .arg(root.join("nextest").join("default").join("junit.xml"))
+        .arg("--config")
+        .arg(&config)
+        .arg("--write")
+        .arg(&priorities)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "",
+        "nothing on standard error, though no report exists"
+    );
+    assert!(output.status.success(), "exit 0");
+    assert_eq!(
+        std::fs::read_to_string(&priorities).unwrap(),
+        "# The priorities of the slowest tests, from the times of the last run.\n\
+         # `test-timing --write` writes this file; a run names it with\n\
+         # `--tool-config-file test-timing:<file>`.\n\
+         \n",
+        "the first run of a target directory gets a configuration with no priority"
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn an_empty_store_is_refused()
 {
     let root = std::env::temp_dir().join(format!("test-timing-{}-empty", std::process::id()));
