@@ -2179,6 +2179,13 @@ mod tests
             // Losslessness holds over arbitrary input.
             prop_assert_eq!(reconstruct(parse_result.tree()), src);
         }
+    }
+
+    proptest! {
+        // Each case parses up to five fragments whole and by form, so the
+        // enforcing lane, whose checked clauses multiply that cost, draws
+        // fewer.
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(anodized_panic) { 64 } else { 400 }))]
 
         #[test]
         fn arbitrary_source_parses_by_form_as_whole(

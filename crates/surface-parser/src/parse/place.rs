@@ -3527,7 +3527,9 @@ mod tests
     /// and with none, tried in source order and then backwards, so the shared
     /// molding resumes, starts again, and starts over after a copy it
     /// committed. Each copy is molded fresh once, and both orders read that
-    /// molding (#8148).
+    /// molding (#8148). Each copy molds three times, so the enforcing lane,
+    /// whose checked clauses multiply that cost, writes at every eighth token
+    /// end.
     #[test]
     fn a_resumed_copy_answers_as_a_fresh_one()
     {
@@ -3560,9 +3562,11 @@ mod tests
         ] {
             let text = SourceText::from(source);
             let mut shared = super::Shared::new(&pbg, text);
+            let stride = if cfg!(anodized_panic) { 8 } else { 1 };
             let ends: Vec<usize> = label(SourceFragment::from(source))
                 .iter()
                 .filter_map(|token| usize::try_from(token.end).ok())
+                .step_by(stride)
                 .collect();
             let variants: Vec<(&str, &str)> = [")", ";", "=>", "else"]
                 .into_iter()
