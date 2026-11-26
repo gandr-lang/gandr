@@ -2283,7 +2283,16 @@ mod tests
     {
         let features = gandr_surface_features::FeatureLedger::read(&committed().join("../.."))
             .expect("the committed features ledger reads");
-        for (rule, gate) in gandr_surface_grammar::RULE_GATES {
+        let rules = gandr_surface_grammar::RULE_GATES
+            .iter()
+            .map(|&(rule, gate)| (rule, gate));
+        let attributes = gandr_surface_lowering::gate::ATTRIBUTE_GATES
+            .iter()
+            .map(|&(attribute, gate)| (attribute, gate));
+        let builtins = gandr_surface_lowering::gate::BUILTIN_GATES
+            .iter()
+            .map(|&(_kind, word, gate)| (word, gate));
+        for (gated, gate) in rules.chain(attributes).chain(builtins) {
             if let gandr_surface_grammar::RuleGate::Feature(id) = gate {
                 let status = features.status(&FeatureId(id.to_owned()));
                 assert!(
@@ -2291,7 +2300,7 @@ mod tests
                         status,
                         Ok(Status::Implemented | Status::Partial | Status::Planned)
                     ),
-                    "the rule `{rule}` names `{id}`, which is no row or a declined row: {status:?}"
+                    "`{gated}` names `{id}`, which is no row or a declined row: {status:?}"
                 );
             }
         }

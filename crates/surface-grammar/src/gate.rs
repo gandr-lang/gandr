@@ -14,7 +14,7 @@
 
 use crate::model::RuleName;
 
-/// Why a rule is in tier zero.
+/// Why a rule, an attribute or a builtin row is in tier zero.
 ///
 /// # Specification
 /// trivial.
@@ -30,6 +30,10 @@ pub enum CoreReason
     /// The form only groups the forms that it holds, and each of them is its
     /// own gate.
     Group,
+    /// The form states a record of its declaration: an expectation, a
+    /// document, a spelling, or a request to a lint. The checker judges the
+    /// declaration the same with the form and with none.
+    Record,
 }
 
 /// What a source needs to write a form of a rule.

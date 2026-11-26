@@ -96,6 +96,7 @@ pub mod error;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod form;
+pub mod gate;
 pub mod import;
 pub mod layered;
 pub mod layout;

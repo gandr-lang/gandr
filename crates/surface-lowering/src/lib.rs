@@ -434,6 +434,7 @@ pub use gandr_surface_lowering_base::description;
 use gandr_surface_lowering_base::doc;
 use gandr_surface_lowering_base::error;
 use gandr_surface_lowering_base::form;
+pub use gandr_surface_lowering_base::gate;
 use gandr_surface_lowering_base::import;
 use gandr_surface_lowering_base::layered;
 pub use gandr_surface_lowering_base::model;
