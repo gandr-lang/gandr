@@ -7,20 +7,21 @@
 //! when it fits and breaks one item per line when it does not. A form the
 //! parser repaired, a string and a hole are copied byte for byte.
 //!
-//! # One spelling of a statement's end
+//! # One spelling of an item's end
 //!
-//! A statement ends at its line's end. Where a block of statements breaks
-//! one statement per line, the `;` that ends a statement before the block's
-//! last one is left out, since the layout pass places the separator at the
-//! line's end. Two cases keep the `;`: two statements on one line, as a block
-//! laid on one line writes them, and the `;` after a block's last statement,
-//! which gives the block the unit value. A block of statements is one that a
-//! line-final `=` opens, or a `{` of a form after no `where` and no `rec`; a
-//! declaration body keeps each `;`, since the layout pass places none there.
+//! A statement ends at its line's end, and so does a member of a declaration
+//! body. Where a block breaks one item per line, the `;` that ends an item at
+//! a line's end is left out, since the layout pass places the separator there.
+//! Two cases keep the `;`: two items on one line, as a block laid on one line
+//! writes them, and the `;` after the last statement of a block of
+//! statements, which gives the block the unit value. The layout pass places a
+//! `;` before the close of a declaration body, so its last member writes none.
+//! A block is one that a line-final `=` or `where` opens, or a `{` of a form;
+//! after a `where` or a `rec`, the block is a declaration body.
 //!
 //! The formatted text is parsed again before it is returned: its tree must
 //! equal the source's, a `;` the layout pass places alike with a written one,
-//! its tokens and comments must be the source's, a statement's `;` left out
+//! its tokens and comments must be the source's, an item's `;` left out
 //! aside, and each comment must belong to the node it belonged to, or
 //! [`format`] refuses with [`FormatError::Changed`] and returns nothing.
 //!
@@ -2778,7 +2779,7 @@ fn spells_alike<'written, 'candidate, 'source, 'read>(
             next.material == wrote.material && <&str>::from(next.text) == <&str>::from(wrote.text)
         }) {
             Some(next) => each(wrote, next),
-            None if wrote.offside == Offside::Ends => {},
+            None if matches!(wrote.offside, Offside::Ends | Offside::EndsMember) => {},
             None => return false,
         }
     }

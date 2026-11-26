@@ -148,6 +148,10 @@ pub enum Offside
     /// before another line of the block or another form of the source, the
     /// layout pass places a separator there, so the formatter leaves it out.
     Ends,
+    /// A written `;` that ends a member of a declaration body: the layout
+    /// pass places a separator at each member's line end, the last one's too,
+    /// so the formatter leaves it out where it ends a line.
+    EndsMember,
     /// The empty close of a block.
     Closes,
 }
@@ -250,9 +254,13 @@ pub fn flatten<'source>(
     // ascending. A form is reached before its target, so each is listed
     // before the walk reaches it.
     let mut glued: Vec<NodeIndex> = Vec::new();
-    // The `;` tiles of the forms whose block is a declaration body,
-    // ascending: a form is reached before its tiles.
-    let mut declared: Vec<NodeIndex> = Vec::new();
+    // The children of the forms whose block is a declaration body, each of
+    // its members and each of its `;` tiles, ascending: a form is reached
+    // before its children.
+    let mut members: Vec<NodeIndex> = Vec::new();
+    // The tiles in the braces that a member of a declaration body inlines,
+    // ascending.
+    let mut nested: Vec<NodeIndex> = Vec::new();
     in_order(
         &mut pending,
         tree.children(tree.root())
@@ -280,35 +288,50 @@ pub fn flatten<'source>(
                     // stand in the form's block, each its own branch; the
                     // others stand in the block around the form.
                     let mut inside = Inside::No;
+                    // The depth in the declaration body of the form, none
+                    // outside it: a member that the form inlines as its own
+                    // tiles holds braces of its own, the body of a circuit
+                    // rule `{ node …; }`, whose tiles are no members.
+                    let mut body: Option<usize> = None;
                     let mut before: Option<LabelText<'static>> = None;
                     in_order(
                         &mut pending,
                         tree.children(at).map(|child| {
                             let label = tile_label(grammar, tree, child);
+                            body = match (body, label) {
+                                (None, Some(LabelText("{")))
+                                    if matches!(before, Some(LabelText("where" | "rec"))) =>
+                                {
+                                    Some(0)
+                                },
+                                (Some(depth), Some(LabelText("{"))) => {
+                                    listed(&mut nested, child);
+                                    Some(depth.saturating_add(1))
+                                },
+                                (Some(0), Some(LabelText("}"))) | (None, _) => None,
+                                (Some(depth), Some(LabelText("}"))) => {
+                                    listed(&mut nested, child);
+                                    Some(depth.saturating_sub(1))
+                                },
+                                (Some(0), _) => {
+                                    listed(&mut members, child);
+                                    Some(0)
+                                },
+                                (Some(depth), _) => {
+                                    listed(&mut nested, child);
+                                    Some(depth)
+                                },
+                            };
                             let here = match (inside, label) {
                                 (Inside::No, Some(LabelText("{"))) => {
-                                    inside = match before {
-                                        Some(LabelText("where" | "rec")) => Inside::Declarations,
-                                        Some(_) | None => Inside::Statements,
-                                    };
+                                    inside = Inside::Yes;
                                     branch
                                 },
-                                (
-                                    Inside::Statements | Inside::Declarations,
-                                    Some(LabelText("}")),
-                                ) => {
+                                (Inside::Yes, Some(LabelText("}"))) => {
                                     inside = Inside::No;
                                     branch
                                 },
-                                (Inside::Statements | Inside::Declarations, _) => {
-                                    if inside == Inside::Declarations
-                                        && label == Some(LabelText(";"))
-                                        && let Err(slot) = declared.binary_search(&child)
-                                    {
-                                        declared.insert(slot, child);
-                                    }
-                                    Some(branch_of(tree, child))
-                                },
+                                (Inside::Yes, _) => Some(branch_of(tree, child)),
                                 (Inside::No, _) => branch,
                             };
                             if label.is_some() {
@@ -372,9 +395,28 @@ pub fn flatten<'source>(
                         Context::of(rule.name(), text, before)
                     })
                 };
-                // A declaration body's `;` ends no statement.
-                let statement = branch.filter(|_| declared.binary_search(&at).is_err());
-                (context, offside_of(grammar, mold, text, statement))
+                // A `;` of a declaration body, or a member's own last `;`,
+                // ends a member of the body. A `;` in the braces a member
+                // inlines ends no member and no statement.
+                let member = members.binary_search(&at).is_ok()
+                    || branch.is_some_and(|branch| {
+                        branch.direct == Direct::No
+                            && members.binary_search(&branch.node).is_ok()
+                            && own_end(tree, branch.node) == Some(node.span())
+                    });
+                let statement = branch.filter(|_| nested.binary_search(&at).is_err());
+                let offside = match offside_of(grammar, mold, text, statement) {
+                    Offside::Ends | Offside::Written if member && <&str>::from(text) == ";" => {
+                        Offside::EndsMember
+                    },
+                    offside @ (Offside::Written
+                    | Offside::Opens
+                    | Offside::Separates
+                    | Offside::Ends
+                    | Offside::EndsMember
+                    | Offside::Closes) => offside,
+                };
+                (context, offside)
             },
             NodeLabel::Wald
             | NodeLabel::Meld(_)
@@ -406,6 +448,7 @@ pub fn flatten<'source>(
         }
     }
     ended_items(tree, &mut kept);
+    braced_members(&mut kept);
     for obligation in obligations {
         for leaf in &kept {
             if let Owner::Form(form) = leaf.owner
@@ -421,6 +464,40 @@ pub fn flatten<'source>(
     Leaves {
         leaves: kept,
         repaired,
+    }
+}
+
+/// Insert `node` into the ascending list `list`, once.
+///
+/// # Specification
+/// trivial.
+fn listed(
+    list: &mut Vec<NodeIndex>,
+    node: NodeIndex,
+)
+{
+    if let Err(slot) = list.binary_search(&node) {
+        list.insert(slot, node);
+    }
+}
+
+/// Mark as [`Offside::Written`] each member's `;` after a `}`: the layout
+/// pass reads a `}` at a line's end as the close of a block, so a member
+/// whose last word is a `}` keeps its own `;`.
+///
+/// # Specification
+/// trivial.
+fn braced_members(leaves: &mut [Leaf<'_>])
+{
+    let mut closed = false;
+    for leaf in leaves
+        .iter_mut()
+        .filter(|leaf| leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty())
+    {
+        if leaf.offside == Offside::EndsMember && closed {
+            leaf.offside = Offside::Written;
+        }
+        closed = <&str>::from(leaf.text) == "}";
     }
 }
 
@@ -559,18 +636,15 @@ fn in_order<T>(
     }
 }
 
-/// Whether the walk stands inside the block a form opens, and which.
+/// Whether the walk stands inside the block a form opens.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Inside
 {
     /// It does not.
     No,
-    /// It does: a `{` of the form opened it and no `}` has closed it. A `;`
-    /// of the form there ends a statement.
-    Statements,
-    /// It does, and a `where` or a `rec` stands before its `{`: the block is
-    /// a declaration body, whose `;` the layout pass does not place.
-    Declarations,
+    /// It does: a `{` of the form opened it and no `}` has closed it. Each
+    /// child there is an item of the block, its own branch.
+    Yes,
 }
 
 /// The label of the tile at `at`, or none for any other node.

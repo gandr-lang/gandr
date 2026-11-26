@@ -214,6 +214,9 @@ enum LineEnd
     Kept,
     /// It is a statement's `;`, which the layout pass places at a line's end.
     Placed,
+    /// It is a member's `;`, which the layout pass places at each line's end
+    /// of a declaration body, the last one's too.
+    Closed,
 }
 
 /// Whether documentation starts or ends between an element and the one
@@ -604,7 +607,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                         });
                         continue;
                     },
-                    Offside::Written | Offside::Ends => {},
+                    Offside::Written | Offside::Ends | Offside::EndsMember => {},
                 }
                 if let Some(&(_, expects)) = BRACKETS.iter().find(|&&(opener, _)| opener == text) {
                     let here = space::Token {
@@ -721,6 +724,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
             context: leaf.context,
             line_end: match leaf.offside {
                 Offside::Ends => LineEnd::Placed,
+                Offside::EndsMember => LineEnd::Closed,
                 Offside::Written | Offside::Opens | Offside::Separates | Offside::Closes => {
                     LineEnd::Kept
                 },
@@ -1085,8 +1089,10 @@ fn group_doc(
 /// line that opens them, a continuation further still, a blank line the
 /// source wrote before an item kept as `blank`. A statement's `;` that ends
 /// an item before the last item that holds code is left out, since the
-/// layout pass places it at the line's end; an item it was all of is left
-/// out too.
+/// layout pass places it at the line's end, and so is a member's `;` that ends
+/// any item a word begins; an item it was all of is left out too. The layout
+/// pass ends no item that a `|` or an attribute begins, so such an item keeps
+/// its `;`.
 ///
 /// # Specification
 /// trivial.
@@ -1111,17 +1117,18 @@ fn item_lines<'source>(
     let mut kept: Vec<Placed<'source>> = Vec::new();
     let mut lines: Vec<DocId> = Vec::new();
     for (index, item) in items.iter().enumerate() {
-        let left = last
-            .filter(|&last| index < last)
-            .and_then(|_| {
-                item.placed
-                    .iter()
-                    .rposition(|current| current.element.kind() == Kind::Code)
-            })
+        let left = item
+            .placed
+            .iter()
+            .rposition(|current| current.element.kind() == Kind::Code)
             .filter(|&at| {
                 item.placed
                     .get(at)
-                    .is_some_and(|current| current.line_end == LineEnd::Placed)
+                    .is_some_and(|current| match current.line_end {
+                        LineEnd::Placed => last.is_some_and(|last| index < last),
+                        LineEnd::Closed => worded(item.placed),
+                        LineEnd::Kept => false,
+                    })
             });
         if let Some(at) = left {
             kept.clear();
@@ -1151,6 +1158,22 @@ fn item_lines<'source>(
     }
     let body = builder.concat_all(lines)?;
     Ok(builder.nest(NestAmount::from(INDENT), body)?)
+}
+
+/// Whether the first code of `placed` is a word, as the layout pass reads the
+/// lead of an item that it ends at the line's end.
+///
+/// # Specification
+/// trivial.
+fn worded(placed: &[Placed<'_>]) -> bool
+{
+    placed
+        .iter()
+        .find(|current| current.element.kind() == Kind::Code)
+        .is_some_and(|first| {
+            matches!(first.element, Element::Text(text)
+                if <&str>::from(text).starts_with(|letter: char| letter.is_alphabetic() || letter == '_'))
+        })
 }
 
 /// The document of `join`: nothing, or one space.
