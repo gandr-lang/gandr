@@ -277,6 +277,15 @@ pub(super) const MEANINGLESS: &[(&str, &str)] = &[
          head answers it",
     ),
     (
+        "item inner_attribute_block",
+        "an inner attribute's brackets and keywords state a fact of the source or of the block \
+         that it stands in, such as the features of a source: no term or type",
+    ),
+    (
+        "item inner_attribute_block name",
+        "an inner attribute's name is the fact it states, no term or type",
+    ),
+    (
         "item pub_declaration",
         "a `pub` mark exports the declaration after it and is no term or type: the declaration's \
          head answers it",
