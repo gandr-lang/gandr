@@ -3334,10 +3334,8 @@ fn a_constructor_answers_a_definition_s_application_2112()
 
 /// #3665: a constructor returned against a result written as the application
 /// of a definition written as a function tail, `-> wrapped(Integer)` with
-/// `def wrapped(A : Type) -> -F Type { … }`, was refused as unannotated: the
-/// lowering found the body of a definition written `= e` alone. The tail's
-/// declaration form holds its body, so the constructor lowers, bare and
-/// returned, and the checker accepts it.
+/// `def wrapped(A : Type) -> -F Type = … ;`, lowers, bare and returned, and
+/// the checker accepts it: the tail's declaration form holds its body.
 #[test]
 fn a_constructor_answers_a_function_tail_s_application_3665()
 {

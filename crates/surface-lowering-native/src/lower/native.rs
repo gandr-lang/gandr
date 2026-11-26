@@ -147,7 +147,7 @@
 //! reading passes over a match on a parameter whose type decodes a code,
 //! `v : elL(c)`, when a match on another parameter encloses it: a decode
 //! carries no stage, so the claim descends on the code (`Lowerer::decodes`).
-//! So `def rec f(p₁, …, pₖ, y, q₁, …, qₘ) -> C { b }` staging `y` lowers to
+//! So `def rec f(p₁, …, pₖ, y, q₁, …, qₘ) -> C = b ;` staging `y` lowers to
 //! `thunk (λp₁ … λpₖ. fix f. λy. λq₁ … λqₘ. b)`, and a call `f[<](p₁, …, pₖ,
 //! a, c₁, …, cₘ)` to `(force f) a c₁ … cₘ`. The staged parameter is always the
 //! fixpoint's first binder, its evidence `StructuralDescent`, and whether `a`

@@ -5,10 +5,10 @@
 //! written twice balances the wrong opener. In
 //!
 //! ```text
-//! def give_up() -> -F Unit {
+//! def give_up() -> -F Unit = {
 //!   var c = 0;
 //!   access c as v { abort(v) }}
-//! }
+//! };
 //! ```
 //!
 //! the second `}` of the access line closes the definition, and the `}` under

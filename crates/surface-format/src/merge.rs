@@ -1,9 +1,9 @@
 //! A signature and the definition after it written as one form.
 //!
 //! The function form: `def f : () -> B ; def f = thunk { c } ;` and `def
-//! f() -> -F B { c }`, which lower to the same thunk at the same type, and
+//! f() -> -F B = c ;`, which lower to the same thunk at the same type, and
 //! `def f : A -> B ; def f = thunk { fun (x) { c } } ;` or `def f = fun (x) {
-//! c } ;` and `def f(x : A) -> -F B { c }`, the lambda's binders the
+//! c } ;` and `def f(x : A) -> -F B = c ;`, the lambda's binders the
 //! function form's parameters.
 //!
 //! The joined form, for every other pair: `def x : T ; def x = e ;` and `def

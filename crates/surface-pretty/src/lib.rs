@@ -1146,7 +1146,7 @@ where
 quenchant_shape::reason_enum! {
     /// Why a definition is not written whole.
     pub mod whole {
-        /// The reason no `def name(…) -> C { b }` is written.
+        /// The reason no `def name(…) -> C = b ;` is written.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// Its type is no suspended function.

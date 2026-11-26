@@ -6,12 +6,12 @@
 //! the bracket. In
 //!
 //! ```text
-//! def same(n : Integer) -> -F Integer {
+//! def same(n : Integer) -> -F Integer = {
 //!   case n {{
 //!     zero @ 0 => return zero,
 //!     _ => return n
 //!   }
-//! }
+//! };
 //! ```
 //!
 //! the doubled `{` is paired with the case's `}`, the case's `{` with the
