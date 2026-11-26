@@ -2316,7 +2316,7 @@ fn features_prints_the_declaration_of_each_source()
     assert_eq!(
         stdout(&read),
         format!(
-            "{}: tier zero\n{}: @![features(\"deprecation\")]\n",
+            "{}: tier zero\n{}: @![features((\"deprecation\", \"modules\"))]\n",
             twin.display(),
             undeclared.display()
         )

@@ -417,7 +417,7 @@ pub fn unused_feature<'source>(
         let span = ByteSpan::new(ByteOffset::from(from), ByteOffset::from(to)).ok()?;
         Some((SurfaceName::from(text.get(from .. to)?), span))
     });
-    Some(written.unwrap_or((SurfaceName::from(attribute), entry.span())))
+    Some(written.unwrap_or_else(|| (SurfaceName::from(attribute), entry.span())))
 }
 
 /// The keys that the source `source` of a unit declares with the attribute

@@ -1998,12 +1998,13 @@ fn a_component_check_carries_its_members_expectation()
 #[test]
 fn a_source_declares_its_features_at_its_head()
 {
-    let declared = "@![features((\"attributes\", \"pattern-matching\"))] def one() -> Integer = 1;";
+    let declared = "@![features((\"deprecation\", \"modules\"))] @[deprecated] def one() -> \
+                    Integer = 1; module Inner where { def two() -> Integer = 2; }";
     let lowered = lower(declared);
-    assert_eq!(
-        rows(&lowered),
-        [row("one", Role::Declared, Amounts::Completed)],
-        "the declaration of the source is read as one with no attribute"
+    assert!(
+        rows(&lowered).contains(&row("one", Role::Declared, Amounts::Completed)),
+        "the declaration of the source is read as one with no attribute at the head: {:?}",
+        rows(&lowered)
     );
     let table = lowered.module.attributes();
     let [source] = *table.sources()
@@ -2032,7 +2033,7 @@ fn a_source_declares_its_features_at_its_head()
     };
     assert_eq!(
         keys,
-        ["attributes", "pattern-matching"],
+        ["deprecation", "modules"],
         "the keys are read in the order of the source"
     );
 
@@ -2233,21 +2234,29 @@ fn a_source_is_refused_for_a_feature_that_it_declares_and_does_not_use()
 }
 
 /// The head of a source that admits no declaration takes attributes: the
-/// attribute `features` is filed on the source, and an attribute that is
-/// refused refuses the one held slot of the head.
+/// attribute `features` is filed on the source, and the one held slot of the
+/// head carries the refusal of an attribute of the head.
 #[test]
 fn the_head_of_a_source_with_no_declaration_takes_attributes()
 {
     let declared = "@![features(\"modules\")]";
     let lowered = lower(declared);
+    let refused: Vec<_> = lowered
+        .module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some(refusal)
+            }
+            else {
+                None
+            }
+        })
+        .collect();
     assert!(
-        lowered
-            .module
-            .declarations()
-            .iter()
-            .all(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_))),
-        "the head is refused nowhere: {:?}",
-        lowered.module.declarations()
+        matches!(*refused.as_slice(), [LoweringRefusal::FeatureUnused { .. }]),
+        "the one slot of the head carries the judgement of the declaration: {refused:?}"
     );
     let table = lowered.module.attributes();
     let [source] = *table.sources()
