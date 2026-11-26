@@ -15,6 +15,7 @@ use crate::roles::Roles;
 use crate::roles::RolesError;
 use crate::store::Digest;
 use crate::store::Kind;
+use crate::store::Listed;
 use crate::store::Store;
 use crate::tree::Source;
 use crate::tree::Tree;
@@ -161,6 +162,9 @@ pub struct Part
     /// The time of the part.
     pub time: Duration,
 }
+
+/// The values of a tree: each source with its value, in name order.
+pub type Valued = Vec<(Source, Vec<u8>)>;
 
 /// The values of a tree, with the cost of each part of the run.
 #[derive(Debug)]
@@ -328,6 +332,18 @@ pub fn values(
             *slot = Some(record.into_bytes());
         }
     }
+    let entries: Vec<Listed> = sources
+        .iter()
+        .zip(&keys)
+        .map(|(source, key)| Listed {
+            key: *key,
+            object: source.object.clone(),
+            name: source.name.clone(),
+        })
+        .collect();
+    store
+        .list(kind, tree.id(), &entries)
+        .map_err(ComputeError::Store)?;
     parts.push(Part {
         name: "write the store",
         count: missing.len(),
@@ -403,6 +419,52 @@ fn values_together(
     Ok(records)
 }
 
+/// The values of the kind `kind` that `store` lists for `tree`, in name
+/// order.
+///
+/// Gives `None` when the store has no list of the tree or lacks a value of
+/// the list. The list is the work of the tool of the tree, so the reader
+/// needs no key of that tool.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ComputeError::Store`] when the store refuses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tree that a run computed is listed with each value,
+///   under no tool; a tree that no run computed is not listed, and no list of
+///   one kind serves another kind.
+/// - witness: `compute::tests::a_computed_tree_is_listed_under_no_tool`
+#[inline]
+pub fn listed(
+    store: &Store,
+    tree: &Tree,
+    kind: Kind,
+) -> Result<Option<Valued>, ComputeError>
+{
+    let Some(entries) = store.listed(kind, tree.id()).map_err(ComputeError::Store)?
+    else {
+        return Ok(None);
+    };
+    let mut values = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let Some(value) = store.get(kind, &entry.key).map_err(ComputeError::Store)?
+        else {
+            return Ok(None);
+        };
+        values.push((
+            Source {
+                name: entry.name,
+                object: entry.object,
+            },
+            value,
+        ));
+    }
+    Ok(Some(values))
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -412,6 +474,7 @@ mod tests
     use super::ROLES;
     use super::Writer;
     use super::held;
+    use super::listed;
     use super::values;
     use crate::recovery::Recorder;
     use crate::roles::Roles;
@@ -515,6 +578,43 @@ mod tests
                 .missing(),
             0,
             "the roles leave each record in its place"
+        );
+        std::fs::remove_dir_all(root).expect("the repository is removed");
+    }
+
+    /// A tree that a run computed is listed with each value, and the reader
+    /// names no tool. A tree that no run computed is not listed, and the
+    /// list of the records is no list of the roles.
+    #[test]
+    fn a_computed_tree_is_listed_under_no_tool()
+    {
+        let root = scratch_repository("listed", &[
+            ("crates/surface-corpus/strict/values.gandr", WHOLE),
+            ("corpus/model/circle.gandr", CUT),
+        ]);
+        let store = Store::at(root.join("store"));
+        let tree = Tree::of_revision(&root, "HEAD").expect("the commit has a tree");
+        assert_eq!(
+            listed(&store, &tree, RECOVERY)
+                .expect("the store reads")
+                .map(|values| values.len()),
+            None,
+            "no run computed the tree"
+        );
+        let pbg = built_in().expect("the built-in grammar builds");
+        let writer = Writer::Recovery(Recorder::new(&pbg).expect("each mold has a rule"));
+        let tool = Digest::of_parts([b"a tool that the reader does not know".as_slice()]);
+        let computed = values(&store, &tree, &tool, &writer).expect("the values are given");
+        let read = listed(&store, &tree, RECOVERY)
+            .expect("the store reads")
+            .expect("the tree is listed");
+        assert_eq!(read, computed.values);
+        assert_eq!(
+            listed(&store, &tree, ROLES)
+                .expect("the store reads")
+                .map(|values| values.len()),
+            None,
+            "the list of the records is no list of the roles"
         );
         std::fs::remove_dir_all(root).expect("the repository is removed");
     }

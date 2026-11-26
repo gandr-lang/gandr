@@ -19,16 +19,18 @@ The values that a program computes from the tree and that the tree does not hold
 
 The key of a value is the BLAKE3 digest of the tool and the input. The tool is the git tree identifier of each package that builds the writer, with the root manifest, the lock and the toolchain file. The input is the git object identifier of the source. The store holds one file for each key, written beside its place and renamed into it, so two runs need no lock.
 
+The store holds one list for each kind and each git tree that a run computed: each value of the tree with its key, its input and its name. A run reads the values of a tree with another tool from that list, so it needs no key of that tool.
+
 ## Provided features
 
 - `Recorder` writes the recovery record of a source, and the fingerprint of a tree.
 - `RecordError` names the refusal of the grammar or of the parser.
 - `Roles` writes the roles that the highlight gives a source: one line for each span, with its byte range, its role and its text.
-- `Store` reads and writes a value by its kind and its key; `Digest` is a key or a tool.
+- `Store` reads and writes a value by its kind and its key, and the list of the values of a kind by its git tree; `Digest` is a key or a tool.
 - `Tree` reads a commit or the work tree from git: its corpus sources, their contents in one batch, and the tool of a kind.
 - `workspace::closure` gives the packages that build a package, from `cargo metadata`.
-- `compute::values` gives the values of one kind for a tree: each from the store, or computed by the `Writer` of the kind on each core and written to the store. `compute::held` gives the values that the store holds. The kinds are `recovery` and `roles`.
-- `checkout::compute` computes the values of a commit whose tool is not the tool of the run: the `outputs` binary of that commit runs in a detached work tree below `target/`, on the same store.
+- `compute::values` gives the values of one kind for a tree: each from the store, or computed by the `Writer` of the kind on each core and written to the store. It writes the list of the tree. `compute::held` gives the values that the store holds, and `compute::listed` the values that the list of a tree names. The kinds are `recovery` and `roles`.
+- `checkout::compute` computes the values of a commit whose tool is not the tool of the run: the `outputs` binary of that commit runs in a detached work tree below `target/`, on the same store. A binary that refuses its command line exits with 2. A commit whose binary refuses a kind thus has no value of the kind, and `outputs difference` shows each value of the head as a change.
 - `difference::changes` gives the sources whose values differ between two trees: added, removed or changed.
 - `word::named` tells if a commit of a range names a kind in a trailer `Changes-output: <kind>`. `outputs difference` exits with 1 for a difference that no commit of the range names, so an output does not change without a word.
 - One run of `outputs` answers each kind that its command line names: one kind, kinds with a comma between them, or `all`. A run reads each tree one time. Two runs do not make the checkout of one base at the same time: the second one waits for a lock.

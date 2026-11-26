@@ -14,7 +14,14 @@
 //!
 //! The store is a cache. A run with an empty store computes each value
 //! again, and a deleted file costs one computation.
+//!
+//! The store holds one list for each kind and each git tree that a run
+//! computed: each value of the tree with its key, its input and its name.
+//! The list is a value of the kind, named by the digest of its bytes, and a
+//! file named by the tree holds that digest. A reader of a tree thus needs no
+//! key of the tool that computed the tree.
 
+use core::fmt::Write as _;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -58,11 +65,37 @@ impl Digest
     {
         blake3::Hash::from_bytes(self.0).to_hex().to_string()
     }
+
+    /// The digest that the 64 hexadecimal digits `hex` write, or `None` when
+    /// `hex` is no such text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_hex(hex: &str) -> Option<Self>
+    {
+        blake3::Hash::from_hex(hex)
+            .ok()
+            .map(|hash| Self(*hash.as_bytes()))
+    }
 }
 
 /// A kind of output, by the name that its directory in the store has.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Kind(pub &'static str);
+
+/// One value of a tree, as the list of the tree holds it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Listed
+{
+    /// The key of the value.
+    pub key: Digest,
+    /// The git object identifier of the input of the value.
+    pub object: String,
+    /// The name of the source.
+    pub name: String,
+}
 
 /// The store of outputs, below one directory.
 #[derive(Clone, Debug)]
@@ -173,17 +206,127 @@ impl Store
         value: &[u8],
     ) -> io::Result<()>
     {
-        let place = self.place(kind, key);
-        let Some(directory) = place.parent()
-        else {
-            return Err(io::Error::other("a place of the store has no directory"));
-        };
-        fs::create_dir_all(directory)?;
-        let mut partial = place.clone().into_os_string();
-        partial.push(format!(".{}.partial", std::process::id()));
-        fs::write(&partial, value)?;
-        fs::rename(&partial, &place)
+        write_whole(&self.place(kind, key), value)
     }
+
+    /// The file that holds the digest of the list of `kind` for the git tree
+    /// `tree`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pointer(
+        &self,
+        kind: Kind,
+        tree: &str,
+    ) -> PathBuf
+    {
+        self.root.join(kind.0).join("trees").join(tree)
+    }
+
+    /// Writes `entries` as the list of the values of `kind` for the git tree
+    /// `tree`: one line for each entry, with its key, its input and its
+    /// name, and a tab between two fields.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// A directory or a file of the store that cannot be written.
+    #[inline]
+    pub fn list(
+        &self,
+        kind: Kind,
+        tree: &str,
+        entries: &[Listed],
+    ) -> io::Result<()>
+    {
+        let mut text = String::new();
+        for entry in entries {
+            let _written = writeln!(
+                text,
+                "{}\t{}\t{}",
+                entry.key.hex(),
+                entry.object,
+                entry.name
+            );
+        }
+        let key = Digest::of_parts([b"list".as_slice(), text.as_bytes()]);
+        self.put(kind, &key, text.as_bytes())?;
+        write_whole(&self.pointer(kind, tree), key.hex().as_bytes())
+    }
+
+    /// The list of the values of `kind` for the git tree `tree`, or `None`
+    /// when the store holds no list of the tree that it can read.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// A file of the store that exists and cannot be read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list reads as it was written, and a tree with no
+    ///   list reads as none.
+    /// - witness: `store::tests::a_list_reads_as_it_was_written`
+    #[inline]
+    pub fn listed(
+        &self,
+        kind: Kind,
+        tree: &str,
+    ) -> io::Result<Option<Vec<Listed>>>
+    {
+        let hex = match fs::read_to_string(self.pointer(kind, tree)) {
+            Ok(hex) => hex,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let Some(key) = Digest::of_hex(hex.trim())
+        else {
+            return Ok(None);
+        };
+        let Some(bytes) = self.get(kind, &key)?
+        else {
+            return Ok(None);
+        };
+        let Ok(text) = String::from_utf8(bytes)
+        else {
+            return Ok(None);
+        };
+        Ok(text
+            .lines()
+            .map(|line| {
+                let mut fields = line.splitn(3, '\t');
+                let key = Digest::of_hex(fields.next()?)?;
+                let object = fields.next()?.to_owned();
+                let name = fields.next()?.to_owned();
+                Some(Listed { key, object, name })
+            })
+            .collect())
+    }
+}
+
+/// Writes `bytes` to a file beside `place`, named by the process, then
+/// renames it into `place`, so a reader sees no part of the file.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A directory or a file that cannot be written.
+fn write_whole(
+    place: &Path,
+    bytes: &[u8],
+) -> io::Result<()>
+{
+    let Some(directory) = place.parent()
+    else {
+        return Err(io::Error::other("a place of the store has no directory"));
+    };
+    fs::create_dir_all(directory)?;
+    let mut partial = place.to_path_buf().into_os_string();
+    partial.push(format!(".{}.partial", std::process::id()));
+    fs::write(&partial, bytes)?;
+    fs::rename(&partial, place)
 }
 
 #[cfg(test)]
@@ -191,6 +334,7 @@ mod tests
 {
     use super::Digest;
     use super::Kind;
+    use super::Listed;
     use super::Store;
 
     /// A value reads as it was written, a key that the store does not hold
@@ -214,6 +358,40 @@ mod tests
             Some(b"W\t0\t1\tf\n".to_vec())
         );
         assert_eq!(store.get(kind, &other).expect("the store reads"), None);
+        std::fs::remove_dir_all(root).expect("the store is removed");
+    }
+
+    /// A list reads as it was written, a tree with no list reads as none,
+    /// and a list of one kind is no list of another kind.
+    #[test]
+    fn a_list_reads_as_it_was_written()
+    {
+        let root = std::env::temp_dir().join(format!("gandr-outputs-list-{}", std::process::id()));
+        let store = Store::at(root.clone());
+        let kind = Kind("recovery");
+        let tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        let entries = vec![
+            Listed {
+                key: Digest::of_parts([b"first".as_slice()]),
+                object: String::from("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"),
+                name: String::from("fixture/model/circle.gandr"),
+            },
+            Listed {
+                key: Digest::of_parts([b"second".as_slice()]),
+                object: String::from("8b137891791fe96927ad78e64b0aad7bded08bdc"),
+                name: String::from("strict/a name with a space.gandr"),
+            },
+        ];
+        assert_eq!(store.listed(kind, tree).expect("the store reads"), None);
+        store.list(kind, tree, &entries).expect("the store writes");
+        assert_eq!(
+            store.listed(kind, tree).expect("the store reads"),
+            Some(entries)
+        );
+        assert_eq!(
+            store.listed(Kind("roles"), tree).expect("the store reads"),
+            None
+        );
         std::fs::remove_dir_all(root).expect("the store is removed");
     }
 }

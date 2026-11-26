@@ -27,8 +27,15 @@ pub fn place(root: &Path) -> PathBuf
     root.join("target/outputs-checkout")
 }
 
+/// The exit status of an `outputs` binary that refuses its command line: a
+/// command or a kind that the binary does not have.
+pub const COMMAND_LINE_REFUSED: u8 = 2;
+
 /// Computes the values of the kind `kind` of the commit `revision` of the
 /// repository `root` into `store`, by the `outputs` binary of that commit.
+///
+/// Gives `false` when that binary refuses the command line: the commit does
+/// not have the kind, and thus has no value of it.
 ///
 /// # Specification
 /// trivial.
@@ -36,15 +43,14 @@ pub fn place(root: &Path) -> PathBuf
 /// # Errors
 /// One line that names the step that failed: the checkout of the commit, or
 /// the build or the run of its binary, with the last line that the step
-/// wrote. A commit with no `gandr-workflow-outputs` fails in its build, and
-/// a commit whose binary does not know the kind fails in its run.
+/// wrote. A commit with no `gandr-workflow-outputs` fails in its build.
 #[inline]
 pub fn compute(
     root: &Path,
     store: &Store,
     kind: Kind,
     revision: &str,
-) -> Result<(), String>
+) -> Result<bool, String>
 {
     let commit = run(Command::new("git").arg("-C").arg(root).args([
         "rev-parse",
@@ -78,7 +84,7 @@ pub fn compute(
     };
     let _checked_out = checked_out.map_err(|error| format!("the checkout of {commit}: {error}"))?;
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let _ran = run(Command::new(cargo)
+    let output = Command::new(cargo)
         .current_dir(&work)
         .env("CARGO_TARGET_DIR", root.join("target/outputs-target"))
         .env("GANDR_OUTPUT_STORE", store.root())
@@ -92,10 +98,21 @@ pub fn compute(
             "outputs",
             "--",
         ])
-        .args(["compute", kind.0, "--revision", commit]))
-    .map_err(|error| format!("the tool of {commit}: {error}"))?;
+        .args(["compute", kind.0, "--revision", commit])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("the tool of {commit}: {error}"))?;
     drop(lock);
-    Ok(())
+    if output.status.code() == Some(i32::from(COMMAND_LINE_REFUSED)) {
+        return Ok(false);
+    }
+    if !output.status.success() {
+        return Err(format!(
+            "the tool of {commit}: {}",
+            last_line(&output.stderr)
+        ));
+    }
+    Ok(true)
 }
 
 /// The standard output of `command`, or the last line of its standard error
@@ -115,11 +132,19 @@ fn run(command: &mut Command) -> Result<String, String>
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(stderr
+    Err(last_line(&output.stderr))
+}
+
+/// The last line of `stderr` that is not blank.
+///
+/// # Specification
+/// trivial.
+fn last_line(stderr: &[u8]) -> String
+{
+    String::from_utf8_lossy(stderr)
         .lines()
         .rev()
         .find(|line| !line.trim().is_empty())
         .unwrap_or("no message")
-        .to_owned())
+        .to_owned()
 }

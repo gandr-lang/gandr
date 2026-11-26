@@ -22,8 +22,10 @@
 //! `difference` prints the count of the sources whose values differ between
 //! the base and the head, then the first changes, one on each line. A tree
 //! whose tool is the tool of this binary is computed in this run. A tree with
-//! another tool is computed by the binary of its commit, in a checkout below
-//! the target directory, unless the store holds each of its values.
+//! another tool is read from the list that the store holds for the tree. If
+//! the store holds no list of it, the binary of its commit computes it, in a
+//! checkout below the target directory. A commit whose binary does not have
+//! the kind has no value of the kind, so each value of the head is a change.
 //!
 //! `difference` exits with 1 when values of a kind differ and no commit
 //! between the base and the head names that kind in a trailer
@@ -31,6 +33,9 @@
 //! `--head`, the commits end at `HEAD`.
 //!
 //! `--cost` adds each part of the run with its count and its time.
+//!
+//! The binary exits with 2 when it refuses its command line: a command or a
+//! kind that it does not have.
 
 use core::fmt::Write as _;
 use std::io::Write as _;
@@ -45,6 +50,7 @@ use gandr_surface_grammar::built_in;
 use gandr_workflow_outputs::checkout;
 use gandr_workflow_outputs::compute;
 use gandr_workflow_outputs::compute::Part;
+use gandr_workflow_outputs::compute::Valued;
 use gandr_workflow_outputs::compute::Writer;
 use gandr_workflow_outputs::difference;
 use gandr_workflow_outputs::gauge;
@@ -68,9 +74,6 @@ const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--p
 /// How many changes `difference` prints when the command line names no
 /// count.
 const LINES: usize = 16;
-
-/// The values of a tree: each source with its value, in name order.
-type Valued = Vec<(Source, Vec<u8>)>;
 
 /// What the command line asks.
 #[derive(Debug)]
@@ -161,14 +164,24 @@ fn asked(arguments: &[String]) -> Result<Asked, String>
     Ok(asked)
 }
 
-/// Runs the command line, and writes a refusal as one line.
+/// Runs the command line, and writes a refusal as one line. A command line
+/// that the binary does not take exits with
+/// [`checkout::COMMAND_LINE_REFUSED`], so a run of a later binary can tell
+/// that this one does not have a kind.
 ///
 /// # Specification
 /// trivial.
 fn main() -> ExitCode
 {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    match run(&arguments) {
+    let asked = match asked(&arguments) {
+        Ok(asked) => asked,
+        Err(usage) => {
+            let _written = writeln!(std::io::stderr().lock(), "outputs: {usage}");
+            return ExitCode::from(checkout::COMMAND_LINE_REFUSED);
+        },
+    };
+    match run(&asked) {
         Ok(()) => ExitCode::SUCCESS,
         Err(refusal) => {
             let _written = writeln!(std::io::stderr().lock(), "outputs: {refusal}");
@@ -313,9 +326,11 @@ impl Run
         Ok(values)
     }
 
-    /// The values of the kind `kind` of the side `revision`, from the store,
-    /// from this run when its tool is `own`, or from the binary of its
-    /// commit; and how many values the run computed.
+    /// The values of the kind `kind` of the side `revision`, and how many
+    /// values the run computed. This run computes the work tree and a tree
+    /// whose tool is `own`. It reads another tree from the list of the
+    /// tree, or lets the binary of its commit compute it. A commit whose
+    /// binary does not have the kind gives no value.
     ///
     /// # Specification
     /// trivial.
@@ -330,30 +345,51 @@ impl Run
     ) -> Result<(Valued, usize), String>
     {
         let (tree, tool) = self.tree(revision)?;
+        if revision.is_none() || *own == tool {
+            let values = self.compute(&tree, &tool, kind)?;
+            return Ok((values.values, values.computed));
+        }
+        let started = Instant::now();
+        let listed =
+            compute::listed(&self.store, &tree, kind).map_err(|error| error.to_string())?;
+        self.parts.push(Part {
+            name: "read the list",
+            count: listed.as_ref().map_or(0, Vec::len),
+            time: started.elapsed(),
+        });
+        if let Some(values) = listed {
+            return Ok((values, 0));
+        }
+        // A binary with no list wrote each value at the key that this run
+        // gives it, when the packages of the tool are the same in both trees.
         let held =
             compute::held(&self.store, &tree, &tool, kind).map_err(|error| error.to_string())?;
         let missing = held.missing();
         if missing == 0 {
             return Ok((held_values(held), 0));
         }
-        if revision.is_none() || *own == tool {
-            let values = self.compute(&tree, &tool, kind)?;
-            return Ok((values.values, values.computed));
-        }
         let commit = revision.unwrap_or("HEAD");
         let started = Instant::now();
-        checkout::compute(&self.root, &self.store, kind, commit)?;
+        let known = checkout::compute(&self.root, &self.store, kind, commit)?;
         self.parts.push(Part {
             name: "run the other tool",
             count: missing,
             time: started.elapsed(),
         });
+        if !known {
+            return Ok((Vec::new(), 0));
+        }
+        if let Some(values) =
+            compute::listed(&self.store, &tree, kind).map_err(|error| error.to_string())?
+        {
+            return Ok((values, missing));
+        }
         let held =
             compute::held(&self.store, &tree, &tool, kind).map_err(|error| error.to_string())?;
         let left = held.missing();
         if left > 0 {
             return Err(format!(
-                "the tool of {commit} wrote {left} values fewer than its tree has"
+                "the tool of {commit} wrote no list of its tree and {left} values fewer than the tree has"
             ));
         }
         Ok((held_values(held), missing))
@@ -474,19 +510,18 @@ fn computed(
     Ok(())
 }
 
-/// The run of the command line `arguments`: each kind in its order, then the
+/// The run of the command line `asked`: each kind in its order, then the
 /// gauges.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// The refusal of the command line, of the workspace, of the grammar, of a
-/// tree or of the store, as one line; and one line for each kind with a
-/// difference that no commit names.
-fn run(arguments: &[String]) -> Result<(), String>
+/// The refusal of the workspace, of the grammar, of a tree or of the store,
+/// as one line; and one line for each kind with a difference that no commit
+/// names.
+fn run(asked: &Asked) -> Result<(), String>
 {
-    let asked = asked(arguments)?;
     let mut run = Run::start()?;
     let mut out = String::new();
     let mut summary = String::new();
@@ -494,12 +529,12 @@ fn run(arguments: &[String]) -> Result<(), String>
     let mut refusals: Vec<String> = Vec::new();
     for &kind in &asked.kinds {
         if asked.difference {
-            let (base_computed, refusal) = differ(&mut run, &asked, kind, &mut out, &mut summary)?;
+            let (base_computed, refusal) = differ(&mut run, asked, kind, &mut out, &mut summary)?;
             recomputed = Some(recomputed.map_or(base_computed, |most| most.max(base_computed)));
             refusals.extend(refusal);
         }
         else {
-            computed(&mut run, &asked, kind, &mut out, &mut summary)?;
+            computed(&mut run, asked, kind, &mut out, &mut summary)?;
         }
     }
     let started = Instant::now();

@@ -97,6 +97,17 @@ const FIXTURE_HELD_OUT: [&str; 2] = ["corpus/ledger/", "corpus/sketch/"];
 
 impl Tree
 {
+    /// The git tree identifier of the tree, in hexadecimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn id(&self) -> &str
+    {
+        &self.id
+    }
+
     /// The tree of the commit `revision` in `repository`.
     ///
     /// # Specification
