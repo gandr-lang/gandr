@@ -36,9 +36,8 @@ def unfoldStart(
 ) -> Path[.A = Path[.A = A] x k] (Path.walk
   (fun (c) { type(Path[.A = A] (same A x) c) })
   r
-  s) (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s) {
-  Path.here (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s)
-}
+  s) (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s) = Path.here
+  (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s)
 
 def hereStart(
   A : Type,
@@ -50,9 +49,8 @@ def hereStart(
 ) -> Path[.A = Path[.A = A] x k] (Path.walk
   (fun (c) { type(Path[.A = A] (Path.walk (fun (d) { A }) (Path.here x) x) c) })
   r
-  s) (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s) {
-  Path.here (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s)
-}
+  s) (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s) = Path.here
+  (Path.walk (fun (c) { type(Path[.A = A] x c) }) r s)
 
 def unitStart(
   A : Type,
@@ -68,6 +66,5 @@ def unitStart(
 ) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step f g) m] (Path.walk
   (fun (c) { type(Path[.A = Path[.A = A] x z] (Path.step (Path.step f g) (Path.here z)) c) })
   r
-  s) (Path.walk (fun (c) { type(Path[.A = Path[.A = A] x z] (Path.step f g) c) }) r s) {
-  Path.here (Path.walk (fun (c) { type(Path[.A = Path[.A = A] x z] (Path.step f g) c) }) r s)
-}
+  s) (Path.walk (fun (c) { type(Path[.A = Path[.A = A] x z] (Path.step f g) c) }) r s) = Path.here
+  (Path.walk (fun (c) { type(Path[.A = Path[.A = A] x z] (Path.step f g) c) }) r s);

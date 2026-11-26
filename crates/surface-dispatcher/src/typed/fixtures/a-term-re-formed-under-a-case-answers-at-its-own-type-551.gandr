@@ -11,8 +11,6 @@ def made(
   to : a -> b,
   linv : *{g : b -> a, sect : (x : a) -> Path[.A = a] (g (to x)) x},
   rinv : *{h : b -> a, retr : (y : b) -> Path[.A = b] (to (h y)) y}
-} {
-  match i {
-    | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}}
-  }
-}
+} = match i {
+  | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}}
+};
