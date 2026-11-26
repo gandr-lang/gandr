@@ -226,6 +226,8 @@ fn walk(
 /// One row of the features ledger, as the tables read it.
 struct Row
 {
+    /// `id`.
+    id: String,
     /// `area`.
     area: String,
     /// `status`.
@@ -262,6 +264,7 @@ fn rows(root: &Path) -> Result<Vec<Row>, String>
             sources.sort();
             sources.dedup();
             Row {
+                id: text("id"),
                 area: text("area"),
                 status: text("status"),
                 crates: text("crate").split_whitespace().map(String::from).collect(),
@@ -504,6 +507,50 @@ fn run(
     println!("| ---- | ------------------- |");
     for (rule, count) in &ranked {
         println!("| `{rule}` | {count} |");
+    }
+
+    // For each rule, the rows whose sources use it more than the corpus does:
+    // the evidence for the row that gates the rule.
+    let by_path: BTreeMap<&Path, &BTreeSet<&'static str>> = sources
+        .iter()
+        .zip(&uses)
+        .filter_map(|(path, used)| Some((path.strip_prefix(root).ok()?, used.as_ref()?)))
+        .collect();
+    println!("\n## the rows of each rule\n");
+    println!("| Rule | Rows whose sources use it most: row, sources with the rule of its sources |");
+    println!("| ---- | ------------------------------------------------------------------------- |");
+    for (rule, count) in &ranked {
+        let overall = *count as f64 / parsed.len() as f64;
+        let mut lifts: Vec<(f64, &str, usize, usize)> = rows
+            .iter()
+            .filter(|row| matches!(row.status.as_str(), "implemented" | "partial"))
+            .filter_map(|row| {
+                let read: Vec<&&BTreeSet<&'static str>> = row
+                    .sources
+                    .iter()
+                    .filter_map(|source| by_path.get(Path::new(source)))
+                    .collect();
+                let with = read.iter().filter(|used| used.contains(rule)).count();
+                (with > 0 && with * 2 >= read.len()).then(|| {
+                    let lift = (with as f64 / read.len() as f64) / overall;
+                    (lift, row.id.as_str(), with, read.len())
+                })
+            })
+            .collect();
+        lifts.sort_by(|left, right| {
+            right
+                .2
+                .cmp(&left.2)
+                .then(right.0.total_cmp(&left.0))
+                .then(left.1.cmp(right.1))
+        });
+        let shown = lifts
+            .iter()
+            .take(5)
+            .map(|&(_, id, with, of)| format!("`{id}` {with}/{of}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("| `{rule}` | {shown} |");
     }
 
     if !tier0.is_empty() {
