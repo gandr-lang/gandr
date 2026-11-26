@@ -1,0 +1,7 @@
+/// `features`: the language features that its source declares, each by its
+/// key. It stands at the head of a source.
+@![features("attributes")]
+
+/// The value one.
+@[runs("1")]
+def one() -> Integer = 1;

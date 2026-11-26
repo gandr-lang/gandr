@@ -73,7 +73,9 @@
 //! and `export` take no payload, `explicit_runs` none or a text naming its one
 //! option, `effects`,
 //! `owes` an integer, `refuses`, `runs`, `normalizes` and `doc` a text,
-//! `distributes` a text or a tuple of texts, read in written order, `respects`
+//! `distributes` a text or a tuple of texts, read in written order,
+//! `features` a text or a tuple of texts, each the key of a language feature
+//! that its source declares, `respects`
 //! and `entry` one declared name or a tuple of them, `identity` a tuple of two
 //! or three declared names, `form` one bare word, `explicit` or `sugared`, and
 //! `deprecated` none or a record of the texts `since` and `note`, either
@@ -739,6 +741,9 @@ impl RegisteredAttribute
     /// a key in the program's export table. Each parameter and the result is a
     /// fixed-width integer, and the row is empty.
     pub const EXPORT: Self = Self("export");
+    /// `features`: the source whose head it stands at declares the language
+    /// features that its payload names, each by its key.
+    pub const FEATURES: Self = Self("features");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -856,8 +861,8 @@ impl fmt::Display for AttributeSchema
 }
 
 /// Where an attribute block stands: before a declaration, before a
-/// constructor arm of a data declaration, or before a sort, an operation or a
-/// rule of a theory.
+/// constructor arm of a data declaration, before a sort, an operation or a
+/// rule of a theory, or at the head of a source.
 ///
 /// # Specification
 /// trivial.
@@ -874,6 +879,8 @@ pub enum AttributePlace
     Operation,
     /// Before a rule of a theory.
     Rule,
+    /// At the head of a source, in an inner block.
+    Source,
 }
 
 impl fmt::Display for AttributePlace
@@ -894,6 +901,7 @@ impl fmt::Display for AttributePlace
             Self::Sort => "a sort",
             Self::Operation => "an operation",
             Self::Rule => "a rule",
+            Self::Source => "a source",
         })
     }
 }
@@ -915,7 +923,9 @@ impl AttributePlaces
     pub const CONSTRUCTOR: Self = Self(&[AttributePlace::Constructor]);
     /// Before a sort of a theory alone.
     pub const SORT: Self = Self(&[AttributePlace::Sort]);
-    /// Before each place.
+    /// At the head of a source alone.
+    pub const SOURCE: Self = Self(&[AttributePlace::Source]);
+    /// Before a declaration, a constructor arm and each member of a theory.
     pub const EACH: Self = Self(&[
         AttributePlace::Declaration,
         AttributePlace::Constructor,
@@ -936,7 +946,8 @@ impl AttributePlaces
     }
 
     /// These places, where an attribute of them stands at no `place` of
-    /// them, or the absence when it stands at `place`.
+    /// them, or the absence when it stands at `place`. The head of a source
+    /// takes each attribute that a declaration takes, as a module does.
     ///
     /// # Specification
     /// trivial.
@@ -946,7 +957,9 @@ impl AttributePlaces
         place: AttributePlace,
     ) -> Maybe<Self, placed::Absent>
     {
-        if self.0.contains(&place) {
+        let taken = self.0.contains(&place)
+            || (place == AttributePlace::Source && self.0.contains(&AttributePlace::Declaration));
+        if taken {
             Maybe::Absent(placed::Absent::Taken)
         }
         else {
@@ -1092,7 +1105,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 25_usize] = [
+const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 26_usize] = [
     (
         "checks",
         AttributeSchema::Marker,
@@ -1218,6 +1231,11 @@ const REGISTRY: [(&str, AttributeSchema, AttributePlaces); 25_usize] = [
         RegisteredAttribute::EXPORT.0,
         AttributeSchema::Marker,
         AttributePlaces::DECLARATION,
+    ),
+    (
+        RegisteredAttribute::FEATURES.0,
+        AttributeSchema::Texts,
+        AttributePlaces::SOURCE,
     ),
 ];
 
@@ -1865,6 +1883,10 @@ pub struct AttributeTable
     /// members, and that tile to the member's entries, in the order the
     /// source wrote them.
     members: BTreeMap<UnitKey, BTreeMap<ByteSpan, Vec<AttributeEntry>>>,
+    /// The key of each source with an attribute at its head, in the order of
+    /// the sources: the key of the first inner block of the source, which its
+    /// entries are filed under.
+    sources: Vec<UnitKey>,
 }
 
 impl AttributeTable
@@ -1884,6 +1906,7 @@ impl AttributeTable
             interfaces: BTreeMap::new(),
             spellings: BTreeMap::new(),
             members: BTreeMap::new(),
+            sources: Vec::new(),
         }
     }
 
@@ -2294,6 +2317,45 @@ impl AttributeTable
         self.spellings.get(&(key, at))
     }
 
+    /// Keep `key` as the key of a source with an attribute at its head.
+    ///
+    /// # Specification
+    /// - requires: `key` is the key of the first inner block of a source of
+    ///   the unit, and an entry of that source is filed under it.
+    /// - ensures: [`Self::sources`] holds `key` one time, after each key kept
+    ///   before it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a key kept two times is held one time, and a second
+    ///   key stands after the first.
+    /// - witness: `attribute::tests::a_source_key_is_kept_one_time_in_order`
+    #[spec(ensures: self.sources.contains(&key))]
+    #[inline]
+    pub fn file_source(
+        &mut self,
+        key: UnitKey,
+    )
+    {
+        if !self.sources.contains(&key) {
+            self.sources.push(key);
+        }
+    }
+
+    /// The key of each source with an attribute at its head, in the order
+    /// the sources were read. [`Self::entries`] at a key answers the
+    /// attributes of that source.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sources(&self) -> &[UnitKey]
+    {
+        &self.sources
+    }
+
     /// What the `deprecated` entry filed under `key` states, read off its
     /// payload in `arena`.
     ///
@@ -2596,6 +2658,7 @@ mod tests
             ("inert", AttributeSchema::Marker),
             ("frobenius", AttributeSchema::Marker),
             ("export", AttributeSchema::Marker),
+            ("features", AttributeSchema::Texts),
         ];
 
         for (spelling, schema) in expected {
@@ -2670,6 +2733,12 @@ mod tests
                 AttributePlace::Rule,
                 "a declaration, a constructor, a sort, an operation or a rule",
             ),
+            (
+                "features",
+                AttributePlace::Source,
+                AttributePlace::Declaration,
+                "a source",
+            ),
         ] {
             let held = places(spelling);
             assert_eq!(
@@ -2690,6 +2759,41 @@ mod tests
                 );
             }
         }
+    }
+
+    /// The head of a source takes an attribute that a declaration takes, and
+    /// no attribute of a constructor or of a sort alone.
+    #[test]
+    fn a_source_takes_what_a_declaration_takes()
+    {
+        assert_eq!(
+            super::AttributePlaces::DECLARATION.refusing(AttributePlace::Source),
+            Maybe::Absent(super::placed::Absent::Taken),
+            "an attribute of a declaration stands at the head of a source"
+        );
+        for places in [super::AttributePlaces::CONSTRUCTOR, super::AttributePlaces::SORT] {
+            assert_eq!(
+                places.refusing(AttributePlace::Source),
+                Maybe::Present(places),
+                "an attribute of {places} is refused at the head of a source"
+            );
+        }
+    }
+
+    #[test]
+    fn a_source_key_is_kept_one_time_in_order()
+    {
+        let mut table = AttributeTable::new();
+        let first = keyed(SourceIndex::default(), NodeDigest::from([1_u8; 32_usize]));
+        let second = keyed(SourceIndex::default(), NodeDigest::from([2_u8; 32_usize]));
+        table.file_source(first);
+        table.file_source(second);
+        table.file_source(first);
+        assert_eq!(
+            table.sources(),
+            [first, second],
+            "each source is held one time, in the order it was kept"
+        );
     }
 
     #[test]
@@ -2735,6 +2839,7 @@ mod tests
             ("inrt", "inert"),
             ("frobenus", "frobenius"),
             ("exprt", "export"),
+            ("featurs", "features"),
         ];
 
         for (written, nearest) in expected {

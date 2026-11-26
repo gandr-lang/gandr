@@ -1993,6 +1993,69 @@ fn a_component_check_carries_its_members_expectation()
     );
 }
 
+/// The attribute `features` at the head of a source is filed on the source,
+/// with its keys, and it is refused before a declaration.
+#[test]
+fn a_source_declares_its_features_at_its_head()
+{
+    let declared = "@![features((\"attributes\", \"pattern-matching\"))] def one() -> Integer = 1;";
+    let lowered = lower(declared);
+    assert_eq!(
+        rows(&lowered),
+        [row("one", Role::Declared, Amounts::Completed)],
+        "the declaration of the source is read as one with no attribute"
+    );
+    let table = lowered.module.attributes();
+    let [source] = *table.sources()
+    else {
+        panic!("the source is kept one time: {:?}", table.sources());
+    };
+    let [entry] = table.entries(source)
+    else {
+        panic!(
+            "the source holds its one attribute: {:?}",
+            table.entries(source)
+        );
+    };
+    assert_eq!(entry.name().as_ref(), "features");
+    let Maybe::Present(payload) = entry.payload()
+    else {
+        panic!("the attribute keeps its payload");
+    };
+    let Maybe::Present(keys) = gandr_surface_lowering::texts(&lowered.arena, payload)
+    else {
+        panic!("the payload holds texts");
+    };
+    let keys: [&str; 2_usize] = match *keys.as_slice() {
+        [first, second] => [first.as_ref(), second.as_ref()],
+        _ => panic!("the payload holds two keys: {keys:?}"),
+    };
+    assert_eq!(
+        keys,
+        ["attributes", "pattern-matching"],
+        "the keys are read in the order of the source"
+    );
+
+    let misplaced = "@[features(\"attributes\")] def one() -> Integer = 1;";
+    let lowered = lower(misplaced);
+    assert!(
+        lowered.module.declarations().iter().any(|declaration| matches!(
+            declaration.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::MisplacedAttribute {
+                place: gandr_surface_lowering::AttributePlace::Declaration,
+                takes,
+                ..
+            }) if takes == gandr_surface_lowering::AttributePlaces::SOURCE
+        )),
+        "before a declaration the attribute is refused with its place: {:?}",
+        lowered.module.declarations()
+    );
+    assert!(
+        lowered.module.attributes().sources().is_empty(),
+        "and no source is kept"
+    );
+}
+
 #[test]
 fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
 {

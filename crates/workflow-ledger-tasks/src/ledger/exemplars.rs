@@ -17,7 +17,8 @@
 //!   is spelled with in ASCII; a rule holding a glyph tile holds two, one per
 //!   spelling;
 //! - its tree holds a tile molded by its rule, or, for an attribute, the source
-//!   lowers, no declaration is refused and the attribute is filed on one. The
+//!   lowers, no declaration is refused and the attribute is filed on one, or
+//!   on the source for an attribute that stands at the head of a source. The
 //!   `doc` attribute is filed as documentation, so its exemplar's declaration
 //!   must carry documentation beyond the opening comment's lines. The source
 //!   lowers alone, so an import names no source it holds: a declaration that
@@ -970,8 +971,8 @@ struct Header
     lines: usize,
 }
 
-/// Whether `tree` lowers with `attribute` filed on a declaration and no
-/// declaration refused.
+/// Whether `tree` lowers with `attribute` filed on a declaration, or on the
+/// source, and no declaration refused.
 ///
 /// # Specification
 /// - requires: `tree` parsed with no obligation, from a source opening with
@@ -980,7 +981,8 @@ struct Header
 ///   of its declarations but for an unresolved import or an unanswered `thir`
 ///   mark, and files `attribute` on one of them: in the attribute table, at the
 ///   declaration or at a member of the theory it is, or, for `doc`, as
-///   documentation holding more lines than `header`. The source lowers alone,
+///   documentation holding more lines than `header`; or files it on the
+///   source, for an attribute at the head of the source. The source lowers alone,
 ///   so its imports resolve to nothing here and its `thir` marks stage nothing,
 ///   and `check:exemplars` settles what they bind under the fixture root. A
 ///   `builtin` exemplar lowers as a module of `std`, the one place its mark
@@ -1079,6 +1081,13 @@ fn filed(
             };
         }
     }
+    let table = module.attributes();
+    filed |= table.sources().iter().any(|&source| {
+        table
+            .entries(source)
+            .iter()
+            .any(|entry| entry.name() == attribute)
+    });
     if filed {
         Ok(())
     }

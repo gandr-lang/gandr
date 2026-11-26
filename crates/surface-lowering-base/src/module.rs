@@ -1301,6 +1301,8 @@ pub enum Standing
     /// Before the rule of a theory whose name tile this is, or whose keyword
     /// it is for a rule with no name.
     Rule(Placed),
+    /// At the head of the source, in an inner block.
+    Source,
 }
 
 impl Standing
@@ -1319,12 +1321,14 @@ impl Standing
             Self::Sort(_) => crate::attribute::AttributePlace::Sort,
             Self::Operation(_) => crate::attribute::AttributePlace::Operation,
             Self::Rule(_) => crate::attribute::AttributePlace::Rule,
+            Self::Source => crate::attribute::AttributePlace::Source,
         }
     }
 
     /// What the entry of an attribute at this standing is filed at: the
-    /// declaration for one before it or before a constructor arm, and the
-    /// member for one before a member of a theory.
+    /// declaration for one before it or before a constructor arm, the member
+    /// for one before a member of a theory, and the source, as a declaration,
+    /// for one at its head.
     ///
     /// # Specification
     /// trivial.
@@ -1333,7 +1337,7 @@ impl Standing
     pub const fn holder(self) -> crate::attribute::AttributeHolder
     {
         match self {
-            Self::Declaration | Self::Constructor(_) => {
+            Self::Declaration | Self::Constructor(_) | Self::Source => {
                 crate::attribute::AttributeHolder::Declaration
             },
             Self::Sort(member) | Self::Operation(member) | Self::Rule(member) => {
@@ -5032,6 +5036,9 @@ impl<'source> Collector<'_, 'source>
         if let Err(refusal) = read {
             head.inner.truncate(start);
             return Ok(Some(refusal));
+        }
+        for written in head.inner.iter_mut().skip(start) {
+            written.standing = Standing::Source;
         }
         head.blocks.push(block);
 

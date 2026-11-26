@@ -19784,6 +19784,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         let attribute = entry.name();
                         let at = entry.span();
                         table.file(key, AttributeHolder::Declaration, entry);
+                        if written.standing == Standing::Source {
+                            table.file_source(key);
+                        }
                         table.file_named(key, attribute, named);
                         if let Some(spelled) = spelled {
                             table.file_spelled(key, at, spelled);
