@@ -12,6 +12,8 @@ use crate::changed::Head;
 use crate::corpus::Class;
 use crate::corpus::CorpusName;
 use crate::corpus::Source;
+use crate::rotation::Row;
+use crate::rotation::Text;
 
 /// What salts a sample's ranking: the sweep test's own name, so two sweeps
 /// draw different slices of one corpus.
@@ -29,9 +31,9 @@ pub struct SampleSize(pub usize);
 /// A sweep's stated sample.
 ///
 /// # Specification
-/// - provides: the deterministic selections [`Sample::select`] and
-///   [`Sample::touched`] apply; the name and size are the statement a sweep
-///   test's documentation repeats.
+/// - provides: the deterministic selections [`Sample::select`],
+///   [`Sample::touched`] and [`Sample::rows`] apply; the name and size are the
+///   statement a sweep test's documentation repeats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Sample
 {
@@ -154,6 +156,47 @@ impl Sample
             .collect()
     }
 
+    /// The rows of `rows` this sample draws, in row order: the first `size`
+    /// by the BLAKE3 digest of the sample's name, a zero byte and the row's
+    /// text. A sweep whose inputs are no corpus sources, such as the blocks
+    /// that it builds itself, draws its fixed set so.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `size` rows, or every row when fewer, each once, in ascending
+    ///   order; the same rows on every machine and every run.
+    /// - provides: a slice whose cost is the size's, salted by the sample's
+    ///   name, that moves by at most one row when one is added or removed.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hundred rows drawn at ten, by two names and past
+    ///   their count; a size overshoot, an unsalted rank or a result out of row
+    ///   order fails the witness.
+    /// - witness: `sample::tests::a_sample_draws_rows_by_their_text`
+    #[spec(ensures: |ret| ret.len() == rows.len().min(self.size.0) && ret.is_sorted_by(|left, right| left.0 < right.0) && ret.iter().all(|row| row.0 < rows.len()))]
+    #[inline]
+    #[must_use]
+    pub fn rows(
+        &self,
+        rows: &[Text<'_>],
+    ) -> Vec<Row>
+    {
+        let unkeyed = Head::default();
+        let mut ranked: Vec<(Rank, usize)> = rows
+            .iter()
+            .enumerate()
+            .map(|(at, &text)| (self.rank_of(&unkeyed, text), at))
+            .collect();
+        ranked.sort_unstable();
+        let taken: BTreeSet<usize> = ranked
+            .into_iter()
+            .take(self.size.0)
+            .map(|(_, at)| at)
+            .collect();
+        taken.into_iter().map(Row).collect()
+    }
+
     /// The positions in `candidates` of the fixed set: the first-ranked
     /// candidate of every class, then candidates in rank order, until the
     /// size is reached.
@@ -206,11 +249,24 @@ impl Sample
         source: &Source,
     ) -> Rank
     {
+        self.rank_of(key, Text(source.name.as_ref()))
+    }
+
+    /// The rank of the name or the text `named` in this sample under `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rank_of(
+        &self,
+        key: &Head,
+        named: Text<'_>,
+    ) -> Rank
+    {
         let mut hasher = blake3::Hasher::new();
         key.key(&mut hasher);
         let _name = hasher.update(self.name.0.as_bytes());
         let _separator = hasher.update(&[0]);
-        let _source = hasher.update(source.name.as_ref().as_bytes());
+        let _source = hasher.update(named.0.as_bytes());
         Rank(*hasher.finalize().as_bytes())
     }
 }
@@ -229,6 +285,43 @@ mod tests
     use crate::corpus::Class;
     use crate::corpus::CorpusName;
     use crate::corpus::Source;
+    use crate::rotation::Row;
+    use crate::rotation::Text;
+
+    /// A sample draws its size of rows by their text, in row order, the same
+    /// rows each time; its name salts the rank, and a size past the count
+    /// draws every row.
+    #[test]
+    fn a_sample_draws_rows_by_their_text()
+    {
+        let texts: Vec<String> = (0_u8 .. 100_u8).map(|row| format!("row {row}")).collect();
+        let rows: Vec<Text<'_>> = texts.iter().map(|text| Text(text)).collect();
+        let sample = Sample {
+            name: SampleName("rows"),
+            size: SampleSize(10),
+        };
+        let drawn = sample.rows(&rows);
+        assert_eq!(drawn.len(), 10, "the sample draws its size");
+        assert!(
+            drawn.is_sorted_by(|left, right| left.0 < right.0),
+            "the rows are in row order, each once"
+        );
+        assert_eq!(drawn, sample.rows(&rows), "the same rows each time");
+        let other = Sample {
+            name: SampleName("other rows"),
+            size: SampleSize(10),
+        };
+        assert_ne!(drawn, other.rows(&rows), "the name salts the rank");
+        let every = Sample {
+            name: SampleName("rows"),
+            size: SampleSize(200),
+        };
+        assert_eq!(
+            every.rows(&rows),
+            (0 .. 100).map(Row).collect::<Vec<_>>(),
+            "a size past the count draws every row"
+        );
+    }
 
     /// A source named `name`, nowhere on disk.
     ///

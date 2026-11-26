@@ -1097,6 +1097,11 @@ mod sweeps
 
     use gandr_kernel_term::Convergence;
     use gandr_surface_grammar::built_in;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
+    use gandr_workflow_sweep::Text;
 
     use super::Term;
     use super::admitted;
@@ -1379,11 +1384,23 @@ mod sweeps
         text
     }
 
+    /// The sample of the small blocks: thirty-two blocks, ranked by the BLAKE3
+    /// digest of their source under this name, beside the block of the rule
+    /// that tears. The whole set is 2,850 blocks, and each one runs the whole
+    /// pipeline: 62 s on a hosted runner. Thirty-two hold the sweep within the
+    /// suite's bound of a second a test. The `sweeps` and `nightly` profiles
+    /// visit each block.
+    const SMALL_BLOCKS: Sample = Sample {
+        name: SampleName("each_small_block_that_the_check_admits_joins_its_critical_pairs"),
+        size: SampleSize(32),
+    };
+
     /// Each block of one rule or two over a table of three constructors with
     /// one symmetry, each side to a bound, that the check admits, crosses to
     /// the kernel, and the oracle joins each critical pair of the rules that
     /// cross. The rule `Two (Two x Z) y ==> y` is in the set, in its other
-    /// order `Two x (Two y Z) ==> x`.
+    /// order `Two x (Two y Z) ==> x`, and its block of one rule is in each
+    /// sample.
     #[test]
     fn each_small_block_that_the_check_admits_joins_its_critical_pairs()
     {
@@ -1413,10 +1430,23 @@ mod sweeps
                 )
             })
             .collect();
+        let texts: Vec<String> = blocks.iter().map(|block| small_block(block)).collect();
+        let rows: Vec<Text<'_>> = texts.iter().map(|text| Text(text)).collect();
+        let mut visited: BTreeSet<usize> = Sweep::asked()
+            .expect("the run's sweep resolves")
+            .visit_rows(SMALL_BLOCKS, &rows)
+            .into_iter()
+            .map(|row| row.0)
+            .collect();
+        let _torn = visited.insert(
+            blocks
+                .iter()
+                .position(|block| *block == [&torn])
+                .expect("the block of the rule that tears is in the set"),
+        );
         let (mut admitted_count, mut failures) = (0_usize, Vec::new());
-        for block in &blocks {
-            let text = small_block(block);
-            let Some(crossed) = admitted(&pbg, &path, &text)
+        for text in visited.iter().filter_map(|&at| texts.get(at)) {
+            let Some(crossed) = admitted(&pbg, &path, text)
             else {
                 failures.push(format!("{text}does not reach the check"));
                 continue;
@@ -1444,12 +1474,12 @@ mod sweeps
         assert!(
             admitted_count > 0,
             "the check admits a small block: {admitted_count} of {}",
-            blocks.len()
+            visited.len()
         );
         assert!(
             failures.is_empty(),
             "small blocks, of {} ({admitted_count} admitted), that the check admits and the oracle does not join:\n{}",
-            blocks.len(),
+            visited.len(),
             failures.join("\n")
         );
     }

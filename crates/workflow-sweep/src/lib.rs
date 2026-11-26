@@ -383,6 +383,40 @@ impl Sweep
         }
     }
 
+    /// The rows of `rows` the sweep visits, for a sweep whose inputs are no
+    /// corpus sources: every row under [`Coverage::Full`], `sample`'s rows
+    /// otherwise; none for [`Portion::Changed`], since a change of the corpus
+    /// touches no such row.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for [`Portion::Fixed`], each row in order under
+    ///   [`Coverage::Full`] and [`Sample::rows`] otherwise; for
+    ///   [`Portion::Changed`], nothing.
+    /// - provides: the rows a sweep over the inputs it builds itself visits.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a full sweep visits every row, a sampled one its
+    ///   sample's rows, and the change's portion none; swapping an arm changes
+    ///   a count.
+    /// - witness: `tests::a_sweep_visits_rows_by_its_coverage`
+    #[spec(ensures: |ret| ret.len() == match (self.portion, self.coverage) { (Portion::Fixed, Coverage::Full) => rows.len(), (Portion::Fixed, Coverage::Sampled) => rows.len().min(sample.size.0), (Portion::Changed, _) => 0 })]
+    #[inline]
+    #[must_use]
+    pub fn visit_rows(
+        &self,
+        sample: Sample,
+        rows: &[Text<'_>],
+    ) -> Vec<Row>
+    {
+        match (self.portion, self.coverage) {
+            (Portion::Fixed, Coverage::Full) => (0 .. rows.len()).map(Row).collect(),
+            (Portion::Fixed, Coverage::Sampled) => sample.rows(rows),
+            (Portion::Changed, _) => Vec::new(),
+        }
+    }
+
     /// The candidates a rotating sweep visits: those the night's slice of
     /// `nights` holds under [`Coverage::Full`], `sample`'s fixed set
     /// otherwise; for [`Portion::Changed`], as [`Sweep::visit`].
@@ -443,7 +477,41 @@ mod tests
     use super::SampleName;
     use super::SampleSize;
     use super::Sweep;
+    use super::Text;
     use super::corpus::sources;
+
+    #[test]
+    fn a_sweep_visits_rows_by_its_coverage()
+    {
+        let texts: Vec<String> = (0_u8 .. 40_u8).map(|row| format!("row {row}")).collect();
+        let rows: Vec<Text<'_>> = texts.iter().map(|text| Text(text)).collect();
+        let sample = Sample {
+            name: SampleName("a sweep"),
+            size: SampleSize(3),
+        };
+        let full = Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole);
+        assert_eq!(
+            full.visit_rows(sample, &rows).len(),
+            40,
+            "a full sweep visits every row"
+        );
+        assert_eq!(
+            full.changed().visit_rows(sample, &rows),
+            [],
+            "a full companion visits nothing"
+        );
+        let sampled = Sweep::new(Coverage::Sampled, Changed::default(), Rotation::Whole);
+        assert_eq!(
+            sampled.visit_rows(sample, &rows),
+            sample.rows(&rows),
+            "a sampled sweep visits its sample's rows"
+        );
+        assert_eq!(
+            sampled.changed().visit_rows(sample, &rows),
+            [],
+            "a change of the corpus touches no row"
+        );
+    }
 
     #[test]
     fn a_full_sweep_visits_every_candidate()

@@ -461,3 +461,50 @@ pub fn read_run(
     }
     Ok(())
 }
+
+/// Records the JUnit report at `path`, the report of one run that its target
+/// directory keeps: `target/nextest/<profile>/junit.xml`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the report is read and recorded in `history`, its lane the name
+///   of the directory that holds it.
+/// - provides: the samples of a run that a host or a runner kept, with no store
+///   and no `gh`.
+/// - fails: [`TimingError::Io`] when the report cannot be read; the refusals of
+///   [`samples`] for a report that nextest did not write.
+/// - panics: none.
+/// - executable: none — the outcome is the history's growth, state accumulated
+///   across calls that only a traversal could check.
+///
+/// # Errors
+/// - [`TimingError::Io`] — the report is unreadable.
+/// - [`TimingError::Xml`], [`TimingError::TestCase`] — the report is not a
+///   JUnit report nextest wrote.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one report of the profile `default` writes its overrides
+///   to a file; a report not read or a lane taken from another directory
+///   changes the file.
+/// - witness: `tests::cli::a_kept_report_writes_the_priorities_of_the_next_run`
+///
+/// # Cost
+/// - allocation: the report's text, growth within the report
+#[inline]
+pub fn read_report(
+    path: &Path,
+    history: &mut History,
+) -> Result<(), TimingError>
+{
+    let text = std::fs::read_to_string(path).map_err(|error| TimingError::Io {
+        path: path.to_owned(),
+        message: crate::error::held_built!(error.to_string()),
+    })?;
+    let lane = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .map_or_else(|| Lane::from("junit"), Lane::from);
+    history.record(&lane, samples(ReportText::from(text.as_str()), path)?);
+    Ok(())
+}

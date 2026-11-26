@@ -19,10 +19,10 @@ The corpus sources a sweep test visits: a stated, hashed and stratified sample u
 
 ## Provided features
 
-- `Sweep::asked` reads the run's coverage, change and rotation; `Sweep::visit` returns the sources to visit, and `Sweep::visit_rotating` the night's slice of them over the sweep's `Nights` under the `nightly` profile; `Sweep::changed` turns either to the change's sources beside the fixed set, which a sweep's `_changed` companion visits.
+- `Sweep::asked` reads the run's coverage, change and rotation; `Sweep::visit` returns the sources to visit, and `Sweep::visit_rotating` the night's slice of them over the sweep's `Nights` under the `nightly` profile; `Sweep::changed` turns either to the change's sources beside the fixed set, which a sweep's `_changed` companion visits. `Sweep::visit_rows` returns the rows to visit of a sweep whose inputs are no corpus sources, such as the blocks it builds itself.
 - `Rotation` names the night a nightly run visits, whether a source is in a sweep's slice, which part of a text it covers and whether a row of an input is in the night's slice of its rows; `GANDR_SWEEP_NIGHT` replays another night.
 - `corpus::sources` walks the strict and fixture roots as the dispatcher's walk does, naming each source and its class.
-- `Sample` names a sweep's sample and its size; `Sample::select` draws its fixed set, and `Sample::touched` the change's sources beside it.
+- `Sample` names a sweep's sample and its size; `Sample::select` draws its fixed set, `Sample::touched` the change's sources beside it, and `Sample::rows` its fixed set of rows by their text.
 - `SweepError` names the corpus entry or the `git` invocation behind every refusal.
 
 ## Expected features

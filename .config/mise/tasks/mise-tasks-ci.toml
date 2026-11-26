@@ -222,10 +222,12 @@ for entry in "$publish/"*; do
 done
 '''
 
-# Test priorities come from measured queue runs, never from memory: the tool
-# stores each run's JUnit reports under target/test-timing, prints every test
-# that has or would have a priority, and generates the overrides a reviewer
-# commits to .config/nextest.toml (crates/workflow-test-timing/README.md).
+# Test priorities come from measured runs, never from memory: the tool stores
+# each queue run's JUnit reports under target/test-timing and prints every
+# test that has or would have a priority. A gate run reads the report its
+# target directory keeps (`--junit`) and writes the overrides as the tool
+# configuration of its own run (`--write`; .config/nextest.toml,
+# crates/workflow-test-timing/README.md).
 ["ci:timing"]
 description = "Propose nextest priorities from recent merge-queue test timings"
 usage = '''

@@ -142,6 +142,56 @@ fn times_print_each_test_by_its_slowest_lane()
 }
 
 #[test]
+fn a_kept_report_writes_the_priorities_of_the_next_run()
+{
+    let root = std::env::temp_dir().join(format!("test-timing-{}-kept", std::process::id()));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    let kept = root.join("nextest").join("default");
+    std::fs::create_dir_all(&kept).unwrap();
+    std::fs::write(kept.join("junit.xml"), ENFORCING.replace("SLOW", "3.0")).unwrap();
+    let config = root.join("nextest.toml");
+    std::fs::write(&config, "").unwrap();
+    let priorities = root.join("priorities.toml");
+    let output = Command::new(env!("CARGO_BIN_EXE_test-timing"))
+        .arg("--junit")
+        .arg(kept.join("junit.xml"))
+        .arg("--config")
+        .arg(&config)
+        .arg("--write")
+        .arg(&priorities)
+        .arg("--store")
+        .arg(root.join("absent"))
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "",
+        "nothing on standard error, though no store exists"
+    );
+    assert!(output.status.success(), "exit 0");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "",
+        "the overrides go to the file alone"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&priorities).unwrap(),
+        "# The priorities of the slowest tests, from the times of the last run.\n\
+         # `test-timing --write` writes this file; a run names it with\n\
+         # `--tool-config-file test-timing:<file>`.\n\
+         \n\
+         [[profile.default.overrides]]\n\
+         filter = \"test(=slow::t)\"\n\
+         priority = 80\n\
+         \n",
+        "the test of three seconds starts in the level of two, and the fast ones get none"
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn an_empty_store_is_refused()
 {
     let root = std::env::temp_dir().join(format!("test-timing-{}-empty", std::process::id()));

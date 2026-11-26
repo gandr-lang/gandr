@@ -31,6 +31,7 @@ pub use crate::fetch::RunId;
 pub use crate::fetch::RunLimit;
 pub use crate::fetch::Stored;
 pub use crate::fetch::download;
+pub use crate::fetch::read_report;
 pub use crate::fetch::read_run;
 pub use crate::fetch::recent_runs;
 pub use crate::fetch::stored_runs;

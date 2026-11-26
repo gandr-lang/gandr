@@ -1,10 +1,13 @@
 //! `test-timing`: proposes nextest priority levels from the durations of
-//! recent merge-queue runs.
+//! recent merge-queue runs, or of the one run whose report a target directory
+//! keeps.
 //!
 //! It fetches the JUnit reports of the latest successful merge-queue runs
 //! with `gh`, keeping each run in a store so it is fetched once, and prints
 //! the tests that have or would have a priority, then the overrides that
-//! would set the proposed ones.
+//! would set the proposed ones. With `--junit` it reads one report and no
+//! store; with `--write` it writes the overrides to a nextest tool
+//! configuration, which the next run names, in place of the report.
 //!
 //! # Exit codes
 //!
@@ -32,6 +35,7 @@ use gandr_workflow_test_timing::Table;
 use gandr_workflow_test_timing::TimingError;
 use gandr_workflow_test_timing::download;
 use gandr_workflow_test_timing::proposals;
+use gandr_workflow_test_timing::read_report;
 use gandr_workflow_test_timing::read_run;
 use gandr_workflow_test_timing::recent_runs;
 use gandr_workflow_test_timing::stored_runs;
@@ -81,6 +85,16 @@ struct Cli
     /// it held longest.
     #[arg(long)]
     times: bool,
+    /// Read this JUnit report of one run in place of the store, with no `gh`:
+    /// the report that a target directory keeps of its last run,
+    /// `target/nextest/default/junit.xml`.
+    #[arg(long)]
+    junit: Option<PathBuf>,
+    /// Write the proposed priority overrides to this file in place of the
+    /// report: a nextest tool configuration, which a run names with
+    /// `--tool-config-file test-timing:<file>`.
+    #[arg(long)]
+    write: Option<PathBuf>,
 }
 
 /// Parses the invocation, prints the report and chooses the exit code.
@@ -121,21 +135,27 @@ fn main() -> ExitCode
     }
 }
 
-/// Fetches the runs `cli` names, reads them and prints the proposal, or with
-/// `--times` each test's time.
+/// Fetches the runs `cli` names, or reads the one report `--junit` names, and
+/// prints the proposal, or with `--times` each test's time, or with `--write`
+/// writes the proposed overrides.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: unless `--offline`, every run `gh` lists is in the store; the
-///   newest `--runs` stored runs are read; with `--times` standard output
-///   receives one tab-separated `lane binary test seconds` line per test, in
-///   test order, and the configuration is not read; otherwise it receives the
+/// - ensures: with `--junit`, that report alone is read, and no store and no
+///   `gh`; otherwise, unless `--offline`, every run `gh` lists is in the store,
+///   and the newest `--runs` stored runs are read; with `--times` standard
+///   output receives one tab-separated `lane binary test seconds` line per
+///   test, in test order, and the configuration is not read; with `--write` the
+///   file receives the generated overrides as a nextest tool configuration, and
+///   standard output receives nothing; otherwise standard output receives the
 ///   run identifiers, the table and the generated overrides.
-/// - provides: the whole report, and the times `ci:slow-file` files from.
+/// - provides: the whole report, the times `ci:slow-file` files from, and the
+///   priorities of the next run.
 /// - fails: every refusal of [`recent_runs`], [`download`], [`stored_runs`],
-///   [`read_run`] and [`Overrides::parse`]; [`TimingError::NoRuns`] when the
-///   store holds no run; [`TimingError::Io`] when the configuration cannot be
-///   read; [`TimingError::Output`] when standard output cannot be written.
+///   [`read_run`], [`read_report`] and [`Overrides::parse`];
+///   [`TimingError::NoRuns`] when the store holds no run; [`TimingError::Io`]
+///   when the configuration cannot be read or the file of `--write` cannot be
+///   written; [`TimingError::Output`] when standard output cannot be written.
 /// - panics: none.
 /// - executable: none — the outcome is the store on disk and the bytes on
 ///   standard output, neither observable from the call.
@@ -147,34 +167,43 @@ fn main() -> ExitCode
 /// - hypothesis: L3 — the offline report over three stored runs reads only the
 ///   newest two when asked for two; a fetch through a fake `gh` stores and
 ///   reads the runs it lists; an empty store is refused; `--times` over one run
-///   prints each test by its slowest lane, with no configuration present.
+///   prints each test by its slowest lane, with no configuration present; one
+///   kept report writes the overrides of its slow tests to a file.
 /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
 /// - witness: `tests::cli::an_empty_store_is_refused`
 /// - witness: `tests::cli::times_print_each_test_by_its_slowest_lane`
+/// - witness: `tests::cli::a_kept_report_writes_the_priorities_of_the_next_run`
 ///
 /// # Cost
 /// - allocation: the report text and the fetched run list, growth within the
 ///   stored runs
 fn report(cli: Cli) -> Result<(), TimingError>
 {
-    let repository = Repository::from(held!(cli.repo.as_str()));
-    if !cli.offline {
-        for run in recent_runs(&repository, cli.runs)? {
-            download(&repository, run, &cli.store)?;
-        }
-    }
-    let runs: SmallVec<RunId, 0, Global> = stored_runs(&cli.store)?
-        .into_iter()
-        .take(cli.runs.into())
-        .collect();
-    if runs.is_empty() {
-        return Err(TimingError::NoRuns { dir: cli.store });
-    }
     let mut history = History::default();
-    for &run in &runs {
-        read_run(&cli.store, run, &mut history)?;
+    let runs: SmallVec<RunId, 0, Global> = if let Some(ref report) = cli.junit {
+        read_report(report, &mut history)?;
+        SmallVec::<_, 0, Global>::new()
     }
+    else {
+        let repository = Repository::from(held!(cli.repo.as_str()));
+        if !cli.offline {
+            for run in recent_runs(&repository, cli.runs)? {
+                download(&repository, run, &cli.store)?;
+            }
+        }
+        let runs: SmallVec<RunId, 0, Global> = stored_runs(&cli.store)?
+            .into_iter()
+            .take(cli.runs.into())
+            .collect();
+        if runs.is_empty() {
+            return Err(TimingError::NoRuns { dir: cli.store });
+        }
+        for &run in &runs {
+            read_run(&cli.store, run, &mut history)?;
+        }
+        runs
+    };
     let output = |error: std::io::Error| {
         #[cfg_attr(
             all(dylint_lib = "quenchant_dylints", not(test)),
@@ -218,6 +247,35 @@ fn report(cli: Cli) -> Result<(), TimingError>
     })?;
     let overrides = Overrides::parse(ConfigText::from(text.as_str()), &cli.config)?;
     let rows = proposals(history.timings(), &overrides);
+    if let Some(ref path) = cli.write {
+        #[cfg_attr(
+            all(dylint_lib = "quenchant_dylints", not(test)),
+            expect(
+                std_container,
+                reason = "the call builds a String of alloc, and no local format stands"
+            )
+        )]
+        let generated = format!(
+            "# The priorities of the slowest tests, from the times of the last run.\n\
+             # `test-timing --write` writes this file; a run names it with\n\
+             # `--tool-config-file test-timing:<file>`.\n\n{}",
+            Generated(&rows)
+        );
+        return std::fs::write(path, generated).map_err(|error| TimingError::Io {
+            path: path.clone(),
+            message: {
+                #[cfg_attr(
+                    all(dylint_lib = "quenchant_dylints", not(test)),
+                    expect(
+                        std_container,
+                        reason = "the call builds a String of alloc, and no local format stands"
+                    )
+                )]
+                let built = error.to_string();
+                held!(built.as_str())
+            },
+        });
+    }
     #[cfg_attr(
         all(dylint_lib = "quenchant_dylints", not(test)),
         expect(

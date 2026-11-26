@@ -14,9 +14,9 @@ nextest priority levels proposed from the per-test durations of recent merge-que
 
 ## Synopsis
 
-**What.** `gandr-workflow-test-timing` installs the `test-timing` binary. It reads the JUnit reports of the latest successful merge-queue runs, summarises each test, compares a proposed priority level with the one `.config/nextest.toml` sets now, and prints the overrides that would set the proposed levels.
+**What.** `gandr-workflow-test-timing` installs the `test-timing` binary. It reads the JUnit reports of the latest successful merge-queue runs, or the one report that a target directory keeps of its last run, summarises each test, and proposes a priority level for each slow test. It prints the proposal beside the level that `.config/nextest.toml` sets, or it writes the overrides as a nextest tool configuration that the next run names.
 
-**Why.** nextest starts higher-priority tests first, so a suite whose slowest tests start early finishes sooner on a fixed number of threads. Which tests are slowest changes with the code, and a hand-kept list goes stale. Every CI test lane already uploads a JUnit report with per-test times; this crate turns those reports into a proposal a reviewer accepts in a commit.
+**Why.** nextest starts higher-priority tests first, so a suite whose slowest tests start early finishes sooner on a fixed number of threads. Which tests are slowest changes with the code, and a hand-kept list goes stale. Each run writes a JUnit report with per-test times; this crate turns the report of the last run into the priorities of the next one.
 
 **How.** `gh run list` names the latest successful merge-queue runs of `landing-checks.yml`, and `gh run download` stores each run's `junit-*` artifacts once. Each test is summarised by the lower median of its samples in the lane where that median is greatest. A level table with a margin either side of each boundary turns the median and the current priority into a proposal. The current priority is the first `[[profile.default.overrides]]` table whose filter matches the test, as nextest applies it.
 
@@ -24,6 +24,8 @@ nextest priority levels proposed from the per-test durations of recent merge-que
 
 - `test-timing` prints the run identifiers, a table of every test that has or would have a priority, and the proposed overrides.
 - `--runs N` reads the newest N stored runs, 5 by default. `--offline` reads the store without invoking `gh`.
+- `--junit PATH` reads one JUnit report in place of the store, with no `gh`: the report that a target directory keeps of its last run, `target/nextest/default/junit.xml`. The lane is the name of the report's directory.
+- `--write PATH` writes the proposed overrides to `PATH` as a nextest tool configuration in place of the report. A run names it with `--tool-config-file test-timing:PATH`, so the tree holds no list of priorities. `.github/workflows/gates.yml` does so for each suite, from the report that its cached target directory keeps.
 - `--times` prints one tab-separated `lane binary test seconds` line per test instead of the proposal: its lower median in the lane it held longest. `mise run ci:slow-file` reads one run this way and files each test past its 30 s budget (#3752).
 - `Overrides::parse` reads the priority overrides whose filters are unions of `test(=NAME)` and `test(TEXT)` terms, and refuses any other filter by name.
 - `TimingError` names the file, command or configuration term behind every refusal.
@@ -41,7 +43,7 @@ cargo nextest run -p gandr-workflow-test-timing
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-workflow-test-timing
 ```
 
-A reviewer reads the table, replaces the priority-setting overrides in `.config/nextest.toml` with the accepted part of the generated tables, and commits the change with the report's run identifiers.
+A gate run writes the overrides of its own run: `test-timing --junit target/nextest/default/junit.xml --write priorities.toml`, then `cargo nextest run --tool-config-file test-timing:$PWD/priorities.toml`. The overrides of the tool configuration rank below those of `.config/nextest.toml`, which sets no priority.
 
 ## Levels and margins
 
