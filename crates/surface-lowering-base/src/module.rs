@@ -5000,8 +5000,8 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an inner block leading a source asks for the exits of
-    ///   each declaration of the source, and one after a declaration is
-    ///   refused where it stands.
+    ///   each declaration of the source, and one after a declaration is refused
+    ///   where it stands.
     /// - witness: `gandr-surface-lowering::lower::exits::tests::an_inner_attribute_decorates_its_source`
     #[spec(
         captures: before = (head.blocks.len(), head.inner.len()),
