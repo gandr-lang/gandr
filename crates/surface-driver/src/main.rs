@@ -443,6 +443,7 @@ use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::schedule;
 use gandr_surface_dispatcher::timed;
 use gandr_surface_evaluate::Evaluator;
+use gandr_surface_features::FeatureId;
 use gandr_surface_features::FeatureLedger;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
@@ -4862,6 +4863,9 @@ fn run(
     let mut exportings: Vec<Exporting> = packages.iter().map(|_| Exporting::default()).collect();
     // Each settled manifold the walk read, judged as a deployment after it.
     let mut manifolds: Vec<PathBuf> = Vec::new();
+    // Each key that a source declares with the attribute `features`, compared
+    // with the rows of the features ledger after the walk.
+    let mut declared: Vec<(PathBuf, FeatureId)> = Vec::new();
     let visitor = |mut step: Step<'_>| {
         // The step's place among the packages, read once for its export and
         // its manifest.
@@ -4925,6 +4929,7 @@ fn run(
                     }
                     read_manifold(&step, &mut manifolds);
                 }
+                read_declared(&step, &mut declared);
             },
             Step::Fault { path, fault } => {
                 if let Err(error) = writeln!(stderr, "gandr: {}: {fault}", path.display()) {
@@ -4991,6 +4996,8 @@ fn run(
         let reached = deployed(manifold, stderr)?;
         verdict = worse(verdict, reached);
     }
+    let reached = known(&declared, stderr)?;
+    verdict = worse(verdict, reached);
     // Every export of the run is committed before any is read, so a dependent
     // reads a dependency the same run checked, whatever their order.
     if checking && let Some(held) = store.as_deref() {
@@ -5709,6 +5716,105 @@ fn deployed(
     else {
         RunVerdict::Unsettled
     })
+}
+
+/// Keep each key that the source of `step` declares with the attribute
+/// `features`, with the path of the source.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `declared` holds one more entry for each key of a source that
+///   the lowering read, in the order of the keys. A fault and a source that
+///   the lowering refused whole add nothing.
+/// - provides: the keys that [`known`] compares after the walk.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause is the body's one match; the CLI witness
+///   observes the refusal of a key.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`known`].
+/// - witness: `tests::cli::check_refuses_a_declared_feature_that_is_no_row`
+///
+/// # Cost
+/// - allocation: the path and the key of each declared feature, growth within
+///   the declarations of the run
+fn read_declared(
+    step: &Step<'_>,
+    declared: &mut Vec<(PathBuf, FeatureId)>,
+)
+{
+    if let Step::Source {
+        path,
+        composed: Composed::Settled {
+            declared: ref keys, ..
+        },
+        ..
+    } = *step
+    {
+        declared.extend(
+            keys.iter()
+                .map(|key| (path.to_path_buf(), FeatureId(key.clone()))),
+        );
+    }
+}
+
+/// Compare each declared key of `declared` with the rows of the features
+/// ledger that the toolchain was built with, each refusal written to `stderr`,
+/// and give the verdict that it leaves the run at.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a key that is no row of the ledger is one line `gandr: <path>:
+///   ToolchainUnmet.feature.<key>: …` on standard error and unsettles the run.
+///   A run with no declared key reads no ledger and settles. A ledger that
+///   does not read is one line on standard error, and faults.
+/// - provides: the check that `gandr check` and `gandr test` make of each
+///   declaration of features.
+/// - fails: the first write error.
+/// - panics: none.
+/// - executable: none — the lines are on standard error, which the CLI witness
+///   reads.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source that declares a key of no row is refused by the
+///   clause with exit one, and a source that declares a row settles.
+/// - witness: `tests::cli::check_refuses_a_declared_feature_that_is_no_row`
+///
+/// # Cost
+/// - allocation: the ledger, one time for a run with a declared key
+fn known(
+    declared: &[(PathBuf, FeatureId)],
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    if declared.is_empty() {
+        return Ok(RunVerdict::Settled);
+    }
+    let ledger = match FeatureLedger::built_in() {
+        Ok(ledger) => ledger,
+        Err(fault) => {
+            writeln!(stderr, "gandr: the built-in features ledger: {fault}")?;
+            return Ok(RunVerdict::Faulted);
+        },
+    };
+    let mut verdict = RunVerdict::Settled;
+    for &(ref path, ref key) in declared {
+        if ledger.status(key).is_err() {
+            writeln!(
+                stderr,
+                "gandr: {}: ToolchainUnmet.feature.{key}: the source declares `{key}`, which is \
+                 no row of the features ledger of this toolchain",
+                path.display(),
+                key = key.0
+            )?;
+            verdict = RunVerdict::Unsettled;
+        }
+    }
+    Ok(verdict)
 }
 
 /// File `step` into the export of the package it is attributed to.

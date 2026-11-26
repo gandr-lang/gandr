@@ -515,6 +515,11 @@ pub enum Composed<'source>
         /// What the source's `thir` marks staged, in the order written: what
         /// a refusal of a staged body reads its name from.
         marks: Vec<Staged>,
+        /// The keys that the source declares with the attribute `features` at
+        /// its head, in byte order: what the driver compares with the rows of
+        /// the features ledger of the toolchain. A source with no such
+        /// attribute declares none.
+        declared: Vec<String>,
         /// Every binder a lambda or a bind opens, written in a declaration
         /// the checker accepted, that no variable reads, ascending: each a
         /// hint the editor fades. An unused consumable capability is the
@@ -649,6 +654,7 @@ impl Composed<'_>
                 deprecated,
                 parted,
                 marks,
+                declared,
                 unused,
                 unreached,
                 program,
@@ -669,6 +675,7 @@ impl Composed<'_>
                     deprecated,
                     parted,
                     marks,
+                    declared,
                     unused,
                     unreached,
                     kernel: Maybe::Present(kernel),
@@ -3620,6 +3627,8 @@ struct Share<'source>
     parted: Vec<CellDiagnostic>,
     /// What its `thir` marks staged.
     marks: Vec<Staged>,
+    /// The keys that it declares with the attribute `features` at its head.
+    declared: Vec<String>,
     /// The binders its accepted declarations write and never read.
     unused: Vec<ByteSpan>,
     /// The path imports it writes that no use of its own reaches.
@@ -4212,6 +4221,21 @@ fn share<'source>(
         .iter()
         .find(|source| source.start() == member.start)
         .map_or_else(Vec::new, |source| source.marks().to_vec());
+    let declared = module
+        .unit()
+        .sources()
+        .iter()
+        .position(|source| source.start() == member.start)
+        .and_then(|at| {
+            gandr_surface_lowering::gate::declared_features(
+                module.attributes(),
+                arena,
+                gandr_surface_lowering::SourceIndex::from(at),
+            )
+        })
+        .map_or_else(Vec::new, |keys| {
+            keys.into_iter().map(String::from).collect()
+        });
     Share {
         report,
         exercised,
@@ -4223,6 +4247,7 @@ fn share<'source>(
         deprecated,
         parted,
         marks,
+        declared,
         unused,
         unreached,
     }
@@ -4458,6 +4483,7 @@ fn settled<'source>(
         deprecated: share.deprecated,
         parted: share.parted,
         marks: share.marks,
+        declared: share.declared,
         kernel: Maybe::Absent(admitted::Absent::Pending),
         keys: Names::default(),
         positions: Maybe::Absent(positioned::Absent::Pending),

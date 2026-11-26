@@ -2336,6 +2336,47 @@ fn features_prints_the_declaration_of_each_source()
     );
 }
 
+/// `gandr check` refuses a source that declares a feature that is no row of
+/// the features ledger, by the clause `ToolchainUnmet.feature.<key>`, and it
+/// settles a source that declares a row.
+#[test]
+fn check_refuses_a_declared_feature_that_is_no_row()
+{
+    let scratch = Scratch::new(Path::new("declared-feature"));
+    let unknown = scratch.0.join("unknown.gandr");
+    let row = scratch.0.join("row.gandr");
+    std::fs::write(
+        &unknown,
+        "@![features(\"not-a-feature\")]\n\ndef one() -> Integer = 1;\n",
+    )
+    .expect("the scratch source is written");
+    std::fs::write(
+        &row,
+        "@![features(\"deprecation\")]\n\n@[deprecated]\ndef one() -> Integer = 1;\n",
+    )
+    .expect("the scratch source is written");
+    let check = Path::new("check");
+
+    let refused = ran(gandr(&[check, &unknown]));
+    assert_eq!(code(&refused), Code(1_i32), "{}", stderr(&refused));
+    assert!(
+        stderr(&refused).contains(&format!(
+            "gandr: {}: ToolchainUnmet.feature.not-a-feature: ",
+            unknown.display()
+        )),
+        "{}",
+        stderr(&refused)
+    );
+
+    let settled = ran(gandr(&[check, &row]));
+    assert_eq!(code(&settled), Code(0_i32), "{}", stderr(&settled));
+    assert!(
+        !stderr(&settled).contains("ToolchainUnmet"),
+        "{}",
+        stderr(&settled)
+    );
+}
+
 /// #4906: `gandr doc` writes a page for each source of a package, an
 /// importer's beside the sibling it imports, and an index naming each page by
 /// its source and the first sentence of its own documentation; a path naming

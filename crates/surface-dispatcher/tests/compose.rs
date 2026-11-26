@@ -1094,6 +1094,7 @@ fn a_judged_module_renders_before_its_admission()
             deprecated,
             parted: Vec::new(),
             marks: Vec::new(),
+            declared: Vec::new(),
             unused,
             unreached: Vec::new(),
             kernel: Maybe::Present(kernel),
