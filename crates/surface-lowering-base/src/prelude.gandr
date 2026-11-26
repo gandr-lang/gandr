@@ -26,6 +26,12 @@ pub type Char : Type
 @[builtin("row")]
 pub type Row : Type
 
+/// A view is a place of a value of type `a`, lent at the mode `m`. A method
+/// at a deduced mode takes a view as its receiver. A method that answers a
+/// place answers a view.
+@[builtin("view")]
+pub type View[m : Mode](a : Type) : Type
+
 /// Decidable equality over a carrier some value may be unequal to itself in:
 /// symmetric.
 pub theory PartialEq where

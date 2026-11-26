@@ -652,6 +652,34 @@ impl<'source> Collector<'_, 'source>
         else {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         };
+        // A former whose static argument is no type states it in a static
+        // telescope, `type View[m : Mode](a : Type) : Type ;`. Only a
+        // signature that binds a row writes one.
+        let telescope = match cursor.tile(TileName::BRACKET_OPEN) {
+            Maybe::Present(open) => {
+                let mut classifiers = Vec::new();
+                loop {
+                    if let Maybe::Absent(_) = cursor.tile(TileName::IDENTIFIER)
+                        && let Maybe::Absent(_) = cursor.tile(TileName::TYPE_VARIABLE)
+                        && let Maybe::Absent(_) = cursor.tile(TileName::TYPE_IDENTIFIER)
+                    {
+                        return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                    }
+                    if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+                        return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                    }
+                    classifiers.push(one_in(FormName::MODULE, cursor.operands())?);
+                    if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                        break;
+                    }
+                }
+                if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                }
+                Some((open, classifiers))
+            },
+            Maybe::Absent(_) => None,
+        };
         let parameters = Self::family_parameters(&mut cursor)?;
         // A signature with no body, `type T : K ;`, binds a row of the
         // toolchain, so `@[builtin]` alone admits it, at the top level of a
@@ -671,6 +699,9 @@ impl<'source> Collector<'_, 'source>
                 (kind, None, true)
             },
             Maybe::Absent(_) => {
+                if let Some((open, _)) = telescope {
+                    return Err(misplaced_in(FormName::MODULE, open.span));
+                }
                 if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 }
@@ -728,6 +759,12 @@ impl<'source> Collector<'_, 'source>
         self.collected.own(defined.node, held);
         for parameter in &parameters {
             self.collected.own(parameter.classifier.node, held);
+        }
+        for classifier in telescope
+            .iter()
+            .flat_map(|&(_, ref classifiers)| classifiers)
+        {
+            self.collected.own(classifier.node, held);
         }
         let meaning = if builtin {
             if !parameters.is_empty() {
