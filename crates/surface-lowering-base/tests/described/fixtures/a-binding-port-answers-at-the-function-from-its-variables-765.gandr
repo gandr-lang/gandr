@@ -6,5 +6,5 @@ theory IdentityReturn where {
   oper f : (a : VTy) --> CTy
   oper arrow : (a : VTy, b : CTy) --> CTy
   oper ret : (a : VTy, t : VTm a) --> CTm (f a)
-  oper lam : (a : VTy, b : CTy, t : pi+ (x : VTm a). CTm b) --> CTm (arrow a b)
+  oper lam : (a : VTy, b : CTy, t : (x : VTm a) -> CTm b) --> CTm (arrow a b)
 }

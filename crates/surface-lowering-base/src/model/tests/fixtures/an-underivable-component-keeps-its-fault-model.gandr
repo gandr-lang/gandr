@@ -5,7 +5,7 @@ theory Faulty where {
   sort Name : Atom
   oper id : (a : Ob) --> Hom a a
   oper split : (a : Ob) --> (l : Ob, r : Ob)
-  oper lam : (t : pi+ (x : Tm). Tm) --> Tm
+  oper lam : (t : (x : Tm) -> Tm) --> Tm
   oper nu : (p : bind (c : Name). Ob) --> Ob
   rule twice : id (id a) ==> id a
   rule same : lam (bind x. (t x)) ==> lam (bind y. (t y))

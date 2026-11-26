@@ -1,7 +1,7 @@
 theory StateLaws where {
   sort S : Type+
   sort C : Type
-  oper get : (k : pi+ (s : S). C) --> C
+  oper get : (k : (s : S) -> C) --> C
   oper put : (s : S, k : C) --> C
   rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s))
   rule swap : put s (get (bind t. (k t))) <=> get (bind t. (put s (k t)))

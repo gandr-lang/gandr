@@ -144,7 +144,7 @@ enum Binds
     /// An atom's abstraction, `bind a . t` at a port written
     /// `bind (a : N) . T`.
     Atom,
-    /// A binding field, `bind x . t` at a port written `pi+ (x : S) . T`.
+    /// A binding field, `bind x . t` at a port written `(x : S) -> T`.
     Variable,
 }
 

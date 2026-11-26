@@ -22,7 +22,7 @@ def omitted() -> Integer = stepped 4
 pub theory StatePutLaws where {
   sort S : Type+
   sort C : Type
-  oper get : (k : pi+ (s : S). C) --> C
+  oper get : (k : (s : S) -> C) --> C
   oper put : (s : S, k : C) --> C
   rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
   rule putPut : put s (put u k) <=> put u k

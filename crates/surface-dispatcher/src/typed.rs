@@ -10542,8 +10542,8 @@ mod tests
     {
         let theory = |name: &str, law: &str| {
             format!(
-                "theory {name} where {{\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s \
-                 : S) . C) --> C;\n{law}}}\n\n"
+                "theory {name} where {{\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : (s \
+                 : S) -> C) --> C;\n{law}}}\n\n"
             )
         };
         let scope = |name: &str, theory: &str| {

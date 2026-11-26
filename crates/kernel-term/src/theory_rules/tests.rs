@@ -748,7 +748,7 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
         "nor one applied to one name twice"
     );
     // ext(m, bind x . n) ==> n, `n` leaving the abstraction, beside
-    // ret : (a : S) --> C and ext : (m : C, k : pi+ (x : V) . C) --> C.
+    // ret : (a : S) --> C and ext : (m : C, k : (x : V) -> C) --> C.
     let literal = |text: &str| StringLiteral::new(String::from(text));
     let rule_tag = ConstructorTag::from(super::tag::RULE);
     let conditioned = |unit: &str| {
@@ -1351,7 +1351,7 @@ impl Code
 
     /// The sort chain declaring the representable sort `V` and the sort `C`,
     /// and the operation chain declaring `ret : (a : unit) --> C` and
-    /// `ext : (m : C, k : pi+ (x : V) . C) --> C`.
+    /// `ext : (m : C, k : (x : V) -> C) --> C`.
     ///
     /// # Specification
     /// trivial.

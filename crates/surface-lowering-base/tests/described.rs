@@ -325,7 +325,7 @@ fn a_binding_port_answers_at_the_function_from_its_variables_765()
         matches!(ty(index), Some(ValueType::Element { .. })),
         "the binder's index at its port's sort"
     );
-    let body = entry(&types, span(". CTm b", "CTm b"), DescribedRole::Type);
+    let body = entry(&types, span("-> CTm b", "CTm b"), DescribedRole::Type);
     assert!(
         matches!(ty(body), Some(ValueType::Universe { .. })),
         "the bound port's sort at its universe"
@@ -342,7 +342,7 @@ fn a_binding_port_answers_at_the_function_from_its_variables_765()
             "an index application at its operation's result, first-order or not"
         );
     }
-    let port = entry(&types, span("t : pi+", "t"), DescribedRole::Name);
+    let port = entry(&types, span("t : (x", "t"), DescribedRole::Name);
     let Some(ValueType::Thunk(function)) = ty(port)
     else {
         panic!("the bound port at a thunk: {:?}", ty(port));
@@ -388,12 +388,12 @@ fn an_unelaborated_operation_s_ports_answer_as_written_2969()
         _ => None,
     };
 
-    let sort = entry(&types, span("q : pi+ (x : V)", "V"), DescribedRole::Type);
+    let sort = entry(&types, span("q : (x : V)", "V"), DescribedRole::Type);
     assert!(
         matches!(ty(sort), Some(ValueType::Universe { .. })),
         "a binder's sort at its universe"
     );
-    let binder = entry(&types, span("q : pi+ (x", "x"), DescribedRole::Name);
+    let binder = entry(&types, span("q : (x", "x"), DescribedRole::Name);
     let variable = entry(&types, span("Below (k x)", "x"), DescribedRole::Term);
     assert!(
         code(variable).is_some(),

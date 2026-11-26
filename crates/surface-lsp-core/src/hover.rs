@@ -2962,7 +2962,7 @@ mod tests
             shown(text, (6.into(), 14.into())),
             Ok(String::from(
                 "```gandr\ntheory State where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : \
-                 pi+ (s : S) . C) --> C;\n}\n```"
+                 (s : S) -> C) --> C;\n}\n```"
             ))
         );
     }

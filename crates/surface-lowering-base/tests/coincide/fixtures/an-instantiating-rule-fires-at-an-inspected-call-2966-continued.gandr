@@ -9,7 +9,7 @@ theory Continued where {
   oper ret : (e : E) --> E
   oper hole : E
   oper post : (v : V) --> C
-  oper wp : (e : E, k : pi+ (v : V). C, r : pi+ (v : V). C) --> C
+  oper wp : (e : E, k : (v : V) -> C, r : (v : V) -> C) --> C
   rule literal : wp (lit n) k r ==> k (int n)
   rule returned : wp (ret e) k r ==> wp e r r
 }

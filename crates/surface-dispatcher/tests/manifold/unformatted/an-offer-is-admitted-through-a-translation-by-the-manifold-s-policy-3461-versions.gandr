@@ -1,13 +1,13 @@
 pub theory Older where {
   sort V : Type+;
   sort C : Type;
-  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  oper get : (key : V, k : (v : V) -> C) --> C;
   oper put : (key : V, value : V, k : C) --> C;
 }
 pub theory Newer where {
   sort V : Type+;
   sort C : Type;
-  oper fetch : (key : V, k : pi+ (v : V). C) --> C;
+  oper fetch : (key : V, k : (v : V) -> C) --> C;
   oper put : (key : V, value : V, k : C) --> C;
 }
 pub flow downgrade : Newer ~~> Older where {

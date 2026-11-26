@@ -99,13 +99,7 @@ fn telescope(binders: &[Binder]) -> String
         .map(|binder| {
             let mut entry = format!("{} : ", binder.name);
             for variable in &binder.over {
-                write!(
-                    entry,
-                    "pi+ ({} : {}) . ",
-                    variable.name,
-                    sort(&variable.sort)
-                )
-                .unwrap();
+                write!(entry, "({} : {}) -> ", variable.name, sort(&variable.sort)).unwrap();
             }
             entry.push_str(&sort(&binder.sort));
             entry
@@ -444,9 +438,9 @@ fn an_underivable_component_keeps_its_fault()
     );
 }
 
-/// A binding port's binder takes its `pi+` variables, its sort read under
-/// them: `get`'s continuation takes the state, and `lam`'s body binds a value
-/// whose type is a free sort variable no other port names, bound first.
+/// A binding port's binder takes the variables its arrows bind, its sort read
+/// under them: `get`'s continuation takes the state, and `lam`'s body binds a
+/// value whose type is a free sort variable no other port names, bound first.
 #[test]
 fn a_binding_port_derives_the_function_from_its_variables_765()
 {
@@ -456,12 +450,12 @@ fn a_binding_port_derives_the_function_from_its_variables_765()
 
     assert_eq!(
         spelled(&model, "get"),
-        "get : (k : pi+ (s : S) . C) => C",
+        "get : (k : (s : S) -> C) => C",
         "the continuation takes the state"
     );
     assert_eq!(
         spelled(&model, "lam"),
-        "lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)) . CTm(b)) => CTm(b)",
+        "lam : (a : VTy, b : CTy, t : (x : VTm(a)) -> CTm(b)) => CTm(b)",
         "a sort variable only a variable's sort names is bound before the port"
     );
 }

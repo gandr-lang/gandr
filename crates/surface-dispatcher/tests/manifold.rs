@@ -256,7 +256,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
 /// The theory a site's own model answers a labelled `Store` with, and two
 /// models of it: one at strings, one at integers.
 const KEPT: &str = "pub theory Kept where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key \
-                    : V, k : pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) \
+                    : V, k : (v : V) -> C) --> C;\n  oper put : (key : V, value : V, k : C) \
                     --> C;\n}\npub module Echo : Model(Kept) with sort V = String where {\n  type C = \
                     String;\n  def get(key : String, k : String -> String) -> String = k \
                     key;\n  def put(key : String, value : String, k : String) -> String = k;\n}\npub \
@@ -333,7 +333,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
         Path::new("p.gandr"),
         Text(
             "import std.io;\nimport std.net;\npub theory Store where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key : V, k : \
-             pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) --> C;\n}\npub \
+             (v : V) -> C) --> C;\n  oper put : (key : V, value : V, k : C) --> C;\n}\npub \
              world far requires [std.io.Console.Eff, store : Store with sort V = String];\npub world netted \
              requires [std.net.Eff];\npub world lost requires [Missing];\n",
         ),

@@ -963,7 +963,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
     sort Tm : Type+;
     oper zero : Tm;
     oper f : (a : Tm) --> Tm;
-    oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+    oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
     rule zeta : let u t <=> t u;
     {rules}
 }}"
@@ -1036,8 +1036,8 @@ fn a_pattern_overlapping_its_own_rule_joins_2115()
     sort S : Type+;
     sort C : Type;
     oper ret : (a : S) --> C;
-    oper ext : (m : C, k : pi+ (x : S) . C) --> C;
-    oper get : (k : pi+ (s : S) . C) --> C;
+    oper ext : (m : C, k : (x : S) -> C) --> C;
+    oper get : (k : (s : S) -> C) --> C;
     {rule}
 }}"
         )

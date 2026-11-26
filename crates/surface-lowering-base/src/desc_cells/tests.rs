@@ -141,7 +141,7 @@ fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
 fn an_ill_formed_rule_is_refused_once_and_left_unexamined_2375()
 {
     let report = descriptions(
-        "theory Undeclared where { sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C; oper put : (s : S, k : C) --> C; rule putPut : put s (put (f s) k) <=> put (f s) k; }",
+        "theory Undeclared where { sort S : Type+; sort C : Type; oper get : (k : (s : S) -> C) --> C; oper put : (s : S, k : C) --> C; rule putPut : put s (put (f s) k) <=> put (f s) k; }",
     );
     let [ref refusal] = *report.diagnostics.as_slice()
     else {

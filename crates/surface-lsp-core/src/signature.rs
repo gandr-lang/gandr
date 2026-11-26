@@ -1133,8 +1133,8 @@ mod tests
             ("Tm", "Tm : Type", Vec::new()),
             (
                 "lam",
-                "lam : (t : pi+ (x : Tm) . Tm) --> Tm",
-                Vec::from(["t : pi+ (x : Tm) . Tm"])
+                "lam : (t : (x : Tm) -> Tm) --> Tm",
+                Vec::from(["t : (x : Tm) -> Tm"])
             ),
             (
                 "app",
