@@ -534,9 +534,11 @@ mod sweeps
     /// 40602657172).
     const NIGHTS: Nights = Nights(21);
 
-    /// The longest source text, its import closure laid out before it, a
-    /// sampled run scripts: 6 KiB, which holds the sweep within the suite's
-    /// bound of a second a test. A script submits the text ten times, and
+    /// The longest source text, its import closure laid out before it and the
+    /// prelude not counted, a sampled run scripts: 6 KiB, which holds the
+    /// sweep within the suite's bound of a second a test. Each source lays
+    /// the same prelude, so its bytes are a fixed cost of every script and
+    /// no part of a source's length. A script submits the text ten times, and
     /// where specifications are enforced the corpus's longest sources (35 to
     /// 88 KiB) take two to three seconds each, where its median source takes
     /// tens of milliseconds; the `sweeps` and nightly profiles script them.
@@ -593,7 +595,10 @@ mod sweeps
                     panic!("the corpus walks without a fault: {step:?}");
                 };
                 let text = <&str>::from(text);
-                if sweep.coverage() == Coverage::Sampled && text.len() > SCRIPTED_BYTES {
+                let past_prelude = text
+                    .len()
+                    .saturating_sub(usize::from(gandr_surface_lowering::prelude::base()));
+                if sweep.coverage() == Coverage::Sampled && past_prelude > SCRIPTED_BYTES {
                     over = over.saturating_add(1);
                 }
                 else {
