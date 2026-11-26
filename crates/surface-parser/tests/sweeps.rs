@@ -32,13 +32,10 @@ use gandr_surface_parser::parse;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
-use gandr_workflow_outputs::Recorder;
-use gandr_workflow_sweep::Changed;
 use gandr_workflow_sweep::Coverage;
 use gandr_workflow_sweep::Held;
 use gandr_workflow_sweep::Nights;
 use gandr_workflow_sweep::Portion;
-use gandr_workflow_sweep::Rotation;
 use gandr_workflow_sweep::Row;
 use gandr_workflow_sweep::Sample;
 use gandr_workflow_sweep::SampleName;
@@ -121,17 +118,8 @@ struct RowStep(usize);
 #[derive(Clone, Copy, Debug)]
 struct TokenCount(usize);
 
-/// Every corpus source keeps its recorded tree, and each variant of it, the
-/// source with one significant token dropped, parses, marks what it repairs
-/// and stays under a bound of work.
-///
-/// Each source of the fixture and strict roots has a record under
-/// `tests/recovery/` at its path in the corpus, with the extension `recovery`.
-/// The record is one row: the whole parse's obligation count, node count and
-/// fingerprint. The row must match exactly, so a change of the tree of a
-/// source is one changed line of its record in the same change. A source with
-/// no record, a record of another shape and a record with no source are
-/// stale; the failure names each, with the command that re-records it.
+/// Each variant of a corpus source, the source with one significant token
+/// dropped, parses, marks what it repairs and stays under a bound of work.
 ///
 /// Each variant owes three facts. It gives a tree. Its tree holds at most
 /// [`NODES_PER_TOKEN`] nodes for each significant token of its text, and one
@@ -141,65 +129,51 @@ struct TokenCount(usize);
 /// of obligations refuses nothing: `ledger:recovery` reports its classes as a
 /// number of each pull request.
 ///
-/// The record of a source is what [`Recorder::record`] writes: its count of
-/// obligations, its count of positions and the fingerprint of its tree. The
-/// fingerprint names each mold by its rule, its label and its rank, so a
-/// grammar change re-records exactly the sources whose parses it changes.
+/// The record of a whole source is not a fact of this sweep: its count of
+/// obligations, its count of positions and the fingerprint of its tree are
+/// the output `recovery` of the store of `gandr-workflow-outputs`, and
+/// `outputs difference recovery` compares it between two trees.
 ///
-/// A corpus change re-records the sources it touches:
-/// `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<source> mise run ci:recovery`
-/// rewrites that source's record alone, `<source>` being its name in the
-/// corpus. The variable holds one or more names, one on each line (#5864):
+/// `GANDR_RECOVERY_SOURCE` holds the names of the sources to sweep, one on
+/// each line, each the name of a source in the corpus (#5864):
 /// `ci:recovery-change` names the sources a pull request touches, so its
-/// sweep holds those records alone. `UPDATE_EXPECT=1 mise run ci:recovery`
-/// rewrites every record and deletes those whose source is gone. The rewrite
-/// is a reviewed diff, never a blind re-pin: a row that moved is a tree
-/// change, answered by the change that causes it.
+/// sweep visits those sources alone.
 ///
 /// The whole matrix is one parse for each of the corpus's hundred thousand
-/// significant tokens (`mise run ci:recovery`, and the `sweeps` profile), and
-/// the rewrite reads every whole source; the `nightly` profile parses every
-/// source whole and the night's share of each source's variants
-/// ([`Rotation::holds_row`]). The sources are independent, so they are parsed
+/// significant tokens (`mise run ci:recovery`, and the `sweeps` profile); the
+/// `nightly` profile parses the night's share of each source's variants
+/// (`Rotation::holds_row`). The sources are independent, so they are parsed
 /// on every available core, the longest first ([`observed_in_parallel`]). The
-/// sample, [`RECOVERY`], parses forty-eight sources: each one whole and the
-/// variants of every sixteenth significant token, a source past
-/// [`SAMPLED_SPAN`] tokens at that step times its multiple of the span
-/// ([`sampled_step`]). Its companion parses the sources the change touches
-/// beside them (#4654). Every source's record is still required to exist, and
-/// every record to have a source, under every profile.
+/// sample, [`RECOVERY`], parses forty-eight sources: the variants of every
+/// sixteenth significant token, a source past [`SAMPLED_SPAN`] tokens at that
+/// step times its multiple of the span ([`sampled_step`]). Its companion
+/// parses the sources the change touches beside them (#4654).
 #[test]
-fn each_variant_parses_marks_and_keeps_the_clean_tree() -> Result<(), Failure>
+fn each_variant_parses_and_marks_its_repairs() -> Result<(), Failure>
 {
     recovers(Portion::Fixed)
 }
 
 /// The change's sources beside the fixed set (#4654).
 #[test]
-fn each_variant_parses_marks_and_keeps_the_clean_tree_changed() -> Result<(), Failure>
+fn each_variant_parses_and_marks_its_repairs_changed() -> Result<(), Failure>
 {
     recovers(Portion::Changed)
 }
 
-/// The recovery sweep over `portion` of the run: the fixed portion also
-/// holds every source to its record and every record to its source, and
-/// rewrites them under `UPDATE_EXPECT`.
+/// The recovery sweep over `portion` of the run.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// A source or record that cannot be read or written, or a variant that gives
-/// no tree.
+/// A source that cannot be read, or a variant that gives no tree.
 fn recovers(portion: Portion) -> Result<(), Failure>
 {
-    /// How many moved rows or broken facts a failure lists.
+    /// How many broken facts a failure lists.
     const LISTED: usize = 16;
 
     let pbg = built();
-    let recorder = Recorder::new(pbg).map_err(|error| error.to_string())?;
-    let records = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recovery");
-    let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let only: Option<HashSet<String>> = std::env::var("GANDR_RECOVERY_SOURCE").ok().map(|names| {
         names
             .lines()
@@ -208,15 +182,10 @@ fn recovers(portion: Portion) -> Result<(), Failure>
             .map(str::to_owned)
             .collect()
     });
-    if portion == Portion::Changed && (update || only.is_some()) {
+    if portion == Portion::Changed && only.is_some() {
         return Ok(());
     }
-    let sweep = if update {
-        Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole)
-    }
-    else {
-        Sweep::asked()?
-    };
+    let sweep = Sweep::asked()?;
     let sweep = match portion {
         Portion::Fixed => sweep,
         Portion::Changed => sweep.changed(),
@@ -228,53 +197,31 @@ fn recovers(portion: Portion) -> Result<(), Failure>
         Coverage::Full => 1,
         Coverage::Sampled => RECOVERY_STRIDE,
     };
-    let rerecord = |rel: &str| {
-        format!(
-            "re-record it with `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE={rel} mise run ci:recovery`"
-        )
-    };
     let sources = corpus::sources()?;
     let visited: HashSet<PathBuf> = sweep
         .visit(RECOVERY, &sources)
         .into_iter()
         .map(|source| source.path)
         .collect();
-    let mut sourced: HashSet<PathBuf> = HashSet::new();
-    let mut stale = Vec::new();
-    let mut moved = Vec::new();
-    let mut broken: Vec<String> = Vec::new();
-    let mut jobs: Vec<(&str, PathBuf, &Path)> = Vec::new();
+    let mut jobs: Vec<(&str, &Path)> = Vec::new();
     for source in &sources {
         let rel = source.name.as_ref();
-        let record = records.join(rel).with_extension("recovery");
-        let _sourced = sourced.insert(record.clone());
         if only.as_ref().is_some_and(|only| !only.contains(rel)) {
-            continue;
-        }
-        if portion == Portion::Changed && !visited.contains(&source.path) {
-            continue;
-        }
-        if !update && !record.is_file() {
-            stale.push(format!("{rel} has no record; {}", rerecord(rel)));
             continue;
         }
         if only.is_none() && !visited.contains(&source.path) {
             continue;
         }
-        jobs.push((rel, record, source.path.as_path()));
+        jobs.push((rel, source.path.as_path()));
     }
     let observations = observed_in_parallel(
         &jobs,
-        |&(_, _, path)| path,
-        |&(rel, _, path)| {
+        |&(_, path)| path,
+        |&(rel, path)| {
             let src = std::fs::read_to_string(path)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
             let mut faults: Vec<String> = Vec::new();
             let mut dropped = String::new();
-            let whole_row = recorder.record(&src).map_err(|error| error.to_string())?;
-            if update {
-                return Ok((whole_row, faults));
-            }
             let labelled = label(SourceFragment::from(src.as_str()));
             let significant = || {
                 labelled
@@ -333,69 +280,10 @@ fn recovers(portion: Portion) -> Result<(), Failure>
                     ));
                 }
             }
-            Ok((whole_row, faults))
+            Ok(faults)
         },
     )?;
-    for (&(rel, ref record, _), (whole_row, faults)) in jobs.iter().zip(observations) {
-        if update {
-            if let Some(parent) = record.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(record, &whole_row)?;
-            continue;
-        }
-        broken.extend(faults);
-        let recorded = std::fs::read_to_string(record)?;
-        if recorded.lines().take(2).count() != 1 || !recorded.starts_with("W\t") {
-            stale.push(format!(
-                "{rel} has a record of another shape; {}",
-                rerecord(rel)
-            ));
-        }
-        else if recorded != whole_row {
-            moved.push(format!("{rel} whole"));
-        }
-    }
-    let mut orphans = Vec::new();
-    if only.is_none() && portion == Portion::Fixed {
-        let mut pending = vec![records.clone()];
-        while let Some(dir) = pending.pop() {
-            let Ok(entries) = std::fs::read_dir(&dir)
-            else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    pending.push(path);
-                }
-                else if !sourced.contains(&path) {
-                    orphans.push(path);
-                }
-            }
-        }
-        orphans.sort();
-    }
-    if update {
-        for orphan in &orphans {
-            std::fs::remove_file(orphan)?;
-        }
-        return Ok(());
-    }
-    let orphaned: Vec<&Path> = orphans
-        .iter()
-        .filter_map(|orphan| orphan.strip_prefix(&records).ok())
-        .collect();
-    assert!(
-        stale.is_empty() && orphans.is_empty(),
-        "stale recovery records: {stale:?}; records under tests/recovery with no corpus source, which `UPDATE_EXPECT=1 mise run ci:recovery` deletes: {orphaned:?}"
-    );
-    assert!(
-        moved.is_empty(),
-        "{} whole trees moved from the record: {:?}",
-        moved.len(),
-        moved.iter().take(LISTED).collect::<Vec<_>>()
-    );
+    let broken: Vec<String> = observations.into_iter().flatten().collect();
     assert!(
         broken.is_empty(),
         "{} variants break a fact of recovery; first {:?}",
@@ -420,10 +308,10 @@ fn recovers(portion: Portion) -> Result<(), Failure>
 /// - panics: resumes a worker's panic on the caller's thread.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the whole recovery sweep compares every observed row with
-///   the record kept at the job's own source; a result out of the jobs' order,
-///   or one missing, moves every row after it and fails the sweep.
-/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
+/// - hypothesis: L2 — the recovery sweep gives each source its own faults; a
+///   result that is missing fails the count of the specification, and a fault
+///   of a job fails the sweep with the name of its source.
+/// - witness: `tests::sweeps::each_variant_parses_and_marks_its_repairs`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |observed| observed.len() == jobs.len()))]
 fn observed_in_parallel<T, J>(
     jobs: &[T],
@@ -497,7 +385,7 @@ where
 /// - hypothesis: L3 — the sampled sweeps visit a source of 4729 tokens beside
 ///   sources under the span; a step that never widened would take the bound,
 ///   and one that widened under the whole sweep would skip rows it owes.
-/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
+/// - witness: `tests::sweeps::each_variant_parses_and_marks_its_repairs`
 /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
 #[spec(ensures: |ret| ret.0 >= stride.0 && match coverage {
     Coverage::Full => ret.0 == stride.0,

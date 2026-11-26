@@ -62,9 +62,9 @@
 //!   obligations, which misses every report the lowering and the checker make;
 //!   a hand-written table of near misses, which drifts from the grammar. The
 //!   parser's own drop sweep (`gandr-surface-parser`'s
-//!   `sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`) holds every
-//!   dropped token's obligation and node counts to a record; it says how much
-//!   the parse recovers, and this sweep where the user is told.
+//!   `sweeps::each_variant_parses_and_marks_its_repairs`) holds every dropped
+//!   token's variant to a tree, a bound of nodes and its obligations; it says
+//!   how much the parse recovers, and this sweep where the user is told.
 //! - Reversal: a sweep that must run on every pull request checks its mutants
 //!   in memory, without the scratch directory.
 

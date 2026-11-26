@@ -1536,13 +1536,6 @@ path = "crates/workflow-github"
 [workspace.dependencies.gandr-workflow-ledger-tasks]
 path = "crates/workflow-ledger-tasks"
 
-# The writer of each kind of output: a value that a program computes from
-# the tree and that the tree does not hold.
-# consumers:
-# - surface-parser (dev)
-[workspace.dependencies.gandr-workflow-outputs]
-path = "crates/workflow-outputs"
-
 # The corpus sources a sweep test visits: the stated sample under every
 # pull-request profile, the whole corpus under `sweeps`.
 # consumers:

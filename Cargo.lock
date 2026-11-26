@@ -2225,7 +2225,6 @@ dependencies = [
  "gandr-surface-syntax",
  "gandr-theory-graphs",
  "gandr-theory-spec-combinators",
- "gandr-workflow-outputs",
  "gandr-workflow-sweep",
  "proptest",
  "quenchant-anodized",

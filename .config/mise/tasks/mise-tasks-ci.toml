@@ -250,35 +250,28 @@ flag "--top <top>" help="how many checks to list" default="30"
 '''
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests {{usage.tests}} --runs {{usage.runs}} --frequency {{usage.frequency}} --top {{usage.top}}"
 
-# The one-token-drop recovery matrix in full: some forty thousand parses
-# against the per-source records under crates/surface-parser/tests/recovery,
-# where every other profile visits the sweep's sample. UPDATE_EXPECT=1
-# re-records from the full matrix; GANDR_RECOVERY_SOURCE narrows either run to
-# the sources it names, one on each line.
+# The one-token-drop recovery matrix in full: some forty thousand parses,
+# where every other profile visits the sweep's sample. GANDR_RECOVERY_SOURCE
+# narrows the run to the sources it names, one on each line.
 ["ci:recovery"]
-description = "Every corpus source cut short and with each token dropped, against its recovery record"
-run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::each_variant_parses_marks_and_keeps_the_clean_tree)'"
+description = "Every corpus source with each token dropped, against the facts of recovery"
+run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::each_variant_parses_and_marks_its_repairs)'"
 
-# The recovery sweep over a pull request's own records (#5864): `landing`'s
-# stale records are not the pull request's, and the whole sweep failed every
-# pull request for them. `.config/recovery/change.bash` names the sources the
-# change touches to `ci:recovery`, or runs it whole for a change to the parser
-# or a removed source; `.config/recovery/change-cases.bash` holds its cases.
+# The recovery sweep over the sources of a pull request (#5864).
+# `.config/recovery/change.bash` names the sources the change touches to
+# `ci:recovery`, or runs it whole for a change to the parser;
+# `.config/recovery/change-cases.bash` holds its cases.
 ["ci:recovery-change"]
-description = "The recovery sweep over the records a change touches, or every record when it reaches the parser or removes a source"
+description = "The recovery sweep over the sources a change touches, or every source when it reaches the parser"
 run = ".config/recovery/change.bash"
 
-# The goldens a corpus source carries beside it — its recovery record and,
-# for a refusing source, its rendered refusals — rewritten for every source.
-# The records are a sweep and run whole under the `sweeps` profile: under a
-# pull-request profile the 30 s bound cuts the rewrite short and leaves a
-# partial record. The rendered refusals read every source under any profile.
-# A new or changed source runs this once, then the check.
+# The goldens a refusing corpus source carries beside it, its rendered
+# refusals, rewritten for every source. They read every source under any
+# profile. A new or changed source runs this once, then the check.
 ["corpus:goldens"]
-description = "Rewrite every corpus source's recovery record and rendered refusals"
+description = "Rewrite every refusing corpus source's rendered refusals"
 env.UPDATE_EXPECT = "1"
 run = [
-  ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::each_variant_parses_marks_and_keeps_the_clean_tree)'",
   ".config/mise/scope cargo nextest run --locked --package gandr-surface-render-terminal --test tests -E 'test(=corpus::every_refusing_source_renders_as_its_golden)'",
 ]
 
