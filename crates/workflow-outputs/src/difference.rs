@@ -36,32 +36,92 @@ pub enum Change
     },
 }
 
+/// What the line of a change shows for a value that has no line at the place
+/// of the difference.
+const ABSENT: &str = "no line";
+
+/// A whole value on one line: a value of one line as it is, and a value of
+/// more lines as their count and the first of them.
+///
+/// # Specification
+/// trivial.
+fn whole(value: &[u8]) -> String
+{
+    let text = String::from_utf8_lossy(value);
+    let mut lines = text.lines();
+    let first = lines.next().unwrap_or_default().trim_end();
+    match lines.count() {
+        0 => first.to_owned(),
+        more => format!("{} lines, the first: {first}", more.saturating_add(1)),
+    }
+}
+
+/// The first line at which two values differ: its number from 1, then the
+/// line of the base and the line of the head. A value that ends before that
+/// line gives [`ABSENT`].
+///
+/// # Specification
+/// trivial.
+fn first_difference<'text>(
+    base: &'text str,
+    head: &'text str,
+) -> (usize, &'text str, &'text str)
+{
+    let mut left = base.lines();
+    let mut right = head.lines();
+    let mut number = 1_usize;
+    loop {
+        match (left.next(), right.next()) {
+            (Some(was), Some(is)) if was == is => number = number.saturating_add(1),
+            (was, is) => return (number, was.unwrap_or(ABSENT), is.unwrap_or(ABSENT)),
+        }
+    }
+}
+
 impl Change
 {
     /// The change as one line: the name, then `added`, `removed`, or the
     /// value of the base and the value of the head, each without its newline.
+    ///
+    /// A value of more lines does not go on the line whole. An added or a
+    /// removed value gives the count of its lines and the first of them. A
+    /// changed value gives the first line that differs, with its number.
     ///
     /// # Specification
     /// - ensures: the line has no newline.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an added, a removed and a changed source give three
-    ///   lines that name them.
+    ///   lines that name them, and a value of more lines gives one line of it.
     /// - witness: `difference::tests::two_trees_differ_by_source`
+    /// - witness: `difference::tests::a_value_of_more_lines_shows_one_line`
     #[spec(ensures: |ret| !ret.contains('\n'))]
     #[inline]
     #[must_use]
     pub fn line(&self) -> String
     {
-        let shown = |value: &[u8]| String::from_utf8_lossy(value).trim_end().replace('\n', "⏎");
         match *self {
-            Self::Added { ref name, ref head } => format!("{name}: added: {}", shown(head)),
-            Self::Removed { ref name, ref base } => format!("{name}: removed: {}", shown(base)),
+            Self::Added { ref name, ref head } => format!("{name}: added: {}", whole(head)),
+            Self::Removed { ref name, ref base } => format!("{name}: removed: {}", whole(base)),
             Self::Changed {
                 ref name,
                 ref base,
                 ref head,
-            } => format!("{name}: {} → {}", shown(base), shown(head)),
+            } => {
+                let before = String::from_utf8_lossy(base);
+                let after = String::from_utf8_lossy(head);
+                if before.lines().nth(1).is_none() && after.lines().nth(1).is_none() {
+                    format!("{name}: {} → {}", before.trim_end(), after.trim_end())
+                }
+                else {
+                    let (number, was, is) = first_difference(&before, &after);
+                    format!(
+                        "{name}: line {number}: {} → {}",
+                        was.trim_end(),
+                        is.trim_end()
+                    )
+                }
+            },
         }
     }
 }
@@ -183,6 +243,29 @@ mod tests
             "fixture/a.gandr: removed: W\t0",
             "strict/c.gandr: W\t2 → W\t3",
             "strict/d.gandr: added: W\t4",
+        ]);
+    }
+
+    /// A value of more lines gives one line of it: the first line that
+    /// differs with its number, or the count of the lines and the first.
+    #[test]
+    fn a_value_of_more_lines_shows_one_line()
+    {
+        let base = [
+            value("fixture/a.gandr", "0..1 Other \"a\"\n1..2 Other \";\"\n"),
+            value("fixture/c.gandr", "0..1 Other \"c\"\n1..2 Other \";\"\n"),
+        ];
+        let head = [
+            value("fixture/a.gandr", "0..1 Other \"a\"\n1..2 Keyword \";\"\n"),
+            value("fixture/b.gandr", "0..1 Other \"b\"\n1..2 Other \";\"\n"),
+            value("fixture/c.gandr", "0..1 Other \"c\"\n"),
+        ];
+        let found = changes(&base, &head);
+        let lines: Vec<String> = found.iter().map(Change::line).collect();
+        assert_eq!(lines, [
+            "fixture/a.gandr: line 2: 1..2 Other \";\" → 1..2 Keyword \";\"",
+            "fixture/b.gandr: added: 2 lines, the first: 0..1 Other \"b\"",
+            "fixture/c.gandr: line 2: 1..2 Other \";\" → no line",
         ]);
     }
 }
