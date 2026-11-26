@@ -1,5 +1,5 @@
 /// `wildcard.type`: the wildcard where a type is read, an endpoint that the
 /// elaborator answers from the comparisons that force it.
 
-/// The reflexive path at `3` forces the right end to `3`.
-def same : Path[.A = Integer] 3 _ = Path.here 3;
+/// The reflexive path at `Integer` forces the right end to `Integer`.
+def same : Path[.A = Type] Integer _ = Path.here Integer;
