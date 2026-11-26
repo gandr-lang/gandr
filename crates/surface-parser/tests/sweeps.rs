@@ -491,6 +491,32 @@ fn a_separator_reads_the_frontier_each_window_shares()
     );
 }
 
+/// A `def` that lost its name reads its `:` as a form's `:`, and at that `:`
+/// the `:` of a view block and of a handler tie. The view block's form stays
+/// open over its `{`, so the layout's `;` before the next `def` leaves the
+/// declaration open in that window and closes it in the handler's. Their
+/// window classes read whether each form has a closing class, so the tables
+/// decide as the dry runs do. Before the change, the text counts one
+/// disagreement.
+#[test]
+fn a_separator_reads_the_closing_class_of_each_open_form()
+{
+    let pbg = built();
+    let text = "def : ?\n\n@[refuses(\"OutOfFragment.WrongSort\")]\ndef pure_unknown : -F ?\n";
+    let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
+    let mut state = MeldState::new(pbg);
+    molder.mold_stream(
+        &mut state,
+        &label(SourceFragment::from(text)),
+        SourceText::from(text),
+    );
+    assert_eq!(
+        DisagreementCount(0),
+        molder.disagreements(),
+        "the tables decide a `def` that lost its name as the dry runs do"
+    );
+}
+
 /// The table sweep over the sources `sweep` visits, the strays first.
 ///
 /// # Specification

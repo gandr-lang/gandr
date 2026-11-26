@@ -55,11 +55,15 @@
 //! open frontier meets every opener's; a window that gathers so is exposed,
 //! and the openers of its class mold their own windows.
 //!
-//! A separator that ends a declaration reads two facts of the frontier it
-//! closes: whether the frontier keeps a bracket open, and whether the
-//! frontier's rule ends a form at the separator's labels. A theory's member
-//! and a top-level rule can share every successor and still part there, so
-//! the signature reads both facts at each node, for each window position.
+//! A separator that ends a declaration reads three facts of the forms open
+//! at it (`MeldState::close_at_separator`). An open form tile above the
+//! declaration's frontier keeps the declaration open when its mold has a
+//! closing class. At the frontier itself, the separator reads whether the
+//! frontier keeps a bracket open, and whether the frontier's rule ends a form
+//! at the separator's labels. Two openers can share every successor and still
+//! part there: a theory's member and a top-level rule, or a `:` of a view
+//! block and a `:` of a handler. So the signature reads the three facts at
+//! each node, the last for each window position.
 //!
 //! The signatures are canonical numbers: the window's nodes, one per
 //! successor and position reached, are numbered level by level from the
@@ -646,10 +650,11 @@ impl WindowClasses
                 };
                 let start = arena.len();
                 arena.push(pbg.observation(mold).map_or(UNNAMED, u32::from));
-                // What a separator that ends the declaration reads of the
-                // frontier it closes (`MeldState::close_at_separator`): whether
-                // the node keeps a bracket open, and whether its rule ends a
-                // form at each position's labels.
+                // What a separator that ends the declaration reads of a form
+                // open at it (`MeldState::close_at_separator`): whether the
+                // node has a closing class, whether it keeps a bracket open,
+                // and whether its rule ends a form at each position's labels.
+                arena.push(u32::from(pbg.closing_class(mold).is_some()));
                 arena.push(u32::from(keeps_bracket(pbg, mold)));
                 arena.extend(
                     labels
