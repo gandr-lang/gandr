@@ -99,6 +99,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression -", Standing::Owed(0)),
     ("Expression .", Standing::Owed(4)),
     ("Expression .#[", Standing::Owed(0)),
+    ("Expression .%", Standing::Owed(0)),
     (
         "Expression ;",
         Standing::Design(

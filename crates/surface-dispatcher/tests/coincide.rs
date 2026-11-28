@@ -263,9 +263,9 @@ fn thunk_body(
 /// one output of it: `become f a`, `f a`, or `let p = f a` then `p`, the
 /// tail written `p` alone as the sugared form writes it (#1327), either after
 /// a `;` or on the next line. A call of several outputs delivers them whole
-/// by its output group, `let %(q, r) = f a` or `let (q, r) = f a` then
-/// `*{q, r}`. It delivers one output by the selection `(f a).q` or by the
-/// labelled group `let %(.q = x, .r) = f a` then `x` (#5147, #5771). A pair
+/// by its output group, `let %(q, r) = f a` then `*{q, r}`. It delivers one
+/// output by the port `(f a).%q` or by the labelled group `let %(.q = x, .r)
+/// = f a` then `x` (#5147, #5771). A pair
 /// pattern `*{…}` reads as a group does. The call is written in the
 /// inspection notation a `normalizes` row reads, `f(a)`. The label is the
 /// output the run delivers, absent when the run delivers the call whole.
@@ -309,10 +309,10 @@ fn direct_call(body: SourceFragment<'_>) -> Option<(String, Option<String>)>
     let (call, output) = match *statements.as_slice() {
         [ref only] => {
             let only = only.strip_prefix("become ").unwrap_or(only);
-            // A selection `(f a).q` delivers the output its label names.
+            // A port `(f a).%q` delivers the output its label names.
             match only
                 .strip_prefix('(')
-                .and_then(|inner| inner.rsplit_once(")."))
+                .and_then(|inner| inner.rsplit_once(").%"))
             {
                 Some((call, label)) if identifier(label) => (call, Some(String::from(label))),
                 _ => (only, None),
@@ -326,7 +326,7 @@ fn direct_call(body: SourceFragment<'_>) -> Option<(String, Option<String>)>
             let closing = if bound.starts_with("*{") {
                 Some('}')
             }
-            else if bound.starts_with('(') || bound.starts_with("%(") {
+            else if bound.starts_with("%(") {
                 Some(')')
             }
             else {
