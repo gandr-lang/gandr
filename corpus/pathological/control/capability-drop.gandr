@@ -1,4 +1,4 @@
-@![features(("capabilities", "let-statements", "records"))]
+@![features(("capabilities", "data-parameters", "let-statements", "records", "sized-types"))]
 
 @[refuses("CapabilityConsumable")]
 def discard(c : Cap[1] { write }) -> Unit =

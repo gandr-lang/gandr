@@ -1,4 +1,4 @@
-@![features(("capabilities", "modules", "visibility"))]
+@![features(("capabilities", "data-parameters", "modules", "visibility"))]
 
 // `std.authority`: the ambient authority. `std` reaches the host by
 // capability, on `cap-std`'s design. Authority enters a program in one place,

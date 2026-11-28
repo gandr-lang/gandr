@@ -1,4 +1,4 @@
-@![features(("capabilities", "let-statements", "records"))]
+@![features(("capabilities", "data-parameters", "let-statements", "records", "sized-types"))]
 
 /// `CapabilityConsumable`: a capability of the consumable grade.
 @[refuses("CapabilityConsumable")]

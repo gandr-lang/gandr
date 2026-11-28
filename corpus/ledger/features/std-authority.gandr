@@ -1,4 +1,4 @@
-@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
+@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
 
 /// `std-authority`: The ambient authority.
 /// Implemented: `std.authority`, `library/std/src/authority.gandr`, names

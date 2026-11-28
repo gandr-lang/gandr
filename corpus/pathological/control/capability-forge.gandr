@@ -1,4 +1,4 @@
-@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
+@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules"))]
 
 // A string standing where a capability is expected.
 //
