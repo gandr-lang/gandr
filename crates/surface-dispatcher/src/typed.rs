@@ -6783,7 +6783,10 @@ fn matched(
                     else {
                         continue;
                     };
-                    match constructor(arena, &signatures, shape, ty) {
+                    // A scrutinee typed by a decode, `modelType Flagged`,
+                    // names its family once exposed, as its parts are read.
+                    let head = exposed(arena, definitions, ty);
+                    match constructor(arena, &signatures, shape, head) {
                         Maybe::Present(constructor) => constructor,
                         Maybe::Absent(named::Absent::Undeclared) => continue,
                     }
