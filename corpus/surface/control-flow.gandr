@@ -1,4 +1,22 @@
-@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "explicit-exits", "for-loops", "imports", "let-statements", "loops", "modules", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "records", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-handlers",
+  "effect-rows",
+  "explicit-exits",
+  "for-loops",
+  "imports",
+  "let-statements",
+  "loops",
+  "modules",
+  "native-lists",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "thunks-and-force",
+  "universes"
+))]
 
 // Loops and their exits. A `loop` or a `while` may run forever, so the
 // function holding one states `Partial` in its row, `-F [Partial] T`: the host
@@ -39,7 +57,7 @@ def pick(n : Nat) -> [Partial] Nat =
   let m = loop {
     match n where
       | Zero => break(n)
-      | Succ(p) => break(p)
+      | Succ p => break(p)
   }
   Succ m
 
@@ -53,7 +71,7 @@ def leave(n : Nat) -> [Partial] Nat =
   loop {
     match n where
       | Zero => continue
-      | Succ(p) => return p
+      | Succ p => return p
   }
 
 /// One is a successor, so its predecessor is returned.
@@ -86,7 +104,7 @@ def sift(n : Nat) -> [Partial] Nat =
   loop {
     match n where
       | Zero => { break; }
-      | Succ(p) => { tick p; continue; }
+      | Succ p => { tick p; continue; }
   }
   n
 
@@ -130,7 +148,7 @@ def find_succ(xs : List Nat, otherwise : Nat) -> Nat =
   for x in xs {
     match x where
       | Zero => continue
-      | Succ(p) => return p
+      | Succ p => return p
   }
   otherwise
 
