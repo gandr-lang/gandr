@@ -11,7 +11,19 @@
 //!
 //! - see: #8291
 
-@![features(("data-parameters", "identity-types", "let-statements", "modules", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "records",
+  "rule-respect",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// The theory of a vote: two constants and no rule.
 pub theory Vote where
@@ -78,7 +90,7 @@ pub def rec poll(t : Terms Tally) -> Terms Vote =
   match t where
     | Tally.none => TallyInVote.none
     | Tally.all => TallyInVote.all
-    | Tally.meet(x, y) => TallyInVote.meet (poll[<] x) (poll[<] y)
+    | Tally.meet x y => TallyInVote.meet (poll[<] x) (poll[<] y)
 
 /// A meet whose left side is the full tally runs to its right side.
 @[runs("Vote.aye")]

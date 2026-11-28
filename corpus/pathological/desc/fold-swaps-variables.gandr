@@ -13,7 +13,13 @@
 //! - see: `model/desc/fold-swaps-variables.gandr` — the folds that respect
 //!   the rule
 
-@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // `Purse` with its symmetry.
 import "../../model/desc/fold-swaps-variables.gandr"
@@ -27,4 +33,4 @@ def rec upper(t : Terms Purse) -> Terms Purse =
   match t where
     | Purse.copper => Purse.copper
     | Purse.silver => Purse.silver
-    | Purse.two(x, y) => upper[<] x
+    | Purse.two x y => upper[<] x

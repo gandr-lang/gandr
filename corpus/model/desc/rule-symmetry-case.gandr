@@ -10,7 +10,14 @@
 //!
 //! - see: #8385
 
-@![features(("data-parameters", "let-statements", "pattern-matching", "signatures-as-values", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "let-statements",
+  "pattern-matching",
+  "signatures-as-values",
+  "universes",
+  "visibility"
+))]
 
 /// The theory of the beacons, with two beacons side by side in no order.
 pub theory Beacon where
@@ -32,7 +39,7 @@ def turn(t : Terms Beacon) -> Terms Beacon =
   match t where
     | Beacon.dull => Beacon.dull
     | Beacon.bright => Beacon.bright
-    | Beacon.twin(x, y) => Beacon.twin y x
+    | Beacon.twin x y => Beacon.twin y x
 
 /// Each beacon as it is. The two sides of the symmetry differ by their order.
 ///
@@ -41,4 +48,4 @@ def stay(t : Terms Beacon) -> Terms Beacon =
   match t where
     | Beacon.dull => Beacon.dull
     | Beacon.bright => Beacon.bright
-    | Beacon.twin(x, y) => Beacon.twin x y
+    | Beacon.twin x y => Beacon.twin x y

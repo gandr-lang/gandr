@@ -11,7 +11,18 @@
 //!
 //! - see: #8288
 
-@![features(("data-parameters", "identity-types", "let-statements", "modules", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "records",
+  "rule-respect",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// The theory of a truth value: two constants and no rule.
 theory Truth where
@@ -79,7 +90,7 @@ def rec decode(b : Terms Bit) -> Terms Truth =
   match b where
     | Bit.zero => BitInTruth.zero
     | Bit.one => BitInTruth.one
-    | Bit.band(x, y) => BitInTruth.band (decode[<] x) (decode[<] y)
+    | Bit.band x y => BitInTruth.band (decode[<] x) (decode[<] y)
 
 /// The round trip fails at the true value, which the layout stores as zero.
 ///

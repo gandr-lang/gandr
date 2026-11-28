@@ -12,7 +12,16 @@
 //!
 //! - see: #8291
 
-@![features(("data-parameters", "identity-types", "let-statements", "modules", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// The theory of a vote: two constants and no rule.
 theory Vote where
@@ -74,4 +83,4 @@ def rec poll(t : Terms Tally) -> Terms Vote =
   match t where
     | Tally.none => Vote.nay
     | Tally.all => Vote.aye
-    | Tally.meet(x, y) => agree (poll[<] x) (poll[<] y)
+    | Tally.meet x y => agree (poll[<] x) (poll[<] y)

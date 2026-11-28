@@ -22,4 +22,4 @@ def onLeft(t : Terms Beacon) -> Terms Beacon =
   match t where
     | Beacon.dull => Beacon.dull
     | Beacon.bright => Beacon.bright
-    | Beacon.twin(x, y) => x
+    | Beacon.twin x y => x

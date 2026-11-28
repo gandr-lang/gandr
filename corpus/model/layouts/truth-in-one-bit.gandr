@@ -13,7 +13,22 @@
 //!
 //! - see: #8288
 
-@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "modules", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "type-codes", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "equivalence-record",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "records",
+  "rule-respect",
+  "signatures-as-values",
+  "structural-recursion",
+  "type-codes",
+  "universes",
+  "visibility"
+))]
 
 /// The theory of a truth value: two constants and no rule.
 pub theory Truth where
@@ -82,7 +97,7 @@ pub def rec decode(b : Terms Bit) -> Terms Truth =
   match b where
     | Bit.zero => BitInTruth.zero
     | Bit.one => BitInTruth.one
-    | Bit.band(x, y) => BitInTruth.band (decode[<] x) (decode[<] y)
+    | Bit.band x y => BitInTruth.band (decode[<] x) (decode[<] y)
 
 /// A truth value comes back from its bit.
 pub def there(t : Terms Truth) -> Path (decode (encode t)) t =
@@ -111,7 +126,7 @@ def rec back(b : Terms Bit) -> Path (encode (decode b)) b =
   match b where
     | Bit.zero => Path.here Bit.zero
     | Bit.one => Path.here Bit.one
-    | Bit.band(x, y) => Path.step
+    | Bit.band x y => Path.step
       (encodeConj (decode x) (decode y))
       (Path.walk
         (fun (z) {
