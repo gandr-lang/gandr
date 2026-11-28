@@ -27,7 +27,13 @@
 //! - see: `corpus/model/desc/llvm-constants-are-terms.gandr` — a source that
 //!   uses it
 
-@![features(("data-parameters", "dependent-functions", "signatures-as-values", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "signatures-as-values",
+  "universes",
+  "visibility"
+))]
 
 /// The admitted part of the `llvm` dialect.
 pub theory Llvm where

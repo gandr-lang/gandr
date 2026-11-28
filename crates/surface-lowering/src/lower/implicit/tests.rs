@@ -1391,7 +1391,7 @@ fn handled(
 ) -> String
 {
     format!(
-        "effect {binder} : std.io.Console.Eff {{ {body} }} handle {{ | pure(v) => pure v | oper print(line, k) => pure 1 }}"
+        "effect {binder} : std.io.Console.Eff {{ {body} }} handle {{ | pure(v) => pure v | oper print(line, k) => pure 1 | oper write_bytes(bytes, k) => pure 1 }}"
     )
 }
 

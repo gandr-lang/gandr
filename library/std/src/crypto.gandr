@@ -1,4 +1,11 @@
-@![features(("effect-rows", "imports", "let-statements", "modules", "native-primitives", "visibility"))]
+@![features((
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "visibility"
+))]
 
 // `std.crypto`: a one-time pad over the integers modulo `2^w`. `pad` adds a
 // key to a message, `(message + key) mod 2^w`, and `unpad` takes it away.

@@ -814,7 +814,12 @@ fn a_footprint_reads_held_authority_and_rows_through_every_former()
         .collect();
     assert_eq!(
         granted,
-        [("std.fs.Eff", "read"), ("std.io.Console.Eff", "print")],
-        "the held reader and the printing row count; the scope's writer does not"
+        [
+            ("std.fs.Eff", "read"),
+            ("std.io.Console.Eff", "print"),
+            ("std.io.Console.Eff", "write_bytes")
+        ],
+        "the held reader and each operation of the printing row count; the scope's writer does \
+         not"
     );
 }

@@ -23,14 +23,22 @@
 //! unit once the host has written it as one line. The host at a program's entry
 //! writes it to standard output; a host capturing it, as a test's does, keeps
 //! the lines instead, and the program runs unchanged under either.
+//! `write_bytes` takes a list of `u8` and replies the count of the bytes once
+//! the host has written each one to the same output, or a negative error
+//! number. A byte is not text: the host adds no newline and reads no UTF-8.
 //!
 //! `Stderr` is the process's error stream: `eprint` takes a string and replies
 //! the unit once the host has written it as one line to standard error.
 //! `Stdin` is its input: `read_line` takes the unit and replies the next line
 //! with its newline kept, so the end of input is the empty string and an empty
-//! line is a newline alone. The three standard streams are three interfaces,
-//! as `cap-std` holds three handles, so a handler of one covers its own
-//! operations alone.
+//! line is a newline alone. `read_bytes` takes a count `n` of at least 1 and
+//! makes one read of at most `n` bytes. It replies a pair: the count of the
+//! bytes read, or a negative error number, and those bytes as a list of `u8`.
+//! The count 0 with the empty list is the end of input. The two operations
+//! read one input, so each continues at the byte after the last byte the
+//! other read, and `print` and `write_bytes` write one output in the order of
+//! the calls. The three standard streams are three interfaces, as `cap-std`
+//! holds three handles, so a handler of one covers its own operations alone.
 //!
 //! `Net` is a stream to a peer. `connect` takes the peer, its key spelled in
 //! hex and then any `@<ip:port>` the dialer may try, and replies a stream;
@@ -108,6 +116,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::IntegerWidth;
 use quenchant_shape::shape::Maybe;
 
 use super::EffectConflict;
@@ -258,11 +267,11 @@ pub struct HostSignatures
     pub ring: EffectSig,
     /// Run forever: no operation, and no handler.
     pub partial: EffectSig,
-    /// Write a line to the console.
+    /// Write a line, or bytes, to the console.
     pub console: EffectSig,
     /// Write a line to standard error.
     pub stderr: EffectSig,
-    /// Read a line from standard input.
+    /// Read a line, or bytes, from standard input.
     pub stdin: EffectSig,
     /// Open, accept, write, read and close a stream to a peer.
     pub net: EffectSig,
@@ -410,6 +419,9 @@ impl HostSignatures
         let integer = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
         let buffer = arena.value_type_buffer();
+        let byte = arena.value_type_base(BaseType::Fixed(IntegerWidth::U8));
+        let bytes = arena.value_type_list(byte);
+        let read_bytes = arena.value_type_product(&[integer, bytes]);
         let strings = arena.value_type_list(string);
         let args_mode = arena.value_type_product(&[strings, string]);
         let command = arena.value_type_product(&[string, args_mode]);
@@ -494,21 +506,35 @@ impl HostSignatures
             },
         ])?;
         let partial = partiality();
-        let console = EffectSig::new(CONSOLE.into(), [EffectOp {
-            name: "print".into(),
-            payload: string,
-            reply: unit,
-        }])?;
+        let console = EffectSig::new(CONSOLE.into(), [
+            EffectOp {
+                name: "print".into(),
+                payload: string,
+                reply: unit,
+            },
+            EffectOp {
+                name: "write_bytes".into(),
+                payload: bytes,
+                reply: integer,
+            },
+        ])?;
         let stderr = EffectSig::new(STDERR.into(), [EffectOp {
             name: "eprint".into(),
             payload: string,
             reply: unit,
         }])?;
-        let stdin = EffectSig::new(STDIN.into(), [EffectOp {
-            name: "read_line".into(),
-            payload: unit,
-            reply: string,
-        }])?;
+        let stdin = EffectSig::new(STDIN.into(), [
+            EffectOp {
+                name: "read_line".into(),
+                payload: unit,
+                reply: string,
+            },
+            EffectOp {
+                name: "read_bytes".into(),
+                payload: integer,
+                reply: read_bytes,
+            },
+        ])?;
         let accepted = arena.value_type_product(&[string, integer]);
         let frame = arena.value_type_product(&[integer, string]);
         let net = EffectSig::new(NET.into(), [

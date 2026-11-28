@@ -15,7 +15,17 @@
 //!
 //! [Hillerström-2016-liberating_effects_rows_handlers]: https://doi.org/10.1145/2976022.2976033 "Hillerström and Lindley, Liberating Effects with Rows and Handlers"
 
-@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "records", "row-kind", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "row-kind",
+  "visibility"
+))]
 
 // The console's host interface.
 import std.io
@@ -42,6 +52,7 @@ def quiet[r : Row](s : String) -> [r] Unit =
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => k *{}
+    | oper write_bytes(bytes, k) => k 0
   }
 
 /// `quietRun` handles the printed line.

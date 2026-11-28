@@ -11,7 +11,14 @@
 //!
 //! - see: #7837 — the answer of a system call
 
-@![features(("call-by-push-value", "conditionals", "let-statements", "nominal-data", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "conditionals",
+  "let-statements",
+  "nominal-data",
+  "universes",
+  "visibility"
+))]
 
 /// The answer of a system call, split.
 pub data Answer : Type where

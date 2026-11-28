@@ -14,9 +14,15 @@
 //! Under `Scripted`, the input is a tape in the source. Each run gives the
 //! tape after it: no input left, and the output equal to the input.
 //!
+//! Under `Hosted`, `main` copies standard input to standard output, with a
+//! buffer of 4096 bytes and at most 4096 passes. A read of a pipe gives at
+//! most the bytes that the pipe holds. When each read fills the buffer, the
+//! copy moves at most 16 MiB.
+//!
 //! - see: #7844 — the first program, and the mode as a parameter of the
 //!   program
-//! - see: `../../../library/std/src/io.gandr` — `Io.Eff` and `Scripted`
+//! - see: `../../../library/std/src/io.gandr` — `Io.Eff`, `Scripted` and
+//!   `Hosted`
 
 @![features((
   "call-by-push-value",
@@ -24,6 +30,7 @@
   "data-parameters",
   "dependent-functions",
   "effect-handlers",
+  "effect-rows",
   "imports",
   "let-statements",
   "modules",
@@ -35,14 +42,17 @@
   "records",
   "signature-models",
   "structural-recursion",
+  "thunks-and-force",
   "universes"
 ))]
 
 // The bytes of a buffer and of a tape.
 import std.list (List)
-// The IO of a program, its model with no kernel, and the receive of a
-// completion.
-import std.io (Io, Returned, Shut, Tape, Scripted, returned)
+// The authority of `main`, and the console that it opens.
+import std.authority (Authority, console)
+// The IO of a program, its model with no kernel, its model over the host
+// streams with their capability, and the receive of a completion.
+import std.io (Io, Returned, Shut, Tape, Scripted, Hosted, Streams, returned)
 
 /// A bound of passes.
 data Passes : Type where
@@ -98,3 +108,42 @@ def from_no_input() -> Tape = copied #[] #[0u8, 0u8] five
 @[runs("Tape (cons 5u8 nil) (cons 1u8 (cons 2u8 (cons 3u8 (cons 4u8 nil))))")]
 def past_the_bound() -> Tape =
   copied #[1u8, 2u8, 3u8, 4u8, 5u8] #[0u8, 0u8] (Pass (Pass Spent))
+
+/// Twice the passes of `passes`.
+def rec twice(passes : Passes) -> Passes =
+  match passes where
+    | Spent => Spent
+    | Pass rest => Pass (Pass (twice[<] rest))
+
+/// It doubles `passes` once for each pass of `times`.
+def rec doubled(times : Passes, passes : Passes) -> Passes =
+  match times where
+    | Spent => passes
+    | Pass rest => doubled[<] rest (twice passes)
+
+/// A byte 0 for each pass of `passes`.
+def rec zeros(passes : Passes) -> List u8 =
+  match passes where
+    | Spent => #[]
+    | Pass rest => cons 0u8 (zeros[<] rest)
+
+/// Twelve passes.
+def twelve : Passes = Pass
+  (Pass (Pass (Pass (Pass (Pass (Pass (Pass (Pass (Pass (Pass (Pass Spent)))))))))))
+
+/// 4096 passes: twelve doublings of one pass.
+def many : Passes = doubled twelve (Pass Spent)
+
+/// The copy of standard input to standard output under `Hosted`, through a
+/// buffer of 4096 bytes, in at most 4096 passes.
+def main(authority : Authority) -> [std.io.Console.Eff, std.io.Stdin.Eff] Integer =
+  let buffer = zeros many
+  let program : +U (Streams -> -F [
+    std.io.Console.Eff,
+    std.io.Stdin.Eff
+  ] Unit) = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+    copy buffer many
+    pure fun (streams) { pure *{} }
+  } handle Hosted
+  program (console authority)
+  0

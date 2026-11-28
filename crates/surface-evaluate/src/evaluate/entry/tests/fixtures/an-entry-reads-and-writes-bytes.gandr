@@ -1,0 +1,13 @@
+def main() -> [std.io.Console.Eff, std.io.Stdin.Eff] Integer =
+  let line = std.io.Stdin.read_line
+  std.io.Console.print line
+  let first = std.io.Stdin.read_bytes 2
+  let second = std.io.Stdin.read_bytes 8
+  let third = std.io.Stdin.read_bytes 8
+  let one = std.io.Console.write_bytes first.1
+  let two = std.io.Console.write_bytes second.1
+  if one + two == 3 {
+    first.0 * 10 + second.0 + third.0 * 100
+  } else {
+    99
+  }

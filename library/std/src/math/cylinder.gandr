@@ -1,4 +1,14 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "type-codes", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "type-codes",
+  "universes",
+  "visibility"
+))]
 
 // `std.math.cylinder`: cylinders and cones of paths, composed.
 //
