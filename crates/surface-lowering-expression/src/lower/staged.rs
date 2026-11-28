@@ -97,6 +97,8 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::lower::capability::Capability;
+use crate::lower::capability::CapabilityRef;
 use crate::module::SlotIndex;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
@@ -445,7 +447,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   paired with whether a stage written under it is placed.
     /// - ensures: each staged type reached is marked `At` its binder's ordinal,
     ///   or one `Below` it when written `<`; a node stays placed while every
-    ///   form above it is one [`PLACING`] names.
+    ///   form above it is one [`PLACING`] names. A capability's brackets hold
+    ///   its grade and its labels and no stage, so no node of a capability is
+    ///   marked.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a staged type naming no
     ///   binder of `names`; the out-of-fragment refusal for one under a form
     ///   that places no stage, a path's carrier or a capability's region among
@@ -480,6 +484,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 continue;
             };
             let placed = Placed::of(at, node);
+            if CapabilityRef::new(self.host_ref())
+                .capability_at(placed)?
+                .is_some()
+            {
+                continue;
+            }
             let formed = self.cx().form_at(placed)?;
             read_pieces(self.cx().pbg, self.cx().tree, at, scratch)?;
             if let Some((form, Former::StagedType)) = formed
@@ -541,8 +551,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(())
     }
 
-    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, or the view type
-    /// `View[m](a)` a method answering a place declares its result at.
+    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, the view type
+    /// `View[m](a)` a method answering a place declares its result at, or a
+    /// capability, `Cap[read]`.
     ///
     /// # Specification
     /// - requires: `site` is a staged type.
@@ -551,7 +562,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   stands; a view type its function recorded stands as its place's index,
     ///   the atom `Integer`, its element read by the function; a patched type
     ///   is read as [`Self::patched_fields`] and [`Self::patched_faces`] read
-    ///   it.
+    ///   it; a capability is read as [`Capability::capability_type`] reads it.
     /// - fails: the wrong-sort refusal where no value type is read; a fault
     ///   naming the form for a tile out of place; the out-of-fragment refusal
     ///   for a staged type no quantified function's signature marked;
@@ -574,7 +585,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Cost
     /// - allocation: the bracket's entries, the stage marks and the plan,
     ///   durable by the staged type's plan
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched { .. } | Plan::Atom(TypeAtom::Integer)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched { .. } | Plan::Atom(TypeAtom::Integer) | Plan::Capability(..)))))]
     #[inline]
     pub fn staged_type(
         &mut self,
@@ -582,6 +593,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        // The prelude's `Cap` with its labels in the bracket, `Cap[read]` or
+        // `Cap[1][write]`, is a capability type.
+        if let Some(capability) = CapabilityRef::new(self.host_ref()).capability_at(site.at)? {
+            return Capability::new(self.host()).capability_type(site, capability);
+        }
         let frame = self.require(site, Produced::ValueType)?;
         let base = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;

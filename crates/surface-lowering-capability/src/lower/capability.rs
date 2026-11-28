@@ -519,16 +519,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         }
     }
 
-    /// The bracketed head and the label set of the capability type at `at`:
-    /// the application of a name that resolves to the declaration of the row
-    /// `cap`, with its grade in a bracket after it or none, to one label set.
+    /// The graded head and the label set of the capability type at `at`: a
+    /// name that resolves to the declaration of the row `cap`, with its grade
+    /// in a bracket after it or none, and its label set in a bracket after
+    /// that, `Cap[read, write]` or `Cap[1][write]`, or applied to a label set
+    /// in braces, `Cap {read, write}`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the head `Cap[g]` when it writes a bracket, and the label
-    ///   set's operand, when `at` is a juxtaposed type application whose head's
-    ///   name resolves to the declaration of the row `cap`; none for any other
-    ///   form.
+    /// - ensures: the head `Cap[g]` when it writes a grade, and the form that
+    ///   holds the labels, when `at` is a staged type or a juxtaposed type
+    ///   application whose head's name resolves to the declaration of the row
+    ///   `cap`; none for any other form.
     /// - fails: the refusal of a form whose tiles do not read.
     /// - panics: none.
     ///
@@ -545,37 +547,50 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         at: Placed,
     ) -> Result<Option<(Option<Placed>, Placed)>, LoweringRefusal<'source>>
     {
-        let Some((_, Former::TypeApplication)) = self.cx().form_at(at)?
-        else {
-            return Ok(None);
-        };
         let mut pieces = Pieces::new();
-        read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
-        // A juxtaposed application reads as its head, then its one argument
-        // between the zero-width `(` and `)` that the melder writes.
-        let &[
-            head,
-            Piece::Tile { .. },
-            Piece::Operand(set),
-            Piece::Tile { .. },
-        ] = pieces.pieces.as_slice()
-        else {
-            return Ok(None);
+        let (head, set) = match self.cx().form_at(at)? {
+            // The labels in the bracket after the head, `Cap[read]`.
+            Some((_, Former::StagedType)) => {
+                read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
+                let Some(&head) = pieces.pieces.first()
+                else {
+                    return Ok(None);
+                };
+                (head, at)
+            },
+            // A juxtaposed application reads as its head, then its one
+            // argument between the zero-width `(` and `)` that the melder
+            // writes: `Cap {read}`.
+            Some((_, Former::TypeApplication)) => {
+                read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
+                let &[
+                    head,
+                    Piece::Tile { .. },
+                    Piece::Operand(set),
+                    Piece::Tile { .. },
+                ] = pieces.pieces.as_slice()
+                else {
+                    return Ok(None);
+                };
+                (head, set)
+            },
+            _ => return Ok(None),
         };
-        let (staged, named) = match head {
+        let (graded, named) = match head {
             Piece::Tile { at: named, .. } => (None, named),
-            Piece::Operand(staged) => {
-                let Some((_, Former::StagedType)) = self.cx().form_at(staged)?
+            Piece::Operand(head) => {
+                if let Some((_, Former::StagedType)) = self.cx().form_at(head)? {
+                    let mut bracketed = Pieces::new();
+                    read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut bracketed)?;
+                    let Some(named) = bracketed.pieces.first().map(|piece| piece.placed())
+                    else {
+                        return Ok(None);
+                    };
+                    (Some(head), named)
+                }
                 else {
-                    return Ok(None);
-                };
-                let mut bracketed = Pieces::new();
-                read_pieces(self.cx().pbg, self.cx().tree, staged.node, &mut bracketed)?;
-                let Some(named) = bracketed.pieces.first().map(|piece| piece.placed())
-                else {
-                    return Ok(None);
-                };
-                (Some(staged), named)
+                    (None, head)
+                }
             },
         };
 
@@ -587,7 +602,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                 named,
                 gandr_core_term::builtin::SurfaceFormer::Cap,
             )
-            .then_some((staged, set)))
+            .then_some((graded, set)))
     }
 
     /// The type that the parentheses at `at` hold, or `at` itself when it
@@ -634,12 +649,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
 {
-    /// Classify a capability type, `Cap {op, …}` or `Cap[r] {op, …}`: the
-    /// head `head` that [`CapabilityRef::capability_at`] found, applied to
-    /// the label set `set`.
+    /// Classify a capability type, `Cap[op, …]` or `Cap[g][op, …]`: the
+    /// graded head `graded` that [`CapabilityRef::capability_at`] found, and
+    /// the labels of `set`, in its bracket or in braces, `Cap {op, …}`.
     ///
     /// # Specification
-    /// - requires: [`CapabilityRef::capability_at`] answers `head` and `set`
+    /// - requires: [`CapabilityRef::capability_at`] answers `graded` and `set`
     ///   for `site`.
     /// - ensures: the type stands as a value type, planned over the authority
     ///   its operations name, each under the host interface offering it, and
@@ -665,11 +680,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     pub fn capability_type(
         &mut self,
         site: Site,
-        (staged, set): (Option<Placed>, Placed),
+        (graded, set): (Option<Placed>, Placed),
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let _frame = self.host().require(site, Produced::ValueType)?;
-        let grade = if let Some(staged) = staged {
+        let grade = if let Some(staged) = graded {
             let mut pieces = Pieces::new();
             read_pieces(self.cx().pbg, self.cx().tree, staged.node, &mut pieces)?;
             let mut cursor = Cursor::new(&pieces.pieces, staged.span);
@@ -686,14 +701,24 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         else {
             CapabilityGrade::Durable
         };
-        let Some((_, Former::LabelSet)) = self.cx().form_at(set)?
-        else {
-            return Err(site.fault(set.span, FormFault::MisplacedTile));
+        // The labels stand in the bracket after the head, or in a label set's
+        // braces.
+        let (open, close) = match self.cx().form_at(set)? {
+            Some((_, Former::StagedType)) => (TileName::BRACKET_OPEN, TileName::BRACKET_CLOSE),
+            Some((_, Former::LabelSet)) => (TileName::BRACE_OPEN, TileName::BRACE_CLOSE),
+            _ => return Err(site.fault(set.span, FormFault::MisplacedTile)),
         };
         let mut pieces = Pieces::new();
         read_pieces(self.cx().pbg, self.cx().tree, set.node, &mut pieces)?;
         let mut cursor = Cursor::new(&pieces.pieces, set.span);
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        if open == TileName::BRACKET_OPEN {
+            // The head, which `capability_at` read.
+            let Maybe::Present(_) = cursor.read()
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+        }
+        closed(site, &mut cursor, open)?;
         let table = host(site)?;
         let mut authority = Authority::new();
         loop {
@@ -718,11 +743,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;
             }
-            if let Maybe::Present(_) = cursor.at(TileName::BRACE_CLOSE) {
+            if let Maybe::Present(_) = cursor.at(close) {
                 break;
             }
         }
-        closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
+        closed(site, &mut cursor, close)?;
         exhausted(site, &cursor)?;
 
         let region = self
@@ -1437,7 +1462,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                 ..
             } => Holder::Capability,
             Shape::Form {
-                former: Former::TypeApplication | Former::ParenthesizedType,
+                former: Former::StagedType | Former::TypeApplication | Former::ParenthesizedType,
                 ..
             } if self
                 .capability_at(self.unparenthesized(Placed::of(declared, node))?)?

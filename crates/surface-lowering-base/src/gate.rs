@@ -318,12 +318,12 @@ where
 /// primitive. It plans a type atom and a type former in the same manner.
 ///
 /// # Specification
-/// - requires: `plans` are the plans of a lowering of `tree`.
 /// - ensures: one element for each plan that is a named primitive, a type atom,
-///   a type former or a float literal, with the span of its node and the row of
-///   that primitive, atom or former; the row of a float literal is the float
-///   atom. An operation that operator syntax selects adds nothing: the rule of
-///   the operator has its own gate.
+///   a type former, a capability or a float literal, with the span of its node
+///   and the row of that primitive, atom or former; the row of a float literal
+///   is the float atom, and the row of a capability is the head `Cap`. An
+///   operation that operator syntax selects adds nothing: the rule of the
+///   operator has its own gate.
 /// - provides: the rows that [`used_features`] counts beside those of
 ///   [`reached_rows`].
 /// - fails: never.
@@ -361,6 +361,9 @@ where
             }
             else if let Plan::Literal(gandr_kernel_term::Literal::Float64(_)) = *plan {
                 Row::Atom(gandr_core_term::builtin::TypeAtom::Float64)
+            }
+            else if let Plan::Capability(..) = *plan {
+                Row::Surface(gandr_core_term::builtin::SurfaceFormer::Cap)
             }
             else {
                 return None;
@@ -442,10 +445,13 @@ pub fn marked_rows(
 /// - ensures: the id of the language feature of each rule that molds a node of
 ///   `tree` inside `within`, of each attribute that `table` files under a key
 ///   of `source`, of each builtin row whose key a `builtin` attribute of
-///   `source` states, and of each row of `reached`. A rule, an attribute or a
-///   row of tier zero adds nothing. The span of an id is the span of the node,
-///   of the attribute or of the name that starts first among those that use it,
-///   and the longest of those that start there.
+///   `source` states, and of each row of `reached`. A node inside the span of a
+///   row of `reached` that is a head of the surface adds no rule: the row gates
+///   the head and what its brackets hold, so the bracket of `Cap[read]` is no
+///   stage of a sized type. A rule, an attribute or a row of tier zero adds
+///   nothing. The span of an id is the span of the node, of the attribute or of
+///   the name that starts first among those that use it, and the longest of
+///   those that start there.
 /// - provides: the set that the keys of [`declared_features`] are compared
 ///   with, and the place of a refusal.
 /// - fails: never.
@@ -454,14 +460,17 @@ pub fn marked_rows(
 /// # Adequacy
 /// - hypothesis: L3 — a source of the forms of the first twin uses nothing, and
 ///   a form, an attribute, a builtin row and a name that reaches a builtin row
-///   outside tier zero each add their feature.
+///   outside tier zero each add their feature, and a capability adds its row's
+///   feature and not the feature of its bracket's rule.
 /// - witness: `gandr-surface-lowering::tests::modules::a_source_uses_the_features_of_its_forms_and_of_its_attributes`
 /// - witness: `gandr-surface-driver::tests::cli::features_counts_a_builtin_row_that_a_name_reaches`
 ///
 /// # Cost
-/// - time: one pass over the nodes of the tree, one over the entries of the
-///   table and one over the rows.
-/// - allocation: the map, one element for each feature.
+/// - time: one pass over the nodes of the tree, each looked up among the spans
+///   of the heads of the surface; one pass over the entries of the table and
+///   one over the rows.
+/// - allocation: the map, one element for each feature, and the spans of the
+///   heads of the surface that `reached` holds.
 #[inline]
 #[must_use]
 pub fn used_features(
@@ -481,10 +490,22 @@ pub fn used_features(
             }
         }
     };
+    let heads: BTreeSet<(ByteOffset, ByteOffset)> = reached
+        .iter()
+        .filter(|&&(_span, row)| matches!(row, Row::Surface(_)))
+        .map(|&(span, _row)| (span.start(), span.end()))
+        .collect();
+    let in_head = |span: ByteSpan| {
+        heads
+            .iter()
+            .take_while(|&&(start, _end)| start <= span.start())
+            .any(|&(_start, end)| span.end() <= end)
+    };
     for position in tree.positions() {
         if let Some(node) = tree.node(position)
             && within.start <= node.span().start()
             && node.span().end() <= within.end
+            && !in_head(node.span())
             && let NodeLabel::Meld(mold) | NodeLabel::Tile(mold) = node.label()
             && let Ok(rule) = pbg.rule_of(mold)
         {

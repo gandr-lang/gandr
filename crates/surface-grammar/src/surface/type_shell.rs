@@ -604,8 +604,9 @@ fn add_type_rules(
     // declaration's implicit `[i : Size]` binds. Postfix in the path band,
     // so `Nat[< i] -> Nat` and `-F Nat[i]` need no parentheses. The same
     // bracket names a method's deduced mode where a view's type reads its
-    // element after it, `View[m](a)`, and the grade of a capability, `Cap[1]
-    // {write}` or `Cap[ω] {read}`; a name there is a grade variable.
+    // element after it, `View[m](a)`, the label set of a capability, `Cap[read,
+    // write]`, a list of names, and its grade, `Cap[1][write]` or
+    // `Cap[ω][read]`; a name there is a grade variable.
     //
     // The bracket also reads `Config[.port = 443]`, which the lowering gives a
     // tile out of place: the reader `.#{` of `extension_type` fixes a record's
@@ -630,7 +631,7 @@ fn add_type_rules(
             Regex::alt([
                 Regex::seq([
                     Regex::optional(tile(TileLabel("<"))),
-                    tile(TileLabel("identifier")),
+                    comma1(tile(TileLabel("identifier"))),
                     tile(TileLabel("]")),
                     Regex::optional(Regex::seq([
                         tile(TileLabel("(")),
