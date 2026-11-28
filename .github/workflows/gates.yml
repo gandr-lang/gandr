@@ -195,6 +195,9 @@ jobs:
       # nextest tool configuration with the priority of each slow test
       # (`.config/nextest.toml`). With no report, the configuration holds no
       # priority. When the tool fails, the suite runs in the order of nextest.
+      #
+      # The variable `PRIORITIES` is one word. It joins the option and its value
+      # with `=`.
       - name: set the priorities
         if: ${{ matrix.nextest }}
         env:
@@ -203,15 +206,16 @@ jobs:
           REPORT: ${{ github.workspace }}/target/nextest/default/junit.xml
         run: |
           if ${{ matrix.timing }} --junit "$REPORT" --write "$RUNNER_TEMP/priorities.toml"; then
-            echo "PRIORITIES=--tool-config-file test-timing:$RUNNER_TEMP/priorities.toml" >> "$GITHUB_ENV"
+            echo "PRIORITIES=--tool-config-file=test-timing:$RUNNER_TEMP/priorities.toml" >> "$GITHUB_ENV"
           else
             echo "::notice title=priorities::test-timing failed, so the suite runs in the order of nextest"
           fi
+      # A gate with no priorities gets no word for them.
       - name: run the gate
         env:
           KACHE_OCI_USERNAME: ${{ github.actor }}
           KACHE_OCI_PASSWORD: ${{ github.token }}
-        run: ${{ matrix.run }} $PRIORITIES
+        run: ${{ matrix.run }} ${PRIORITIES:+"$PRIORITIES"}
       # The tree tracks no file of an output or a ratchet of the list of
       # artifacts. The run of the gate leaves the checkout clean. A file that a
       # test writes and that the list does not have shows itself here.
