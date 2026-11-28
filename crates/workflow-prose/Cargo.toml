@@ -40,5 +40,10 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 
+# A sweep that `gandr-workflow-sweep` samples reads the refusals of the
+# corpus at their sources.
+[dev-dependencies]
+gandr-workflow-sweep.workspace = true
+
 [lints]
 workspace = true

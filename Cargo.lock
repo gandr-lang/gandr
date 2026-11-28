@@ -2812,6 +2812,7 @@ dependencies = [
  "clap",
  "gandr-workflow-output-store",
  "gandr-workflow-outputs",
+ "gandr-workflow-sweep",
  "quenchant-shape",
  "serde",
  "serde_json",

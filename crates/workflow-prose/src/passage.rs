@@ -1444,8 +1444,10 @@ fn rendered(
 ///   circuit with a cycle at the path of its source, and a second run gives the
 ///   same goldens from the list that the first run wrote; a key that names a
 ///   file of the renderer's tests, a walk that is not made, or a store that is
-///   not filled changes the paths or the list.
-/// - witness: `passage::tests::the_refusals_of_the_corpus_are_read_at_their_sources`
+///   not filled changes the paths or the list. A pull request reads a sample of
+///   the refusing sources through [`at_source`], and the whole profiles read
+///   them all through this function.
+/// - witness: `passage::tests::sweeps::the_refusals_of_the_corpus_are_read_at_their_sources`
 fn refusals(
     root: &Path,
     store: &Store,
@@ -1469,11 +1471,23 @@ fn refusals(
         else {
             continue;
         };
-        let key = format!("corpus/{below}");
-        let text = String::from_utf8_lossy(text);
-        goldens.extend(golden(Text(&key), Text(&text)));
+        goldens.extend(at_source(below, text));
     }
     Ok(goldens)
+}
+
+/// The goldens of `text`, the refusals of the source at `below`, its path
+/// below `corpus/`: each at the key `corpus/<below>`.
+///
+/// # Specification
+/// trivial.
+fn at_source(
+    below: &str,
+    text: &[u8],
+) -> Vec<Golden>
+{
+    let key = format!("corpus/{below}");
+    golden(Text(&key), Text(&String::from_utf8_lossy(text)))
 }
 
 /// The `.gandr` files git tracks under `root`, `/`-separated and relative to
@@ -1531,10 +1545,7 @@ fn read(path: &Path) -> Result<String, ProseError>
 #[cfg(test)]
 mod tests
 {
-    use std::path::Path;
-
     use super::Advice;
-    use super::BTreeSet;
     use super::Head;
     use super::Limits;
     use super::Line;
@@ -1542,7 +1553,6 @@ mod tests
     use super::Placed;
     use super::References;
     use super::Source;
-    use super::Store;
     use super::Text;
     use super::WhatLine;
     use super::body;
@@ -1551,7 +1561,6 @@ mod tests
     use super::document;
     use super::gather;
     use super::golden;
-    use super::refusals;
 
     #[test]
     fn a_comment_run_splits_at_its_blank_lines_and_lists()
@@ -1964,46 +1973,175 @@ mod tests
         std::fs::remove_dir_all(&root).unwrap();
     }
 
-    /// The refusals of this checkout are at their sources, and the run fills
-    /// the store. A second run gives the same goldens from the store.
-    #[test]
-    fn the_refusals_of_the_corpus_are_read_at_their_sources()
+    // The refusals of the corpus, read at their sources, in a sweep: a pull
+    // request renders a sample of the refusing sources and the sources its
+    // change touches, and the whole profiles read each of them through the
+    // store of the outputs.
+    mod sweeps
     {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let held = std::env::temp_dir().join(format!("prose-refusals-{}", std::process::id()));
-        let store = Store::at(held.clone());
-        let goldens = refusals(&root, &store).unwrap();
-        let trees = std::fs::read_dir(held.join("refusals/trees")).map_or(0, Iterator::count);
-        assert!(
-            trees > 0,
-            "the run lists the values of its tree in the store"
-        );
-        assert_eq!(
-            refusals(&root, &store).unwrap(),
-            goldens,
-            "the store gives the goldens that the walk gave"
-        );
-        let paths: BTreeSet<&str> = goldens
-            .iter()
-            .map(|golden| golden.what.path.as_str())
-            .collect();
-        assert!(
-            paths.contains("corpus/pathological/circuit/circuit-cyclic-wiring.gandr"),
-            "the circuit with a cycle prints a diagnostic at its source"
-        );
-        let elsewhere: Vec<&&str> = paths
-            .iter()
-            .filter(|path| {
-                !path.starts_with("corpus/")
-                    || Path::new(path)
-                        .extension()
-                        .is_none_or(|extension| extension != "gandr")
+        use std::path::Path;
+        use std::path::PathBuf;
+
+        use gandr_workflow_outputs::refusals::REFUSING;
+        use gandr_workflow_outputs::refusals::rendered;
+        use gandr_workflow_sweep::Coverage;
+        use gandr_workflow_sweep::Portion;
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Source;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::super::BTreeSet;
+        use super::super::Golden;
+        use super::super::Store;
+        use super::super::at_source;
+        use super::super::refusals;
+
+        /// The sample: eight refusing sources, ranked by their BLAKE3 digest
+        /// under this name, at least one of the pathological twins and one of
+        /// the diagnostics exemplars of the ledger; and, in the companion,
+        /// each refusing source the change adds or modifies beside them
+        /// (`gandr-workflow-sweep`).
+        const SAMPLE: Sample = Sample {
+            name: SampleName("the_refusals_of_the_corpus_are_read_at_their_sources"),
+            size: SampleSize(8),
+        };
+
+        /// The circuit with a cycle, below `corpus/`: its diagnostic is read
+        /// at its source in each fixed portion.
+        const CYCLIC: &str = "pathological/circuit/circuit-cyclic-wiring.gandr";
+
+        /// The refusals of this checkout are at their sources. Under the whole
+        /// profiles, the run fills the store, and a second run gives the same
+        /// goldens from the store.
+        #[test]
+        fn the_refusals_of_the_corpus_are_read_at_their_sources()
+        {
+            read_at_sources(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set.
+        #[test]
+        fn the_refusals_of_the_corpus_are_read_at_their_sources_changed()
+        {
+            read_at_sources(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
+
+        /// Whether `source` sits in a directory of [`REFUSING`]: its path
+        /// below `corpus/` is its name below the fixture root, or its whole
+        /// name in the ledger.
+        ///
+        /// # Specification
+        /// trivial.
+        fn refusing(source: &Source) -> bool
+        {
+            let name = source.name.as_ref();
+            let below = name.strip_prefix("fixture/").unwrap_or(name);
+            REFUSING.iter().any(|directory| {
+                below
+                    .strip_prefix(directory)
+                    .is_some_and(|rest| rest.starts_with('/'))
             })
-            .collect();
-        assert!(
-            elsewhere.is_empty(),
-            "each diagnostic of the corpus is at a source of the corpus: {elsewhere:?}"
-        );
-        std::fs::remove_dir_all(&held).unwrap();
+        }
+
+        /// The goldens of the refusing sources `sweep` visits are each at a
+        /// source of the corpus, and, in the fixed portion, the circuit with a
+        /// cycle gives one.
+        ///
+        /// # Specification
+        /// trivial.
+        fn read_at_sources(sweep: &Sweep)
+        {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+            let goldens = match (sweep.coverage(), sweep.portion()) {
+                (Coverage::Full, Portion::Changed) => return,
+                (Coverage::Full, Portion::Fixed) => whole(&root),
+                (Coverage::Sampled, portion) => sampled(sweep, &root, portion),
+            };
+            let paths: BTreeSet<&str> = goldens
+                .iter()
+                .map(|golden| golden.what.path.as_str())
+                .collect();
+            if sweep.portion() == Portion::Fixed {
+                assert!(
+                    paths.contains(format!("corpus/{CYCLIC}").as_str()),
+                    "the circuit with a cycle prints a diagnostic at its source"
+                );
+            }
+            let elsewhere: Vec<&&str> = paths
+                .iter()
+                .filter(|path| {
+                    !path.starts_with("corpus/")
+                        || Path::new(path)
+                            .extension()
+                            .is_none_or(|extension| extension != "gandr")
+                })
+                .collect();
+            assert!(
+                elsewhere.is_empty(),
+                "each diagnostic of the corpus is at a source of the corpus: {elsewhere:?}"
+            );
+        }
+
+        /// The goldens of each refusing source of the checkout at `root`, read
+        /// through a store that the run fills, which a second run reads.
+        ///
+        /// # Specification
+        /// trivial.
+        fn whole(root: &Path) -> Vec<Golden>
+        {
+            let held = std::env::temp_dir().join(format!("prose-refusals-{}", std::process::id()));
+            let store = Store::at(held.clone());
+            let goldens = refusals(root, &store).unwrap();
+            let trees = std::fs::read_dir(held.join("refusals/trees")).map_or(0, Iterator::count);
+            assert!(
+                trees > 0,
+                "the run lists the values of its tree in the store"
+            );
+            assert_eq!(
+                refusals(root, &store).unwrap(),
+                goldens,
+                "the store gives the goldens that the walk gave"
+            );
+            std::fs::remove_dir_all(&held).unwrap();
+            goldens
+        }
+
+        /// The goldens of the refusing sources of `portion` of `sweep`, and of
+        /// the circuit with a cycle in the fixed portion, rendered by one walk
+        /// of the checkout at `root`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn sampled(
+            sweep: &Sweep,
+            root: &Path,
+            portion: Portion,
+        ) -> Vec<Golden>
+        {
+            let root = root.canonicalize().expect("the checkout's root resolves");
+            let mut candidates = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
+            candidates.extend(gandr_workflow_sweep::corpus::ledger().expect("the ledger reads"));
+            candidates.retain(refusing);
+            let visited = sweep.visit(SAMPLE, &candidates);
+            assert!(
+                visited.len() >= sweep.drawn(SAMPLE).0,
+                "the sample is drawn: {}",
+                visited.len()
+            );
+            let mut paths: Vec<PathBuf> = visited.into_iter().map(|source| source.path).collect();
+            if portion == Portion::Fixed {
+                paths.push(root.join("corpus").join(CYCLIC));
+            }
+            if paths.is_empty() {
+                return Vec::new();
+            }
+            rendered(&root, paths)
+                .expect("every refusing source reads")
+                .iter()
+                .flat_map(|(below, text)| at_source(&below.to_string_lossy(), text.as_bytes()))
+                .collect()
+        }
     }
 }
