@@ -12324,7 +12324,7 @@ mod tests
         assert_eq!(
             ask(
                 "textDocument/prepareCallHierarchy",
-                prepare("following.gandr", below(divided_at, 3), 28)
+                prepare("following.gandr", below(divided_at, 4), 16)
             ),
             serde_json::json!([minus]),
             "a call of `minus` in `divided` prepares `minus` at its definition"
@@ -12349,20 +12349,20 @@ mod tests
                     &item(
                         "following.gandr",
                         "divided",
-                        lines(divided_at, below(divided_at, 3), 60),
+                        lines(divided_at, below(divided_at, 5), 27),
                         span(divided_at, 8, 15)
                     ),
-                    &[span(below(divided_at, 3), 26, 31)]
+                    &[span(below(divided_at, 4), 14, 19)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedUp",
-                        lines(halved_at, below(halved_at, 3), 69),
+                        lines(halved_at, below(halved_at, 5), 26),
                         span(halved_at, 8, 16)
                     ),
-                    &[span(below(halved_at, 3), 26, 31)]
+                    &[span(below(halved_at, 4), 14, 19)]
                 ),
                 call("from", &difference, &[span(difference_at, 29, 34)]),
             ]),
@@ -16205,7 +16205,7 @@ mod tests
                 )
                 .0,
             ),
-            Character::from(23_u32),
+            Character::from(11_u32),
         );
         let opened = |capabilities: Value| {
             let mut server = Connected::default();
@@ -16925,7 +16925,7 @@ mod tests
         };
         assert_eq!(
             opened(&mut server, "model/cancellation/answered.gandr"),
-            ["12-12:import `./cancel-base.gandr` is never used:[1]"],
+            ["19-19:import `./cancel-base.gandr` is never used:[1]"],
             "a scope reading only builtins reads nothing through its import, which fades whole"
         );
         assert_eq!(
@@ -17023,21 +17023,21 @@ mod tests
         };
         let (uri, text, judged) = opened(&mut server, "model/cancellation/answered.gandr");
         assert_eq!(
-            ask(&mut server, &uri, 12, &judged),
+            ask(&mut server, &uri, 19, &judged),
             [
                 serde_json::json!({"title": "Remove the unused import `./cancel-base.gandr`",
                 "kind": "quickfix", "diagnostics": hinted(&judged), "isPreferred": true,
-                "edit": {"changes": {&uri: [lines(12, 13)]}}})
+                "edit": {"changes": {&uri: [lines(19, 20)]}}})
             ],
             "the import alone on its line is removed with its line break"
         );
         assert_eq!(
-            ask(&mut server, &uri, 15, &judged),
+            ask(&mut server, &uri, 22, &judged),
             [Value::Null; 0],
             "a range elsewhere is offered no removal"
         );
         assert_eq!(
-            refusals(&mut server, &uri, without(&text, &[12_usize].into())),
+            refusals(&mut server, &uri, without(&text, &[19_usize].into())),
             0,
             "the scope checks without its import"
         );

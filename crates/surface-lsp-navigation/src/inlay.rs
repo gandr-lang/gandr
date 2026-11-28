@@ -414,7 +414,7 @@ mod tests
                 "def pick+1:8 : Nat",
                 "def pick+4:15 : Nat",
                 "def leave+4:15 : Nat",
-                "def sift+4:15 : Nat",
+                "def sift+5:15 : Nat",
                 "def handled+2:10 : Nat",
                 "def handled+5:13 : Nat",
                 "def handled+6:21 : Integer",
@@ -434,11 +434,7 @@ mod tests
             "the lambda's binder, and no annotated `let`"
         );
         assert_eq!(
-            hinted(
-                "surface/control-flow.gandr",
-                Some("for x in xs { tick x; }"),
-                1
-            ),
+            hinted("surface/control-flow.gandr", Some("for x in xs do"), 1),
             ["def for_each+1:8 : Nat"],
             "a window holds the hints inside it alone"
         );
