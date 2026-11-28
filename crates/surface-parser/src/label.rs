@@ -2120,7 +2120,8 @@ fn suffix_len(
 }
 
 /// Scan a lexeme led by `.`: the `..` rest token, the `.@` as-pattern alias,
-/// the selectors `.#[`, `.#{` and `.*{`, or a bare `.`.
+/// the port selector `.%`, the selectors `.#[`, `.#{` and `.*{`, or a bare
+/// `.`.
 ///
 /// A dot before a digit stands alone too, so `.1` is the leading-dot label
 /// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
@@ -2129,16 +2130,16 @@ fn suffix_len(
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; a pair `..` or `.@` is one punctuation, so is
-///   a selector `.#[`, `.#{` or `.*{`, and every other dot, one before a digit
-///   included, stands alone.
+/// - ensures: scanning advances; a pair `..`, `.@` or `.%` is one punctuation,
+///   so is a selector `.#[`, `.#{` or `.*{`, and every other dot, one before a
+///   digit included, stands alone.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; a pair `..` or `.@` is one
+///   and failure to advance change a row; a pair `..`, `.@` or `.%` is one
 ///   punctuation and a dot before a digit stands alone.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 #[spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && ret.lexeme == Lexeme::Punct)]
@@ -2155,7 +2156,10 @@ fn scan_dot(
     {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::THREE))
     }
-    else if second == Some(SourceByte::from(b'.')) || second == Some(SourceByte::from(b'@')) {
+    else if second == Some(SourceByte::from(b'.'))
+        || second == Some(SourceByte::from(b'@'))
+        || second == Some(SourceByte::from(b'%'))
+    {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO))
     }
     else {
@@ -2689,6 +2693,8 @@ mod tests
                 (".0 =", Lexeme::Punct, 1),
                 ("..x", Lexeme::Punct, 2),
                 (".@ x", Lexeme::Punct, 2),
+                (".%q", Lexeme::Punct, 2),
+                (".% q", Lexeme::Punct, 2),
                 (".x", Lexeme::Punct, 1),
                 (".#[i]", Lexeme::Punct, 3),
                 (".#{.a}", Lexeme::Punct, 3),

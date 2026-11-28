@@ -4037,8 +4037,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         Ok(())
     }
 
-    /// Classify a selection `f(a, …).l` off a call whose result is a group of
-    /// outputs as the output `l` alone.
+    /// Classify a selection `f(a, …).%l` or `f(a, …).l` off a call whose
+    /// result is a group of outputs as the output `l` alone.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
@@ -4058,6 +4058,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// - hypothesis: L3 — each output of a two-output call, selected, returns
     ///   its own binder.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_is_selected_with_its_selector_5771`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::SelectedOutput { .. })))]
     #[inline]
     pub fn selected_output(
@@ -4066,7 +4067,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Ok((target, selected)) = Context::link(site, &pieces.pieces, site.at.span)
+        let Some((target, selected)) = Context::port_link(&pieces.pieces)
+            .or_else(|| Context::link(site, &pieces.pieces, site.at.span).ok())
         else {
             return Ok(Planned(false));
         };

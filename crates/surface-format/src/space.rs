@@ -293,13 +293,13 @@ fn applied(left: Token<'_>) -> Wordlike
 /// - ensures: a `,` or `;` touches what stands before it and is followed by one
 ///   space; a comment has one space on either side; an application's empty
 ///   juxtaposition tile has one space before it and none after it, and none
-///   before it either where the call is in call form; a `.` or a selector `.#[`
-///   or `.*{` touches the word or bracket before it, and a `.` the word after
-///   it unless it ends a binder; a pipeline field `|>.` touches the method's
-///   name after it; a prefix operator touches what follows it; a `(` or `[`
-///   touches the word or hugging bracket before it, unless it opens an operand
-///   or the binders of `fun`, `fork` or `bind`; any other two are one space
-///   apart.
+///   before it either where the call is in call form; a `.`, a port selector
+///   `.%` or a selector `.#[` or `.*{` touches the word or bracket before it, a
+///   `.%` the name after it, and a `.` the word after it unless it ends a
+///   binder; a pipeline field `|>.` touches the method's name after it; a
+///   prefix operator touches what follows it; a `(` or `[` touches the word or
+///   hugging bracket before it, unless it opens an operand or the binders of
+///   `fun`, `fork` or `bind`; any other two are one space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.
@@ -310,6 +310,7 @@ fn applied(left: Token<'_>) -> Wordlike
 ///   against it, and the corpus sweep formats every source once and again
 ///   unchanged.
 /// - witness: `tests::format::the_printer_decides_every_inner_space`
+/// - witness: `tests::format::a_port_selector_touches_its_target_and_its_port_5771`
 /// - witness: `tests::format::a_terminator_touches_the_form_it_ends`
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 #[spec(ensures: |ret| right.kind != Kind::Token
@@ -345,10 +346,13 @@ pub fn join(
     if left.kind == Kind::Token && left_text.is_empty() {
         return Join::Touch;
     }
-    if (right.kind == Kind::Token && right_text == "."
+    if (right.kind == Kind::Token && matches!(right_text, "." | ".%")
         || right.kind == Kind::Open && matches!(right_text, ".#[" | ".*{" | ".#{"))
         && applied(left) == Wordlike::Yes
     {
+        return Join::Touch;
+    }
+    if left.kind == Kind::Token && left_text == ".%" {
         return Join::Touch;
     }
     if left.kind == Kind::Token && left_text == "." {

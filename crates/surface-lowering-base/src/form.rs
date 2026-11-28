@@ -765,6 +765,8 @@ impl TileName
     /// The opener `%(` of a group of ports: a body's outputs, or the patterns
     /// that receive a call's outputs.
     pub const PORT_GROUP_OPEN: Self = Self("%(");
+    /// The port selector `.%` of a port of an application, `f(a).%l`.
+    pub const PORT_SELECT: Self = Self(".%");
     /// A type identifier written as one of a form's own tiles.
     pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
     /// A type variable written as one of a form's own tiles.

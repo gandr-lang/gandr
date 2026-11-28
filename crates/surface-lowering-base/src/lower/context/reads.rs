@@ -1252,6 +1252,43 @@ impl<'source> Context<'_, 'source>
         Ok((target, selected))
     }
 
+    /// The target and the selected port of one port selection `t.%l`, read
+    /// from its pieces.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the operand the port is taken from and the name tile after
+    ///   its `.%`; nothing for pieces that are not an operand, the port
+    ///   selector and a name.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a port selected off a call and off a constructor's
+    ///   application reads its target and its port, and a selection with a dot
+    ///   reads as no port selection.
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_is_selected_with_its_selector_5771`
+    #[spec(ensures: |ret| ret.is_none_or(|(target, _)| pieces.first() == Some(&Piece::Operand(target))))]
+    #[inline]
+    #[must_use]
+    pub fn port_link(pieces: &[Piece]) -> Option<(Placed, Placed)>
+    {
+        let [
+            Piece::Operand(target),
+            Piece::Tile {
+                label: TileName::PORT_SELECT,
+                ..
+            },
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: selected,
+            },
+        ] = *pieces
+        else {
+            return None;
+        };
+        Some((target, selected))
+    }
+
     /// Read the entries of a tuple pattern up to `)`, each positional.
     ///
     /// # Specification

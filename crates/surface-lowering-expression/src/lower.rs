@@ -10213,41 +10213,45 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(())
     }
 
-    /// Classify a selection `e.name` or `e.0`.
+    /// Classify a selection `e.name` or `e.0`, or a port `e.%name`.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: a selection `Family.Constructor` naming a constructor of a
-    ///   family is that constructor, applied to no field, as
-    ///   `Native::construct` reads it; a bare selection `x.op` of an operation
-    ///   of no input that a capability or a host interface offers performs it
-    ///   with the unit as its payload, as `Capability::exercise_bare` reads it;
-    ///   a bare selection `s.m` of a method whose one input is its receiver
-    ///   calls it on `s`, as `Capability::method_bare` reads it; a selection
-    ///   `C(a, …).l` off a multi-output constructor is its port `l`, as
-    ///   `Native::port` reads it; a selection by position projects the entry at
-    ///   that place of the type written for its operand, or of the pair the
-    ///   operand is when no type is written, as `Models::positional` reads it;
-    ///   a selection read as a computation off a name whose written type is a
-    ///   thunked lazy record over labels observes the entry its label names; a
-    ///   selection off a name whose written type is a type over labels projects
-    ///   the entry its label names, as `Models::selection` reads it; a
-    ///   selection off a name whose written type is a data family without
-    ///   indices reads the field its label names off every constructor, as
-    ///   `Native::data_field` reads it; a selection off a flattened model
-    ///   implicit is the parameter of the component it names, as
-    ///   `Models::flattened_member` reads it; a selection off a value no
-    ///   written type states, a chain of selections ending at a binder's or a
-    ///   declaration's name not capitalised, or one link off a name written at
-    ///   a patched type, projects the field its label names of the record the
-    ///   value is, as `Models::field` reads it. A chain of selections whose
-    ///   head is a capitalised name is a path: inside a functor whose parameter
-    ///   the head names, a one-link path is that parameter's value component,
-    ///   as [`Self::parameter_value`] reads it; a path whose head, capitalised
-    ///   or not, names a module an enclosing module declares reaches the member
-    ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
-    ///   as that member's constant as below; otherwise it is resolved through
-    ///   the outermost scope, its head the module the path's source sees
+    /// - ensures: a port `C(a, …).%l` of a multi-output constructor is its port
+    ///   `l`, as `Native::port` reads it, and a port `f(a, …).%l` of a call
+    ///   returning a group of outputs is the output `l`, as
+    ///   `Models::selected_output` reads it; a selection `Family.Constructor`
+    ///   naming a constructor of a family is that constructor, applied to no
+    ///   field, as `Native::construct` reads it; a bare selection `x.op` of an
+    ///   operation of no input that a capability or a host interface offers
+    ///   performs it with the unit as its payload, as
+    ///   `Capability::exercise_bare` reads it; a bare selection `s.m` of a
+    ///   method whose one input is its receiver calls it on `s`, as
+    ///   `Capability::method_bare` reads it; a selection `C(a, …).l` off a
+    ///   multi-output constructor is its port `l`, as `Native::port` reads it;
+    ///   a selection by position projects the entry at that place of the type
+    ///   written for its operand, or of the pair the operand is when no type is
+    ///   written, as `Models::positional` reads it; a selection read as a
+    ///   computation off a name whose written type is a thunked lazy record
+    ///   over labels observes the entry its label names; a selection off a name
+    ///   whose written type is a type over labels projects the entry its label
+    ///   names, as `Models::selection` reads it; a selection off a name whose
+    ///   written type is a data family without indices reads the field its
+    ///   label names off every constructor, as `Native::data_field` reads it; a
+    ///   selection off a flattened model implicit is the parameter of the
+    ///   component it names, as `Models::flattened_member` reads it; a
+    ///   selection off a value no written type states, a chain of selections
+    ///   ending at a binder's or a declaration's name not capitalised, or one
+    ///   link off a name written at a patched type, projects the field its
+    ///   label names of the record the value is, as `Models::field` reads it. A
+    ///   chain of selections whose head is a capitalised name is a path: inside
+    ///   a functor whose parameter the head names, a one-link path is that
+    ///   parameter's value component, as [`Self::parameter_value`] reads it; a
+    ///   path whose head, capitalised or not, names a module an enclosing
+    ///   module declares reaches the member that module exports, as
+    ///   [`Self::enclosed_member`] reads it, and stands as that member's
+    ///   constant as below; otherwise it is resolved through the outermost
+    ///   scope, its head the module the path's source sees
     ///   ([`Self::see_module`](crate::lower::Expressions::see_module)), at the
     ///   depth that binds it: a path ending at an exported value component
     ///   stands as that member's constant when the member is declared strictly
@@ -10257,11 +10261,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   reads it. The chain is walked by an explicit loop, and its links are
     ///   left unread.
     /// - provides: the governed reading of a module path.
-    /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
-    ///   the path spells it and the member, for a selection a governing module
-    ///   or a parameter does not export; [`LoweringRefusal::PartialField`] for
-    ///   a data field some constructor does not declare; the forward-member
-    ///   refusal for a member declared at or after the referring declaration;
+    /// - fails: yields the misplaced-tile refusal at a `.%` off no application
+    ///   that has the port; [`LoweringRefusal::UnknownMember`], naming the
+    ///   module as the path spells it and the member, for a selection a
+    ///   governing module or a parameter does not export;
+    ///   [`LoweringRefusal::PartialField`] for a data field some constructor
+    ///   does not declare; the forward-member refusal for a member declared at
+    ///   or after the referring declaration;
     ///   [`LoweringRefusal::ProjectionFromApplication`] for a chain whose head
     ///   is an application of a functor; the wrong-sort refusal for a path
     ///   ending at a module, which is not a value; the wrong-sort refusal
@@ -10323,6 +10329,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             && label == TileName::SUB_RECORD_OPEN
         {
             return Models::new(self.host()).sub_record(site, pieces);
+        }
+        // `C(a, …).%l` and `f(a, …).%l` name a port of an application, and
+        // `.%` selects nothing else.
+        if let [_, Piece::Tile { label, at }, ..] = *pieces.pieces.as_slice()
+            && label == TileName::PORT_SELECT
+        {
+            if Native::new(self.host()).port(site, pieces)? == arity::Planned(true)
+                || Models::new(self.host()).selected_output(site, pieces)? == arity::Planned(true)
+            {
+                return Ok(());
+            }
+            return Err(site.fault(at.span, FormFault::MisplacedTile));
         }
         // `Family.Constructor` names a constructor of the family.
         if let Maybe::Present(constructor) =

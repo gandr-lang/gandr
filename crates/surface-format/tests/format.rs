@@ -413,6 +413,19 @@ fn the_printer_decides_every_inner_space()
     );
 }
 
+/// #5771: the port selector `.%` touches its target and its port, as a `.`
+/// does.
+#[test]
+fn a_port_selector_touches_its_target_and_its_port_5771()
+{
+    let grammar = grammar();
+    assert_eq!(
+        text(&grammar, "def h = (f n) .% q ;", WIDE),
+        "def h = (f n).%q;\n",
+        "no space stands at either side of `.%`"
+    );
+}
+
 #[test]
 fn a_terminator_touches_the_form_it_ends()
 {

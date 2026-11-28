@@ -5237,8 +5237,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         Ok(arity::Planned(true))
     }
 
-    /// Classify a selection `C(a, …).l` off a multi-output constructor as
-    /// the port `l` of `C` applied to `a, …`.
+    /// Classify a selection `C(a, …).%l` or `C(a, …).l` off a multi-output
+    /// constructor as the port `l` of `C` applied to `a, …`.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
@@ -5258,6 +5258,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - hypothesis: L3 — each output of a two-output constructor, and an
     ///   output it lacks, separate the two ports from the refusal.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_is_selected_with_its_selector_5771`
     #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Constructor(_))))]
     #[inline]
     pub fn port(
@@ -5267,7 +5268,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
         let unplanned = Ok(arity::Planned(false));
-        let Ok((target, selected)) = Context::link(site, &pieces.pieces, site.at.span)
+        let Some((target, selected)) = Context::port_link(&pieces.pieces)
+            .or_else(|| Context::link(site, &pieces.pieces, site.at.span).ok())
         else {
             return unplanned;
         };

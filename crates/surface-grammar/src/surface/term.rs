@@ -2243,7 +2243,8 @@ fn expressions(
     ));
     // A selection names its entry by label, `p.n`, or by position, `p.0`: the
     // printer writes a projection off a pair whose labels the core does not
-    // keep by its position, and that spelling reads back.
+    // keep by its position, and that spelling reads back. The port selector
+    // `.%` names a port of an application, `(divmod n 2).%q`, `Share(e).%left`.
     out.push(r(
         RuleName("projection_expression"),
         Provenance("projection_expression"),
@@ -2251,11 +2252,16 @@ fn expressions(
         p.postfix,
         seq([
             h(s),
-            t(TileLabel(".")),
             Regex::alt([
-                t(TileLabel("identifier")),
-                t(TileLabel("constructor")),
-                t(TileLabel("number")),
+                seq([
+                    t(TileLabel(".")),
+                    Regex::alt([
+                        t(TileLabel("identifier")),
+                        t(TileLabel("constructor")),
+                        t(TileLabel("number")),
+                    ]),
+                ]),
+                seq([t(TileLabel(".%")), t(TileLabel("identifier"))]),
             ]),
         ]),
     ));
