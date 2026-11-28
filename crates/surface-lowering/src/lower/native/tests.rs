@@ -4172,6 +4172,33 @@ fn nested_constructor_patterns_compile_to_nested_cases()
     assert_accepted(&report);
 }
 
+/// A constructor pattern applies its fields by juxtaposition, `Just (Yes n)`,
+/// with its constructor bare or under its family, `Outer.Both _ (Inner.Yes
+/// n)`: each arm switches on the field it names, and the match checks.
+#[test]
+fn a_constructor_pattern_applies_its_fields_by_juxtaposition()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/a-constructor-pattern-applies-its-fields-by-juxtaposition-module.gandr"
+        )),
+        &mut arena,
+    );
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("depth")));
+    let cases = reachable(&arena, root)
+        .into_iter()
+        .filter(|&at| matches!(arena.computation(at), Some(&Computation::DataCase { .. })))
+        .count();
+    assert_eq!(
+        cases, 3_usize,
+        "the outer switch, the switch on the field of `Just` and the switch on the second \
+         field of `Both`"
+    );
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+}
+
 #[test]
 fn a_data_case_names_the_family_it_eliminates_809()
 {

@@ -184,6 +184,7 @@ const KINDS: &[(&str, Standing)] = &[
     ),
     ("Expression ~", Standing::Owed(0)),
     ("Expression ∷", Standing::Owed(0)),
+    ("Pattern  ", Standing::Owed(0)),
     ("Pattern #[", Standing::Owed(0)),
     ("Pattern (", Standing::Owed(0)),
     ("Pattern *{", Standing::Owed(0)),
@@ -1117,7 +1118,8 @@ fn gated(
                             || def.label == ".#["
                             || (matches!(def.label, "(" | JUXTAPOSED)
                                 && def.sort == Sort::Expression)
-                            || (def.label == JUXTAPOSED && def.sort == Sort::Type));
+                            || (def.label == JUXTAPOSED
+                                && matches!(def.sort, Sort::Type | Sort::Pattern)));
                     let qualifying = melded && opener == Some(child) && def.label == ".";
                     (
                         child,
@@ -1189,11 +1191,13 @@ fn gated(
         // outermost application answers for. A type's spine, `Vec A n`, lowers
         // as one application of its family, so the family's name answers
         // through it, as the head of the call form `Vec(A, n)` does (#5326),
-        // and a word's spine alike, `pred` in `pred c v`. A path or a bridge
-        // head, `Path[.A = C]` in `Path[.A = C] a b`, is no type alone: the
-        // spine lowers as one path type, which answers (#5750). The descent of
-        // a word's spine, `[<]` in `el [<] a`, is a part of the head of the
-        // call `el[<](a)`, which answers.
+        // and a word's spine alike, `pred` in `pred c v`. A constructor
+        // pattern's spine, `Cons x` in `Cons x rest`, lowers as one constructor
+        // pattern, which the outermost application answers for. A path or a
+        // bridge head, `Path[.A = C]` in `Path[.A = C] a b`, is no type
+        // alone: the spine lowers as one path type, which answers
+        // (#5750). The descent of a word's spine, `[<]` in `el [<] a`,
+        // is a part of the head of the call `el[<](a)`, which answers.
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             headed
                 && if melded {

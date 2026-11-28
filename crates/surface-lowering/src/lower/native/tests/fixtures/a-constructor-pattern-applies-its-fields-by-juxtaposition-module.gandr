@@ -1,0 +1,12 @@
+data Inner : Type where { | No : Inner | Yes : (n : Integer) --> Inner }
+data Outer : Type where {
+  | Nothing : Outer
+  | Just : (i : Inner) --> Outer
+  | Both : (a : Inner, b : Inner) --> Outer
+}
+def depth(m : Outer) -> Integer = match m {
+  | Just (Yes n) => n
+  | Outer.Both first (Inner.Yes n) => n
+  | Just No => 0
+  | other => 1
+};

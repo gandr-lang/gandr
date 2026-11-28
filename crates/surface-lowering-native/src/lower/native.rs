@@ -6006,7 +6006,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - ensures: as [`Self::pattern`], for one pattern; a telescope pattern's
     ///   components and a sum pattern's payload are queued with the component's
     ///   or summand's type the queued pattern's stated type writes, when it
-    ///   writes one.
+    ///   writes one; a pattern in parentheses has the shape of the pattern
+    ///   inside.
     /// - fails: as [`Self::pattern`]; a group in parentheses, which stands
     ///   where a stored product's pattern belongs, with
     ///   [`FormFault::MisplacedTile`].
@@ -6106,6 +6107,20 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         read_pieces(self.cx().pbg, self.cx().tree, at.node, pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(here.name));
+        }
+        // A pattern in parentheses only groups it: the pattern inside stands
+        // in its place.
+        if name == FormName::PARENTHESIZED_PATTERN {
+            let mut cursor = Cursor::new(&pieces.pieces, at.span);
+            closed(here, &mut cursor, TileName::PAREN_OPEN)?;
+            let inner = here.one(cursor.operands())?;
+            closed(here, &mut cursor, TileName::PAREN_CLOSE)?;
+            exhausted(here, &cursor)?;
+            let grouped = Queued {
+                at: inner,
+                ..queued
+            };
+            return self.pattern_shape(site, grouped, pieces, patterns, named, work);
         }
         if name == FormName::CONS_PATTERN {
             return self.cons_pattern(site, here, queued.slot, pieces, patterns, work);

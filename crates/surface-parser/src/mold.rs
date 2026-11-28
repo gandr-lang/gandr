@@ -1580,9 +1580,15 @@ fn next_labels<'src>(
 
 /// The forms whose `(` opens a call list only where the source writes it
 /// straight after the head: the endpoint lists of a path type and a bridge
-/// type, `Path(a, b)`. After a space the `(` opens a group that the head
-/// applies.
-const GLUED_CALLS: [&str; 2] = ["path_type", "bridge_type"];
+/// type, `Path(a, b)`, the fields of a constructor pattern, `Cons(x, rest)`,
+/// and the letter of a word cons, `back(g) ∷ p`. After a space the `(` opens
+/// a group that the head applies.
+const GLUED_CALLS: [&str; 4] = [
+    "path_type",
+    "bridge_type",
+    "constructor_pattern",
+    "cons_pattern",
+];
 
 /// Whether a space stands between a token and the next significant one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5269,24 +5275,27 @@ impl<'pbg> Molder<'pbg>
         molds.retain(|&mold| verdict(mold) == Follow::Possible);
     }
 
-    /// Whether a type's mold can stand before a token written after a space
-    /// (#5326). A mold that ends a whole type is followed by a token that
-    /// starts a type, since the melder applies the type to it. The endpoint
-    /// list of a path or bridge type is a call list: `Path (g a) (g a)`
-    /// applies `Path` to two groups, and only a `(` written straight after
-    /// the head opens the list. A type variable takes an argument as a type
-    /// name does: `fam d c` applies `fam` to two arguments.
+    /// Whether a type's or a pattern's mold can stand before a token written
+    /// after a space (#5326). A mold that ends a whole type is followed by a
+    /// token that starts a type, since the melder applies the type to it; a
+    /// mold that ends a whole pattern is followed by a group, `Cons x (Cons y
+    /// rest)`. The endpoint list of a path or bridge type is a call list:
+    /// `Path (g a) (g a)` applies `Path` to two groups, and only a `(` written
+    /// straight after the head opens the list; so does the field list of a
+    /// constructor pattern. A type variable takes an argument as a type name
+    /// does: `fam d c` applies `fam` to two arguments.
     ///
     /// # Specification
     /// - requires: `labels` are the labels of a token written after a space.
-    /// - ensures: for a mold of a type when the grammar has a type application
-    ///   tile, [`Follow::Possible`] exactly when a same-form successor that
-    ///   [`direct_successor`] admits, outside the `(` of the forms
-    ///   [`GLUED_CALLS`] names, is labelled with one of `labels`, or `mold`'s
-    ///   right bound is the root, it can end its form, and
+    /// - ensures: for a mold of a type or a pattern when the grammar has an
+    ///   application tile in its sort, [`Follow::Possible`] exactly when a
+    ///   same-form successor that [`direct_successor`] admits, outside the `(`
+    ///   of the forms [`GLUED_CALLS`] names, is labelled with one of `labels`,
+    ///   or `mold`'s right bound is the root, it can end its form, and
     ///   [`Molder::after_form`] admits `labels` or a label in `labels` names a
-    ///   tile that begins a type, or `mold`'s right bound is not the root and a
-    ///   label in `labels` names a tile that begins a form. For any other mold,
+    ///   tile that begins a type, for a type, or a `(` that begins a pattern,
+    ///   for a pattern, or `mold`'s right bound is not the root and a label in
+    ///   `labels` names a tile that begins a form. For any other mold,
     ///   [`Molder::follow`].
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the mold's
@@ -5298,9 +5307,14 @@ impl<'pbg> Molder<'pbg>
     ///   Maybe A` returns `Maybe A`, `fam d c` applies `fam` to two, and `Path
     ///   (g a) (g a)` applies `Path` to two groups: keeping the endpoint list's
     ///   `(` reads the groups as the endpoints, and refuting a whole type
-    ///   before a type reads `Maybe` as a head that takes no argument.
+    ///   before a type reads `Maybe` as a head that takes no argument. `Cons x
+    ///   (Cons y rest)` reads the group as a field, not as the letter of a word
+    ///   cons after `x`, and `de zero` keeps the reading of a misspelt `def`
+    ///   before a name.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
     /// - witness: `tests::grammar::a_called_former_keeps_its_own_opener_6121`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_pattern_applies_its_fields_by_juxtaposition`
+    /// - witness: `gandr-surface-lowering::tests::modules::a_member_definition_misspelt_is_held_under_its_name_2484`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -5315,11 +5329,13 @@ impl<'pbg> Molder<'pbg>
     ) -> Follow
     {
         let pbg = self.pbg;
-        let typed = pbg.mold(mold).is_ok_and(|own| own.sort == Sort::Type)
-            && pbg.application_in(Sort::Type).is_some();
-        if !typed {
+        let applied = pbg.mold(mold).ok().map(|own| own.sort).filter(|&sort| {
+            matches!(sort, Sort::Type | Sort::Pattern) && pbg.application_in(sort).is_some()
+        });
+        let Some(sort) = applied
+        else {
             return self.follow(mold, labels);
-        }
+        };
         let ids = labels.as_slice();
         let succeeded = pbg.mold_successors(mold).iter().any(|&(_, right)| {
             direct_successor(pbg, mold, right) == Adjacency::Direct
@@ -5331,17 +5347,22 @@ impl<'pbg> Molder<'pbg>
                         .rule_of(right)
                         .is_ok_and(|rule| GLUED_CALLS.contains(&rule.name().0)))
         });
-        let starts_type = || {
+        // A type's form starts at any token that starts a type. A pattern's
+        // starts only at a group, `Cons x (Cons y rest)`: a name after a
+        // pattern keeps the reading of a misspelt keyword, `de zero`.
+        let starts_sort = || {
             ids.iter().any(|&label| {
-                pbg.label_fresh_candidates(label)
-                    .iter()
-                    .any(|&fresh| pbg.mold(fresh).is_ok_and(|start| start.sort == Sort::Type))
+                pbg.label_fresh_candidates(label).iter().any(|&fresh| {
+                    pbg.mold(fresh).is_ok_and(|start| {
+                        start.sort == sort && (sort == Sort::Type || start.label == "(")
+                    })
+                })
             })
         };
         let continued = succeeded
             || if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
                 bool::from(pbg.mold_is_form_last(mold))
-                    && (self.after_form(mold, labels) == Follow::Possible || starts_type())
+                    && (self.after_form(mold, labels) == Follow::Possible || starts_sort())
             }
             else {
                 ids.iter()

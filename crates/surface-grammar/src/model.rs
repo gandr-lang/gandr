@@ -1680,6 +1680,9 @@ pub struct Pbg
     /// The mold of juxtaposition's tile between two types, `Maybe A`, when
     /// the grammar has one.
     type_application: Option<MoldId>,
+    /// The mold of juxtaposition's tile between two patterns, `Cons x`, when
+    /// the grammar has one.
+    pattern_application: Option<MoldId>,
 }
 
 impl Pbg
@@ -1858,6 +1861,7 @@ impl Pbg
         };
         let application = application_in(Sort::Expression);
         let type_application = application_in(Sort::Type);
+        let pattern_application = application_in(Sort::Pattern);
         Self {
             dag,
             forms,
@@ -1868,6 +1872,7 @@ impl Pbg
             automaton,
             application,
             type_application,
+            pattern_application,
         }
     }
 
@@ -2219,8 +2224,8 @@ impl Pbg
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the built-in inventory holds one application mold in
-    ///   the expression sort and one in the type sort, so a lost or doubled
-    ///   tile shows.
+    ///   the expression sort, one in the type sort and one in the pattern sort,
+    ///   so a lost or doubled tile shows.
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
     #[spec(ensures: |ret| ret.is_none_or(|mold| self.molds.mold(mold).is_ok_and(|def| def.label == crate::APPLICATION && def.sort == sort)))]
     #[inline]
@@ -2233,9 +2238,8 @@ impl Pbg
         match sort {
             Sort::Expression => self.application,
             Sort::Type => self.type_application,
-            Sort::Item | Sort::Pattern | Sort::Instantiation | Sort::ModuleMember | Sort::Block => {
-                None
-            },
+            Sort::Pattern => self.pattern_application,
+            Sort::Item | Sort::Instantiation | Sort::ModuleMember | Sort::Block => None,
         }
     }
 

@@ -64,7 +64,7 @@ pub enum RuleGate
 ///   grammar, and each of the twelve forms of the first twin is in the core.
 /// - witness: `gate::tests::each_rule_has_one_line_and_each_line_one_rule`
 /// - witness: `gate::tests::the_forms_of_the_first_twin_are_in_the_core`
-pub const RULE_GATES: [(&str, RuleGate); 161_usize] = [
+pub const RULE_GATES: [(&str, RuleGate); 163_usize] = [
     ("abort_expression", RuleGate::Feature("temporary-access")),
     ("access_expression", RuleGate::Feature("temporary-access")),
     ("acquire_expression", RuleGate::Feature("shared-endpoints")),
@@ -145,6 +145,10 @@ pub const RULE_GATES: [(&str, RuleGate); 161_usize] = [
     ("cons_pattern", RuleGate::Feature("list-case")),
     ("constructor.expression", RuleGate::Core(CoreReason::Name)),
     ("constructor_pattern", RuleGate::Feature("pattern-matching")),
+    (
+        "constructor_pattern.juxtaposed",
+        RuleGate::Feature("pattern-matching"),
+    ),
     ("continue_expression", RuleGate::Feature("loops")),
     ("data_declaration", RuleGate::Feature("nominal-data")),
     ("def_value", RuleGate::Core(CoreReason::Twin)),
@@ -262,6 +266,7 @@ pub const RULE_GATES: [(&str, RuleGate); 161_usize] = [
         RuleGate::Feature("signature-models"),
     ),
     ("parenthesized_expression", RuleGate::Core(CoreReason::Twin)),
+    ("parenthesized_pattern", RuleGate::Core(CoreReason::Group)),
     ("parenthesized_type", RuleGate::Core(CoreReason::Group)),
     (
         "path_declaration",

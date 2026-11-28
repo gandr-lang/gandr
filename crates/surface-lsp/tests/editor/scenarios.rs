@@ -201,6 +201,7 @@ const COUNTED: &[&str] = &[
     "pattern list_pattern",
     "pattern literal_pattern",
     "pattern or_pattern",
+    "pattern parenthesized_pattern",
     "pattern telescope_pattern",
     "pattern telescope_pattern name",
     "pattern tuple_pattern",

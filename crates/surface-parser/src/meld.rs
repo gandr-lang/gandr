@@ -2595,23 +2595,28 @@ impl<'pbg> MeldState<'pbg>
 
     /// The application tile an operand of `sort` opening next would take: the
     /// slope's top is the head or an argument of a spine of that sort, `f x` or
-    /// `Vec A n` (#5326).
+    /// `Vec A n` (#5326). A pattern's spine has a constructor at its head,
+    /// `Cons x`, so a word after a variable or a wildcard is no field of it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the application mold of `sort` exactly when the slope's top
-    ///   is a complete operand of `sort`, and the rest holds as
-    ///   [`Self::applies_next`] states. `None` otherwise.
+    ///   is a complete operand of `sort`, a pattern's spine has a constructor
+    ///   at its head as [`Self::constructor_headed`] reads it, and the rest
+    ///   holds as [`Self::applies_next`] states. `None` otherwise.
     /// - provides: the one test of whether a juxtaposition continues a spine.
     /// - panics: none.
     ///
     /// # Clause cost
     /// - bound: at most two reads of the emission log for the spine and eight
-    ///   reads of the head's direct children, as [`Self::operands_of`] states.
+    ///   reads of the head's direct children, as [`Self::operands_of`] states;
+    ///   for a pattern, one read for each application of its spine.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::juxtaposed`].
+    /// - hypothesis: L3 — as [`Self::juxtaposed`]; `| _ =>> e` keeps the run an
+    ///   operand of the arm, not a field of the wildcard.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
     #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort)))]
     fn applies_next_in(
         &self,
@@ -2626,6 +2631,9 @@ impl<'pbg> MeldState<'pbg>
             || (top.sort != sort
                 && !(sort == Sort::Type && self.spine_operands() == Some(top.sort)))
         {
+            return None;
+        }
+        if sort == Sort::Pattern && !self.constructor_headed(application) {
             return None;
         }
         // A block-like statement ends at its brace, as Rust's does: `if c { a }
@@ -2694,6 +2702,90 @@ impl<'pbg> MeldState<'pbg>
             matches!(cell.role, Role::Operator { sort: own, shape: OpShape::Infix | OpShape::Prefix, .. } if own == sort)
         });
         (slot == Some(OpenSlot::Tile) || under_operator).then_some(sort)
+    }
+
+    /// Whether the pattern spine at the slope's top has a constructor at its
+    /// head: `Cons` in `Cons x`, or `Tree.Leaf` in `Tree.Leaf x`.
+    ///
+    /// # Specification
+    /// - requires: `application` is the pattern sort's application mold.
+    /// - ensures: true exactly when the head of the spine is a `constructor`
+    ///   tile or a form of the rule `constructor_pattern`. The spine is the
+    ///   left operand of a pending application below the top operand, else the
+    ///   top. The head is read through each application meld's first child.
+    /// - panics: none.
+    /// - bound: one read of the emission log for each application of the spine,
+    ///   and one for its head.
+    /// - executable: none — the head is a read of the emission log, and a
+    ///   predicate restates the walk of the spine.
+    ///
+    /// # Termination
+    /// Each turn steps to the first child of an emitted meld, strictly earlier
+    /// in the finite log.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Cons x rest` applies twice, and `_ =>>` applies
+    ///   nothing.
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_pattern_applies_its_fields_by_juxtaposition`
+    /// - witness: `gandr-surface-lowering::lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
+    fn constructor_headed(
+        &self,
+        application: MoldId,
+    ) -> bool
+    {
+        let Some((top, rest)) = self.stack.split_last()
+        else {
+            return false;
+        };
+        let spine = match *rest {
+            [
+                ..,
+                ref left,
+                Cell {
+                    role: Role::Operator { mold, .. },
+                    ..
+                },
+            ] if mold == application => left,
+            _ => top,
+        };
+        let mut at = spine.emit;
+        loop {
+            let Some(op) = usize::try_from(at.0)
+                .ok()
+                .and_then(|index| self.emit.get(index))
+            else {
+                return false;
+            };
+            match *op {
+                EmitOp::Interior {
+                    label: NodeLabel::Meld(mold),
+                    ref children,
+                    ..
+                } => {
+                    if mold != application {
+                        return self
+                            .pbg
+                            .rule_of(mold)
+                            .is_ok_and(|rule| rule.name().0 == "constructor_pattern");
+                    }
+                    let Some(&first) = children.first()
+                    else {
+                        return false;
+                    };
+                    at = first;
+                },
+                EmitOp::Token {
+                    label: NodeLabel::Tile(mold),
+                    ..
+                } => {
+                    return self
+                        .pbg
+                        .mold(mold)
+                        .is_ok_and(|def| def.label == "constructor");
+                },
+                EmitOp::Interior { .. } | EmitOp::Token { .. } => return false,
+            }
+        }
     }
 
     /// Whether a tile of `mold` over `text` opens a value and no type: the

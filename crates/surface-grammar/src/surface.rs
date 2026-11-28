@@ -255,6 +255,7 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
     ("expression.pipe", Assoc::Left),
     ("expression.application", Assoc::Left),
     ("type.juxtaposition", Assoc::Left),
+    ("pattern.juxtaposition", Assoc::Left),
 ];
 
 /// The tighter-than edges between named groups, in the order the DAG lists
@@ -272,8 +273,10 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
 /// `(f x) y`, `f x.y` applies `f` to `x.y`, and `-f x` negates `f x`. A
 /// type's juxtaposition sits between the path and application bands,
 /// left-associative. Thus `Vec A n` is `(Vec A) n`, `M.T A` applies `M.T`,
-/// and `-F Maybe A` returns `Maybe A`. Each group added after the first
-/// chains comes last in [`PREC_GROUPS`], so every earlier group keeps its id.
+/// and `-F Maybe A` returns `Maybe A`. A pattern's juxtaposition sits between
+/// the atom and cons bands, left-associative. Thus `Cons x rest` is `(Cons x)
+/// rest`. Each group added after the first chains comes last in
+/// [`PREC_GROUPS`], so every earlier group keeps its id.
 const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.atom", "expression.postfix"),
     ("expression.postfix", "expression.application"),
@@ -284,6 +287,7 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.and", "expression.or"),
     ("expression.or", "expression.pipe"),
     ("pattern.atom", "pattern.cons"),
+    ("pattern.atom", "pattern.juxtaposition"),
     ("pattern.as", "pattern.or"),
     ("type.atom", "type.path"),
     ("type.path", "type.application"),
@@ -300,6 +304,7 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.pipe", "expression.pure"),
     ("expression.application", "expression.unary"),
     ("type.juxtaposition", "type.application"),
+    ("pattern.juxtaposition", "pattern.cons"),
 ];
 
 /// The label of juxtaposition's tile, `f x`.
@@ -454,6 +459,7 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "parameter",
     "parameters",
     "parenthesized_expression",
+    "parenthesized_pattern",
     "parenthesized_type",
     "primitive_type",
     "product_type",
