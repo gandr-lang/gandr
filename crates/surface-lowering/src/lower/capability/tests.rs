@@ -357,7 +357,7 @@ fn a_returner_row_names_whole_interfaces()
 {
     let mut arena = CoreArena::new();
     let text = prelude_hosting(
-        "def peek(c : Cap {read}) -> -F [std.process.Exit.Eff, std.fs.Eff] String = c.read \"notes\";\n",
+        "def peek(c : Cap[read]) -> -F [std.process.Exit.Eff, std.fs.Eff] String = c.read \"notes\";\n",
     );
     let module = preluded_imported(&text, &mut arena);
     let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "peek".into())
@@ -410,7 +410,7 @@ fn a_returner_row_names_whole_interfaces()
 #[test]
 fn a_host_interface_answers_only_where_its_module_is_imported_4523()
 {
-    let say = "def say(c : Cap {print}) -> -F [std.io.Console.Eff] Unit = c.print \"said\";\n";
+    let say = "def say(c : Cap[print]) -> -F [std.io.Console.Eff] Unit = c.print \"said\";\n";
     for (imports, reached) in [
         ("import std.io ;\n", true),
         ("import std.fs ;\n", false),
@@ -2784,7 +2784,7 @@ fn a_scoped_capability_cannot_escape()
 {
     let mut arena = CoreArena::new();
     let text = prelude_hosting(
-        "def leak() -> -F Cap {exit} = handle c : std.process.Exit.Eff { pure c } with { | pure(x) => pure x | oper exit(code, k) => k *{} };\n",
+        "def leak() -> -F Cap[exit] = handle c : std.process.Exit.Eff { pure c } with { | pure(x) => pure x | oper exit(code, k) => k *{} };\n",
     );
     let module = preluded_imported(&text, &mut arena);
     let report = judged(&module, &mut arena);

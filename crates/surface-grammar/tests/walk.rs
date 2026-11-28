@@ -99,14 +99,15 @@ use crate::failure::Failure;
 /// does, then by the type application's second form leaving the grammar
 /// (#5330), then by the port's dotted binder leaving the grammar (#7869),
 /// then by the static telescope of a type member's head, `type View[m :
-/// Mode](a : Type) : Type;`.
-const BUILT_IN_FINGERPRINT: u64 = 0x3592_1924_fe83_ae5e;
+/// Mode](a : Type) : Type;`, then by a capability's labels in the static
+/// bracket, `Cap[read, write]`, with its head a name of the prelude.
+const BUILT_IN_FINGERPRINT: u64 = 0x3559_2ba5_cb47_a118;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2947);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2941);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
@@ -168,7 +169,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Boolean", 1),
     ("Bridge", 1),
     ("Buf", 1),
-    ("Cap", 1),
     ("Char", 1),
     ("Flow", 1),
     ("Integer", 1),
@@ -181,7 +181,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 57),
+    ("[", 56),
     ("]", 75),
     ("_", 43),
     ("abort", 1),
@@ -231,7 +231,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("i32", 1),
     ("i64", 1),
     ("i8", 1),
-    ("identifier", 422),
+    ("identifier", 420),
     ("if", 16),
     ("import", 12),
     ("in", 1),
@@ -295,12 +295,12 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("while", 1),
     ("with", 16),
     ("world", 1),
-    ("{", 57),
+    ("{", 56),
     ("|", 8),
     ("|>", 1),
     ("|>.", 1),
     ("||", 1),
-    ("}", 76),
+    ("}", 75),
     ("~", 1),
     ("~>", 3),
     ("ω", 17),

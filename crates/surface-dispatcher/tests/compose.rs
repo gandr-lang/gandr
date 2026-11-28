@@ -2053,7 +2053,7 @@ fn a_closure_judged_otherwise_is_not_continued()
     let [after, whole] = judged(
         (
             SourceText::from("def zero = 0 ;\n"),
-            SourceText::from("def fs : Cap {read, write} ;\n"),
+            SourceText::from("def fs : Cap[read, write] ;\n"),
         ),
         (&HostGrant::UNBOUNDED, &reading),
     );

@@ -363,7 +363,7 @@ fn dropping(
     (answering(arena, host, subject, returned), returned)
 }
 
-/// `Cap {exit}`, held by the host for the run.
+/// `Cap[exit]`, held by the host for the run.
 ///
 /// # Specification
 /// trivial.
@@ -385,7 +385,7 @@ fn held_exit(
 }
 
 /// Check `term` against the returner of the unit at the row `Proc`, under a
-/// `Cap {exit}` the host holds for the run.
+/// `Cap[exit]` the host holds for the run.
 ///
 /// # Specification
 /// trivial.
@@ -447,7 +447,7 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
         Ok(()),
         "the same exit after the close leaves the clause nothing owed"
     );
-    // c : Cap {exit}; let d = fork (s : end) { close(s) }; c.exit(1); close(d)
+    // c : Cap[exit]; let d = fork (s : end) { close(s) }; c.exit(1); close(d)
     let child_closed = Program::new(&mut arena).close();
     let parent = parent_open(&mut arena, exited);
     let exchange = fork(&mut arena, protocol, child_closed, parent);
@@ -574,7 +574,7 @@ fn a_child_exercises_only_what_outlives_every_region_1334()
     let mut arena = CoreArena::new();
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
-    // c : Cap {exit}; let d = fork (s : end) { c.exit(1); close(s) }; close(d)
+    // c : Cap[exit]; let d = fork (s : end) { c.exit(1); close(s) }; close(d)
     let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
     let child = parent_open(&mut arena, exited);
     let closed = Program::new(&mut arena).close();
@@ -792,7 +792,7 @@ fn a_task_owes_its_draw_past_its_parent_s_handler_6058()
     );
 }
 
-/// `Cap {operations}` over the host's file system, held by the host for the
+/// `Cap[operations]` over the host's file system, held by the host for the
 /// run.
 ///
 /// # Specification
@@ -855,7 +855,7 @@ fn on_notes(
 }
 
 /// Check `term` against the returner of the unit at the row `Fs`, under a
-/// `Cap {read}` and then a `Cap {write}` the host holds for the run.
+/// `Cap[read]` and then a `Cap[write]` the host holds for the run.
 ///
 /// # Specification
 /// trivial.
@@ -920,7 +920,7 @@ fn two_halves_share_a_capability_only_to_read_through_it_2789()
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
     let (reader, writer) = (DeBruijnIndex::from(1_u32), DeBruijnIndex::from(0_u32));
-    // r : Cap {read}, w : Cap {write};
+    // r : Cap[read], w : Cap[write];
     // let d = fork (s : end) { r.read("notes"); close(s) }; w.write(("notes",
     // "notes")); close(d)
     let read = on_notes(&mut arena, &host, Some(reader), Notes::Read);

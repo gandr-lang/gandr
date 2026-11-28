@@ -615,11 +615,11 @@ fn a_grant_bounds_every_source_the_walk_judges()
     let scratch = Scratch::new(Path::new("granted"));
     scratch.file(
         Path::new("corpus/fixture/both.gandr"),
-        SourceText::from("@[ owes(1) ] def fs : Cap {read, write} ;"),
+        SourceText::from("@[ owes(1) ] def fs : Cap[read, write] ;"),
     );
     scratch.file(
         Path::new("corpus/fixture/read.gandr"),
-        SourceText::from("@[ owes(1) ] def reads : Cap {read} ;"),
+        SourceText::from("@[ owes(1) ] def reads : Cap[read] ;"),
     );
     let reading =
         HostGrant::within([&OperationName::from("read")]).expect("the host offers `read`");

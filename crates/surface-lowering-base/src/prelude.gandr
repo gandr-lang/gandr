@@ -32,8 +32,8 @@ pub type Row : Type
 @[builtin("view")]
 pub type View[m : Mode](a : Type) : Type
 
-/// A capability is the authority to exercise the operations of its label
-/// set, each an operation of a host interface: `Cap {read, write}`.
+/// A capability is the authority to exercise the operations of its labels,
+/// each an operation of a host interface: `Cap[read, write]`.
 @[builtin("cap")]
 pub type Cap(ops : Row) : Type
 

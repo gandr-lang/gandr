@@ -244,7 +244,7 @@ fn gandr_check_refuses_a_capability_past_its_grant_5705()
     let scratch = Scratch::new(Path::new("reals-grant-5705"));
     let source = scratch.file(
         Path::new("held.gandr"),
-        Text::from("def reals : Cap {admit, decide} ;\n"),
+        Text::from("def reals : Cap[admit, decide] ;\n"),
     );
     let check = |grant: &str| {
         crate::unbound(env!("CARGO_BIN_EXE_gandr"))
@@ -265,7 +265,7 @@ fn gandr_check_refuses_a_capability_past_its_grant_5705()
     assert!(
         report.contains(
             "error[CapabilityUngranted]: this capability claims authority the host did not grant"
-        ) && report.contains("authority the host did not grant: found `Cap {admit, decide}`"),
+        ) && report.contains("authority the host did not grant: found `Cap[admit, decide]`"),
         "a capability that claims `decide` past the grant is refused by name: {report}"
     );
     let wide = check("admit,decide");

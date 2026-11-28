@@ -3,7 +3,7 @@
 //! An entry is a computation returning the exit code, `U (F^e Integer)`, or the
 //! unit, `U (F^e Unit)`, whose run exits with zero, or a function returning
 //! either of the arguments, `U (List(String) → F^e …)`, or of the ambient
-//! authority, `U (Cap {…} → F^e …)`: the capability the host hands the run
+//! authority, `U (Cap[…] → F^e …)`: the capability the host hands the run
 //! once, from which `std.authority` opens each host module's root capability.
 //! The interfaces `e` it may perform are its own. A `main` at any other type is
 //! refused by name where it is declared, so a program never starts at an entry
@@ -65,7 +65,7 @@ pub enum Arguments
 /// # Specification
 /// - requires: `declared` is a value type of `arena`.
 /// - ensures: [`Arguments::Unread`] for `U (F^e R)`, [`Arguments::Read`] for `U
-///   (List(String) → F^e R)` and [`Arguments::Authority`] for `U (Cap {…} → F^e
+///   (List(String) → F^e R)` and [`Arguments::Authority`] for `U (Cap[…] → F^e
 ///   R)`, each function written as an arrow or a Pi, each under any row `e`,
 ///   where `R` is `Integer` or the unit; the misshapen absence for every other
 ///   type, a type `arena` does not hold included.

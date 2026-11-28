@@ -1020,7 +1020,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                 | Former::FlowType
                 | Former::RelationType
                 | Former::ManifestType
-                | Former::LabelSet
                 | Former::AtType
                 | Former::StagedType
                 | Former::ExtensionType

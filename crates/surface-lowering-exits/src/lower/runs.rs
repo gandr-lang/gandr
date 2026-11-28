@@ -730,7 +730,6 @@ fn operand_of(
         | Former::SumType
         | Former::LazyProductType
         | Former::TelescopeType
-        | Former::LabelSet
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType

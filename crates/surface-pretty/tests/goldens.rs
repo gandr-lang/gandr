@@ -7650,8 +7650,8 @@ fn a_row_writes_each_instance_by_its_label_2271()
         declared_whole(&source, (ty, body), PageWidth::from(120_u32)),
         Maybe::Present((
             String::from(
-                "def down[r : Region, r1 : Region](a : (Cap {print}) at r, b : (Cap {print}) \
-                 at r1) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit = *{};"
+                "def down[r : Region, r1 : Region](a : Cap[print] at r, b : Cap[print] at r1) -> \
+                 [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit = *{};"
             ),
             Fidelity::Faithful
         )),
@@ -7721,7 +7721,7 @@ fn a_row_over_a_theory_spells_its_manifest_3230()
 
 /// A definition whose row labels a theory's instance writes the label as the
 /// source does, `[a : State with sort S = Integer]`, its capability and its
-/// region binder unwritten: `Cap {…}` names a host interface's operations
+/// region binder unwritten: `Cap[…]` names a host interface's operations
 /// alone, so the elaborated header would not read back. With no manifest
 /// recorded the header is the elaborated one, as an interface's is (#3230).
 #[test]
@@ -7776,7 +7776,7 @@ fn a_labelled_theory_entry_spells_its_label_3230()
     assert_eq!(
         declared_whole(&CoreSource::new(&core, &[]), (ty, body), wide),
         Maybe::Present((
-            String::from("def down[r : Region](a : (Cap {get}) at r) -> [r : State] Unit = *{};"),
+            String::from("def down[r : Region](a : Cap[get] at r) -> [r : State] Unit = *{};"),
             Fidelity::Faithful
         )),
         "with no manifest the header is the elaborated one"
@@ -8331,10 +8331,6 @@ fn a_positional_projection_the_surface_does_not_read_is_notation()
 /// past the named scopes spells without it, approximately, and a held
 /// one never names a scope.
 #[test]
-#[expect(
-    clippy::literal_string_with_formatting_args,
-    reason = "a capability's authority is spelled `Cap {op}`, which reads as a format argument"
-)]
 fn a_scoped_capability_names_its_scope_400()
 {
     use gandr_core_term::effect::EffectName;
@@ -8366,18 +8362,18 @@ fn a_scoped_capability_names_its_scope_400()
     let named = CoreSource::new(&core, &[]).scoped(&both);
     assert_eq!(
         spelled(&named, ty(outer)),
-        faithful(Written("(Cap {exit}) at c"))
+        faithful(Written("Cap[exit] at c"))
     );
     assert_eq!(
         spelled(&named, ty(inner)),
-        faithful(Written("(Cap {exit}) at e"))
+        faithful(Written("Cap[exit] at e"))
     );
-    assert_eq!(spelled(&named, ty(held)), faithful(Written("Cap {exit}")));
+    assert_eq!(spelled(&named, ty(held)), faithful(Written("Cap[exit]")));
     let one = [Some(Name::from("c"))];
     let short = CoreSource::new(&core, &[]).scoped(&one);
     assert_eq!(
         spelled(&short, ty(inner)),
-        approximate(Written("Cap {exit}")),
+        approximate(Written("Cap[exit]")),
         "a region past the named scopes goes unwritten"
     );
     for unwritable in ["", "c d"] {
@@ -8385,7 +8381,7 @@ fn a_scoped_capability_names_its_scope_400()
         let blank = CoreSource::new(&core, &[]).scoped(&names);
         assert_eq!(
             spelled(&blank, ty(outer)),
-            approximate(Written("Cap {exit}")),
+            approximate(Written("Cap[exit]")),
             "a scope named {unwritable:?} has no name the region could be written by"
         );
     }
