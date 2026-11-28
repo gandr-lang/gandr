@@ -43,6 +43,8 @@ use gandr_surface_render_terminal::Rendered;
 use gandr_surface_render_terminal::TerminalCapability;
 use gandr_surface_render_terminal::render;
 use gandr_surface_syntax::SourceText;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::given;
 use quenchant_shape::shape::Maybe;
 
 /// A declaration whose definition synthesises a type its signature does
@@ -243,6 +245,22 @@ fn plain(
     format!("{}\n", render(diagnostic, RenderStyle::Plain, verbosity))
 }
 
+/// Gives the rendered text `text` to the store of outputs as the value `name`
+/// of the kind `rendered`, when the environment names a run, and compares it
+/// with the file `name` under `golden/`.
+///
+/// # Specification
+/// trivial.
+fn compared(
+    name: &str,
+    text: &str,
+)
+{
+    let _given = given::give(Kind("rendered"), name, text.as_bytes())
+        .unwrap_or_else(|error| panic!("the text `{name}` goes to the store: {error}"));
+    expect_file![format!("golden/{name}")].assert_eq(text);
+}
+
 /// Remove complete SGR styling from the backend's escape-free input.
 ///
 /// # Specification
@@ -390,7 +408,7 @@ fn a_type_mismatch_renders_as_a_located_report()
         rendered.contains("mismatch.gandr:2:13"),
         "the diagnostic names its source at the term: {rendered}"
     );
-    expect_file!["golden/type-mismatch.txt"].assert_eq(&rendered);
+    compared("type-mismatch.txt", &rendered);
 }
 
 #[test]
@@ -402,7 +420,10 @@ fn a_two_parameter_lambda_names_its_nested_form_6065()
         SourceText::from(LAMBDA_ARITY),
         Verb::Check(Goals::Gated),
     );
-    expect_file!["golden/lambda-arity-6065.txt"].assert_eq(&plain(&diagnostic, Verbosity::User));
+    compared(
+        "lambda-arity-6065.txt",
+        &plain(&diagnostic, Verbosity::User),
+    );
 }
 
 #[test]
@@ -414,7 +435,7 @@ fn an_unimplemented_refusal_closes_with_its_tracking_issue()
         SourceText::from("def half = 0.5f32 ;\n"),
         Verb::Check(Goals::Gated),
     );
-    expect_file!["golden/unimplemented.txt"].assert_eq(&plain(&diagnostic, Verbosity::User));
+    compared("unimplemented.txt", &plain(&diagnostic, Verbosity::User));
 }
 
 /// A declaration over a datatype that is refused at its rule renders as a
@@ -435,7 +456,7 @@ fn a_declaration_over_a_refused_datatype_renders_as_a_note_8342()
     else {
         panic!("the rule, then the two declarations over the block: {printed:?}");
     };
-    expect_file!["golden/refused-datatype-8342.txt"].assert_eq(&plain(low, Verbosity::User));
+    compared("refused-datatype-8342.txt", &plain(low, Verbosity::User));
 }
 
 #[test]
@@ -450,7 +471,7 @@ fn each_causal_shape_renders_as_its_golden()
                 SourceText::from(FORCE),
                 check,
             ),
-            expect_file!["golden/nested-force.txt"],
+            "nested-force.txt",
         ),
         (
             only(
@@ -459,7 +480,7 @@ fn each_causal_shape_renders_as_its_golden()
                 SourceText::from(APPLICATION),
                 check,
             ),
-            expect_file!["golden/nested-application.txt"],
+            "nested-application.txt",
         ),
         (
             only(
@@ -468,11 +489,11 @@ fn each_causal_shape_renders_as_its_golden()
                 SourceText::from(BOUND),
                 check,
             ),
-            expect_file!["golden/run-binder.txt"],
+            "run-binder.txt",
         ),
-        (unlocated_rules(), expect_file!["golden/unlocated-rule.txt"]),
+        (unlocated_rules(), "unlocated-rule.txt"),
     ] {
-        golden.assert_eq(&plain(&diagnostic, Verbosity::User));
+        compared(golden, &plain(&diagnostic, Verbosity::User));
     }
 }
 
@@ -484,12 +505,12 @@ fn an_unended_form_renders_what_is_missing_where()
         (
             "semicolon.gandr",
             include_str!("render/fixtures/missing-semicolon.gandr"),
-            expect_file!["golden/missing-semicolon.txt"],
+            "missing-semicolon.txt",
         ),
         (
             "string.gandr",
             include_str!("render/unformatted/unclosed-string.gandr"),
-            expect_file!["golden/unclosed-string.txt"],
+            "unclosed-string.txt",
         ),
     ] {
         let step = unsettled(
@@ -500,7 +521,7 @@ fn an_unended_form_renders_what_is_missing_where()
         let rendered: String = entries::<Evaluator>(&step, check)
             .map(|diagnostic| plain(&diagnostic, Verbosity::User))
             .collect();
-        golden.assert_eq(&rendered);
+        compared(golden, &rendered);
     }
 }
 
@@ -514,14 +535,12 @@ fn one_refusal_renders_at_every_verbosity()
         Verb::Check(Goals::Gated),
     );
     for (verbosity, golden) in [
-        (Verbosity::User, expect_file!["golden/nested-force.txt"]),
-        (Verbosity::Detailed, expect_file![
-            "golden/verbosity-detailed.txt"
-        ]),
-        (Verbosity::Debug, expect_file!["golden/verbosity-debug.txt"]),
-        (Verbosity::Json, expect_file!["golden/verbosity-json.txt"]),
+        (Verbosity::User, "nested-force.txt"),
+        (Verbosity::Detailed, "verbosity-detailed.txt"),
+        (Verbosity::Debug, "verbosity-debug.txt"),
+        (Verbosity::Json, "verbosity-json.txt"),
     ] {
-        golden.assert_eq(&plain(&diagnostic, verbosity));
+        compared(golden, &plain(&diagnostic, verbosity));
     }
     let styled = render(&diagnostic, RenderStyle::Styled, Verbosity::Json);
     assert_eq!(
@@ -542,7 +561,7 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from(include_str!("render/fixtures/shadowed-builtin.gandr")),
                 Verb::Check(Goals::Gated),
             ),
-            expect_file!["golden/shadowed-builtin.txt"],
+            "shadowed-builtin.txt",
         ),
         (
             only(
@@ -551,7 +570,7 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from("@[ refuses(\"UnresolvedName\") ] def answer = 42 ;\n"),
                 Verb::Check(Goals::Gated),
             ),
-            expect_file!["golden/unsettled.txt"],
+            "unsettled.txt",
         ),
         (
             only(
@@ -560,7 +579,7 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from("def hole : Integer ;\n"),
                 Verb::Check(Goals::Reported),
             ),
-            expect_file!["golden/goal.txt"],
+            "goal.txt",
         ),
         (
             only(
@@ -569,10 +588,10 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from(include_str!("render/fixtures/explicit-exits.gandr")),
                 Verb::Check(Goals::Gated),
             ),
-            expect_file!["golden/explicit-exits.txt"],
+            "explicit-exits.txt",
         ),
     ] {
-        golden.assert_eq(&plain(&diagnostic, Verbosity::User));
+        compared(golden, &plain(&diagnostic, Verbosity::User));
     }
 }
 

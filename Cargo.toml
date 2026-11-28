@@ -1546,7 +1546,11 @@ path = "crates/workflow-ledger-tasks"
 # The store of the outputs: each value by its key, the list of the values of
 # each tree, and the values that a test gives.
 # consumers:
+# - surface-format (dev)
 # - surface-lsp (dev)
+# - surface-pretty (dev)
+# - surface-render-terminal (dev)
+# - surface-tui (dev)
 # - workflow-outputs
 # - workflow-prose
 [workspace.dependencies.gandr-workflow-output-store]

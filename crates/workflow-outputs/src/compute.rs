@@ -33,9 +33,21 @@ use crate::tree::Tree;
 use crate::tree::TreeError;
 use crate::workspace;
 
+/// The kind of the captures of the terminal face: the SVG of each state of a
+/// scene, which the tests of the face give.
+pub const CAPTURES: Kind = Kind("captures");
+
+/// The kind of the layouts of the formatter at its two pages, which the tests
+/// of the formatter give.
+pub const FORMATTED: Kind = Kind("formatted");
+
 /// The kind of the hovers of the headline sources, which the editor harness
 /// of the language server gives.
 pub const HOVERS: Kind = Kind("hovers");
+
+/// The kind of the pages of the presentation printer, which the tests of the
+/// printer give.
+pub const PRINTED: Kind = Kind("printed");
 
 /// The kind of the recovery records.
 pub const RECOVERY: Kind = Kind("recovery");
@@ -43,11 +55,17 @@ pub const RECOVERY: Kind = Kind("recovery");
 /// The kind of the refusals that `gandr check` prints for a refusing source.
 pub const REFUSALS: Kind = Kind("refusals");
 
+/// The kind of the diagnostics that the terminal renderer writes, which the
+/// tests of the renderer give.
+pub const RENDERED: Kind = Kind("rendered");
+
 /// The kind of the roles that the highlight gives a source.
 pub const ROLES: Kind = Kind("roles");
 
 /// Each kind, in the order of the names.
-pub const KINDS: [Kind; 4] = [HOVERS, RECOVERY, REFUSALS, ROLES];
+pub const KINDS: [Kind; 8] = [
+    CAPTURES, FORMATTED, HOVERS, PRINTED, RECOVERY, REFUSALS, RENDERED, ROLES,
+];
 
 /// A kind whose values only a test can compute: the tests of its package give
 /// each value to the store.
@@ -64,13 +82,39 @@ pub struct Tested
     pub inputs: &'static [&'static str],
 }
 
-/// Each kind whose values only a test can compute.
-pub const TESTED: [Tested; 1] = [Tested {
-    kind: HOVERS,
-    package: "gandr-surface-lsp",
-    filter: "test(=editor::shapes::the_headline_sources_give_their_hovers)",
-    inputs: &crate::tree::REFUSAL_INPUTS,
-}];
+/// Each kind whose values only a test can compute, in the order of the names.
+pub const TESTED: [Tested; 5] = [
+    Tested {
+        kind: CAPTURES,
+        package: "gandr-surface-tui",
+        filter: "test(/^captures::/)",
+        inputs: &[],
+    },
+    Tested {
+        kind: FORMATTED,
+        package: "gandr-surface-format",
+        filter: "test(/^format::/) & !test(/^format::sweeps::/)",
+        inputs: &[],
+    },
+    Tested {
+        kind: HOVERS,
+        package: "gandr-surface-lsp",
+        filter: "test(=editor::shapes::the_headline_sources_give_their_hovers)",
+        inputs: &crate::tree::REFUSAL_INPUTS,
+    },
+    Tested {
+        kind: PRINTED,
+        package: "gandr-surface-pretty",
+        filter: "test(/^goldens::/)",
+        inputs: &[],
+    },
+    Tested {
+        kind: RENDERED,
+        package: "gandr-surface-render-terminal",
+        filter: "test(/^render::/)",
+        inputs: &crate::tree::REFUSAL_INPUTS,
+    },
+];
 
 /// The entry of [`TESTED`] of the kind `kind`, or `None` when a writer of
 /// this crate computes the kind.
@@ -107,10 +151,10 @@ pub const STORE_DIRECTORY: &str = "workflow-output-store";
 #[must_use]
 pub fn packages(kind: Kind) -> &'static [&'static str]
 {
-    if kind == HOVERS {
-        &["gandr-surface-lsp"]
+    if let Some(tested) = tested(kind) {
+        return core::slice::from_ref(&tested.package);
     }
-    else if kind == RECOVERY {
+    if kind == RECOVERY {
         &[
             "gandr-surface-grammar",
             "gandr-surface-parser",

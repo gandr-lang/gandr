@@ -110,6 +110,8 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::ShapeSize;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::given;
 use quenchant_shape::shape::Maybe;
 
 use crate::content::agrees;
@@ -292,11 +294,31 @@ fn pin_in(
         "{}: both pages carry the fidelity",
         pinned.name
     );
+    compared(
+        &format!("{}.narrow.txt", pinned.name),
+        &format!("{at_narrow}\n"),
+    );
+    compared(
+        &format!("{}.wide.txt", pinned.name),
+        &format!("{at_wide}\n"),
+    );
+}
+
+/// Gives the printed page `text` to the store of outputs as the value `name`
+/// of the kind `printed`, when the environment names a run, and compares it
+/// with the file `name` under `tests/golden/`.
+///
+/// # Specification
+/// trivial.
+fn compared(
+    name: &str,
+    text: &str,
+)
+{
+    let _given = given::give(Kind("printed"), name, text.as_bytes())
+        .unwrap_or_else(|error| panic!("the page `{name}` goes to the store: {error}"));
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
-    expect_file![directory.join(format!("{}.narrow.txt", pinned.name))]
-        .assert_eq(&format!("{at_narrow}\n"));
-    expect_file![directory.join(format!("{}.wide.txt", pinned.name))]
-        .assert_eq(&format!("{at_wide}\n"));
+    expect_file![directory.join(name)].assert_eq(text);
 }
 
 /// The wide-page spelling and fidelity of `root`.
@@ -760,7 +782,7 @@ fn doubly_tainted_pair_keeps_the_broken_separator()
         PageWidth::from(0_u32),
     );
     assert_eq!(presentation.fidelity(), Fidelity::Faithful);
-    expect_file!["golden/tainted_pair.zero.txt"].assert_eq(&format!("{presentation}\n"));
+    compared("tainted_pair.zero.txt", &format!("{presentation}\n"));
 }
 
 /// A nominal type without arguments is its bare name at both pages: the
