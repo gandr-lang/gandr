@@ -153,10 +153,10 @@ version = "3.0.0"
 default-features = false
 features = ["fast", "zeroize"]
 
-# The snapshot comparison for the frozen tables of the grammar, the layout
-# goldens of the printer and the ranking golden of the inline completion. It
-# compares a file or an inline literal whole. It prints a diff on a mismatch.
-# `UPDATE_EXPECT=1` writes the file again. It has no optional feature.
+# The snapshot comparison for the layout goldens of the printer and the
+# ranking golden of the inline completion. It compares a file or an inline
+# literal whole. It prints a diff on a mismatch. `UPDATE_EXPECT=1` writes the
+# file again. It has no optional feature.
 [workspace.dependencies.expect-test]
 version = "1.5.1"
 default-features = false
@@ -398,9 +398,12 @@ path = "crates/surface-format"
 
 # The checked precedence-bounded grammar: its mold table and its precedence
 # DAG. It holds the default surface, which the melder pushes. It also holds the
-# table that pairs each glyph with its ASCII spelling.
+# table that pairs each glyph with its ASCII spelling. With the feature
+# `baked`, the mold table of the gandr surface is a file of the user's cache.
+# Only the first process builds it.
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
+features = ["baked"]
 
 # The document-layout engine: the sealed document arena, Pareto resolution
 # under width taint, the plan arena and the first-order render machine.

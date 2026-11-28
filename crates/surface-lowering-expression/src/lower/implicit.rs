@@ -206,7 +206,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
 {
     /// The atom the instantiation resident `resident` spells.
     ///
-    /// The slot's positional rule is a lone hole, so the frozen tables hold no
+    /// The slot's positional rule is a lone hole, so the mold table holds no
     /// mold for it, and a pattern mold wins the resident: `7` is a literal
     /// pattern and `Unit` a constructor pattern. This reads both back as the
     /// atoms they spell. A lowercase name molds only with a repair, so it is

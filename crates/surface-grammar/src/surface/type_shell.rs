@@ -1164,7 +1164,7 @@ pub(super) fn row_entry(ty: Sort) -> Regex
 ///   band; the parser's recovery sweep catches a placement that moves another
 ///   form's ties.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+/// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if name == "type.application" && precs.get(PrecName(name)).is_none()), |rules| rules.len() == 2 && rules.iter().zip(["f_type.row.labelled", "f_type.result.labelled"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Type && rule.provenance().0 == "f_type" && precs.get(PrecName("type.application")) == Some(rule.prec()))))]
 pub(super) fn labelled_rows(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {

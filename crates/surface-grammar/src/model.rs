@@ -1240,6 +1240,44 @@ impl RulesDigest
     }
 }
 
+/// The distinct tile labels of `rules`, each at its first occurrence: rule by
+/// rule, each form in pre-order. A baked table names a label by its position
+/// here, so the rules that digest alike give the same list.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each label of a tile of `rules` once, in the order of its first
+///   occurrence.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the list and an index of the labels seen, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — the built-in rules' labels bake and read back the
+///   built-in table whole, so a label missing from the list or two lists in
+///   different orders show.
+/// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
+#[spec(ensures: |ret| ret.iter().enumerate().all(|(at, label)| ret.get(.. at).is_some_and(|before| !before.contains(label))))]
+pub fn tile_labels(rules: &[Rule]) -> Vec<&'static str>
+{
+    let mut seen = alloc::collections::BTreeSet::new();
+    rules
+        .iter()
+        .flat_map(|rule| &rule.regex.entries)
+        .filter_map(|entry| match entry.node {
+            RegexNode::Sym(Sym::Tile(tile)) => Some(tile.label),
+            RegexNode::Empty
+            | RegexNode::Sym(Sym::Sort(_))
+            | RegexNode::Seq(_)
+            | RegexNode::Alt(_)
+            | RegexNode::Optional
+            | RegexNode::Repeat => None,
+        })
+        .filter(|label| seen.insert(*label))
+        .collect()
+}
+
 /// A built precedence DAG with its groups' names.
 #[derive(Clone, Debug)]
 pub struct PrecTable
@@ -1748,13 +1786,13 @@ impl Pbg
     /// table that does not fit its own rules.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the built-in surface thawed renders byte-identical to
-    ///   the one built through every gate, and a frozen table whose digest is
+    /// - hypothesis: L3 — the built-in surface frozen and thawed is the grammar
+    ///   built through every gate, whole, and a frozen table whose digest is
     ///   not the rules' builds them, so a thaw that skipped the digest or a
     ///   fallback that skipped a gate shows. A digest collision between two
     ///   rule lists is outside the witnesses.
-    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
-    /// - witness: `surface::tests::a_stale_frozen_table_builds_its_rules`
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
+    /// - witness: `surface::tests::a_stale_baked_table_builds_its_rules`
     #[spec(captures: input = (rules.len(), table.dag.fingerprint()), ensures: |ret| ret.as_ref().map_or(true, |pbg| pbg.rules.len() == input.0 && pbg.dag.fingerprint() == input.1 && pbg.rule_names.len() == input.0))]
     pub(crate) fn thawed(
         table: PrecTable,
@@ -1790,9 +1828,9 @@ impl Pbg
     /// # Adequacy
     /// - hypothesis: L3 — both the gated build and the thaw assemble here; the
     ///   grouped-form witness observes branch and rule order, and the
-    ///   frozen-table witness compares the two assemblies whole.
+    ///   baked-table witness compares the two assemblies whole.
     /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
-    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
     ///
     /// # Cost
     /// - allocation: the grouped forms, the rule names, the adaptation records
@@ -1833,34 +1871,24 @@ impl Pbg
         }
     }
 
-    /// Renders the grammar's mold table as the source of a frozen table
-    /// digesting its rules.
+    /// The grammar's mold table as a frozen table digesting its rules.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`MoldTable::frozen_source`] under the rules' digest.
-    /// - fails: only as the string sink fails.
+    /// - ensures: [`MoldTable::freeze`] under the rules' digest.
     /// - panics: none.
     ///
-    /// # Errors
-    /// [`core::fmt::Error`] from the sink.
+    /// # Cost
+    /// - allocation: the frozen columns, setup
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the built-in surface's rendering is compared with the
-    ///   committed frozen source.
-    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
-    #[cfg(test)]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body renders every mold once; the check counts the molds once"
-        )
-    )]
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |source| source.matches("FrozenMold(").count() == self.molds.iter().count()))]
-    pub(crate) fn frozen_source(&self) -> Result<alloc::string::String, core::fmt::Error>
+    /// - hypothesis: L3 — the built-in surface's table, frozen, baked, read
+    ///   back and thawed, is the built grammar whole.
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
+    #[spec(ensures: |ret| ret.rules == RulesDigest::of(&self.rules))]
+    pub(crate) fn frozen(&self) -> FrozenTable
     {
-        self.molds.frozen_source(RulesDigest::of(&self.rules))
+        self.molds.freeze(RulesDigest::of(&self.rules))
     }
 
     /// The precedence DAG.

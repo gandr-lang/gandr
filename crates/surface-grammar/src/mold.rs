@@ -42,7 +42,7 @@
 //! Against string comparisons down an ordered map, the probe itself took about
 //! a fifth off parsing the corpus. Nothing iterates the map in an observable
 //! order: `candidate_counts` sorts what it lists, and the fingerprint and the
-//! frozen tables read the mold columns.
+//! baked tables read the mold columns.
 //!
 //! The hasher is `foldhash`'s fixed-seed `fast` state over `hashbrown`, both
 //! with their default features off. Measured as this index, `rapidhash`,
@@ -56,8 +56,8 @@
 //! - Alternatives: a sorted label list the parser binary-searches per token,
 //!   which costs string comparisons on every token; a probe per menu read,
 //!   which hashes and compares a spelling at every step of every token; a
-//!   perfect hash generated with the frozen tables, which needs a build step
-//!   for a cost one probe per label already removes; `rapidhash`, the fastest
+//!   perfect hash generated with the baked tables, which needs a build step for
+//!   a cost one probe per label already removes; `rapidhash`, the fastest
 //!   measured by half a percent, which adds a proc-macro dependency.
 //! - Reversal: `foldhash` unmaintained or dropped from the graph, or a grammar
 //!   whose labels come from untrusted input.
@@ -74,7 +74,7 @@
 //! `Pbg::least_interchangeable` names, for each mold, the least mold that
 //! agrees with it on all of these; a parser weighing tied molds by what follows
 //! needs to weigh one per class. The answer is a column of the table: the gated
-//! build derives it by ordering the molds by those components, and the frozen
+//! build derives it by ordering the molds by those components, and the baked
 //! table stores it beside each mold, so thawing reads it rather than deriving
 //! it.
 //!
@@ -126,6 +126,7 @@ use foldhash::fast::FixedState;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::DelimSpelling;
 use gandr_surface_syntax::GrammarFingerprint;
+use gandr_surface_syntax::GroutSort;
 use gandr_surface_syntax::MoldId;
 use gandr_theory_graphs::Bound;
 use gandr_theory_graphs::Dir;
@@ -562,20 +563,22 @@ pub const FROZEN_COMPLETE_LAST: u8 = 0b0100;
 /// hole is filled.
 pub const FROZEN_REQUIRED_TAIL: u8 = 0b1000;
 
-/// A mold table computed ahead of time from one rule list: the columns
-/// [`MoldTable::build`] interns, without the indexes derived from them.
-/// [`MoldTable::thaw`] reads it back over the rules it was built from.
+/// A mold table as its columns: what [`MoldTable::build`] interns, without the
+/// indexes derived from them. [`MoldTable::freeze`] gives it,
+/// [`bytes`](Self::bytes) bakes it, [`read`](Self::read) reads the baked bytes
+/// back, and [`MoldTable::thaw`] reads it back over the rules it was built
+/// from.
 #[derive(Debug)]
 pub struct FrozenTable
 {
     /// The digest of the rules the table was built from.
     pub rules: RulesDigest,
     /// The molds, by id.
-    pub molds: &'static [FrozenMold],
+    pub molds: Vec<FrozenMold>,
     /// The interned contexts, by id.
-    pub contexts: &'static [FrozenContext],
+    pub contexts: Vec<FrozenContext>,
     /// The distinct step lists the contexts cross, by position.
-    pub steps: &'static [&'static [StepSym]],
+    pub steps: Vec<Vec<StepSym>>,
 }
 
 /// One mold of a [`FrozenTable`].
@@ -592,7 +595,7 @@ pub struct FrozenMold(
     /// The mold's form membership: the `FROZEN_*` bits.
     pub u8,
     /// The mold's same-form successors, by id, ascending.
-    pub &'static [u32],
+    pub Vec<u32>,
     /// The least mold interchangeable with this one, by id: at most its own.
     pub u32,
 );
@@ -609,6 +612,208 @@ pub struct FrozenContext(
     /// The symbols crossed stepping right: a [`FrozenTable::steps`] position.
     pub u32,
 );
+
+/// The eight bytes that open the baked bytes of a [`FrozenTable`]. A change to
+/// the layout of [`FrozenTable::bytes`] changes them.
+const BAKED_MAGIC: [u8; 8] = *b"gmolds01";
+
+/// The bit of a baked step word that marks a tile: the rest of the word is
+/// the label's position. A word without it is a sort's tag.
+const BAKED_TILE: u32 = 0x8000_0000;
+
+impl FrozenTable
+{
+    /// Bakes the table as bytes: the magic, the digest of the rules, then
+    /// little-endian 32-bit words.
+    ///
+    /// # Specification
+    /// - requires: each label of the table is in `labels`.
+    /// - ensures: [`BAKED_MAGIC`], the digest as eight little-endian bytes, the
+    ///   counts of the molds, the contexts and the step lists, then each mold
+    ///   as its label's position in `labels`, its context, its rule, its
+    ///   closing class (`0` none, `1` paren, `2` bracket, `3` brace), its
+    ///   membership, its least interchangeable mold, its successor count and
+    ///   its successors; each context as its two facings (`0` or `1`) and its
+    ///   two step lists; each step list as its length and its steps, a sort as
+    ///   its tag and a tile as [`BAKED_TILE`] with its label's position.
+    ///   [`read`](Self::read) reads the bytes back as this table.
+    /// - panics: none; a label missing from `labels` or a count past 32 bits
+    ///   gives a word that [`read`](Self::read) refuses.
+    ///
+    /// # Cost
+    /// - allocation: the bytes and an index of the labels, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the built-in table baked and read back thaws to the
+    ///   grammar the gated build gives, whole, so a dropped or misplaced word
+    ///   shows.
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
+    #[spec(ensures: |ret| ret.starts_with(&BAKED_MAGIC) && ret.len() % 4 == 0)]
+    #[must_use]
+    pub fn bytes(
+        &self,
+        labels: &[&'static str],
+    ) -> Vec<u8>
+    {
+        let positions: BTreeMap<&str, u32> = labels.iter().copied().zip(0_u32 ..).collect();
+        let label = |text: &str| positions.get(text).copied().unwrap_or(u32::MAX);
+        let count = |length: usize| u32::try_from(length).unwrap_or(u32::MAX);
+        let mut words: Vec<u32> = vec![
+            count(self.molds.len()),
+            count(self.contexts.len()),
+            count(self.steps.len()),
+        ];
+        for &FrozenMold(text, rctx, owner, class, membership, ref successors, twin) in &self.molds {
+            let class = match class {
+                None => 0,
+                Some(ClosingClass::Paren) => 1,
+                Some(ClosingClass::Bracket) => 2,
+                Some(ClosingClass::Brace) => 3,
+            };
+            words.extend([
+                label(text),
+                rctx,
+                owner,
+                class,
+                u32::from(membership),
+                twin,
+                count(successors.len()),
+            ]);
+            words.extend_from_slice(successors);
+        }
+        for &FrozenContext(left_faces, right_faces, left, right) in &self.contexts {
+            words.extend([u32::from(left_faces), u32::from(right_faces), left, right]);
+        }
+        for steps in &self.steps {
+            words.push(count(steps.len()));
+            words.extend(steps.iter().map(|step| match *step {
+                StepSym::Sort(sort) => u32::from(u16::from(sort.grout_sort())),
+                StepSym::Tile(text) => BAKED_TILE | label(text),
+            }));
+        }
+        let mut bytes = Vec::with_capacity(16_usize.saturating_add(words.len().saturating_mul(4)));
+        bytes.extend_from_slice(&BAKED_MAGIC);
+        bytes.extend_from_slice(&self.rules.0.to_le_bytes());
+        for word in words {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes
+    }
+
+    /// Reads baked bytes back as a table.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the table whose [`bytes`](Self::bytes) over `labels` are
+    ///   `bytes`; the ids the table names are not checked against each other,
+    ///   which [`MoldTable::thaw`] does.
+    /// - fails: absent for bytes without [`BAKED_MAGIC`], bytes that end inside
+    ///   a word or before the last count says, bytes left past the last step
+    ///   list, a label past `labels`, a closing class past `3`, a membership
+    ///   past the `FROZEN_*` bits, a facing past `1` or a sort tag no sort
+    ///   carries.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the table's columns, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the built-in table's bytes read back thaw to the
+    ///   gated build's grammar, and each cut of those bytes short of their end
+    ///   and a flipped magic are refused.
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
+    /// - witness: `mold::tests::baked_bytes_that_do_not_read_are_refused`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|table| table.bytes(labels).as_slice() == bytes))]
+    #[must_use]
+    pub fn read(
+        bytes: &[u8],
+        labels: &[&'static str],
+    ) -> Option<Self>
+    {
+        let (magic, rest) = bytes.split_first_chunk::<8>()?;
+        let (digest, rest) = rest.split_first_chunk::<8>()?;
+        let (words, tail) = rest.as_chunks::<4>();
+        if *magic != BAKED_MAGIC || !tail.is_empty() {
+            return None;
+        }
+        let bound = words.len();
+        let mut words = words.iter().map(|&word| u32::from_le_bytes(word));
+        let mut next = || words.next();
+        let length = |word: u32| usize::try_from(word).ok();
+        let label = |word: u32| {
+            usize::try_from(word)
+                .ok()
+                .and_then(|position| labels.get(position))
+                .copied()
+        };
+        let (mold_count, context_count, list_count) =
+            (length(next()?)?, length(next()?)?, length(next()?)?);
+        let mut molds = Vec::with_capacity(mold_count.min(bound));
+        for _ in 0 .. mold_count {
+            let text = label(next()?)?;
+            let (rctx, owner) = (next()?, next()?);
+            let class = match next()? {
+                0 => None,
+                1 => Some(ClosingClass::Paren),
+                2 => Some(ClosingClass::Bracket),
+                3 => Some(ClosingClass::Brace),
+                _ => return None,
+            };
+            let membership = u8::try_from(next()?).ok().filter(|&bits| {
+                bits & !(FROZEN_FORM_FIRST
+                    | FROZEN_FORM_LAST
+                    | FROZEN_COMPLETE_LAST
+                    | FROZEN_REQUIRED_TAIL)
+                    == 0
+            })?;
+            let twin = next()?;
+            let successor_count = length(next()?)?;
+            let mut successors = Vec::with_capacity(successor_count.min(bound));
+            for _ in 0 .. successor_count {
+                successors.push(next()?);
+            }
+            molds.push(FrozenMold(
+                text, rctx, owner, class, membership, successors, twin,
+            ));
+        }
+        let mut contexts = Vec::with_capacity(context_count.min(bound));
+        for _ in 0 .. context_count {
+            let facing = |word: u32| match word {
+                0 => Some(false),
+                1 => Some(true),
+                _ => None,
+            };
+            let (left_faces, right_faces) = (facing(next()?)?, facing(next()?)?);
+            contexts.push(FrozenContext(left_faces, right_faces, next()?, next()?));
+        }
+        let mut steps = Vec::with_capacity(list_count.min(bound));
+        for _ in 0 .. list_count {
+            let step_count = length(next()?)?;
+            let mut list = Vec::with_capacity(step_count.min(bound));
+            for _ in 0 .. step_count {
+                let word = next()?;
+                list.push(if word & BAKED_TILE == 0 {
+                    StepSym::Sort(
+                        Sort::try_from_tag(GroutSort::from(u16::try_from(word).ok()?)).ok()?,
+                    )
+                }
+                else {
+                    StepSym::Tile(label(word & !BAKED_TILE)?)
+                });
+            }
+            steps.push(list);
+        }
+        if next().is_some() {
+            return None;
+        }
+        Some(Self {
+            rules: RulesDigest(u64::from_le_bytes(*digest)),
+            molds,
+            contexts,
+            steps,
+        })
+    }
+}
 
 /// The columns a mold table is assembled from, before the indexes derived
 /// from them: what [`MoldTable::build`] interns and a [`FrozenTable`] holds.
@@ -769,18 +974,18 @@ impl MoldTable
     /// [`PbgError::MoldOverflow`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the built-in surface's table, thawed, renders
-    ///   byte-identical to the one built through every gate, so a dropped
-    ///   column, a misread rule or a misderived index shows; a frozen mold
-    ///   whose rule is missing and a context naming a step list past the table
-    ///   are refused by identity. A frozen table that is internally consistent
-    ///   but stale against its rules is the digest's concern, not this one's.
-    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    /// - hypothesis: L3 — the built-in surface's table, frozen and thawed, is
+    ///   the grammar the gated build gives, whole, so a dropped column, a
+    ///   misread rule or a misderived index shows; a frozen mold whose rule is
+    ///   missing and a context naming a step list past the table are refused by
+    ///   identity. A frozen table that is internally consistent but stale
+    ///   against its rules is the digest's concern, not this one's.
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
     /// - witness: `mold::tests::a_frozen_mold_without_its_rule_is_refused`
     /// - witness: `mold::tests::a_frozen_context_past_the_step_lists_is_refused`
     #[spec(captures: sizes = (frozen.molds.len(), frozen.contexts.len()), ensures: |ret| ret.as_ref().map_or_else(
         |error| matches!(error, PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } | PbgError::MoldOverflow),
-        |table| (table.molds.len(), table.rctxs.len()) == sizes && table.owners.len() == table.molds.len() && table.molds.iter().zip(&table.owners).all(|(mold, &owner)| rules.get(owner).is_some_and(|rule| mold.sort == rule.sort && mold.prec == rule.prec)) && table.molds.iter().zip(frozen.molds).all(|(mold, row)| mold.label == row.0 && u32::from(mold.rctx) == row.1),
+        |table| (table.molds.len(), table.rctxs.len()) == sizes && table.owners.len() == table.molds.len() && table.molds.iter().zip(&table.owners).all(|(mold, &owner)| rules.get(owner).is_some_and(|rule| mold.sort == rule.sort && mold.prec == rule.prec)) && table.molds.iter().zip(&frozen.molds).all(|(mold, row)| mold.label == row.0 && u32::from(mold.rctx) == row.1),
     ))]
     pub(crate) fn thaw(
         frozen: &FrozenTable,
@@ -798,7 +1003,7 @@ impl MoldTable
         let mut complete_last = Vec::new();
         let mut required_tail = Vec::new();
         let mut twins = Vec::with_capacity(count);
-        for (position, &FrozenMold(label, rctx, owner, class, membership, successors, twin)) in
+        for (position, &FrozenMold(label, rctx, owner, class, membership, ref successors, twin)) in
             frozen.molds.iter().enumerate()
         {
             let id = MoldId::try_from(position).map_err(|_error| PbgError::MoldOverflow)?;
@@ -842,7 +1047,7 @@ impl MoldTable
         }
         let mut rctxs = Vec::with_capacity(frozen.contexts.len());
         for (raw, &FrozenContext(left_faces_sort, right_faces_sort, left, right)) in
-            (0_u32 ..).zip(frozen.contexts)
+            (0_u32 ..).zip(&frozen.contexts)
         {
             let rctx = RCtxId(raw);
             let steps = |list: u32| {
@@ -909,7 +1114,7 @@ impl MoldTable
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
     /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
-    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
     #[spec(ensures: |ret| {
         let count = ret.molds.len();
         let index = |mold: MoldId| usize::try_from(u32::from(mold)).ok();
@@ -1182,198 +1387,95 @@ impl MoldTable
         twins
     }
 
-    /// Renders the table as the Rust source of a [`FrozenTable`] digested
-    /// `rules`: one row per mold and per context, and the distinct step lists
-    /// in first-crossed order.
+    /// The table as a [`FrozenTable`] digested `rules`: one row per mold and
+    /// per context, and the distinct step lists in first-crossed order.
     ///
     /// # Specification
     /// - requires: the table was built from rules digesting to `rules`.
-    /// - ensures: source that, compiled beside this module, is a `FrozenTable`
-    ///   [`thaw`](Self::thaw) reads back as this table.
-    /// - fails: only as the string sink fails.
+    /// - ensures: a `FrozenTable` that [`thaw`](Self::thaw) reads back as this
+    ///   table.
     /// - panics: none.
     ///
-    /// # Errors
-    /// [`core::fmt::Error`] from the sink.
+    /// # Cost
+    /// - allocation: the columns and an index of the step lists, setup
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the built-in surface's rendering is the committed
-    ///   frozen source, and that source thawed renders byte-identical to the
-    ///   built table, so a dropped or misrendered column shows in one of the
-    ///   two comparisons.
-    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
-    #[cfg(test)]
-    #[expect(
-        clippy::use_debug,
-        reason = "a label's Debug rendering is its Rust string literal, escapes included"
-    )]
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |source| source.matches("FrozenMold(").count() == self.molds.len() && source.matches("FrozenContext(").count() == self.rctxs.len()))]
-    pub(crate) fn frozen_source(
+    /// - hypothesis: L3 — the built-in surface's table, frozen, baked, read
+    ///   back and thawed, is the built grammar whole, so a dropped or misplaced
+    ///   column shows.
+    /// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
+    #[spec(ensures: |ret| ret.rules == rules && ret.molds.len() == self.molds.len() && ret.contexts.len() == self.rctxs.len())]
+    pub(crate) fn freeze(
         &self,
         rules: RulesDigest,
-    ) -> Result<String, core::fmt::Error>
+    ) -> FrozenTable
     {
-        use core::fmt::Write as _;
-
-        let mut lists: BTreeMap<&[RCtxStep], usize> = BTreeMap::new();
-        let mut order: Vec<&[RCtxStep]> = Vec::new();
-        let mut list_of = |steps| -> usize {
-            *lists.entry(steps).or_insert_with(|| {
-                order.push(steps);
-                order.len().saturating_sub(1)
-            })
-        };
-        let contexts = self
-            .rctxs
+        let mut lists: BTreeMap<&[RCtxStep], u32> = BTreeMap::new();
+        let mut steps: Vec<Vec<StepSym>> = Vec::new();
+        let mut contexts = Vec::with_capacity(self.rctxs.len());
+        for data in &self.rctxs {
+            let mut sides = [0_u32; 2];
+            for (side, list) in sides
+                .iter_mut()
+                .zip([data.left_steps.as_slice(), data.right_steps.as_slice()])
+            {
+                *side = *lists.entry(list).or_insert_with(|| {
+                    steps.push(list.iter().map(|step| step.crossed).collect());
+                    u32::try_from(steps.len().saturating_sub(1)).unwrap_or(u32::MAX)
+                });
+            }
+            let [left, right] = sides;
+            contexts.push(FrozenContext(
+                data.left_faces_sort,
+                data.right_faces_sort,
+                left,
+                right,
+            ));
+        }
+        let molds = self
             .iter()
-            .map(|data| {
-                (
-                    data,
-                    list_of(data.left_steps.as_slice()),
-                    list_of(data.right_steps.as_slice()),
+            .enumerate()
+            .map(|(position, (id, mold))| {
+                let membership = [
+                    (&self.form_first, FROZEN_FORM_FIRST),
+                    (&self.form_last, FROZEN_FORM_LAST),
+                    (&self.complete_last, FROZEN_COMPLETE_LAST),
+                    (&self.required_tail, FROZEN_REQUIRED_TAIL),
+                ]
+                .into_iter()
+                .filter(|&(list, _bit)| list.binary_search(&id).is_ok())
+                .fold(0_u8, |bits, (_list, bit)| bits | bit);
+                let owner = self
+                    .owners
+                    .get(position)
+                    .and_then(|&owner| u32::try_from(owner).ok())
+                    .unwrap_or(u32::MAX);
+                let successors = self
+                    .successor_starts
+                    .get(position)
+                    .zip(self.successor_starts.get(position.saturating_add(1)))
+                    .and_then(|(&start, &end)| self.adjacencies.get(start .. end))
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|&(_left, right)| u32::from(right))
+                    .collect();
+                FrozenMold(
+                    mold.label,
+                    u32::from(mold.rctx),
+                    owner,
+                    self.closing.get(position).copied().flatten(),
+                    membership,
+                    successors,
+                    u32::from(self.twins.get(position).copied().unwrap_or(id)),
                 )
             })
-            .collect::<Vec<_>>();
-        let mut out = String::new();
-        writeln!(
-            out,
-            "//! The built-in surface's mold and context tables, frozen."
-        )?;
-        writeln!(out, "//!")?;
-        writeln!(out, "//! Generated from the built-in rules by")?;
-        writeln!(
-            out,
-            "//! `surface::tests::the_frozen_tables_are_the_built_ones`, which builds them"
-        )?;
-        writeln!(
-            out,
-            "//! through every gate and compares; `UPDATE_EXPECT=1` rewrites this file."
-        )?;
-        writeln!(
-            out,
-            "//! [`built_in`](super::built_in) thaws them while the rules digest to"
-        )?;
-        writeln!(
-            out,
-            "//! [`BUILT_IN`]'s digest and builds the rules otherwise."
-        )?;
-        writeln!(out)?;
-        writeln!(out, "use gandr_surface_syntax::ClosingClass;")?;
-        writeln!(out)?;
-        writeln!(out, "use crate::model::RulesDigest;")?;
-        writeln!(out, "use crate::model::Sort;")?;
-        writeln!(out, "use crate::mold::FrozenContext;")?;
-        writeln!(out, "use crate::mold::FrozenMold;")?;
-        writeln!(out, "use crate::mold::FrozenTable;")?;
-        writeln!(out, "use crate::mold::StepSym;")?;
-        writeln!(out)?;
-        let digest = rules.0;
-        writeln!(
-            out,
-            "/// The built-in surface's tables and the digest of their rules."
-        )?;
-        writeln!(
-            out,
-            "pub(super) static BUILT_IN: FrozenTable = FrozenTable {{"
-        )?;
-        writeln!(
-            out,
-            "    rules: RulesDigest(0x{:04x}_{:04x}_{:04x}_{:04x}),",
-            digest >> 48_u32,
-            (digest >> 32_u32) & 0xffff,
-            (digest >> 16_u32) & 0xffff,
-            digest & 0xffff,
-        )?;
-        writeln!(out, "    molds: &MOLDS,")?;
-        writeln!(out, "    contexts: &CONTEXTS,")?;
-        writeln!(out, "    steps: &STEPS,")?;
-        writeln!(out, "}};")?;
-        writeln!(out)?;
-        writeln!(
-            out,
-            "/// Each mold: label, context, rule, closing class, membership bits, successors, least interchangeable mold."
-        )?;
-        writeln!(out, "#[rustfmt::skip]")?;
-        writeln!(out, "static MOLDS: [FrozenMold; {}] = [", self.molds.len())?;
-        for (position, (id, mold)) in self.iter().enumerate() {
-            let membership = [
-                (&self.form_first, FROZEN_FORM_FIRST),
-                (&self.form_last, FROZEN_FORM_LAST),
-                (&self.complete_last, FROZEN_COMPLETE_LAST),
-                (&self.required_tail, FROZEN_REQUIRED_TAIL),
-            ]
-            .into_iter()
-            .filter(|&(list, _bit)| list.binary_search(&id).is_ok())
-            .fold(0_u8, |bits, (_list, bit)| bits | bit);
-            let owner = self.owners.get(position).copied().unwrap_or(usize::MAX);
-            let twin = self.twins.get(position).copied().unwrap_or(id);
-            write!(
-                out,
-                "    FrozenMold({:?}, {}, {owner}, ",
-                mold.label,
-                u32::from(mold.rctx),
-            )?;
-            match self.closing.get(position).copied().flatten() {
-                Some(class) => write!(out, "Some(ClosingClass::{class:?})")?,
-                None => out.push_str("None"),
-            }
-            write!(out, ", {membership}, &[")?;
-            let successors = self
-                .successor_starts
-                .get(position)
-                .zip(self.successor_starts.get(position.saturating_add(1)))
-                .and_then(|(&start, &end)| self.adjacencies.get(start .. end))
-                .unwrap_or(&[]);
-            for (at, &(_left, right)) in successors.iter().enumerate() {
-                if at > 0 {
-                    out.push_str(", ");
-                }
-                write!(out, "{}", u32::from(right))?;
-            }
-            writeln!(out, "], {}),", u32::from(twin))?;
+            .collect();
+        FrozenTable {
+            rules,
+            molds,
+            contexts,
+            steps,
         }
-        writeln!(out, "];")?;
-        writeln!(out)?;
-        writeln!(
-            out,
-            "/// Each context: whether a hole faces it left, then right; its step lists, left then right."
-        )?;
-        writeln!(out, "#[rustfmt::skip]")?;
-        writeln!(
-            out,
-            "static CONTEXTS: [FrozenContext; {}] = [",
-            contexts.len()
-        )?;
-        for (data, left, right) in contexts {
-            writeln!(
-                out,
-                "    FrozenContext({}, {}, {left}, {right}),",
-                data.left_faces_sort, data.right_faces_sort,
-            )?;
-        }
-        writeln!(out, "];")?;
-        writeln!(out)?;
-        writeln!(
-            out,
-            "/// The distinct step lists, in the order the contexts first cross them."
-        )?;
-        writeln!(out, "#[rustfmt::skip]")?;
-        writeln!(out, "static STEPS: [&[StepSym]; {}] = [", order.len())?;
-        for steps in order {
-            out.push_str("    &[");
-            for (at, step) in steps.iter().enumerate() {
-                if at > 0 {
-                    out.push_str(", ");
-                }
-                match step.crossed {
-                    StepSym::Sort(sort) => write!(out, "StepSym::Sort(Sort::{sort:?})")?,
-                    StepSym::Tile(label) => write!(out, "StepSym::Tile({label:?})")?,
-                }
-            }
-            writeln!(out, "],")?;
-        }
-        writeln!(out, "];")?;
-        Ok(out)
     }
 
     /// The mold `id` names.
@@ -4080,17 +4182,14 @@ mod tests
     #[test]
     fn a_frozen_mold_without_its_rule_is_refused()
     {
-        static STEPS: [&[StepSym]; 1] = [&[]];
-        static CONTEXTS: [FrozenContext; 1] = [FrozenContext(false, false, 0, 0)];
-        static MOLDS: [FrozenMold; 2] = [
-            FrozenMold("a", 0, 0, None, 0, &[1], 0),
-            FrozenMold("b", 0, 1, None, 0, &[], 1),
-        ];
         let frozen = FrozenTable {
             rules: RulesDigest(0),
-            molds: &MOLDS,
-            contexts: &CONTEXTS,
-            steps: &STEPS,
+            molds: vec![
+                FrozenMold("a", 0, 0, None, 0, vec![1], 0),
+                FrozenMold("b", 0, 1, None, 0, vec![], 1),
+            ],
+            contexts: vec![FrozenContext(false, false, 0, 0)],
+            steps: vec![vec![]],
         };
         let first = Rule::new(
             RuleName("first"),
@@ -4134,25 +4233,18 @@ mod tests
     #[test]
     fn a_frozen_context_past_the_step_lists_is_refused()
     {
-        static STEPS: [&[StepSym]; 1] = [&[StepSym::Tile("a")]];
-        static DANGLING_LIST: [FrozenContext; 1] = [FrozenContext(true, false, 0, 1)];
-        static CONTEXTS: [FrozenContext; 1] = [FrozenContext(true, false, 0, 0)];
-        static MOLD: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[], 0)];
-        static PAST_CONTEXT: [FrozenMold; 1] = [FrozenMold("a", 1, 0, None, 0, &[], 0)];
-        static PAST_SUCCESSOR: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[1], 0)];
-        static PAST_TWIN: [FrozenMold; 1] = [FrozenMold("a", 0, 0, None, 0, &[], 1)];
         let rule = Rule::new(
             RuleName("only"),
             Sort::Expression,
             Prec::new(PrecIndex::from(0)),
             Regex::tile(TileLabel("a")),
         );
-        let thaw = |molds: &'static [FrozenMold], contexts: &'static [FrozenContext]| {
+        let thaw = |mold: FrozenMold, context: FrozenContext| {
             let frozen = FrozenTable {
                 rules: RulesDigest(0),
-                molds,
-                contexts,
-                steps: &STEPS,
+                molds: vec![mold],
+                contexts: vec![context],
+                steps: vec![vec![StepSym::Tile("a")]],
             };
             MoldTable::thaw(
                 &frozen,
@@ -4161,27 +4253,80 @@ mod tests
             )
             .map(|_table| ())
         };
+        let mold = || FrozenMold("a", 0, 0, None, 0, vec![], 0);
+        let context = || FrozenContext(true, false, 0, 0);
         assert_eq!(
             Err(PbgError::UnknownRCtx { rctx: RCtxId(0) }),
-            thaw(&MOLD, &DANGLING_LIST)
+            thaw(mold(), FrozenContext(true, false, 0, 1))
         );
         assert_eq!(
             Err(PbgError::UnknownRCtx { rctx: RCtxId(1) }),
-            thaw(&PAST_CONTEXT, &CONTEXTS)
+            thaw(FrozenMold("a", 1, 0, None, 0, vec![], 0), context())
         );
         assert_eq!(
             Err(PbgError::UnknownMold {
                 id: MoldId::from(1)
             }),
-            thaw(&PAST_SUCCESSOR, &CONTEXTS)
+            thaw(FrozenMold("a", 0, 0, None, 0, vec![1], 0), context())
         );
         assert_eq!(
             Err(PbgError::UnknownMold {
                 id: MoldId::from(1)
             }),
-            thaw(&PAST_TWIN, &CONTEXTS)
+            thaw(FrozenMold("a", 0, 0, None, 0, vec![], 1), context())
         );
-        assert_eq!(Ok(()), thaw(&MOLD, &CONTEXTS));
+        assert_eq!(Ok(()), thaw(mold(), context()));
+    }
+
+    /// Baked bytes read back as their table, and bytes that do not read are
+    /// refused: each cut short of the end, a word past the end, another
+    /// magic, a label past the labels, a closing class past `3`, a facing
+    /// past `1` and a sort tag past the sorts.
+    #[test]
+    fn baked_bytes_that_do_not_read_are_refused()
+    {
+        let table = FrozenTable {
+            rules: RulesDigest(0x0123_4567_89ab_cdef),
+            molds: vec![
+                FrozenMold("a", 0, 0, Some(ClosingClass::Brace), 0b0101, vec![1], 0),
+                FrozenMold("b", 1, 0, None, 0b1010, vec![], 0),
+            ],
+            contexts: vec![
+                FrozenContext(true, false, 0, 1),
+                FrozenContext(false, true, 1, 0),
+            ],
+            steps: vec![vec![StepSym::Tile("b")], vec![StepSym::Sort(Sort::Block)]],
+        };
+        let labels = ["a", "b"];
+        let bytes = table.bytes(&labels);
+        let read = FrozenTable::read(&bytes, &labels).expect("baked bytes read back");
+        assert_eq!(alloc::format!("{table:?}"), alloc::format!("{read:?}"));
+        for end in 0 .. bytes.len() {
+            assert!(
+                FrozenTable::read(bytes.get(.. end).unwrap_or_default(), &labels).is_none(),
+                "bytes cut at {end} read"
+            );
+        }
+        let word = |at: usize, value: u32| {
+            let mut changed = bytes.clone();
+            changed.splice(at .. at.saturating_add(4), value.to_le_bytes());
+            FrozenTable::read(&changed, &labels)
+        };
+        let mut longer = bytes.clone();
+        longer.extend_from_slice(&[0; 4]);
+        assert!(FrozenTable::read(&longer, &labels).is_none());
+        let mut magic = bytes.clone();
+        magic.splice(.. 1, *b"h");
+        assert!(FrozenTable::read(&magic, &labels).is_none());
+        assert!(FrozenTable::read(&bytes, &labels[.. 1]).is_none());
+        // The first mold starts at byte 28: label, context, rule, class.
+        assert!(word(28, 2).is_none(), "a label past the labels");
+        assert!(word(40, 4).is_none(), "a closing class past 3");
+        assert!(word(44, 0b1_0000).is_none(), "a membership past its bits");
+        // The contexts start at byte 88, the step lists at byte 120.
+        assert!(word(88, 2).is_none(), "a facing past 1");
+        assert!(word(132, 7).is_none(), "a sort tag past the sorts");
+        assert!(word(132, 6).is_some(), "the last sort tag");
     }
 
     #[test]

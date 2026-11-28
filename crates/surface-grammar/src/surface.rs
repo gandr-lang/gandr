@@ -163,44 +163,42 @@
 //!
 //! The change moved the fingerprint from `0x5984_1cfd_3dbe_9111`.
 //!
-//! # Frozen tables
+//! # Baked tables
 //!
 //! Building the built-in grammar is dominated by numbering and interning its
 //! molds, and every `gandr check` would pay it before the first source. The
-//! table is a function of the constant rules, so it is computed once, when the
-//! rules change, and committed: `src/surface/frozen.rs` holds each mold's
-//! label, context, rule, closing class, form-membership bits, successors and
-//! least interchangeable mold, each context's facing and step lists, the 233
-//! distinct step lists once each, and the digest of the rules it was built
-//! from. `built_in` assembles the rules, digests them, and thaws the table when
-//! the digest matches — the statics are read where the compiler placed them,
-//! and what is derived from them (bounds, the label index, the dense flags, the
+//! table is a function of the constant rules, so a process computes it once
+//! and keeps it as a file of the user's cache, named by the digest of the
+//! rules: each mold's label, context, rule, closing class, form-membership
+//! bits, successors and least interchangeable mold, each context's facing and
+//! step lists, and the distinct step lists once each. `built_in` assembles the
+//! rules, digests them, and thaws the table of the file of that digest. What
+//! is derived from the columns (bounds, the label index, the dense flags, the
 //! successor runs, the fingerprint) is recomputed as the gated build computes
-//! it. Rules that digest otherwise are built through every gate, so a stale
-//! file costs time, never a different grammar.
+//! it. With no file, or a file that does not read, the rules are built through
+//! every gate and the file is written, so a missing file costs time, never a
+//! different grammar. The feature `baked` holds the file; without it, each
+//! call builds the rules.
 //!
-//! The gates do not run on the thaw path: they proved these rules when the file
-//! was generated. `surface::tests::the_frozen_tables_are_the_built_ones` builds
-//! the rules through every gate, renders the table and compares the rendering
-//! with the committed file byte for byte, then compares the thawed grammar with
-//! the built one whole, fingerprint included. A change to any rule fails that
-//! test until `UPDATE_EXPECT=1` rewrites the file, and the rewrite is a
-//! reviewed diff of the table. The digest covers what the table reads of a rule
-//! — name, sort, group and form — and not its provenance or adaptation records,
-//! which the grammar reads from the rules themselves.
+//! The gates do not run on the thaw path: they proved these rules when the
+//! file was written. `surface::tests::the_baked_tables_are_the_built_ones`
+//! builds the rules through every gate, bakes the table, reads the bytes back
+//! and compares the thawed grammar with the built one whole, fingerprint
+//! included. The digest covers what the table reads of a rule — name, sort,
+//! group and form — and not its provenance or adaptation records, which the
+//! grammar reads from the rules themselves.
 //!
 //! - Alternatives: a build script running the gated build at every compile,
-//!   which builds the grammar crate twice and hides the table from review; a
-//!   serialized blob with its own decoder and refusals, where the statics need
-//!   neither; building the table in parallel at first use, which the per-rule
-//!   interning caps at a few times faster and which contends with the source
-//!   workers, where thawing is thirty times faster at every width; memoizing
-//!   the per-occurrence canonical forms, which removes about a quarter of the
+//!   which builds the grammar crate twice; the table as Rust statics in the
+//!   tree, a generated file of 6,758 lines that each change of a rule rewrites;
+//!   building the table in parallel at first use, which the per-rule interning
+//!   caps at a few times faster and which contends with the source workers,
+//!   where thawing is thirty times faster at every width; memoizing the
+//!   per-occurrence canonical forms, which removes about a quarter of the
 //!   build.
 //! - Reversal: a grammar assembled at run time from user-declared operators,
 //!   where the built-in table is not the table a source parses under; or a
-//!   gated build fast enough that a 290 KB generated file stops paying for
-//!   itself.
+//!   gated build fast enough that the file stops paying for itself.
 
 use alloc::vec::Vec;
 
@@ -221,7 +219,8 @@ use crate::model::Sort;
 
 mod circuit;
 
-mod frozen;
+#[cfg(feature = "baked")]
+mod baked;
 
 mod term;
 
@@ -604,9 +603,10 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
 /// - ensures: a checked grammar over [`built_in_prec_table`]'s DAG, whose item,
 ///   expression, pattern and type bands are mutually incomparable and chained
 ///   only as [`PREC_EDGES`] declares; its forms range over tiles and holes, and
-///   named kinds appear only as rule provenance. The mold table is thawed from
-///   the frozen tables while the rules digest to theirs, and built through
-///   every gate otherwise; both are the same table.
+///   named kinds appear only as rule provenance. With the feature `baked`, the
+///   mold table is thawed from the baked file of the rules' digest, and built
+///   through every gate and baked when no such file reads; without it, it is
+///   built. Each path gives the same table.
 /// - fails: a precedence or gate violation in the constant rules.
 /// - panics: none.
 /// - intension: the term rules, then the type rules, then the circuit rules, so
@@ -620,19 +620,24 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
 ///   and named-kind observations, catching missing rule families, changed band
 ///   relations and reordered mold identities; corpus parsing covers admitted
 ///   examples, not every source or a machine-dependent build-time limit. The
-///   frozen-table witness compares the thawed grammar with the gated build
+///   baked-table witnesses compare the thawed grammar with the gated build
 ///   whole.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
-/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+/// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
+/// - witness: `surface::tests::a_baked_file_thaws_to_the_built_grammar`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.dag().groups().count() == PREC_GROUPS.len() && pbg.dag().groups().zip(PREC_GROUPS.iter()).all(|((_, name, assoc), &(expected, expected_assoc))| name == expected && assoc == expected_assoc) && [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember, Sort::Block].iter().all(|sort| pbg.forms().keys().any(|&(present, _)| present == *sort))))]
 #[inline]
 pub fn built_in() -> Result<Pbg, PbgError>
 {
     let precs = built_in_prec_table()?;
     let rules = built_in_rules(&precs)?;
-    Pbg::thawed(precs, rules, &frozen::BUILT_IN)
+    #[cfg(feature = "baked")]
+    let grammar = baked::built_in(precs, rules, baked::directory().as_deref());
+    #[cfg(not(feature = "baked"))]
+    let grammar = Pbg::build_table(precs, rules);
+    grammar
 }
 
 /// The built-in rules over the built-in precedence table.
@@ -650,9 +655,9 @@ pub fn built_in() -> Result<Pbg, PbgError>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each rule list's own witness pins its count and order;
-///   the frozen-table witness builds this list through every gate and compares
+///   the baked-table witness builds this list through every gate and compares
 ///   it with the thawed grammar.
-/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+/// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| !rules.is_empty()))]
 fn built_in_rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
@@ -841,6 +846,7 @@ mod tests
     use gandr_theory_graphs::PrecIndex;
 
     use super::*;
+    use crate::mold::FrozenTable;
 
     #[test]
     fn precedence_helper_failures_preserve_named_context()
@@ -972,22 +978,20 @@ mod tests
         );
     }
 
-    /// The frozen tables are the gated build's: the committed source is the
-    /// rendering of the table built through every gate, and the grammar
-    /// [`built_in`] thaws from it is that grammar, byte for byte. A change to
-    /// the built-in rules fails here until `UPDATE_EXPECT=1` rewrites the
-    /// frozen source.
+    /// The baked tables are the gated build's: the table built through every
+    /// gate, frozen, baked, read back and thawed, is that grammar, byte for
+    /// byte, fingerprint included.
     #[test]
-    fn the_frozen_tables_are_the_built_ones()
+    fn the_baked_tables_are_the_built_ones()
     {
-        extern crate std;
-
         let precs = built_in_prec_table().expect("the built-in table builds");
         let rules = built_in_rules(&precs).expect("the built-in rules build");
-        let built = Pbg::build_table(precs, rules).expect("the built-in rules pass every gate");
-        expect_test::expect_file!["surface/frozen.rs"]
-            .assert_eq(&built.frozen_source().expect("a string sink never fails"));
-        let thawed = built_in().expect("the built-in grammar thaws");
+        let labels = crate::model::tile_labels(&rules);
+        let built = Pbg::build_table(precs.clone(), rules.clone())
+            .expect("the built-in rules pass every gate");
+        let bytes = built.frozen().bytes(&labels);
+        let read = FrozenTable::read(&bytes, &labels).expect("the baked bytes read back");
+        let thawed = Pbg::thawed(precs, rules, &read).expect("the built-in grammar thaws");
         assert_eq!(
             alloc::format!("{built:?}"),
             alloc::format!("{thawed:?}"),
@@ -995,18 +999,65 @@ mod tests
         );
     }
 
-    /// Rules that no longer digest to the frozen tables' rules are built
-    /// through every gate, never thawed: the built-in rules less their last
-    /// one give the grammar the gated build gives them.
+    /// Rules that do not digest to the baked table's rules are built through
+    /// every gate, never thawed: the built-in rules less their last one give
+    /// the grammar the gated build gives them.
     #[test]
-    fn a_stale_frozen_table_builds_its_rules()
+    fn a_stale_baked_table_builds_its_rules()
     {
         let precs = built_in_prec_table().expect("the built-in table builds");
         let mut rules = built_in_rules(&precs).expect("the built-in rules build");
+        let frozen = Pbg::build_table(precs.clone(), rules.clone())
+            .expect("the built-in rules pass every gate")
+            .frozen();
         rules.pop();
         let built =
             Pbg::build_table(precs.clone(), rules.clone()).expect("a prefix passes every gate");
-        let thawed = Pbg::thawed(precs, rules, &frozen::BUILT_IN).expect("stale rules build");
+        let thawed = Pbg::thawed(precs, rules, &frozen).expect("stale rules build");
         assert_eq!(alloc::format!("{built:?}"), alloc::format!("{thawed:?}"));
+    }
+
+    /// A directory with no file gets the file of the rules' digest, the next
+    /// call thaws it to the gated build's grammar, and a file that does not
+    /// read is written again whole.
+    #[cfg(feature = "baked")]
+    #[test]
+    fn a_baked_file_thaws_to_the_built_grammar()
+    {
+        extern crate std;
+
+        let directory = std::env::temp_dir().join(alloc::format!(
+            "gandr-surface-grammar-baked-{}",
+            std::process::id()
+        ));
+        drop(std::fs::remove_dir_all(&directory));
+        let precs = built_in_prec_table().expect("the built-in table builds");
+        let rules = built_in_rules(&precs).expect("the built-in rules build");
+        let path = directory.join(alloc::format!(
+            "{:016x}.molds",
+            crate::model::RulesDigest::of(&rules).0
+        ));
+        let built = alloc::format!(
+            "{:?}",
+            Pbg::build_table(precs, rules).expect("the built-in rules pass every gate")
+        );
+        let call = || {
+            let precs = built_in_prec_table().expect("the built-in table builds");
+            let rules = built_in_rules(&precs).expect("the built-in rules build");
+            let grammar = baked::built_in(precs, rules, Some(&directory))
+                .expect("the built-in grammar builds");
+            alloc::format!("{grammar:?}")
+        };
+        assert_eq!(built, call(), "the first call builds");
+        let baked = std::fs::read(&path).expect("the first call writes the file");
+        assert_eq!(built, call(), "the second call thaws the file");
+        std::fs::write(&path, b"gmolds01").expect("the file takes a write");
+        assert_eq!(built, call(), "a file that does not read is built");
+        assert_eq!(
+            Some(baked),
+            std::fs::read(&path).ok(),
+            "the file is written again"
+        );
+        drop(std::fs::remove_dir_all(&directory));
     }
 }

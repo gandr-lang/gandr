@@ -1892,7 +1892,6 @@ dependencies = [
 name = "gandr-surface-grammar"
 version = "0.0.0"
 dependencies = [
- "expect-test",
  "foldhash 0.2.0",
  "gandr-surface-parser",
  "gandr-surface-render-remote",

@@ -32,7 +32,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - `Pbg::rule_of` and `Pbg::named_kind`: the rule a mold belongs to and the named kind that rule realises, total over the mold table — what a consumer of a molded tree dispatches on.
 - `Pbg::fingerprint`: the grammar's identity, pinned for the built-in surface.
 - `walk_index`, `reachable_molds`, `comparison_table`, `seen_key_verdict`, `GrammarWalkSym`, `MAX_WALK_CHAIN_LEN`: the walk machine over a grammar and the relations read off it.
-- `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups, the mold table thawed from frozen tables.
+- `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups. With the feature `baked`, the mold table is thawed from a file of the user's cache, named by the digest of the rules, and the first process builds and writes it.
 - `RoleTable`, `HighlightError`: the role of every mold, read off a grammar, and the highlight spans of a tree molded under it; a tree under another grammar and a tile past the table are refused.
 - `named_kind_parity`, `named_kind_realization`, `TREE_SITTER_NAMED_KINDS`, `PBG_ONLY_KINDS`: how every named node kind is realised.
 - `SPELLED`, `Spelled`, `Ascii`, `Spelling`, `spelled`, `aliased` and the named entries `EQUIVALENCE`, `FLOW`, `ISOMORPHISM`, `CONS`, `UNRESTRICTED`: every construct has an ASCII spelling and may have a Unicode one; the table pairs each glyph tile with its ASCII token or head, which the labeler molds as the glyph and the printer writes when asked for ASCII. `PRIME` is the identifier prime, which has none. Witnesses: `tests::spelling::every_glyph_tile_of_the_grammar_has_an_ascii_spelling`, `tests::spelling::each_glyph_is_written_in_the_spelling_asked`.
@@ -104,7 +104,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Molds, contexts and closing classes | [`mold`](src/mold.rs) |
 | Tile kinds, observation classes and tile sets | [`automaton`](src/automaton.rs) |
 | The walk index and comparison table | [`walk`](src/walk.rs) |
-| The built-in surface and its frozen tables | [`surface`](src/surface.rs) |
+| The built-in surface and its baked tables | [`surface`](src/surface.rs), [`surface::baked`](src/surface/baked.rs) |
 | The bridges and the universe | [`surface::type_shell`](src/surface/type_shell.rs) |
 | Type operators, the unit value, the splice | [`surface::term`](src/surface/term.rs) |
 | The named-kind inventory | [`parity`](src/parity.rs) |

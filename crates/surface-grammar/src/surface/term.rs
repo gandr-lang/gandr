@@ -4746,7 +4746,7 @@ fn primary_expressions(
 ///   band; the parser's recovery sweep catches a placement that moves another
 ///   form's ties.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+/// - witness: `surface::tests::the_baked_tables_are_the_built_ones`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if name == "expression.pure" && precs.get(PrecName(name)).is_none()), |rules| rules.len() == 1 && rules.iter().all(|rule| rule.name().0 == "forget_model_expression" && rule.sort() == Sort::Expression && rule.provenance().0 == "forget_model_expression" && precs.get(PrecName("expression.pure")) == Some(rule.prec()))))]
 pub(super) fn forgetting(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {

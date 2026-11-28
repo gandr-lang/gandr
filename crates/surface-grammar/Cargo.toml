@@ -31,12 +31,17 @@ gandr-theory-graphs.workspace = true
 hashbrown.workspace = true
 
 # The tests of the highlighter run the parser over the corpus sources. The
-# parser depends on this crate; the cycle closes only for the integration
-# target, which links the one library build both see. The snapshot crate
-# compares the frozen tables with their file.
+# parser depends on this crate. The cycle closes only for the integration
+# target, which links the one library build both see.
 [dev-dependencies]
-expect-test.workspace = true
 gandr-surface-parser.workspace = true
+
+# `baked` makes the mold table of the gandr surface a file of the user's
+# cache. The digest of the rules names the file, and the crate links `std` to
+# read it. Without `baked`, each call of `built_in` builds the rules with
+# every gate.
+[features]
+baked = []
 
 [lints]
 workspace = true
