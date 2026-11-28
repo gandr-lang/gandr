@@ -12,7 +12,13 @@
 //! - see: `model/desc/fold-over-family.gandr` — the folds that respect each
 //!   rule
 
-@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // `Width` and `Gate`.
 import "../../model/desc/family-with-rules.gandr"
@@ -28,8 +34,8 @@ def rec flat(w : Width, t : Gate w) -> Gate w =
     | Dark => Dark
     | Lit => Lit
     | Nil => Nil
-    | Swap(x) => Nil
-    | Hold(c, x) => Hold (flat[<] Bit c) (flat[<] Word x)
+    | Swap x => Nil
+    | Hold c x => Hold (flat[<] Bit c) (flat[<] Word x)
 
 /// The arm of a hold turns its bit. A word behind the lit bit is that word,
 /// and the fold gives a word behind the dark bit for it.
@@ -41,5 +47,5 @@ def rec turned(w : Width, t : Gate w) -> Gate w =
     | Dark => Lit
     | Lit => Dark
     | Nil => Nil
-    | Swap(x) => Swap (turned[<] Word x)
-    | Hold(c, x) => Hold (turned[<] Bit c) (turned[<] Word x)
+    | Swap x => Swap (turned[<] Word x)
+    | Hold c x => Hold (turned[<] Bit c) (turned[<] Word x)

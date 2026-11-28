@@ -1,4 +1,14 @@
-@![features(("data-parameters", "identity-types", "let-statements", "list-case", "native-lists", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "list-case",
+  "native-lists",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // Two proofs by induction over the loops at the book circle's point that
 // prove nothing. The first forgets to carry the loop: its loop arm answers
@@ -31,8 +41,8 @@ def rec wind(p : Path[.A = Circle] Base Base) -> Int =
 def rec spin(n : Int) -> Path[.A = Circle] Base Base =
   match n where
     | Z => Path.here Base
-    | S(x) => loop ∷ spin[<] x
-    | P(x) => back loop ∷ spin[<] x
+    | S x => loop ∷ spin[<] x
+    | P x => back loop ∷ spin[<] x
 
 /// One loop more.
 def loopOn(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base =

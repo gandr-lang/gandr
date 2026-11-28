@@ -10,7 +10,16 @@
 //!
 //! - see: #8338
 
-@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 // `Width` and `Fragment`.
 import "../../model/desc/family-with-rules.gandr"
@@ -54,5 +63,5 @@ def isOne(w : Fragment Word) -> Bool =
   match w where
     | Zero => false
     | One => true
-    | Zext(b) => false
-    | Choose(c, x, y) => false
+    | Zext b => false
+    | Choose c x y => false

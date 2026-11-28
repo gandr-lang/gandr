@@ -1,4 +1,18 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "tarski-universes", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "tarski-universes",
+  "thunks-and-force",
+  "universes"
+))]
 
 // What an inductive-recursive block refuses. The block is one admission, so
 // one refused member refuses every member with it: accessibility is checked
@@ -58,7 +72,7 @@ rec {
   def rec decode(u : Odd) -> -F Type =
     match u where
       | TwoC => return Two
-      | Over(a, b) => decode[<] a
+      | Over a b => decode[<] a
 
   /// The code the field decodes, a definition of the block, refused with it.
   @[refuses("StageNotBelow")]
@@ -81,7 +95,7 @@ rec {
   def rec unloop(u : Loop) -> -F Type =
     match u where
       | Base => return Two
-      | PiL(a, b) => return (+U ((x : unloop [<] (PiL a b)) -> -F Two))
+      | PiL a b => return (+U ((x : unloop [<] (PiL a b)) -> -F Two))
 }
 
 /// A type read off a call that returns no code: `g(L)` is a function still
@@ -109,7 +123,7 @@ rec {
   @[refuses("NegativeOccurrence")]
   def rec elLevel(n : Nat, u : ULevel n) -> -F Type =
     match u where
-      | NatV(m) => return Nat
-      | TypeV(m) => return (ULevel m)
-      | PiV(m, a, b) => return (+U ((x : elLevel [<] m a) -> -F (elLevel [<] m (b x))))
+      | NatV m => return Nat
+      | TypeV m => return (ULevel m)
+      | PiV m a b => return (+U ((x : elLevel [<] m a) -> -F (elLevel [<] m (b x))))
 }

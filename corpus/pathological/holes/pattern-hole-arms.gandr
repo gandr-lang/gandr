@@ -32,4 +32,4 @@ def classify(c : Color) -> Integer =
 def unwrap(m : Chosen) -> Integer =
   match m where
     | Unchosen => 0
-    | Chose(?) => 1
+    | Chose ? => 1

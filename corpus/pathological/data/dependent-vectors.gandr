@@ -24,7 +24,7 @@ import "../../model/data/vectors.gandr"
 /// zero, apart from `Succ(n)`, so the case leaves its arm out.
 def head[a : Type, n : Nat](v : Vec a (Succ n)) -> a =
   match v where
-    | VCons(_, h, _) => h
+    | VCons _ h _ => h
 
 /// The head of the vector two long. The checker splits `Succ` against
 /// `Succ (Succ Zero)`, so `n` stands at `Succ Zero`.

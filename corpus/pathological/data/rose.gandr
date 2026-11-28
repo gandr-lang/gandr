@@ -1,4 +1,12 @@
-@![features(("data-parameters", "dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // What a rose tree refuses. A family nested in another family's arguments
 // stands below its node only through a parameter the other family holds
@@ -37,7 +45,7 @@ data Nat : Type where
 def rec plus(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
-    | Succ(p) => Succ (plus[<] n p)
+    | Succ p => Succ (plus[<] n p)
 
 /// Lists, whose element stands only where a list holds it: strictly
 /// positive, so a family nests through it.
@@ -53,13 +61,13 @@ data Bush : Type where
 def rec map(a : Type, b : Type, f : a -> b, xs : List a) -> List b =
   match xs where
     | Nil => (Nil : List b)
-    | Cons(x, rest) => (Cons (f x) (map[<] a b f rest) : List b)
+    | Cons x rest => (Cons (f x) (map[<] a b f rest) : List b)
 
 /// A list of numbers, summed.
 def rec sum(xs : List Nat) -> Nat =
   match xs where
     | Nil => Zero
-    | Cons(x, rest) => plus x (sum[<] rest)
+    | Cons x rest => plus x (sum[<] rest)
 
 /// The nodes of a tree, forged: the node itself handed to `map` in a list of
 /// its own. The list holds the node at no stage below its own, so `map`'s
@@ -68,4 +76,4 @@ def rec sum(xs : List Nat) -> Nat =
 @[refuses("StageNotBelow")]
 def rec forged(t : Bush) -> Nat =
   match t where
-    | Sprout(kids) => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List Bush) : List Bush)))
+    | Sprout kids => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List Bush) : List Bush)))

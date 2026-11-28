@@ -14,7 +14,19 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "thunks-and-force",
+  "universes"
+))]
 
 // The naturals.
 import "../../model/data/data-base.gandr"
@@ -40,7 +52,7 @@ rec {
   def rec elSigRun(u : USigRun) -> Type =
     match u where
       | NatR => return Nat
-      | SigR(a, b) => {
+      | SigR a b => {
         let t = elSigRun[<] a
         return (Sig t (thunk { fun (x) { elSigRun[<] (b x) } }))
       }

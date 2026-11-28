@@ -1,4 +1,10 @@
-@![features(("dependent-functions", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 // Curry's paradox, refused at its consumer. A family whose node holds
 // a function from the family itself declares: the function's domain stands
@@ -25,11 +31,11 @@ def apply(g : Bad -> Empty, b : Bad) -> Empty =
 @[refuses("StageNotBelow")]
 def bad(b : Bad) -> Empty =
   match b where
-    | MkBad(f) => f b
+    | MkBad f => f b
 
 /// The same consumer through `apply`: the function a node holds takes
 /// nodes only below the node, not every node `apply` hands it.
 @[refuses("StageNotBelow")]
 def smuggled(b : Bad) -> Empty =
   match b where
-    | MkBad(f) => apply f b
+    | MkBad f => apply f b

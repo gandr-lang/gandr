@@ -1,4 +1,10 @@
-@![features(("imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion"))]
+@![features((
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // Folds over the programs that only store that tell put-put's two sides apart
 // : read as their fixpoints, their arms send `Store(s, Store(u, k))`
@@ -14,13 +20,13 @@ import "../../model/identity/state-passing.gandr"
 @[refuses("RuleNotRespected")]
 def rec storesCounted(p : Stores, n : Integer) -> Integer =
   match p where
-    | End(_x) => n
-    | Store(_t, k) => storesCounted[<] k (n + 1)
+    | End _x => n
+    | Store _t k => storesCounted[<] k (n + 1)
 
 /// The count of stores with no accumulator, one more at the law's left side
 /// than at its right.
 @[refuses("RuleNotRespected")]
 def rec storeCount(p : Stores) -> Integer =
   match p where
-    | End(_x) => 0
-    | Store(_t, k) => storeCount[<] k + 1
+    | End _x => 0
+    | Store _t k => storeCount[<] k + 1

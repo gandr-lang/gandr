@@ -1,4 +1,12 @@
-@![features(("data-parameters", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // A constructor passed as an argument is checked at the type of the
 // parameter it is passed to: a list of strings is no list of integers, and
@@ -17,7 +25,7 @@ data List(a : Type) : Type where
 def first(xs : List Integer) -> Integer =
   match xs where
     | Nil => 0
-    | Cons(x, _) => x
+    | Cons x _ => x
 
 /// A string where the parameter takes integers is refused by the checker,
 /// not as unannotated.
@@ -28,7 +36,7 @@ def mistyped() -> Integer = first (Cons "no" Nil)
 def rec size(a : Type, xs : List a) -> Integer =
   match xs where
     | Nil => 0
-    | Cons(_, rest) => {
+    | Cons _ rest => {
       let n = size[<] a rest
       n + 1
     }

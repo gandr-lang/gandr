@@ -1,4 +1,12 @@
-@![features(("data-parameters", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 // A case arm that cannot learn its fields from a constructor equation.
 //
@@ -31,4 +39,4 @@ pub data Packed : (s : Sig) --> Type where
 @[refuses("TypeMismatch")]
 def first(n : Nat, v : Pred (Succ n), h : Packed (Pack n v)) -> At n =
   match h where
-    | Hold(m, w) => A m
+    | Hold m w => A m

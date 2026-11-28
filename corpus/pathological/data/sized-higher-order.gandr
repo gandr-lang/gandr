@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "implicit-arguments", "imports", "let-statements", "pattern-matching", "sized-types", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "identity-types",
+  "implicit-arguments",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "sized-types",
+  "structural-recursion"
+))]
 
 // What a recursion handed through a higher-order function refuses. The
 // recursion's own parameter handed to `apply` or `applyAt` instantiates its
@@ -30,7 +41,7 @@ import "../../model/data/sized-higher-order.gandr"
 def rec applied_again(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (apply Nat Nat applied_again[<] n)
+    | Succ p => Succ (apply Nat Nat applied_again[<] n)
 
 /// The parameter itself handed to `applyAt`: the call instantiates `i` at
 /// the parameter's own stage, and `applied_at_again[<]` takes nothing there.
@@ -38,7 +49,7 @@ def rec applied_again(n : Nat) -> Nat =
 def rec applied_at_again(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (applyAt applied_at_again[<] n)
+    | Succ p => Succ (applyAt applied_at_again[<] n)
 
 /// A stage on an integer: the signature's marks place only data types, so the
 /// checkers refuse the stage where the kernel could not read it.
@@ -63,13 +74,13 @@ def applyNat(f : Nat -> Nat, x : Nat) -> Nat =
 def rec plainly_helped(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (applyNat plainly_helped[<] p)
+    | Succ p => Succ (applyNat plainly_helped[<] p)
 
 /// The predecessor of a number, zero's its own.
 def pred(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => p
+    | Succ p => p
 
 /// Half a number, recursing on its predecessor's predecessor read through
 /// `pred`: `pred` opens no stage, so its result stands at none and
@@ -80,7 +91,7 @@ def pred(n : Nat) -> Nat =
 def rec halved_through_pred(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => { let q = pred p; Succ (halved_through_pred[<] q) }
+    | Succ p => { let q = pred p; Succ (halved_through_pred[<] q) }
 
 /// The number itself handed to `boundedAt` as its `k` beside its predecessor
 /// as its `j`: `k` would stand at the number's stage, not below `j`, and the
@@ -91,7 +102,7 @@ def rec halved_through_pred(n : Nat) -> Nat =
 def rec looping_through_bound(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => { let q = boundedAt p n; looping_through_bound[<] q }
+    | Succ p => { let q = boundedAt p n; looping_through_bound[<] q }
 
 /// The number itself handed to `sameAt` beside the recursion's claim: the
 /// claim's domain bounds `i` from above, one below the number's stage, and
@@ -102,7 +113,7 @@ def rec looping_through_bound(n : Nat) -> Nat =
 def rec disagreeing(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (sameAt disagreeing[<] n)
+    | Succ p => Succ (sameAt disagreeing[<] n)
 
 /// A stage supplied apart from the one the arguments show: they show `i` at
 /// `j`, and the supply states `k`.

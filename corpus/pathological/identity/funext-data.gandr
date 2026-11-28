@@ -16,8 +16,8 @@ import "./flow-data.gandr"
 /// A shape's height: a circle's radius, a rectangle's second side.
 def height(shape : Shape) -> Integer =
   match shape where
-    | Circle(r) => r
-    | Rect(w, h) => h
+    | Circle r => r
+    | Rect w h => h
 
 /// A width and a height agree at a circle but not at a rectangle, refused at
 /// that pattern.

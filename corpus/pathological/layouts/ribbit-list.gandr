@@ -1,4 +1,12 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 // The twin of `model/layouts/ribbit-list.gandr`: a layout is admitted only
 // by an equivalence with the list (vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576,
@@ -20,7 +28,7 @@ data Tags : Type where
 def tagsOf(l : Ints) -> Tags =
   match l where
     | Nil => Bare
-    | Cons(x, rest) => Held
+    | Cons x rest => Held
 
 /// A tag read back as a list, a zero standing for what the tag never kept.
 def listOf(t : Tags) -> Ints =
@@ -34,7 +42,7 @@ def listOf(t : Tags) -> Ints =
 def restored(l : Ints) -> Path (listOf (tagsOf l)) l =
   match l where
     | Nil => Path.here Nil
-    | Cons(x, rest) => Path.here (Cons x rest)
+    | Cons x rest => Path.here (Cons x rest)
 
 /// `equiv` decides round trips over types that do not hold themselves, so the
 /// packed layout's is refused.

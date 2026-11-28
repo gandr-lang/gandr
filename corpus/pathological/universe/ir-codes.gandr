@@ -1,4 +1,16 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "thunks-and-force",
+  "universes"
+))]
 
 // The family a code defines, and its decoder, with each refusal.
 //
@@ -27,11 +39,11 @@ import "../../model/universe/ir-codes.gandr"
 @[checks, form(explicit)]
 def rec decodeArgs(d : Type, c : IR d, x : Type, t : +U (x -> -F d), v : args d c x t) -> d =
   match c where
-    | Iota(e) => e
-    | SigmaC(a, f) => match v where
-      | MkSig(y, r) => decodeArgs[<] d (f y) x t r
-    | DeltaC(a, f) => match v where
-      | MkSig(h, r) => decodeArgs[<] d (f (thunk { fun (z) { t (h z) } })) x t r
+    | Iota e => e
+    | SigmaC a f => match v where
+      | MkSig y r => decodeArgs[<] d (f y) x t r
+    | DeltaC a f => match v where
+      | MkSig h r => decodeArgs[<] d (f (thunk { fun (z) { t (h z) } })) x t r
 
 /// The family a code defines, and its decoder, in one block.
 rec {
@@ -47,5 +59,5 @@ rec {
   @[refuses("StageNotBelow")]
   def rec decodeMu(d : Type, c : IR d, m : Mu d c) -> d =
     match m where
-      | In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
+      | In v => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
 }

@@ -1,4 +1,14 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "records", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "records",
+  "type-codes",
+  "universes"
+))]
 
 // A C function whose pointer must not be null, bound to `Option<&int>`:
 // the niche's null owns nothing, and the function has no precondition
@@ -19,7 +29,7 @@ import "../../model/specification/niche-realizability.gandr"
 def derefWp(w : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
   match w where
     | Zero => return Void
-    | Succ(_n) => return type(*{
+    | Succ _n => return type(*{
       v : Nat,
       cell : star (pointsToAt w v) (realisedAt vInt v) h,
       post : q w v h
@@ -32,5 +42,5 @@ def derefMeets(w : Nat, h : Heap) -> (vOpt vInt w h) -> derefWp w keptOpt h =
   match w where
     | Zero => match h where
       | Emp => fun (e) { e }
-      | Cell(_l, _v, _rest) => fun (e) { e }
-    | Succ(n) => fun (r) { derefOrSome n Zero h r }
+      | Cell _l _v _rest => fun (e) { e }
+    | Succ n => fun (r) { derefOrSome n Zero h r }

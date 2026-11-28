@@ -1,4 +1,11 @@
-@![features(("data-parameters", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 data Maybe(a : Type) : Type where
   | None : Maybe a
@@ -7,4 +14,4 @@ data Maybe(a : Type) : Type where
 @[refuses("NonExhaustiveMatch")]
 def unwrap() -> Integer =
   match (None : Maybe Integer) where
-    | Some(x) => return x
+    | Some x => return x

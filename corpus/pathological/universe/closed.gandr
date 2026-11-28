@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // What a hand-written Tarski universe refuses. A decode that runs to a quote
 // is the quoted type, so a value of another type is refused there; a decode
@@ -23,7 +32,7 @@ data U : Type where
 def rec el(u : U) -> Type =
   match u where
     | NatC => return Nat
-    | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (x -> y) }
+    | Arrow a b => { let x = el[<] a; let y = el[<] b; return (x -> y) }
 
 /// One is a natural, and the decode of the arrow code runs to `Nat -> Nat`.
 @[refuses("TypeMismatch")]

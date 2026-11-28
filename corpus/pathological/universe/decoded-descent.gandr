@@ -1,4 +1,14 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "imports", "let-statements", "pattern-matching", "sized-types", "structural-recursion", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "sized-types",
+  "structural-recursion",
+  "thunks-and-force"
+))]
 
 // What a recursion over decoded values refuses. A fixpoint stages
 // the code, so a tail call that keeps the code and descends only on the
@@ -25,16 +35,16 @@ import "../../model/universe/decoded-descent.gandr"
 def rec totalDirect(c : UL) -> (elL c) -> Nat =
   match c where
     | NatL => thunk { fun (v) { v } }
-    | ListL(a) => thunk { fun (v) {
+    | ListL a => thunk { fun (v) {
       match v -> -F Nat where
         | Nil => Zero
-        | Cons(h, t) => {
+        | Cons h t => {
           let each = totalDirect[<] a
           let rest = totalDirect[<] (ListL a)
           plus (each h) (rest t)
         }
     } }
-    | PiL(a, b) => thunk { fun (f) { Zero } }
+    | PiL a b => thunk { fun (f) { Zero } }
 
 /// A stage on a decode: `elL(c)` is the decoder's result, no data type, so
 /// the signature's mark places nothing.

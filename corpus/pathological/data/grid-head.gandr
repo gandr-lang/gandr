@@ -20,5 +20,5 @@ import "../../model/data/grid-head.gandr"
 @[refuses("NotApart")]
 def anyCell(n : Nat, m : Nat, g : Grid n m) -> Integer =
   match g where
-    | GRow(r, c, cell, rest) => cell
-    | GCol(r, c, cell, rest) => cell
+    | GRow r c cell rest => cell
+    | GCol r c cell rest => cell

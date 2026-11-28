@@ -7,5 +7,5 @@ data Outer : Type where
 @[refuses("NonExhaustiveMatch")]
 def by_literal(m : Outer) -> Integer =
   match m where
-    | Some(0) => return 0
+    | Some 0 => return 0
     | None => return 1

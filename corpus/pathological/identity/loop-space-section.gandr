@@ -1,4 +1,12 @@
-@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // A proof by induction over the presented circle that proves nothing: it
 // forgets to carry the loop, and its loop arm answers with the field's path,
@@ -26,15 +34,15 @@ data Int : Type where {
 def rec wind(c : Circle) -> Int =
   match c where
     | Base => Z
-    | Loop(x) => S (wind[<] x)
-    | Unloop(x) => P (wind[<] x)
+    | Loop x => S (wind[<] x)
+    | Unloop x => P (wind[<] x)
 
 /// Spinning: a successor is a loop, a predecessor an inverse.
 def rec spin(n : Int) -> Circle =
   match n where
     | Z => Base
-    | S(x) => Loop (spin[<] x)
-    | P(x) => Unloop (spin[<] x)
+    | S x => Loop (spin[<] x)
+    | P x => Unloop (spin[<] x)
 
 /// One inverse loop more.
 def unaround(c : Circle) -> Circle =
@@ -48,5 +56,5 @@ def unaround(c : Circle) -> Circle =
 def rec forged(c : Circle) -> Path (spin (wind c)) c =
   match c where
     | Base => Path.here Base
-    | Loop(x) => forged[<] x
-    | Unloop(x) => { let p = forged[<] x; Path.ap unaround p }
+    | Loop x => forged[<] x
+    | Unloop x => { let p = forged[<] x; Path.ap unaround p }

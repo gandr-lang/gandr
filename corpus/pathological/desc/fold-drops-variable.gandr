@@ -12,7 +12,13 @@
 //! - see: `model/desc/fold-drops-variable.gandr` — the fold that respects each
 //!   rule
 
-@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // `Width` and `Fragment`.
 import "../../model/desc/family-with-rules.gandr"
@@ -26,11 +32,11 @@ def rec crossed(w : Width, t : Fragment w) -> Fragment w =
   match t where
     | Low => Low
     | High => High
-    | And(a, b) => And (crossed[<] Bit a) (crossed[<] Bit b)
+    | And a b => And (crossed[<] Bit a) (crossed[<] Bit b)
     | Zero => Zero
     | One => One
-    | Zext(b) => Zext (crossed[<] Bit b)
-    | Choose(c, x, y) => Choose (crossed[<] Bit c) (crossed[<] Word y) (crossed[<] Word x)
+    | Zext b => Zext (crossed[<] Bit b)
+    | Choose c x y => Choose (crossed[<] Bit c) (crossed[<] Word y) (crossed[<] Word x)
 
 /// A fold with a parameter after the term. Its call at a variable is a
 /// function, and the check reads no value for it.
@@ -41,5 +47,5 @@ def rec under(t : Fragment Word, d : Fragment Word) -> Fragment Word =
   match t where
     | Zero => d
     | One => One
-    | Zext(b) => Zext b
-    | Choose(c, x, y) => Choose c (under[<] x d) (under[<] y d)
+    | Zext b => Zext b
+    | Choose c x y => Choose c (under[<] x d) (under[<] y d)

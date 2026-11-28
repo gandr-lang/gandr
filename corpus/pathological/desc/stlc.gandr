@@ -1,4 +1,17 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "pattern-matching", "records", "structural-recursion", "tarski-universes", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "tarski-universes",
+  "type-codes",
+  "universes"
+))]
 
 // The steps of normalisation by evaluation for the simply typed lambda
 // calculus that the checker refuses today.
@@ -30,8 +43,8 @@ rec {
   @[refuses("OutOfFragment.mutual_block.staged_after_first")]
   def rec renNe(g : Ctx, a : ObjTy, t : Ne g a, d : Ctx, r : Ren d g) -> Ne d a =
     match t where
-      | NVar(_h, b, x) => NVar d b (r b x)
-      | NApp(h, b, c, f, u) => {
+      | NVar _h b x => NVar d b (r b x)
+      | NApp h b c f u => {
         let f2 = renNe[<] h (Arr b c) f d r
         let u2 = renNf[<] h b u d r
         NApp d b c f2 u2
@@ -40,8 +53,8 @@ rec {
   @[refuses("OutOfFragment.mutual_block.staged_after_first")]
   def rec renNf(g : Ctx, a : ObjTy, t : Nf g a, d : Ctx, r : Ren d g) -> Nf d a =
     match t where
-      | NNe(h, n) => { let n2 = renNe[<] h Base n d r; NNe d n2 }
-      | NLam(h, b, c, body) => {
+      | NNe h n => { let n2 = renNe[<] h Base n d r; NNe d n2 }
+      | NLam h b c body => {
         let body2 = renNf[<] (Extend h b) c (body (Extend d b)) (lift d h b r)
         NLam d b c body2
       }
@@ -51,7 +64,7 @@ rec {
 def rec envs(g : Ctx, d : Ctx) -> Type =
   match g where
     | Empty => return Unit
-    | Extend(h, a) => return type(*{x : envs [<] h d, y : sem a d})
+    | Extend h a => return type(*{x : envs [<] h d, y : sem a d})
 
 /// An environment and one more value. The tuple meets `envs(Extend(g, a),
 /// d)`, which the shape check does not unfold.

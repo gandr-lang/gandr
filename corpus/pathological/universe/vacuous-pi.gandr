@@ -1,4 +1,14 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "thunks-and-force",
+  "universes"
+))]
 
 // What a dependent arrow whose codomain names its binder refuses: it is no
 // plain arrow. A family that reads to a type over its argument stays
@@ -19,7 +29,7 @@ data Nat : Type where
 def pick(n : Nat) -> -F Type =
   match n where
     | Zero => return Nat
-    | Succ(m) => return (+U (Nat -> -F Nat))
+    | Succ m => return (+U (Nat -> -F Nat))
 
 /// A function over `pick` is no function to the naturals: `pick(x)` names
 /// `x`, so the dependent arrow is not the plain one.

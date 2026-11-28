@@ -14,7 +14,7 @@ data Maybe : Type where
 @[refuses("UndecidedCoverage")]
 def describe(m : Maybe) -> Integer =
   match m where
-    | Just(?) => 100
+    | Just ? => 100
     | Nothing => 200
 
 /// `Just(3)` described: it checks against `describe`'s signature, whose body

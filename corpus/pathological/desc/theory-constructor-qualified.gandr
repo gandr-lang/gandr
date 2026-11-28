@@ -14,5 +14,5 @@ data Tree : Type where
 @[refuses("UnresolvedName")]
 def lambda(t : Tree) -> Integer =
   match t where
-    | Tree.Lam(body) => 1
+    | Tree.Lam body => 1
     | _ => 0
