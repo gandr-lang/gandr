@@ -27,7 +27,7 @@ def opener:
   .file as $file
   | if $file | endswith("/resolve.rs") then first(.text | capture("\\bconst (?<block>TYPE_ATOMS|HOMED_ATOMS|HOMED_FORMERS)\\b") | .block) // null
     elif $file | endswith("/type_shell.rs") then
-      first(.text | capture("RuleName\\(\"(?<block>primitive_type|flow_type|capability_type)\"\\)") | .block)
+      first(.text | capture("RuleName\\(\"(?<block>primitive_type|flow_type)\"\\)") | .block)
       // (if .text | test("\\bfor \\(name, head\\) in \\[") then "carried" else null end)
     elif $file | endswith("/mold.rs") then first(.text | capture("\\bconst (?<block>CALLED_FORMERS)\\b") | .block) // null
     elif $file | endswith("/highlight.rs") then first(.text | capture("\\bconst (?<block>PRIMITIVE_TYPES)\\b") | .block) // null

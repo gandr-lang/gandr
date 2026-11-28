@@ -2483,7 +2483,7 @@ echo "shared check OK: $fields fields, each with its row; rows: $chunked chunked
 # | Place | What it holds | The unit that removes it |
 # | --- | --- | --- |
 # | `crates/surface-lowering-base/src/resolve.rs` | the atoms and the homed formers | #8073 for the atoms, #8074 for the formers |
-# | `crates/surface-grammar/src/surface/type_shell.rs` | the heads of the type grammar | #8073, #8075 and #8077 |
+# | `crates/surface-grammar/src/surface/type_shell.rs` | the heads of the type grammar | #8073 and #8075 |
 # | `crates/surface-parser/src/mold.rs` | the called formers | #8075 |
 # | `crates/surface-grammar/src/highlight.rs` | the primitive types | #8073 |
 # | `crates/surface-lowering-identity/src/lower/identity.rs` | the members of `Path` and `Flow` | #8076 |
