@@ -34,9 +34,10 @@ quenchant-shape.workspace = true
 # of a refusal of the checker to its primary node. It names that node through
 # the types of the checker and of the corpus.
 #
-# The suite parses the JSON image back. Each refusing source of the corpus
-# renders its refusals through the writer of the outputs crate. Each rendered
-# text goes to the store of the outputs.
+# The suite parses the JSON image back. The refusing sources of the corpus
+# render their refusals through the writer of the outputs crate, in a sweep
+# that `gandr-workflow-sweep` samples. Each rendered text goes to the store of
+# the outputs.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-surface-corpus.workspace = true
@@ -46,6 +47,7 @@ gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-workflow-output-store.workspace = true
 gandr-workflow-outputs.workspace = true
+gandr-workflow-sweep.workspace = true
 serde_json.workspace = true
 
 [lints]

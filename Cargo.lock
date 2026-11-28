@@ -2280,6 +2280,7 @@ dependencies = [
  "gandr-surface-syntax",
  "gandr-workflow-output-store",
  "gandr-workflow-outputs",
+ "gandr-workflow-sweep",
  "quenchant-anodized",
  "quenchant-shape",
  "serde_json",
