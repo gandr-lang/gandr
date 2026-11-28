@@ -263,12 +263,12 @@ fn thunk_body(
 /// one output of it: `become f a`, `f a`, or `let p = f a` then `p`, the
 /// tail written `p` alone as the sugared form writes it (#1327), either after
 /// a `;` or on the next line. A call of several outputs delivers them whole
-/// by its output group, `let (q, r) = f a` then `*{q, r}`. It delivers one
-/// output by the selection `(f a).q` or by the labelled group
-/// `let (.q = x, .r) = f a` then `x` (#5147). A pair pattern `*{…}` reads
-/// as a group does. The call is written in the inspection notation a
-/// `normalizes` row reads, `f(a)`. The label is the output the run delivers,
-/// absent when the run delivers the call whole.
+/// by its output group, `let %(q, r) = f a` or `let (q, r) = f a` then
+/// `*{q, r}`. It delivers one output by the selection `(f a).q` or by the
+/// labelled group `let %(.q = x, .r) = f a` then `x` (#5147, #5771). A pair
+/// pattern `*{…}` reads as a group does. The call is written in the
+/// inspection notation a `normalizes` row reads, `f(a)`. The label is the
+/// output the run delivers, absent when the run delivers the call whole.
 ///
 /// # Specification
 /// - ensures: present only for a body of one of the six shapes, the call an
@@ -326,7 +326,7 @@ fn direct_call(body: SourceFragment<'_>) -> Option<(String, Option<String>)>
             let closing = if bound.starts_with("*{") {
                 Some('}')
             }
-            else if bound.starts_with('(') {
+            else if bound.starts_with('(') || bound.starts_with("%(") {
                 Some(')')
             }
             else {
@@ -342,11 +342,17 @@ fn direct_call(body: SourceFragment<'_>) -> Option<(String, Option<String>)>
                 },
                 None => bound.split_once(" = ")?,
             };
-            // The entries of a pair pattern `*{q, r}` or of a group `(q, r)`.
+            // The entries of a pair pattern `*{q, r}` or of a group `%(q, r)`
+            // or `(q, r)`.
             let entries = pattern
                 .strip_prefix("*{")
                 .and_then(|inner| inner.strip_suffix('}'))
-                .or_else(|| pattern.strip_prefix('(')?.strip_suffix(')'));
+                .or_else(|| {
+                    pattern
+                        .strip_prefix("%(")
+                        .or_else(|| pattern.strip_prefix('('))?
+                        .strip_suffix(')')
+                });
             let returned = tail.strip_prefix("return ").unwrap_or(tail);
             // The tail returns the pattern, or the pair of its entries in
             // their order.
