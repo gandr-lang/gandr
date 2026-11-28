@@ -519,6 +519,77 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         }
     }
 
+    /// The bracketed head and the label set of the capability type at `at`:
+    /// the application of a name that resolves to the declaration of the row
+    /// `cap`, with its grade in a bracket after it or none, to one label set.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the head `Cap[g]` when it writes a bracket, and the label
+    ///   set's operand, when `at` is a juxtaposed type application whose head's
+    ///   name resolves to the declaration of the row `cap`; none for any other
+    ///   form.
+    /// - fails: the refusal of a form whose tiles do not read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a capability under the prelude, and one under a
+    ///   source whose own `Cap` binds no row.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_is_the_declaration_of_its_row`
+    #[inline]
+    pub fn capability_at(
+        &self,
+        at: Placed,
+    ) -> Result<Option<(Option<Placed>, Placed)>, LoweringRefusal<'source>>
+    {
+        let Some((_, Former::TypeApplication)) = self.cx().form_at(at)?
+        else {
+            return Ok(None);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
+        // A juxtaposed application reads as its head, then its one argument
+        // between the zero-width `(` and `)` that the melder writes.
+        let &[
+            head,
+            Piece::Tile { .. },
+            Piece::Operand(set),
+            Piece::Tile { .. },
+        ] = pieces.pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        let (staged, named) = match head {
+            Piece::Tile { at: named, .. } => (None, named),
+            Piece::Operand(staged) => {
+                let Some((_, Former::StagedType)) = self.cx().form_at(staged)?
+                else {
+                    return Ok(None);
+                };
+                let mut bracketed = Pieces::new();
+                read_pieces(self.cx().pbg, self.cx().tree, staged.node, &mut bracketed)?;
+                let Some(named) = bracketed.pieces.first().map(|piece| piece.placed())
+                else {
+                    return Ok(None);
+                };
+                (Some(staged), named)
+            },
+        };
+
+        Ok(self
+            .cx()
+            .collected
+            .names_former(
+                self.cx().tree,
+                named,
+                gandr_core_term::builtin::SurfaceFormer::Cap,
+            )
+            .then_some((staged, set)))
+    }
+
     /// The type that the parentheses at `at` hold, or `at` itself when it
     /// writes none: the operand of a placed capability, `(Cap {exit}) at c`.
     ///
@@ -563,10 +634,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
 {
-    /// Classify a capability type, `Cap {op, …}` or `Cap[r] {op, …}`.
+    /// Classify a capability type, `Cap {op, …}` or `Cap[r] {op, …}`: the
+    /// head `head` that [`CapabilityRef::capability_at`] found, applied to
+    /// the label set `set`.
     ///
     /// # Specification
-    /// - requires: `site` is a capability type.
+    /// - requires: [`CapabilityRef::capability_at`] answers `head` and `set`
+    ///   for `site`.
     /// - ensures: the type stands as a value type, planned over the authority
     ///   its operations name, each under the host interface offering it, and
     ///   the grade its bracket writes: durable for none and for `ω`, consumable
@@ -591,22 +665,44 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     pub fn capability_type(
         &mut self,
         site: Site,
-        mut cursor: Cursor<'_>,
+        (staged, set): (Option<Placed>, Placed),
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let _frame = self.host().require(site, Produced::ValueType)?;
-        closed(site, &mut cursor, TileName::CAP)?;
-        let grade = if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
-            self.shared().capability_grade(site, &mut cursor)?
+        let grade = if let Some(staged) = staged {
+            let mut pieces = Pieces::new();
+            read_pieces(self.cx().pbg, self.cx().tree, staged.node, &mut pieces)?;
+            let mut cursor = Cursor::new(&pieces.pieces, staged.span);
+            // The head's name, which `capability_at` read.
+            let Maybe::Present(_) = cursor.read()
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+            let grade = self.shared().capability_grade(site, &mut cursor)?;
+            exhausted(site, &cursor)?;
+            grade
         }
         else {
             CapabilityGrade::Durable
         };
+        let Some((_, Former::LabelSet)) = self.cx().form_at(set)?
+        else {
+            return Err(site.fault(set.span, FormFault::MisplacedTile));
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.cx().pbg, self.cx().tree, set.node, &mut pieces)?;
+        let mut cursor = Cursor::new(&pieces.pieces, set.span);
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let table = host(site)?;
         let mut authority = Authority::new();
         loop {
-            let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER)
+            // A type name is a label too; no host interface offers an
+            // operation of that name, so it is refused by its name below.
+            let ((Maybe::Present(written), _) | (_, Maybe::Present(written))) = (
+                cursor.tile(TileName::IDENTIFIER),
+                cursor.tile(TileName::TYPE_IDENTIFIER),
+            )
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
@@ -720,7 +816,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         // The parentheses read their capability as it is: the at type stands
         // as the capability that they hold.
         let held = self.shared().unparenthesized(operand)?;
-        if let Some((_, Former::CapabilityType)) = self.cx().form_at(held)? {
+        if self.shared().capability_at(held)?.is_some() {
             let _first = self.cx_mut().regions.insert(held.node, region);
             self.host().plan(site, super::Plan::Transparent(held.node));
         }
@@ -1337,9 +1433,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
 
         Ok(match shape_of(self.cx().pbg, node)? {
             Shape::Form {
-                former: Former::CapabilityType | Former::AtType,
+                former: Former::AtType,
                 ..
             } => Holder::Capability,
+            Shape::Form {
+                former: Former::TypeApplication | Former::ParenthesizedType,
+                ..
+            } if self
+                .capability_at(self.unparenthesized(Placed::of(declared, node))?)?
+                .is_some() =>
+            {
+                Holder::Capability
+            },
             Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Holder::Other,
         })
     }

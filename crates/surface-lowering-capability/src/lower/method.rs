@@ -451,7 +451,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
                 self.cx().tree,
                 declared,
                 &mut pieces,
-                |head| self.cx().collected.names_view(self.cx().tree, head),
+                |head| {
+                    self.cx().collected.names_former(
+                        self.cx().tree,
+                        head,
+                        gandr_core_term::builtin::SurfaceFormer::View,
+                    )
+                },
             )? {
                 Maybe::Present(view) => Some((view.mode, view.element)),
                 Maybe::Absent(_) => None,
@@ -1314,7 +1320,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         };
         let Maybe::Present(viewed) =
             view_type(self.cx().pbg, self.cx().tree, view, &mut pieces, |head| {
-                self.cx().collected.names_view(self.cx().tree, head)
+                self.cx().collected.names_former(
+                    self.cx().tree,
+                    head,
+                    gandr_core_term::builtin::SurfaceFormer::View,
+                )
             })?
         else {
             return Err(refused);

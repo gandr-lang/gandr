@@ -677,8 +677,6 @@ impl TileName
     pub const BRIDGE: Self = Self("Bridge");
     /// The flow type's head `Flow`, where it supplies its carrier by name.
     pub const FLOW_TYPE: Self = Self("Flow");
-    /// The capability type's head `Cap`.
-    pub const CAP: Self = Self("Cap");
     /// The keyword `at` placing a capability type in a scope's region.
     pub const AT: Self = Self("at");
     /// The capability scope's lead `effect`.
@@ -1054,9 +1052,9 @@ pub enum Former
     /// A model type with manifest sorts, `Model(T) with sort x = A`: the
     /// bundled record `Model(T)` with the component `x` fixed as `A`.
     ManifestType,
-    /// The capability type `Cap[r]? {op, …}`: the authority to exercise the
-    /// named host operations.
-    CapabilityType,
+    /// A label set `{op, …}`: a term of the sort `Row`, which the capability
+    /// type `Cap {op, …}` takes as its one argument.
+    LabelSet,
     /// A capability type placed in a scope's region, `Cap {op, …} at c`: the
     /// capability lives until the scope binding `c` ends.
     AtType,
@@ -1202,7 +1200,7 @@ impl Former
         Self::BridgeType,
         Self::RelationType,
         Self::ManifestType,
-        Self::CapabilityType,
+        Self::LabelSet,
         Self::StagedType,
         Self::ExtensionType,
         Self::Scope,
@@ -1311,7 +1309,7 @@ pub const FORMERS: [(&str, Former); 124_usize] = [
     ("isomorphism_type", Former::RelationType),
     ("universe_flow_type", Former::RelationType),
     ("manifest_type", Former::ManifestType),
-    ("capability_type", Former::CapabilityType),
+    ("label_set", Former::LabelSet),
     ("at_type", Former::AtType),
     ("staged_type", Former::StagedType),
     ("extension_type", Former::ExtensionType),
@@ -6225,7 +6223,7 @@ pub enum Family
                     | Former::FlowType
                     | Former::RelationType
                     | Former::ManifestType
-                    | Former::CapabilityType
+                    | Former::LabelSet
                     | Former::AtType
                     | Former::StagedType
                     | Former::ExtensionType
@@ -6313,7 +6311,7 @@ pub const fn family_of(former: Former) -> Family
         | Former::FlowType
         | Former::RelationType
         | Former::ManifestType
-        | Former::CapabilityType
+        | Former::LabelSet
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType
