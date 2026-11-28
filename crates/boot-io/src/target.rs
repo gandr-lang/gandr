@@ -53,7 +53,7 @@ pub trait Supported
 /// trivial.
 pub struct Host<'bound>(PhantomData<&'bound ()>);
 
-/// [`start`](crate::start) on a target with no system call of the crate.
+/// [`start`] on a target with no system call of the crate.
 ///
 /// # Specification
 /// trivial.
@@ -68,7 +68,7 @@ where
     match <Host<'_> as Supported>::NEVER {}
 }
 
-/// [`open`](crate::open) on a target with no system call of the crate.
+/// [`open`] on a target with no system call of the crate.
 ///
 /// # Safety
 ///
@@ -90,7 +90,7 @@ where
     match <Host<'_> as Supported>::NEVER {}
 }
 
-/// [`read`](crate::read) on a target with no system call of the crate.
+/// [`read`] on a target with no system call of the crate.
 ///
 /// # Safety
 ///
@@ -113,7 +113,7 @@ where
     match <Host<'_> as Supported>::NEVER {}
 }
 
-/// [`write`](crate::write) on a target with no system call of the crate.
+/// [`write()`] on a target with no system call of the crate.
 ///
 /// # Safety
 ///
@@ -136,7 +136,7 @@ where
     match <Host<'_> as Supported>::NEVER {}
 }
 
-/// [`close`](crate::close) on a target with no system call of the crate.
+/// [`close`] on a target with no system call of the crate.
 ///
 /// # Specification
 /// trivial.
@@ -154,7 +154,7 @@ where
     match <Host<'_> as Supported>::NEVER {}
 }
 
-/// [`stop`](crate::stop) on a target with no system call of the crate.
+/// [`stop`] on a target with no system call of the crate.
 ///
 /// # Specification
 /// trivial.
