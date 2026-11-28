@@ -10746,7 +10746,7 @@ impl Walk<'_, '_>
                 Join::Bracket(Bracket::Arrow),
             )),
             // A homed type former its source writes through its home's path
-            // rather than bare, `std.list.List(A)` or `l.List(A)`, is written
+            // rather than bare, `std.list.List A` or `l.List A`, is written
             // by parts after that path.
             Former::List(_)
             | Former::RunType(_)
@@ -13023,7 +13023,7 @@ impl Walk<'_, '_>
     ///   as its numeral, `(5 : Nat)`, its one piece the type; a truth value
     ///   ascribed `Bool` the visit writes as its word; a homed type former
     ///   whose source records a name for its head as that name applied to its
-    ///   one piece, `std.list.List(A)`. The forms the grammar does not write —
+    ///   one piece, `std.list.List A`. The forms the grammar does not write —
     ///   native transport, a fixpoint `rec f { c }`, a fold, any other
     ///   resumption `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy
     ///   product `&{c, …}` and its observation `c.0`, and a positional

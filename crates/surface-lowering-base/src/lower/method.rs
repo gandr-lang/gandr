@@ -99,7 +99,7 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: `element` is the view's element type `a` of the method's result
-///   `-F View[m](a)`, read as a value type past every parameter.
+///   `-F View[m] a`, read as a value type past every parameter.
 /// - executable: none — the plan holds no scope.
 ///
 /// # Adequacy

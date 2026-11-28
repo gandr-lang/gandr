@@ -45,13 +45,13 @@
 //! # A deduced mode lends the place the method answers
 //!
 //! A method whose receiver is written at a mode its telescope binds, `def
-//! f[m : Mode] (self : View[m] T, …) -> -F View[m](a) { self.#[e] }`, answers
+//! f[m : Mode] (self : View[m] T, …) -> -F View[m] a { self.#[e] }`, answers
 //! the place `self.#[e]` of its receiver: never a value, and never a lens. It
 //! lowers to the function answering the place's index, which lends its
 //! receiver's place shared to judge the element there at `a`: `var p = self ;
 //! access shared p.#[e] as v { let _ : a = v ; pure e }`, declared `-F
 //! Integer`. Its body is that place alone; any other body, or a result other
-//! than `-F View[m](a)` over the receiver's own mode, is
+//! than `-F View[m] a` over the receiver's own mode, is
 //! [`LoweringRefusal::ViewNotPlace`]. A call lends the place of a held
 //! receiver at that index, the index computed reading the receiver shared:
 //!
@@ -1267,7 +1267,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
 {
-    /// The element type `a` of the result `-F View[m](a)`, or `View[m](a)`
+    /// The element type `a` of the result `-F View[m] a`, or `View[m] a`
     /// with the returner the lowering inserts at a result, a method whose
     /// receiver is at the mode `mode` declares, read as a value type under
     /// `frame`.
@@ -1278,9 +1278,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - ensures: the element's node, read as a value type under `frame`, and
     ///   the view type recorded as one a method's result declares.
     /// - fails: [`LoweringRefusal::ViewNotPlace`] at the result when it is
-    ///   neither `-F View[m](a)` nor `View[m](a)`, and at its `m` when that
-    ///   names a mode other than the receiver's; a fault reading the result's
-    ///   pieces.
+    ///   neither `-F View[m] a` nor `View[m] a`, and at its `m` when that names
+    ///   a mode other than the receiver's; a fault reading the result's pieces.
     /// - panics: none.
     ///
     /// # Errors

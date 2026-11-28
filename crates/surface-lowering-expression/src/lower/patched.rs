@@ -117,7 +117,7 @@ use crate::unbuilt::Unbuilt;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Bracket<'source>
 {
-    /// A stage `T[i]` or `T[< i]`, or a view's mode `View[m](a)`.
+    /// A stage `T[i]` or `T[< i]`, or a view's mode `View[m] a`.
     Stage,
     /// The field form `T.#{.l = v, …}`.
     Fields(Vec<Entry<'source>>),

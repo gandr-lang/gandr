@@ -554,7 +554,7 @@ pub struct Context<'run, 'source>
     /// The place assignments a block read, by the place's node: the place
     /// stands as the access that writes it.
     pub assignments: BTreeMap<NodeIndex, access::Assignment>,
-    /// The view types, `View[m](a)`, a method answering a place declares its
+    /// The view types, `View[m] a`, a method answering a place declares its
     /// result at, by node: each stands as the place's index.
     pub view_types: BTreeSet<NodeIndex>,
     /// The linear binders a `resume` or an `abort` ends: a view a block ends

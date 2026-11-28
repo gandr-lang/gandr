@@ -1708,8 +1708,8 @@ pub enum LoweringRefusal<'source>
 
     /// A method whose receiver is at a mode its telescope binds, `self :
     /// View[m] T`,
-    /// whose result is no `-F View[m](a)` over that mode, or whose body is no
-    /// place of its receiver, `{ self.#[i] }`; or a view type `View[m](a)`
+    /// whose result is no `-F View[m] a` over that mode, or whose body is no
+    /// place of its receiver, `{ self.#[i] }`; or a view type `View[m] a`
     /// anywhere but such a method's result.
     ViewNotPlace
     {
@@ -2588,7 +2588,7 @@ impl fmt::Display for LoweringRefusal<'_>
             },
             Self::ViewNotPlace { .. } => f.write_str(
                 "a method whose receiver's mode is deduced answers a place of its receiver: its \
-                 result is `-F View[m](a)` at the receiver's mode `m`, and its body is that \
+                 result is `-F View[m] a` at the receiver's mode `m`, and its body is that \
                  place, `{ self.#[i] }`",
             ),
             Self::ViewOfNoPlace { .. } => f.write_str(

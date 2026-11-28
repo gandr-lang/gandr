@@ -1111,7 +1111,7 @@ impl<'source> Context<'_, 'source>
     ///   the dot after it, `inner .` in `Sealed.inner.T` and `b . c .` in
     ///   `a.b.c.T`, empty for a link that passes none; and the selected name
     ///   after its last dot: a type name, or a value name the link applies,
-    ///   `ext` in `Standard.ext(a, b)` (#5213).
+    ///   `ext` in `Standard.ext a b` (#5213).
     /// - provides: the link half of `Lowerer::type_path`, one link through a
     ///   module path of any length.
     /// - fails: yields the misplaced-tile refusal when the pieces are not an

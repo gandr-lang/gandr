@@ -395,7 +395,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             String::from("give the theory an unfixed carrier sort and operations that return it")
         },
         LoweringRefusal::ViewNotPlace { .. } => {
-            String::from("return a place of `self` with type `View[m](a)`")
+            String::from("return a place of `self` with type `View[m] a`")
         },
         LoweringRefusal::RulesUnoriented { .. } => {
             String::from("make the rule's right side smaller than its left in the path order")
