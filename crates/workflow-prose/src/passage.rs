@@ -19,8 +19,9 @@ use core::fmt;
 use std::fs;
 use std::path::Path;
 
+use gandr_workflow_outputs::compute::work_tree_refusals;
 use gandr_workflow_outputs::refusals::REFUSING;
-use gandr_workflow_outputs::refusals::rendered;
+use gandr_workflow_outputs::store::Store;
 
 use crate::error::ProseError;
 
@@ -1371,7 +1372,9 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
             .goldens
             .extend(golden(Text(&key), Text(&read(path)?)));
     }
-    gathered.goldens.extend(refusals(root)?);
+    gathered
+        .goldens
+        .extend(refusals(root, &Store::asked(root))?);
     Ok(gathered)
 }
 
@@ -1383,11 +1386,14 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
 /// - ensures: for each source under the pathological twins and the exemplars of
 ///   the refusal names that prints a refusal, the goldens of its text as the
 ///   writer of `gandr-workflow-outputs` gives it, each at the path of the
-///   source below `root`. A root with no such directory gives none.
+///   source below `root`. The texts come from `store` when it holds the values
+///   of the inputs of the walk, else from one walk of the checkout, which fills
+///   `store`. A root with no such directory gives none.
 /// - provides: the diagnostics of the corpus, with no file of the tree between
-///   the renderer and the check.
+///   the renderer and the check, and no walk when a run of `outputs` computed a
+///   tree with the same inputs.
 /// - fails: [`ProseError::Io`] naming the root that could not be resolved, or
-///   whose refusing sources the walk could not read.
+///   whose refusing sources the store and the walk could not give.
 /// - panics: none.
 /// - executable: none — the outcome is the walk's.
 ///
@@ -1396,29 +1402,37 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the corpus of this checkout gives the diagnostic of the
-///   circuit with a cycle at the path of its source; a key that names a file of
-///   the renderer's tests, or a walk that is not made, changes the paths.
+///   circuit with a cycle at the path of its source, and a second run gives the
+///   same goldens from the list that the first run wrote; a key that names a
+///   file of the renderer's tests, a walk that is not made, or a store that is
+///   not filled changes the paths or the list.
 /// - witness: `passage::tests::the_refusals_of_the_corpus_are_read_at_their_sources`
-fn refusals(root: &Path) -> Result<Vec<Golden>, ProseError>
+fn refusals(
+    root: &Path,
+    store: &Store,
+) -> Result<Vec<Golden>, ProseError>
 {
     let refused = |message: String| ProseError::Io {
         path: root.to_owned(),
         message,
     };
     let root = fs::canonicalize(root).map_err(|error| refused(error.to_string()))?;
-    let roots: Vec<_> = REFUSING
+    if !REFUSING
         .iter()
-        .map(|directory| root.join("corpus").join(directory))
-        .filter(|directory| directory.is_dir())
-        .collect();
-    if roots.is_empty() {
+        .any(|directory| root.join("corpus").join(directory).is_dir())
+    {
         return Ok(Vec::new());
     }
-    let texts = rendered(&root, roots).map_err(|error| refused(error.to_string()))?;
+    let values = work_tree_refusals(store, &root).map_err(|error| refused(error.to_string()))?;
     let mut goldens = Vec::new();
-    for (source, text) in &texts {
-        let key = relative(&root, &root.join("corpus").join(source));
-        goldens.extend(golden(Text(&key), Text(text)));
+    for &(ref source, ref text) in &values.values {
+        let Some(below) = source.name.strip_prefix("fixture/")
+        else {
+            continue;
+        };
+        let key = format!("corpus/{below}");
+        let text = String::from_utf8_lossy(text);
+        goldens.extend(golden(Text(&key), Text(&text)));
     }
     Ok(goldens)
 }
@@ -1560,6 +1574,7 @@ mod tests
     use super::Placed;
     use super::References;
     use super::Source;
+    use super::Store;
     use super::Text;
     use super::WhatLine;
     use super::body;
@@ -1989,11 +2004,25 @@ mod tests
         std::fs::remove_dir_all(&root).unwrap();
     }
 
+    /// The refusals of this checkout are at their sources, and the run fills
+    /// the store. A second run gives the same goldens from the store.
     #[test]
     fn the_refusals_of_the_corpus_are_read_at_their_sources()
     {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let goldens = refusals(&root).unwrap();
+        let held = std::env::temp_dir().join(format!("prose-refusals-{}", std::process::id()));
+        let store = Store::at(held.clone());
+        let goldens = refusals(&root, &store).unwrap();
+        let trees = std::fs::read_dir(held.join("refusals/trees")).map_or(0, Iterator::count);
+        assert!(
+            trees > 0,
+            "the run lists the values of its tree in the store"
+        );
+        assert_eq!(
+            refusals(&root, &store).unwrap(),
+            goldens,
+            "the store gives the goldens that the walk gave"
+        );
         let paths: BTreeSet<&str> = goldens
             .iter()
             .map(|golden| golden.what.path.as_str())
@@ -2015,5 +2044,6 @@ mod tests
             elsewhere.is_empty(),
             "each diagnostic of the corpus is at a source of the corpus: {elsewhere:?}"
         );
+        std::fs::remove_dir_all(&held).unwrap();
     }
 }

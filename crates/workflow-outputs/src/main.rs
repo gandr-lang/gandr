@@ -46,7 +46,6 @@ use core::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 use std::process::ExitCode;
 use std::time::Instant;
 
@@ -233,26 +232,11 @@ impl Run
             .canonicalize()
             .map_err(|error| format!("the workspace root: {error}"))?;
         let started = Instant::now();
-        let metadata = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-            .args(["metadata", "--no-deps", "--format-version", "1", "--locked"])
-            .current_dir(&root)
-            .output()
-            .map_err(|error| format!("cargo metadata: {error}"))?;
-        let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout)
-            .map_err(|error| format!("cargo metadata: {error}"))?;
+        let metadata = workspace::metadata(&root)?;
         let manifests = workspace::closure(&metadata, compute::TOOL_PACKAGE);
         let packages = compute::KINDS
             .iter()
-            .map(|&kind| {
-                let mut directories: Vec<String> = compute::packages(kind)
-                    .iter()
-                    .flat_map(|package| workspace::closure(&metadata, package))
-                    .chain([compute::TOOL_DIRECTORY.to_owned()])
-                    .collect();
-                directories.sort();
-                directories.dedup();
-                (kind, directories)
-            })
+            .map(|&kind| (kind, compute::tool_packages(&metadata, kind)))
             .collect();
         let parts = vec![Part {
             name: "read the workspace",

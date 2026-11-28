@@ -3,9 +3,31 @@
 //! dependencies.
 
 use alloc::collections::BTreeSet;
+use std::path::Path;
+use std::process::Command;
 
 use anodized::spec;
 use serde_json::Value;
+
+/// The packages of the workspace at `root`, as `cargo metadata --no-deps
+/// --format-version 1 --locked` gives them, by the cargo that `CARGO` names
+/// or by `cargo`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// One line when cargo cannot run or writes no JSON.
+#[inline]
+pub fn metadata(root: &Path) -> Result<Value, String>
+{
+    let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .args(["metadata", "--no-deps", "--format-version", "1", "--locked"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("cargo metadata: {error}"))?;
+    serde_json::from_slice(&output.stdout).map_err(|error| format!("cargo metadata: {error}"))
+}
 
 /// The directories below `crates/` of `package` and of each workspace
 /// package that it depends on, in name order.
