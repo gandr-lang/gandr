@@ -3,11 +3,11 @@
 //! under the `sweeps` profile — and each layout rule pinned by a golden at
 //! the narrow page (40 columns) and the wide page (100 columns).
 //!
-//! Regenerate the goldens with `UPDATE_EXPECT=1` and review the diff.
+//! Each golden is a value of the kind `formatted` of the store of outputs. The
+//! gate of outputs compares it with the golden of the base.
 
 use std::path::Path;
 
-use expect_test::expect_file;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
@@ -128,7 +128,7 @@ fn sources_below(roots: &[&Path]) -> Vec<std::path::PathBuf>
 
 /// The unformatted input `name`, and its goldens at both pages. Each layout
 /// goes to the store of outputs as a value of the kind `formatted`, when the
-/// environment names a run.
+/// environment names a run, and formats once at its page.
 ///
 /// # Specification
 /// trivial.
@@ -150,7 +150,6 @@ fn golden(name: &Path)
         let golden = format!("{}.{page}.txt", name.display());
         let _given = given::give(Kind("formatted"), &golden, laid.as_bytes())
             .unwrap_or_else(|error| panic!("the layout `{golden}` goes to the store: {error}"));
-        expect_file![root.join("golden").join(golden)].assert_eq(&laid);
     }
 }
 
