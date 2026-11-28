@@ -12,7 +12,7 @@
 /// `multi-output-data`: Multi-output data constructors.
 /// Implemented: at grade ω a constructor that writes an output group reads as
 /// one port per output, an ordinary constructor over the shared inputs.
-/// `C(x).l` constructs a port and matches it, coverage counts each port, and a
+/// `C(x).%l` constructs a port and matches it, coverage counts each port, and a
 /// block's rules name ports. `C(x)` is the record of the ports, and a
 /// parameterised family's record takes the type its position states.
 /// Not implemented: the grade-1 reading, whose values are circuits.
@@ -33,8 +33,8 @@ def rec size(e : Expr) -> Integer =
   match e where
     | Lit n => 1
     | Add a b => { let x = size[<] a; let y = size[<] b; x + y + 1 }
-    | Share(x).left => size[<] x
-    | Share(x).right => size[<] x
+    | Share(x).%left => size[<] x
+    | Share(x).%right => size[<] x
 
 /// `twice` adds the sizes of both ports of one share.
 @[runs("3")]
