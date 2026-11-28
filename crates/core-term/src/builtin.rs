@@ -211,6 +211,10 @@ pub enum SurfaceFormer
     /// receiver of a method at a deduced mode, and the answer of a method
     /// that answers a place. The core writes the lent slot, and no type.
     View,
+    /// `Cap {read, write}`, the authority to exercise the operations of its
+    /// label set, each an operation of a host interface. The core forms the
+    /// capability type from the authority, the grade and the region.
+    Cap,
 }
 
 impl SurfaceFormer
@@ -220,7 +224,7 @@ impl SurfaceFormer
     ///
     /// # Specification
     /// trivial.
-    pub const ROWS: [(&'static str, Self); 1_usize] = [("view", Self::View)];
+    pub const ROWS: [(&'static str, Self); 2_usize] = [("view", Self::View), ("cap", Self::Cap)];
 
     /// The key of the head's row.
     ///
@@ -472,6 +476,10 @@ mod tests
         assert_eq!(
             Row::named(Key("view")),
             Maybe::Present(Row::Surface(SurfaceFormer::View))
+        );
+        assert_eq!(
+            Row::named(Key("cap")),
+            Maybe::Present(Row::Surface(SurfaceFormer::Cap))
         );
     }
 

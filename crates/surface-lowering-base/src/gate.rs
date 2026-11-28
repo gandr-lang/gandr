@@ -108,7 +108,7 @@ pub const ATTRIBUTE_GATES: [(&str, RuleGate); 26_usize] = [
 /// - hypothesis: L3 — each row of the builtin table is looked up, each line is
 ///   counted, and the integer widths of the first twin are in the core.
 /// - witness: `gate::tests::each_builtin_row_has_one_line_and_each_line_a_row`
-pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 57_usize] = [
+pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 58_usize] = [
     (Kind::Native, "add", RuleGate::Feature("native-primitives")),
     (Kind::Native, "and", RuleGate::Feature("native-primitives")),
     (Kind::Native, "bool", RuleGate::Feature("native-primitives")),
@@ -165,6 +165,11 @@ pub const BUILTIN_GATES: [(Kind, &str, RuleGate); 57_usize] = [
         Kind::SurfaceFormer,
         "view",
         RuleGate::Feature("deduced-receivers"),
+    ),
+    (
+        Kind::SurfaceFormer,
+        "cap",
+        RuleGate::Feature("capabilities"),
     ),
     (
         Kind::Role,
