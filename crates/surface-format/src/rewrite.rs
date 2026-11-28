@@ -150,6 +150,11 @@ pub enum RewriteName
     /// `s.m`; both forms write the selection alone, the one spelling of the
     /// call.
     BareRun,
+    /// A statement block after an opener: `= {⏎ s⏎ }` and `=⏎ s`, `if c {⏎ s⏎
+    /// }` and `if c then⏎ s`, `fun (x) {⏎ s⏎ }` and `fun (x) do⏎ s`, when the
+    /// block spans lines and no bracket holds it; only the sugared form moves
+    /// it, and the explicit form keeps the braces as the source writes them.
+    BlockLayout,
 }
 
 impl RewriteName
@@ -175,6 +180,7 @@ impl RewriteName
         Self::TypeApplication,
         Self::PatternApplication,
         Self::BareRun,
+        Self::BlockLayout,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -205,6 +211,7 @@ impl RewriteName
             Self::TypeApplication => "type-application",
             Self::PatternApplication => "pattern-application",
             Self::BareRun => "bare-run",
+            Self::BlockLayout => "block-layout",
         }
     }
 
@@ -291,7 +298,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 37] = [
+pub const REWRITES: [Rewrite; 38] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -591,6 +598,14 @@ pub const REWRITES: [Rewrite; 37] = [
         from: Spelling("s.m ()"),
         to: Spelling("s.m"),
         enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BlockLayout,
+        direction: Direction::Sugar,
+        mold: MoldName(""),
+        from: Spelling("= {⏎ s⏎ }"),
+        to: Spelling("=⏎ s"),
+        enabled: Enabled::Off,
     },
 ];
 
@@ -1318,7 +1333,7 @@ pub fn respell<'source>(
         }
     }
     match (respelling.changed, respelling.spelled.remove(&form)) {
-        (Changed::Yes, Some(spelled)) => Respelled::Changed(spelled.leaves),
+        (Changed::Yes, Some(spelled)) => Respelled::Changed(at_next_token(spelled.leaves)),
         (Changed::No, _) | (Changed::Yes, None) => Respelled::Kept,
     }
 }
@@ -1872,7 +1887,281 @@ impl<'source> Respelling<'_, 'source>
             }
             kept
         };
+        let spelled = self.laid_out(at, spelled, open);
         let _previous = self.spelled.insert(at, spelled);
+    }
+
+    /// The form at `at`, spelled `spelled`, with each statement block of its
+    /// own written in its layout form, when the chosen rewrites name
+    /// [`RewriteName::BlockLayout`] and the form is `open` to them.
+    ///
+    /// # Specification
+    /// - requires: `spelled` spells the form at `at`, its own tiles copied from
+    ///   the source.
+    /// - ensures: `spelled` unchanged unless the rewrite is chosen and the form
+    ///   holds a block that [`Self::statement_blocks`] lists; otherwise each
+    ///   such block's `{` written as its opener, empty or `then` or `do`, each
+    ///   of its `;` empty, and its `}` empty, each played as the layout pass
+    ///   plays the part of a parsed layout block.
+    /// - panics: none.
+    /// - executable: none — the clause names the parts of a layout block, which
+    ///   no predicate on the leaves states more simply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block after a `=` that spans lines is written in
+    ///   its layout form, and a block on one line keeps its braces.
+    /// - witness: `tests::rewrite::a_block_in_braces_after_an_opener_is_written_in_its_layout_form`
+    ///
+    /// # Cost
+    /// - allocation: the form's blocks; the leaves change in place
+    fn laid_out(
+        &mut self,
+        at: NodeIndex,
+        mut spelled: Spelled<'source>,
+        open: Open,
+    ) -> Spelled<'source>
+    {
+        if open == Open::No
+            || !self
+                .chosen
+                .rewrites(MoldName(""))
+                .any(|name| name == RewriteName::BlockLayout)
+        {
+            return spelled;
+        }
+        let blocks = self.statement_blocks(at);
+        if !blocks.is_empty() {
+            let form = self.extents.get(&at).copied();
+            for leaf in &mut spelled.leaves {
+                if leaf.material != Material::Token || leaf.origin != Origin::Source {
+                    continue;
+                }
+                let part = blocks.iter().find_map(|block| {
+                    if leaf.span == block.open {
+                        Some((block.opener, Offside::Opens))
+                    }
+                    else if block.separators.contains(&leaf.span) {
+                        Some((Spelling(""), Offside::Separates))
+                    }
+                    else if leaf.span == block.close {
+                        Some((Spelling(""), Offside::Closes))
+                    }
+                    else {
+                        None
+                    }
+                });
+                let Some((text, offside)) = part
+                else {
+                    continue;
+                };
+                let start =
+                    ByteSpan::new(leaf.span.start(), leaf.span.start()).unwrap_or(leaf.span);
+                leaf.span = if text.0.is_empty() { start } else { leaf.span };
+                leaf.text = SourceFragment::from(text.0);
+                leaf.offside = offside;
+                leaf.context = Spacing::Written;
+                leaf.origin = Origin::Rewrite(form.unwrap_or(leaf.span));
+            }
+            self.changed = Changed::Yes;
+        }
+        spelled
+    }
+
+    /// The statement blocks in braces that the form at `at` holds as its own
+    /// tiles and that the layout form can write: each holds a statement, and
+    /// so a separator, written or not, spans lines, its `{` ends its line,
+    /// each `;` ends its line, its `}` starts its line and ends it but for a
+    /// `;` after it, and no bracket holds it. A block of one expression keeps
+    /// its braces: the lowering reads a laid block of one expression as that
+    /// expression. Each block's opener is the one the layout pass reads
+    /// there: none after `=`, `=>` or `else`, `then` for the first block of a
+    /// conditional, and `do` for the block of a lambda, a thunk, a loop, a
+    /// fork or a migration.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the blocks and their separators
+    fn statement_blocks(
+        &self,
+        at: NodeIndex,
+    ) -> Vec<Braced>
+    {
+        let host = match self.tree.node(at).map(Node::label) {
+            Some(NodeLabel::Meld(mold)) => {
+                self.grammar.rule_of(mold).map_or("", |rule| rule.name().0)
+            },
+            _ => return Vec::new(),
+        };
+        let mut blocks = Vec::new();
+        let mut current: Option<Braced> = None;
+        let mut separated = false;
+        for child in written_children(self.grammar, self.tree, at) {
+            let Some(NodeLabel::Tile(mold)) = self.tree.node(child).map(Node::label)
+            else {
+                continue;
+            };
+            let (Some(node), Some(text)) = (self.tree.node(child), self.tree.fragment(child))
+            else {
+                continue;
+            };
+            let tile = self.grammar.rule_of(mold).map_or("", |rule| rule.name().0);
+            let label = self.grammar.mold(mold).map_or("", |def| def.label);
+            let span = node.span();
+            match (label, <&str>::from(text)) {
+                ("{", "{") if tile == STATEMENT_BLOCK.0 || BRACED_HOSTS.contains(&host) => {
+                    current = Some(Braced {
+                        open: span,
+                        opener: Spelling(""),
+                        separators: Vec::new(),
+                        close: span,
+                    });
+                    separated = false;
+                },
+                (";", written) => {
+                    if let Some(block) = current.as_mut() {
+                        separated = true;
+                        if written == ";" {
+                            block.separators.push(span);
+                        }
+                    }
+                },
+                ("}", "}") => {
+                    let Some(mut block) = current.take()
+                    else {
+                        continue;
+                    };
+                    if !separated {
+                        return Vec::new();
+                    }
+                    block.close = span;
+                    // A form writes all its blocks in one form: a layout
+                    // block beside a braced one of the same form reads as
+                    // neither spelling.
+                    let Some(opener) = self.opener(host, &block)
+                    else {
+                        return Vec::new();
+                    };
+                    block.opener = opener;
+                    blocks.push(block);
+                },
+                _ => {},
+            }
+        }
+        blocks
+    }
+
+    /// The opener the layout form writes for `block`, a block in braces of
+    /// the form whose rule is `host`: nothing when the layout form cannot
+    /// write the block.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opener(
+        &self,
+        host: &str,
+        block: &Braced,
+    ) -> Option<Spelling>
+    {
+        let ends_line = |span: ByteSpan| self.line_break(span.end(), Toward::Next);
+        if !ends_line(block.open)
+            || !block.separators.iter().all(|&span| ends_line(span))
+            || !self.line_break(block.close.start(), Toward::Previous)
+            || self.bracketed(block.open)
+        {
+            return None;
+        }
+        let after = self.token(block.close.end(), Toward::Next);
+        if after.is_some_and(|leaf| <&str>::from(leaf.text) != ";") && !ends_line(block.close) {
+            return None;
+        }
+        let before = self.token(block.open.start(), Toward::Previous)?;
+        match (<&str>::from(before.text), host) {
+            ("=" | "=>" | "else", _) => Some(Spelling("")),
+            (_, "if_expression") => Some(Spelling("then")),
+            (_, host) if DO_HOSTS.contains(&host) => Some(Spelling("do")),
+            _ => None,
+        }
+    }
+
+    /// The nearest token of the form with text, from `from` toward `toward`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn token(
+        &self,
+        from: ByteOffset,
+        toward: Toward,
+    ) -> Option<Leaf<'source>>
+    {
+        let at = self.leaves.partition_point(|leaf| leaf.span.start() < from);
+        let written = |leaf: &&Leaf<'source>| {
+            leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty()
+        };
+        match toward {
+            Toward::Next => self.leaves.get(at ..)?.iter().find(written).copied(),
+            Toward::Previous => self.leaves.get(.. at)?.iter().rev().find(written).copied(),
+        }
+    }
+
+    /// Whether a line break stands between `from` and the nearest token with
+    /// text toward `toward`, or no such token stands in the form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn line_break(
+        &self,
+        from: ByteOffset,
+        toward: Toward,
+    ) -> bool
+    {
+        let at = self.leaves.partition_point(|leaf| leaf.span.start() < from);
+        let text = |leaf: &Leaf<'source>| <&str>::from(leaf.text);
+        let gap = |leaf: &&Leaf<'source>| leaf.material != Material::Token || text(leaf).is_empty();
+        let broken = |leaf: &Leaf<'source>| {
+            leaf.material == Material::Whitespace && text(leaf).contains('\n')
+        };
+        match toward {
+            Toward::Next => {
+                let rest = self.leaves.get(at ..).unwrap_or_default();
+                let run = rest.iter().take_while(gap).count();
+                run == rest.len() || rest.get(.. run).unwrap_or_default().iter().any(broken)
+            },
+            Toward::Previous => {
+                let rest = self.leaves.get(.. at).unwrap_or_default();
+                rest.iter().rev().take_while(gap).any(broken)
+            },
+        }
+    }
+
+    /// Whether a bracket holds the token at `span`: a parenthesis, a square
+    /// bracket or a brace that a sigil leads, open before it. No layout block
+    /// opens inside one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bracketed(
+        &self,
+        span: ByteSpan,
+    ) -> bool
+    {
+        let mut open: Vec<&str> = Vec::new();
+        for leaf in self
+            .leaves
+            .iter()
+            .take_while(|leaf| leaf.span.start() < span.start())
+            .filter(|leaf| leaf.material == Material::Token && leaf.offside == Offside::Written)
+        {
+            let text = <&str>::from(leaf.text);
+            if text.ends_with(['(', '[', '{']) {
+                open.push(text);
+            }
+            else if matches!(text, ")" | "]" | "}") {
+                let _closed = open.pop();
+            }
+        }
+        open.iter().any(|&text| text != "{")
     }
 
     /// A form no rewrite reads, its parts as written but for an operand a
@@ -2551,7 +2840,9 @@ impl<'source> Respelling<'_, 'source>
                 Direction::Desugar,
             )
             | (
-                RewriteName::FunctionForm | RewriteName::JoinedDefinition,
+                RewriteName::FunctionForm
+                | RewriteName::JoinedDefinition
+                | RewriteName::BlockLayout,
                 Direction::Sugar | Direction::Desugar,
             ) => return None,
         };
@@ -4120,6 +4411,50 @@ const HANDLER: MoldName = MoldName("handle_expression");
 /// host's parts.
 const STATEMENT_BLOCK: MoldName = MoldName("statement_block");
 
+/// The rules whose own tiles hold a statement block in braces, a block that
+/// is no hole of [`STATEMENT_BLOCK`].
+const BRACED_HOSTS: [&str; 5] = [
+    "block",
+    "if_expression",
+    "for_expression",
+    "while_expression",
+    "loop_expression",
+];
+
+/// The rules whose block a line-final `do` opens in the layout form.
+const DO_HOSTS: [&str; 7] = [
+    "lambda_expression",
+    "thunk_expression",
+    "fork_expression",
+    "migrate_expression",
+    "loop_expression",
+    "for_expression",
+    "while_expression",
+];
+
+/// A statement block in braces that the layout form writes.
+struct Braced
+{
+    /// The span of its `{`.
+    open: ByteSpan,
+    /// What the layout form writes for its `{`: nothing, `then` or `do`.
+    opener: Spelling,
+    /// The spans of its `;`.
+    separators: Vec<ByteSpan>,
+    /// The span of its `}`.
+    close: ByteSpan,
+}
+
+/// Which way a search through a form's leaves goes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Toward
+{
+    /// Toward the form's end.
+    Next,
+    /// Toward the form's start.
+    Previous,
+}
+
 /// The application `f a`, a call written by juxtaposition.
 const APPLICATION: MoldName = MoldName("application_expression");
 
@@ -4212,6 +4547,79 @@ fn shape<'source>(
         ("f_type", &["-F"], &[result]) => Shape::Returner { result },
         _ => Shape::Other,
     }
+}
+
+/// `leaves` with each empty close and separator a rewrite wrote moved past
+/// the whitespace and comments after it, to the next token, where the
+/// layout pass of the parser writes them: a line break before it ends the
+/// statement, and the close adds none. The line break before such a close
+/// leaves with the line of the `}`, and so does a written `;` right after
+/// it: the line end writes the separator, and a `;` after a laid block's
+/// last line would end a statement of that block.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: none when no rewrite wrote such a close or separator;
+///   otherwise the moved leaves, and the leaves once
+fn at_next_token(leaves: Vec<Leaf<'_>>) -> Vec<Leaf<'_>>
+{
+    let rewritten = |leaf: &Leaf<'_>| {
+        leaf.material == Material::Token
+            && <&str>::from(leaf.text).is_empty()
+            && matches!(leaf.offside, Offside::Separates | Offside::Closes)
+            && matches!(leaf.origin, Origin::Rewrite(_))
+    };
+    if !leaves.iter().any(rewritten) {
+        return leaves;
+    }
+    let mut out = Vec::with_capacity(leaves.len());
+    let mut held = Vec::new();
+    for leaf in leaves {
+        let moved = rewritten(&leaf);
+        let trivia = matches!(
+            leaf.material,
+            Material::Whitespace | Material::LineComment | Material::BlockComment
+        );
+        if moved {
+            if leaf.offside == Offside::Closes {
+                while out
+                    .last()
+                    .is_some_and(|last: &Leaf<'_>| last.material == Material::Whitespace)
+                {
+                    let _line = out.pop();
+                }
+            }
+            held.push(leaf);
+        }
+        else if trivia && !held.is_empty() {
+            out.push(leaf);
+        }
+        else {
+            let closed = held
+                .iter()
+                .any(|held: &Leaf<'_>| held.offside == Offside::Closes);
+            let here = ByteSpan::new(leaf.span.start(), leaf.span.start()).unwrap_or(leaf.span);
+            out.extend(
+                core::mem::take(&mut held)
+                    .into_iter()
+                    .map(|mut moved: Leaf<'_>| {
+                        moved.span = here;
+                        moved
+                    }),
+            );
+            if !(closed
+                && leaf.material == Material::Token
+                && leaf.origin == Origin::Source
+                && <&str>::from(leaf.text) == ";")
+            {
+                out.push(leaf);
+            }
+        }
+    }
+    out.extend(held);
+    out
 }
 
 /// The entries of the parenthesised list whose parts are `parts`, each `A`

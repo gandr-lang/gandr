@@ -1635,6 +1635,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "type-application",
             "pattern-application",
             "bare-run",
+            "block-layout",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2299,26 +2300,42 @@ fn a_module_member_s_product_is_written_in_its_braces()
 /// The sugared form writes a block in braces after an opener in its layout
 /// form when the block spans lines: the opener ends its line, each statement
 /// stands on a line of its own, and neither brace nor the `;` after the close
-/// is written. A block on one line keeps its braces. The explicit form keeps
-/// the braces as the source writes them.
+/// is written. A lambda's block opens with `do`, a nested block closes with
+/// no line of its own, and a comment keeps its line. A block of one
+/// expression and a block on one line keep their braces. The explicit form
+/// keeps the braces as the source writes them.
 #[test]
 fn a_block_in_braces_after_an_opener_is_written_in_its_layout_form()
 {
     let grammar = grammar();
     let source = concat!(
-        "@![features((\"let-statements\"))]\n",
+        "@![features((\"dependent-functions\", \"let-statements\"))]\n",
         "\n",
         "def f(x : Integer) -> Integer = {\n",
         "  let y = x;\n",
         "  y\n",
         "};\n",
         "\n",
-        "def h(b : Bool) -> Integer = if b then { 1 } else { 2 };\n",
+        "def k(x : Integer) -> Integer = {\n",
+        "  let add = fun (y : Integer) {\n",
+        "    let w = y;\n",
+        "    w + x\n",
+        "  };\n",
+        "  // the call\n",
+        "  add 1\n",
+        "};\n",
+        "\n",
+        "def m(x : Integer) -> Integer = {\n",
+        "  x\n",
+        "};\n",
+        "\n",
+        "def h(b : Bool) -> Integer = if b { 1 } else { 2 };\n",
     );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
         let options = FormatOptions {
             form,
+            rewrites: Selection::Only(&[RewriteName::BlockLayout]),
             ..FormatOptions::default()
         };
         let formatted = format(&grammar, &parsed, options).expect("the source formats");
@@ -2330,24 +2347,48 @@ fn a_block_in_braces_after_an_opener_is_written_in_its_layout_form()
         formatted.into_text()
     };
     expect![[r#"
-        @![features(("let-statements"))]
+        @![features(("dependent-functions", "let-statements"))]
 
         def f(x : Integer) -> Integer =
           let y = x
           y
 
-        def h(b : Bool) -> Integer = if b then { 1 } else { 2 };
+        def k(x : Integer) -> Integer =
+          let add = fun (y : Integer) do
+            let w = y
+            w + x
+          // the call
+          add 1
+
+        def m(x : Integer) -> Integer = {
+          x
+        };
+
+        def h(b : Bool) -> Integer = if b { 1 } else { 2 };
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        @![features(("let-statements"))]
+        @![features(("dependent-functions", "let-statements"))]
 
         def f(x : Integer) -> Integer = {
           let y = x
           y
         };
 
-        def h(b : Bool) -> Integer = if b then { 1 } else { 2 };
+        def k(x : Integer) -> Integer = {
+          let add = fun (y : Integer) {
+            let w = y
+            w + x
+          }
+          // the call
+          add 1
+        };
+
+        def m(x : Integer) -> Integer = {
+          x
+        };
+
+        def h(b : Bool) -> Integer = if b { 1 } else { 2 };
     "#]]
     .assert_eq(&laid(Form::Explicit));
 }
