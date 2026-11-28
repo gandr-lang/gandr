@@ -3,216 +3,1026 @@
 # site. The cutoff is a fixed year. A ruling moves it forward, in one change
 # that allows whatever the move newly refuses.
 #
-# A `[[crate]]` entry covers a crate whole by its directory under `crates/`,
-# and a `[[corpus]]` entry a corpus subject whole: the directory under
-# `corpus/` holding the sources. A `[[site]]` entry keeps one work at one
-# site: `site` is `<crate>::<module>`, the crate alone at its root, or a
-# corpus source's path; `work` is the key or locator the site cites; and
+# A `[[site]]` entry keeps one work at one site. Its `site` is
+# `<crate>::<module>`, the crate alone at its root, or the path of a corpus
+# source. Its `work` is the key or the locator that the site cites. Its
 # `exemplar` says why no newer work states what the site builds. A work's
 # lineage alone is no reason to keep it: the newest work cites what it builds
-# on. An entry that covers no citation older than the cutoff is refused.
+# on.
 #
-# Every crate and corpus subject citing an older work starts whole. Refreshing
-# a crate's citations deletes its whole entry and adds a `[[site]]` entry for
-# each work it keeps.
+# An entry that covers no citation older than the cutoff is refused. The
+# window has one entry for each site and each older work, so a new citation
+# of an older work is refused at its site. An entry whose exemplar is
+# `frozen` keeps a citation of the tree at the freeze of the window. The
+# citation refresh of its site writes the reason in its place, or cites the
+# newer work and deletes the entry.
 
 cutoff = 2019
 
-[[crate]]
-name = "core-checker"
-
-[[crate]]
-name = "core-checker-base"
-
-[[crate]]
-name = "core-checker-bridge"
-
-[[crate]]
-name = "core-incremental"
-
-[[crate]]
-name = "core-nbe"
-
-[[crate]]
-name = "core-sequent"
-
-[[crate]]
-name = "core-session"
-
-[[crate]]
-name = "core-term"
-
-[[crate]]
-name = "core-unify"
-
-[[crate]]
-name = "kernel-core"
-
-[[crate]]
-name = "runtime-stencils"
-
-[[crate]]
-name = "storage-chunker"
-
-[[crate]]
-name = "storage-records"
-
-[[crate]]
-name = "storage-schema"
-
-[[crate]]
-name = "storage-values"
-
-[[crate]]
-name = "surface-grammar"
-
-[[crate]]
-name = "surface-layout"
-
-[[crate]]
-name = "surface-lowering"
-
-[[crate]]
-name = "surface-lowering-base"
-
-[[crate]]
-name = "surface-lsp"
-
-[[crate]]
-name = "surface-pretty"
-
-[[crate]]
-name = "surface-render-remote"
-
-[[crate]]
-name = "theory-cell-complexes"
-
-[[crate]]
-name = "theory-cell-complexes-tools"
-
-[[crate]]
-name = "theory-circuit-algebras"
-
-[[crate]]
-name = "theory-coherent-resolutions"
-
-[[crate]]
-name = "theory-computads"
-
-[[crate]]
-name = "theory-decomposition-spaces"
-
-[[crate]]
-name = "theory-deep-inference"
-
-[[crate]]
-name = "theory-dynamic-graphs"
-
-[[crate]]
-name = "theory-graphs"
-
-[[crate]]
-name = "theory-levitation"
-
-[[crate]]
-name = "theory-nominal-automata"
-
-[[crate]]
-name = "theory-order-maintenance"
-
-[[crate]]
-name = "theory-path-orders"
-
-[[crate]]
-name = "theory-shapes"
-
-[[crate]]
-name = "theory-sites"
-
-[[corpus]]
-subject = "ledger/features"
-
-[[corpus]]
-subject = "model/circuit"
-
-[[corpus]]
-subject = "model/completion"
-
-[[corpus]]
-subject = "model/conversion"
-
-[[corpus]]
-subject = "model/control"
-
-[[corpus]]
-subject = "model/data"
-
-[[corpus]]
-subject = "model/desc"
-
-[[corpus]]
-subject = "model/drop"
-
-[[corpus]]
-subject = "model/effects"
-
-[[corpus]]
-subject = "model/higher-cells"
-
-[[corpus]]
-subject = "model/identity"
-
-[[corpus]]
-subject = "model/metaprograms"
-
-[[corpus]]
-subject = "model/modules"
-
-[[corpus]]
-subject = "model/moves"
-
-[[corpus]]
-subject = "model/sessions"
-
-[[corpus]]
-subject = "model/universe"
-
-[[corpus]]
-subject = "model/worlds"
-
-[[corpus]]
-subject = "pathological/completion"
-
-[[corpus]]
-subject = "pathological/identity"
-
-[[corpus]]
-subject = "pathological/sessions"
+[[site]]
+site = "core-checker"
+work = "doi:10.1007/3-540-48959-2_17"
+exemplar = "frozen"
 
 [[site]]
-site = "theory-cellular-sheaves::reduce"
-work = "Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology"
-exemplar = "no newer work states the reduction of a cellular sheaf along a matching whose maps are invertible, with the cohomology that it keeps"
+site = "core-checker"
+work = "doi:10.1016/1385-7258(72)90034-0"
+exemplar = "frozen"
 
 [[site]]
-site = "theory-discrete-morse::reduct"
-work = "Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology"
-exemplar = "no newer work states the reduct of a complex along a matching whose pairs are invertible, with the boundary that its gradient paths give"
+site = "core-checker"
+work = "doi:10.1017/s0956796807006223"
+exemplar = "frozen"
 
 [[site]]
-site = "theory-graded-posets"
+site = "core-checker"
+work = "doi:10.1017/s0960129503004122"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker"
+work = "doi:10.1098/rsta.2005.1650"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker"
+work = "doi:10.1145/3009837.3009900"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::access"
+work = "doi:10.1145/1462166.1462167"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::compose"
+work = "doi:10.1090/s0002-9947-00-02653-2"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::conversion"
+work = "doi:10.1145/3009837.3009900"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::coverage"
+work = "doi:10.1017/s0956796807006223"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::eliminator"
+work = "doi:10.1007/3-540-45842-5_13"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::eliminator"
+work = "doi:10.1007/bfb0055070"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::judgement"
+work = "doi:10.1145/3009837.3009900"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::judgement::elaboration"
+work = "doi:10.1145/3009837.3009900"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::product"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::seal"
+work = "doi:10.1017/s0956796814000264"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::seal"
+work = "doi:10.1145/174675.176926"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::seal"
+work = "doi:10.1145/174675.176927"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::seal"
+work = "doi:10.1145/604131.604151"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::session"
+work = "doi:10.1007/978-3-642-15375-4_16"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::session"
+work = "doi:10.1007/978-3-662-46678-0_1"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::session"
+work = "doi:10.1007/bfb0053567"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::session"
+work = "doi:10.1007/s00236-005-0177-z"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::solution"
+work = "Cockx-2018-elaborating_dependent_copattern_matching"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::solution"
+work = "doi:10.1007/3-540-45842-5_13"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::ua"
+work = "doi:10.1017/s0956796898003153"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-base::ua"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-bridge::bridge"
+work = "Plotkin-2013-handling_algebraic_effects"
+exemplar = "frozen"
+
+[[site]]
+site = "core-checker-bridge::bridge"
+work = "doi:10.1145/3009837.3009900"
+exemplar = "frozen"
+
+[[site]]
+site = "core-incremental"
+work = "doi:10.1016/0012-365x(75)90103-x"
+exemplar = "frozen"
+
+[[site]]
+site = "core-incremental"
+work = "doi:10.1145/28395.28434"
+exemplar = "frozen"
+
+[[site]]
+site = "core-incremental"
+work = "doi:10.1145/3236774"
+exemplar = "frozen"
+
+[[site]]
+site = "core-nbe"
+work = "doi:10.1007/978-94-007-0954-6"
+exemplar = "frozen"
+
+[[site]]
+site = "core-nbe"
+work = "doi:10.1145/2500365.2500606"
+exemplar = "frozen"
+
+[[site]]
+site = "core-nbe::policy"
+work = "Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory"
+exemplar = "frozen"
+
+[[site]]
+site = "core-sequent"
+work = "doi:10.1007/3-540-48959-2_17"
+exemplar = "frozen"
+
+[[site]]
+site = "core-sequent"
+work = "doi:10.1017/s0956796818000023"
+exemplar = "frozen"
+
+[[site]]
+site = "core-sequent"
+work = "doi:10.1145/351240.351262"
+exemplar = "frozen"
+
+[[site]]
+site = "core-session"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "core-session"
+work = "doi:10.1007/s00236-005-0177-z"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term"
+work = "doi:10.1007/978-94-007-0954-6"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term"
+work = "doi:10.1017/s0956796807006223"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term"
+work = "doi:10.1145/3009837.3009900"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term::generic"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term::hole"
+work = "doi:10.1145/3009837.3009900"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term::relocation"
+work = "doi:10.4204/eptcs.275.6"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term::support"
+work = "doi:10.1145/2433396.2433409"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term::support"
+work = "doi:10.1145/321812.321820"
+exemplar = "frozen"
+
+[[site]]
+site = "core-term::support"
+work = "doi:10.4204/eptcs.275.6"
+exemplar = "frozen"
+
+[[site]]
+site = "core-unify"
+work = "doi:10.1007/978-3-642-21691-6_5"
+exemplar = "frozen"
+
+[[site]]
+site = "core-unify"
+work = "doi:10.1017/s095679681800014x"
+exemplar = "frozen"
+
+[[site]]
+site = "core-unify"
+work = "doi:10.1093/logcom/1.4.497"
+exemplar = "frozen"
+
+[[site]]
+site = "core-unify"
+work = "doi:10.4204/eptcs.275.6"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/atom-identity.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/atom-sorts.gandr"
+work = "doi:10.1017/cbo9781139084673"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/atom-sorts.gandr"
+work = "doi:10.1093/logcom/exp033"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/circuit-algebras.gandr"
+work = "doi:10.1145/96709.96718"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/circuit-spiders.gandr"
+work = "doi:10.1017/9781316219317"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/confluence-certificate.gandr"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/confluence-certificate.gandr"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/derive-over-codes.gandr"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/derived-rules.gandr"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/higher-order-fields.gandr"
+work = "doi:10.1007/3-540-45931-6_24"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/higher-order-fields.gandr"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/indexed-data.gandr"
+work = "doi:10.1007/bf01211308"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/relative-monads.gandr"
+work = "doi:10.2168/lmcs-11(1:3)2015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/rule-conditions.gandr"
+work = "doi:10.1016/j.ic.2006.12.002"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/rule-conditions.gandr"
+work = "doi:10.1016/s0304-3975(97)00143-6"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/rule-conditions.gandr"
+work = "doi:10.1017/cbo9781139084673"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/rule-conditions.gandr"
+work = "doi:10.1093/logcom/1.4.497"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/second-order-rules.gandr"
+work = "doi:10.1016/0304-3975(93)90091-7"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/second-order-rules.gandr"
+work = "doi:10.1016/s0304-3975(97)00143-6"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/second-order-rules.gandr"
+work = "doi:10.1109/lics.1999.782635"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/session-identity.gandr"
+work = "doi:10.1007/s00236-005-0177-z"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/sized-types.gandr"
+work = "doi:10.1051/ita:2004015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/temporal-judgement.gandr"
+work = "doi:10.1007/3-540-17906-2_30"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/temporal-judgement.gandr"
+work = "doi:10.1007/bf02020961"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/termination-certificates.gandr"
+work = "doi:10.1145/322217.322230"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/ledger/features/unification.gandr"
+work = "doi:10.1145/3236770"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/circuit/circuit-feed-wheel.gandr"
+work = "doi:10.1051/ita:2002009"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/circuit/circuit-rule-block.gandr"
+work = "doi:10.1145/96709.96718"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/circuit/spiders.gandr"
+work = "doi:10.1017/9781316219317"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/completion/buffer-moved.gandr"
+work = "doi:10.1007/bfb0053567"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/control/accessor-loop.gandr"
+work = "doi:10.1017/s0956796899003500"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/control/conditional.gandr"
+work = "doi:10.1007/978-94-007-0954-6"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/control/effect-rows.gandr"
+work = "doi:10.1145/2976022.2976033"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/control/handler-exits.gandr"
+work = "doi:10.2168/lmcs-9(4:23)2013"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/control/row-variable.gandr"
+work = "doi:10.1145/2976022.2976033"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/conversion/church-iteration.gandr"
+work = "doi:10.1145/581478.581501"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/conversion/factorial.gandr"
+work = "doi:10.1145/581478.581501"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/conversion/lucas-lehmer.gandr"
+work = "doi:10.1007/978-3-642-25379-9_26"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/conversion/open-product.gandr"
+work = "doi:10.1145/581478.581501"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/conversion/pigeonhole.gandr"
+work = "doi:10.1007/978-3-642-25379-9_26"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/conversion/recursion-without-allocation.gandr"
+work = "doi:10.1007/978-3-642-25379-9_26"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/data-base.gandr"
+work = "doi:10.1007/978-3-319-89366-2_16"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/data-matched-arms.gandr"
+work = "doi:10.1007/3-540-15975-4_48"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/map-laws.gandr"
+work = "doi:10.1007/978-3-642-87374-4_1"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/map-laws.gandr"
+work = "doi:10.1145/800194.805852"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/nested-call-sugar.gandr"
+work = "doi:10.1007/978-3-319-89366-2_16"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/open-apart.gandr"
+work = "doi:10.1017/s095679681800014x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/recursive-addition.gandr"
+work = "doi:10.1051/ita:2004015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/recursive-lists.gandr"
+work = "doi:10.1051/ita:2004015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/recursive-nat-lists.gandr"
+work = "doi:10.1051/ita:2004015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/rose.gandr"
+work = "doi:10.1051/ita:2004015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/rule-equation.gandr"
+work = "doi:10.1145/322217.322230"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/stuck-arm-call.gandr"
+work = "doi:10.1007/bf01211308"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/unfolded-arm.gandr"
+work = "doi:10.1051/ita:2004015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/vector-cases.gandr"
+work = "doi:10.1007/bf01211308"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/vector-head.gandr"
+work = "doi:10.1145/2951913.2951917"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/vectors.gandr"
+work = "doi:10.1007/bf01211308"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/data/w-tree.gandr"
+work = "doi:10.1016/s0049-237x(09)70189-2"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/atom-occurrence.gandr"
+work = "doi:10.1016/j.ic.2006.12.002"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/atom-occurrence.gandr"
+work = "doi:10.1016/s0304-3975(97)00143-6"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/atom-occurrence.gandr"
+work = "doi:10.1017/cbo9781139084673"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/atom-occurrence.gandr"
+work = "doi:10.1093/logcom/1.4.497"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/atom-sorts.gandr"
+work = "doi:10.1017/cbo9781139084673"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/atom-sorts.gandr"
+work = "doi:10.1093/logcom/exp033"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/bind-port.gandr"
+work = "doi:10.1017/cbo9781139084673"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/bind-port.gandr"
+work = "doi:10.1093/logcom/exp033"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/bind-term.gandr"
+work = "doi:10.1016/j.ic.2006.12.002"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/bind-term.gandr"
+work = "doi:10.1093/logcom/exp033"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/derive-eq-serialize.gandr"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/desc-cell-face.gandr"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/desc-eta-cell.gandr"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/desc-inspect.gandr"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/desc-op-cells.gandr"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/freshness.gandr"
+work = "doi:10.1016/j.ic.2006.12.002"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/freshness.gandr"
+work = "doi:10.1017/cbo9781139084673"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/function-field.gandr"
+work = "doi:10.1007/3-540-45931-6_24"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/function-field.gandr"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/generic-arity.gandr"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/many-out-op.gandr"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/relative-monad.gandr"
+work = "doi:10.2168/lmcs-11(1:3)2015"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/rules-completed.gandr"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/rules-overlap-joinable.gandr"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/rules-overlap-joinable.gandr"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/second-order-rules.gandr"
+work = "doi:10.1016/0304-3975(93)90091-7"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/second-order-rules.gandr"
+work = "doi:10.1016/s0304-3975(97)00143-6"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/desc/second-order-rules.gandr"
+work = "doi:10.1109/lics.1999.782635"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/drop/unwritten.gandr"
+work = "doi:10.2168/lmcs-9(4:23)2013"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/effects/state-model.gandr"
+work = "doi:10.1007/978-3-642-15205-4_26"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/effects/tree.gandr"
+work = "doi:10.2168/lmcs-9(4:23)2013"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/higher-cells/magma-base.gandr"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/higher-cells/ua-by-hand.gandr"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/higher-cells/ua-corolla-rig.gandr"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/higher-cells/ua-corolla-strata.gandr"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/higher-cells/ua-corolla.gandr"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/atom-identity.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/back.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/certificate-transport.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/circle-apart.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/cong-thunk.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/cong-value.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/derived-associator.gandr"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/derived-rule.gandr"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/group-laws.gandr"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/state-passing.gandr"
+work = "doi:10.1007/3-540-45931-6_24"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/univalence-back.gandr"
+work = "arXiv:1611.02108"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/univalence-function.gandr"
+work = "arXiv:1611.02108"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/identity/univalence-then.gandr"
+work = "arXiv:1611.02108"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/metaprograms/derive-eq-over-codes.gandr"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/modules/functor-pair.gandr"
+work = "doi:10.1017/s0956796814000264"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/modules/model-ascription.gandr"
+work = "doi:10.1017/s0956796814000264"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/modules/model-manifest-type.gandr"
+work = "doi:10.1145/174675.176926"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/modules/module-value.gandr"
+work = "doi:10.1017/s0956796814000264"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/modules/nat-add.gandr"
+work = "doi:10.1145/174675.176927"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/modules/nullary-member.gandr"
+work = "doi:10.1007/978-94-007-0954-6"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/modules/sealed-counter.gandr"
+work = "doi:10.1145/174675.176927"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/moves/file-base.gandr"
+work = "doi:10.1007/bfb0053567"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/dialogue-web.gandr"
+work = "doi:10.1007/3-540-17906-2_30"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/dialogue-web.gandr"
+work = "doi:10.1007/bf02020961"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/payload-paths.gandr"
+work = "doi:10.1007/s00236-005-0177-z"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/seat-base.gandr"
+work = "doi:10.1007/bfb0053567"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/seat-evolution.gandr"
+work = "doi:10.1007/s00236-005-0177-z"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/seat-exchange.gandr"
+work = "doi:10.1007/bfb0053567"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/seat-prefix-evolution.gandr"
+work = "doi:10.1007/s00236-005-0177-z"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/sessions/seat-prefix.gandr"
+work = "doi:10.1016/j.tcs.2017.02.009"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/universe/code-beside-value.gandr"
+work = "doi:10.1007/3-540-45842-5_13"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/universe/family-at-call.gandr"
+work = "doi:10.1007/3-540-61780-9_66"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/universe/ir-codes.gandr"
+work = "doi:10.1007/3-540-48959-2_11"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/worlds/closure-axes.gandr"
+work = "doi:10.1145/2034675.2034690"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/worlds/open.gandr"
+work = "doi:10.1007/978-3-540-78663-4_9"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/worlds/seat-and-operator.gandr"
+work = "doi:10.1007/978-3-540-78663-4_9"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/model/worlds/twice.gandr"
+work = "doi:10.1007/978-3-540-78663-4_9"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/pathological/completion/stack-resumed-twice.gandr"
+work = "doi:10.2168/lmcs-9(4:23)2013"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/pathological/identity/atom-identity.gandr"
+work = "arXiv:1308.0729"
+exemplar = "frozen"
+
+[[site]]
+site = "corpus/pathological/sessions/linearity.gandr"
+work = "doi:10.1007/bfb0053567"
+exemplar = "frozen"
+
+[[site]]
+site = "kernel-core"
 work = "arXiv:1312.6454"
-exemplar = "no newer work states the cell poset of a cellular sheaf, each cell with its boundary and rank, that a compatible matching collapses"
+exemplar = "frozen"
+
+[[site]]
+site = "kernel-core::check::occurrence"
+work = "doi:10.1007/3-540-52335-9_47"
+exemplar = "frozen"
+
+[[site]]
+site = "kernel-core::check::occurrence"
+work = "doi:10.1007/bf01211308"
+exemplar = "frozen"
+
+[[site]]
+site = "runtime-stencils"
+work = "doi:10.1017/s0956796818000023"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-chunker"
+work = "doi:10.1016/j.peva.2014.07.016"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-chunker"
+work = "doi:10.1145/2660193.2660195"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-chunker"
+work = "doi:10.1145/502034.502052"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-records"
+work = "doi:10.1145/2535838.2535851"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-records"
+work = "doi:10.1145/502034.502052"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-schema"
+work = "arXiv:1009.1166"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-values"
+work = "doi:10.1007/3-540-48184-2_32"
+exemplar = "frozen"
+
+[[site]]
+site = "storage-values"
+work = "doi:10.1145/502034.502052"
+exemplar = "frozen"
 
 [[site]]
 site = "surface-diagnostics"
 work = "doi:10.4230/lipics.rta.2013.223"
 exemplar = "no newer work states homotopical completion with the parting critical pair as its obstruction; the newer monograph cites it for the procedure"
-
-[[site]]
-site = "surface-lsp-base"
-work = "doi:10.17487/rfc8089"
-exemplar = "RFC 8089 is the standard of the file URI scheme, and no newer work states the scheme or the percent-decoding of its path"
 
 [[site]]
 site = "surface-evaluate::evaluate::reals"
@@ -223,6 +1033,251 @@ exemplar = "no newer work states a strict comparison of two reals as an open tha
 site = "surface-evaluate::evaluate::reals"
 work = "Taylor-2010-lambda_calculus_real_analysis"
 exemplar = "no newer work states the laws that a Dedekind cut owes, and the modality of the domain that a quantifier ranges over"
+
+[[site]]
+site = "surface-grammar"
+work = "doi:10.1007/978-3-642-24452-0_5"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-grammar"
+work = "doi:10.1016/0898-1221(81)90008-0"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-layout"
+work = "doi:10.1145/3110250"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering"
+work = "doi:10.1007/3-540-45842-5_13"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering"
+work = "doi:10.1007/3-540-48959-2_17"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering"
+work = "doi:10.1007/3-540-52335-9_47"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering"
+work = "doi:10.1007/bfb0055070"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering"
+work = "doi:10.1016/1385-7258(72)90034-0"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering"
+work = "doi:10.2168/lmcs-11(1:3)2015"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering"
+work = "doi:10.4230/lipics.rta.2013.223"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::lower::capability::theory"
+work = "doi:10.1023/a:1023064908962"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::model"
+work = "doi:10.1073/pnas.50.5.869"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::model"
+work = "doi:10.1145/321250.321253"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::module::functor"
+work = "doi:10.1017/s0956796814000264"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::module::functor"
+work = "doi:10.1145/199448.199476"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::module::functor"
+work = "doi:10.1145/604131.604151"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::module::sealing"
+work = "doi:10.1017/s0956796814000264"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::module::sealing"
+work = "doi:10.1145/174675.176926"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::module::sealing"
+work = "doi:10.1145/174675.176927"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lowering-base::module::sealing"
+work = "doi:10.1145/604131.604151"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lsp"
+work = "doi:10.17487/rfc8089"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-lsp-base"
+work = "doi:10.17487/rfc8089"
+exemplar = "RFC 8089 is the standard of the file URI scheme, and no newer work states the scheme or the percent-decoding of its path"
+
+[[site]]
+site = "surface-pretty"
+work = "doi:10.1145/3110250"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-render-remote"
+work = "doi:10.1007/bfb0053567"
+exemplar = "frozen"
+
+[[site]]
+site = "surface-render-remote"
+work = "doi:10.1007/s00236-005-0177-z"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-cell-complexes"
+work = "doi:10.1016/s0747-7171(87)80022-6"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-cell-complexes"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-cell-complexes"
+work = "doi:10.1145/321250.321253"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-cell-complexes"
+work = "doi:10.1145/351240.351262"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-cell-complexes-tools"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-cellular-sheaves::reduce"
+work = "Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology"
+exemplar = "no newer work states the reduction of a cellular sheaf along a matching whose maps are invertible, with the cohomology that it keeps"
+
+[[site]]
+site = "theory-circuit-algebras"
+work = "arXiv:1804.07832"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-circuit-algebras"
+work = "doi:10.1051/ita:2002009"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-circuit-algebras"
+work = "doi:10.1145/351240.351262"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-coherent-resolutions"
+work = "doi:10.1016/b978-0-08-012975-4.50028-x"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-coherent-resolutions"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-computads"
+work = "doi:10.1016/0022-4049(76)90013-x"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-computads"
+work = "doi:10.1016/0304-3975(93)90054-w"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-computads"
+work = "doi:10.1017/cbo9781139172752"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-computads"
+work = "doi:10.1017/s0956796818000023"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-computads"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-computads"
+work = "doi:10.1145/351240.351262"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-computads::indexing"
+work = "doi:10.1016/0168-0072(86)90053-9"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-decomposition-spaces"
+work = "doi:10.1016/j.aim.2018.03.016"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-deep-inference"
+work = "doi:10.2168/lmcs-4(1:9)2008"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-deep-inference::modular"
+work = "doi:10.1007/bf02020961"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-deep-inference::modular"
+work = "doi:10.1016/s0012-365x(98)00319-7"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-discrete-morse::reduct"
+work = "Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology"
+exemplar = "no newer work states the reduct of a complex along a matching whose pairs are invertible, with the boundary that its gradient paths give"
+
+[[site]]
+site = "theory-dynamic-graphs"
+work = "doi:10.1145/1187436.1210590"
+exemplar = "frozen"
 
 [[site]]
 site = "theory-exact-reals"
@@ -255,6 +1310,166 @@ work = "Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_fin
 exemplar = "no newer work states ranking as a fold and unranking as an unfold, with the condition on the transformer that makes the unfold a bijection"
 
 [[site]]
+site = "theory-graded-posets"
+work = "arXiv:1312.6454"
+exemplar = "no newer work states the cell poset of a cellular sheaf, each cell with its boundary and rank, that a compatible matching collapses"
+
+[[site]]
+site = "theory-graphs"
+work = "doi:10.1007/978-3-642-24452-0_5"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-graphs"
+work = "doi:10.1016/0898-1221(81)90008-0"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-graphs"
+work = "doi:10.1145/368996.369025"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-levitation"
+work = "arXiv:0906.4931"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-levitation"
+work = "doi:10.1145/1863543.1863547"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-nominal-automata"
+work = "arXiv:1603.01455"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-order-maintenance"
+work = "doi:10.1007/3-540-45749-6_17"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-order-maintenance"
+work = "doi:10.1145/28395.28434"
+exemplar = "frozen"
+
+[[site]]
 site = "theory-ordered-algebras"
 work = "Jeandel-2018-complete_axiomatisation_zxcalculus_clifford+t_quantum_mechanics"
 exemplar = "no newer work in the library states the matrices of the Clifford+T fragment as the matrices over D[e^{iπ/4}] = ℤ[1/√2, i], with the canonical form of an element over the dyadics"
+
+[[site]]
+site = "theory-path-orders"
+work = "doi:10.1016/0304-3975(82)90026-3"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-path-orders"
+work = "doi:10.1016/0304-3975(92)00023-k"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-path-orders"
+work = "doi:10.1109/lics.1999.782635"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-path-orders"
+work = "doi:10.1145/359138.359142"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-path-orders"
+work = "doi:10.2168/lmcs-11(4:3)2015"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-path-orders::decreasing"
+work = "doi:10.1016/0304-3975(92)00023-k"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-path-orders::lpo"
+work = "doi:10.1145/359138.359142"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-path-orders::lpo"
+work = "doi:10.2168/lmcs-11(4:3)2015"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-shapes"
+work = "arXiv:1312.6454"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-shapes"
+work = "doi:10.4230/lipics.types.2015.5"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "Henry-2018-nonunital_polygraphs_form_presheaf_category"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "arXiv:0809.3341"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "arXiv:0907.4553"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "arXiv:1203.3253"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "arXiv:1410.6716"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "arXiv:1705.08546"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "doi:10.1007/978-3-319-20547-2"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "doi:10.1007/s00209-010-0770-x"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "doi:10.1017/s0960129514000565"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "doi:10.4171/dm/392"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites"
+work = "doi:10.4310/hha.2018.v20.n2.a11"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites::wreath"
+work = "Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces"
+exemplar = "frozen"
+
+[[site]]
+site = "theory-sites::wreath"
+work = "Shulman-2017-univalence_inverse_ei_diagrams"
+exemplar = "frozen"
