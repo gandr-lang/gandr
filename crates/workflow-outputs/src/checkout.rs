@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
-use crate::store::Kind;
-use crate::store::Store;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::Store;
 
 /// The detached work tree of the other commit, below the target directory of
 /// the workspace `root`.

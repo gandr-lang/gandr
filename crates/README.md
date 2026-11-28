@@ -168,6 +168,7 @@ crates/
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-ledger-split/         the `ledger-split` binary: the dump of a ledger cut into the schema and a file of rows for each name
 ├── workflow-ledger-tasks/         the `ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read
+├── workflow-output-store/         the store of outputs: each value by its key, the list of each tree, and the values that a test gives
 ├── workflow-outputs/              the writer of each kind of output that the tree does not hold: the recovery record of a corpus source
 ├── workflow-parser-report/        the `parser-report` binary: the parser read on each axis a syntax candidate is measured against
 ├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger and the merge base

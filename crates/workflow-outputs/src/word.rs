@@ -9,7 +9,7 @@ use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 
-use crate::store::Kind;
+use gandr_workflow_output_store::Kind;
 
 /// The key of the trailer that names the kinds whose values a commit changes.
 pub const TRAILER: &str = "Changes-output";

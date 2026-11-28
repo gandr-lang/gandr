@@ -19,9 +19,9 @@ use core::fmt;
 use std::fs;
 use std::path::Path;
 
+use gandr_workflow_output_store::Store;
 use gandr_workflow_outputs::compute::work_tree_refusals;
 use gandr_workflow_outputs::refusals::REFUSING;
-use gandr_workflow_outputs::store::Store;
 
 use crate::error::ProseError;
 

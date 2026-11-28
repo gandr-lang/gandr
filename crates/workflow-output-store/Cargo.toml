@@ -1,0 +1,21 @@
+[package]
+name = "gandr-workflow-output-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The store of the values that a program computes from the tree and that the tree does not hold, and the values that a test gives it"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "gandr", "outputs", "store"]
+categories = ["development-tools::testing"]
+publish.workspace = true
+
+# The pinned anodized facade supplies the specification attribute, and BLAKE3
+# the key of a value.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+
+[lints]
+workspace = true

@@ -29,7 +29,7 @@ The store holds one list for each kind and each git tree that a run computed: ea
 - `RecordError` names the refusal of the grammar or of the parser.
 - `Roles` writes the roles that the highlight gives a source: one line for each span, with its byte range, its role and its text.
 - `refusals::rendered` writes the refusals that `gandr check` prints for each refusing source of a checkout: each diagnostic plain, at the verbosity of a user.
-- `Store` reads and writes a value by its kind and its key, and the list of the values of a kind by its git tree; `Digest` is a key or a tool.
+- The store of `gandr-workflow-output-store` reads and writes a value by its kind and its key, and the list of the values of a kind by its git tree.
 - `Tree` reads a commit or the work tree from git: its corpus sources, its refusing sources, their contents in one batch, and the tool of a kind.
 - `workspace::closure` gives the packages that build a package, from `cargo metadata`. `compute::packages` names the packages that compute a kind.
 - `compute::values` gives the values of one kind for a tree: each from the store, or computed by the `Writer` of the kind on each core and written to the store. It writes the list of the tree. `compute::held` gives the values that the store holds, and `compute::listed` the values that the list of a tree names. `compute::refusals` gives the refusals of a tree, from the list of its inputs or from one walk of a checkout. The kinds are `recovery`, `refusals` and `roles`.
