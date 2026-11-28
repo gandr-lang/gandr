@@ -3102,7 +3102,7 @@ mod tests
         let rec = include_str!("hover/fixtures/rec-group.gandr");
         let succ = fenced(SourceText::from("Succ : (n : NatDiv) --> NatDiv"));
         let family = fenced(SourceText::from("NatDiv : Type"));
-        let rule = fenced(SourceText::from("rule : divmod m Zero ==> (Zero, m)"));
+        let rule = fenced(SourceText::from("rule : divmod m Zero ==> %(Zero, m)"));
         let ints = fenced(SourceText::from("module Ints"));
         let group = format!(
             "{}\n\nThe declarations this `rec_block` writes together.",
@@ -3434,10 +3434,10 @@ mod tests
 
     /// #5196: a hover answers alike in two spellings of one source. A tile of
     /// a refused layout body answers as the same tile of the body in braces
-    /// after `=`, and a rule's pattern variable in a spine answers as in the
-    /// call form.
+    /// after `=`, and a rule's pattern variable in a spine answers at its
+    /// sort.
     #[test]
-    fn a_layout_body_and_a_spine_hover_as_their_braced_and_call_forms_5196()
+    fn a_layout_body_hovers_as_its_braced_form_and_a_spine_variable_at_its_sort_5196()
     {
         let layout = include_str!("hover/fixtures/refused-call.gandr");
         let braced = layout
@@ -3448,11 +3448,9 @@ mod tests
             assert_eq!(at(layout), at(&braced), "{tile}");
         }
         let spine = include_str!("hover/fixtures/natdiv.gandr");
-        let call = spine.replace("divmod m Zero", "divmod(m, Zero)");
-        let variable = |text: &str| shown(SourceText::from(text), (4.into(), 16.into()));
         assert_eq!(
-            variable(spine),
-            variable(&call),
+            shown(SourceText::from(spine), (4.into(), 16.into())),
+            Ok(String::from("```gandr\nm : NatDiv\n```")),
             "a rule's pattern variable"
         );
     }

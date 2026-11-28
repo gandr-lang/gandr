@@ -6328,13 +6328,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
     ///   answer its position states passed on; a comma list, and each
     ///   positional group opened by `%(`, `%(e)` included, is read as a pair; a
-    ///   labelled group, opened by `(` or by `%(`, as
-    ///   `Models::labelled_outputs` reads it; `()` ending a body of no outputs
-    ///   returns none; `(e : T)` is read as `Native::annotated` reads it,
-    ///   adopting a constructor that takes `T` as its classifier, or the value
-    ///   an ascription its position makes carries, and otherwise planned as a
-    ///   value ascription, an injection among them, its label read in the sum
-    ///   `T` states.
+    ///   labelled group `%(.l = e, …)` as `Models::labelled_outputs` reads it;
+    ///   `()` ending a body of no outputs returns none; `(e : T)` is read as
+    ///   `Native::annotated` reads it, adopting a constructor that takes `T` as
+    ///   its classifier, or the value an ascription its position makes carries,
+    ///   and otherwise planned as a value ascription, an injection among them,
+    ///   its label read in the sum `T` states.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
     /// - fails: yields the pair's own refusal, the annotation's refusal as
@@ -6350,7 +6349,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   comma-separated tuple plans one tuple rather than treating the commas
     ///   as grouping, and an annotation no form carries plans its ascription.
     /// - witness: `gandr-surface-lowering::lower::tests::a_grouping_lowers_to_what_it_wraps`
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_group_returns_what_the_parenthesised_group_returns_5771`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_group_of_ports_returns_and_binds_its_outputs_5771`
     /// - witness: `gandr-surface-lowering::lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_parameterized_constructor_needs_its_classifier`
@@ -6379,7 +6378,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
         };
         if let Maybe::Present(_) = cursor.at(TileName::DOT) {
-            return Models::new(self.host()).labelled_outputs(site, list, open);
+            return Models::new(self.host()).labelled_outputs(site, list);
         }
         let run = cursor.operands();
         if open == TileName::PORT_GROUP_OPEN
@@ -6565,21 +6564,20 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(())
     }
 
-    /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included, or,
-    /// ending a body whose result is a group of outputs, the return of one
-    /// value per output. A group opened by `%(`, `%(v)` included, is a group
-    /// of ports, which stands only there.
+    /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included, or a
+    /// group of ports, `%(v1, …, vn)`, `%(v)` included: the return of one
+    /// value per output, ending a body whose result is a group of outputs.
     ///
     /// # Specification
     /// - requires: `cursor` stands at the `open` of a parenthesised expression
     ///   whose first member a comma follows, or at the `%(` of a positional
     ///   group of ports.
-    /// - ensures: ending a body whose written result is a group of outputs, as
-    ///   `Models::answered_outputs` reads it, the tuple stands as a computation
-    ///   and is planned as the return of its members; otherwise it stands as a
-    ///   value and is planned over them as one tuple, as one `*` chain is one
-    ///   product. Either way every member is read as a value under its own
-    ///   frame. At a product it is written or answered at, as
+    /// - ensures: a group of ports ending a body whose written result is a
+    ///   group of outputs, as `Models::answered_outputs` reads it, stands as a
+    ///   computation and is planned as the return of its members; a tuple
+    ///   stands as a value and is planned over them as one tuple, as one `*`
+    ///   chain is one product. Either way every member is read as a value under
+    ///   its own frame. At a product it is written or answered at, as
     ///   [`Self::stated_value`] reads it, of as many positional components as
     ///   it has members, each member written as a constructor, a call, a list
     ///   or a parenthesised form takes the component at its place, as
@@ -6587,9 +6585,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - provides: the introduction of the eager product, and the return of
     ///   several values.
     /// - fails: yields the wrong-sort refusal where no value is read, and where
-    ///   a group opened by `%(` ends no body of outputs; the list's refusal for
-    ///   a member out of shape, both naming the tuple; the walk's refusal
-    ///   reading the product.
+    ///   a group opened by `%(` ends no body of outputs; a tuple that ends a
+    ///   body of outputs is a group of ports written with a bare `(`, refused
+    ///   by name; the list's refusal for a member out of shape, both naming the
+    ///   tuple; the walk's refusal reading the product.
     /// - panics: none.
     ///
     /// # Errors
@@ -6607,7 +6606,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   that returns two outputs.
     /// - witness: `gandr-surface-lowering::lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_group_of_ports_returns_and_binds_its_outputs_5771`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -6630,6 +6629,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         };
         let outputs = Models::new(self.host()).answered_outputs(site)?;
         let produced = match outputs {
+            Some(_) if open == TileName::PAREN_OPEN => {
+                return Err(LoweringRefusal::MalformedForm {
+                    span: site.at.span,
+                    form: FormName::TUPLE,
+                    fault: FormFault::BarePortGroup,
+                });
+            },
             Some(_) => Produced::Computation,
             None if open == TileName::PORT_GROUP_OPEN => {
                 return Err(site.out(FragmentBoundary::WrongSort));
@@ -8504,8 +8510,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 None => Models::new(self.host()).called_outputs(frame, bound, run.node)?,
                 Some(_) => None,
             };
-            // A group in parentheses receives a call's outputs alone. Over a
-            // stored product the pattern is `*{p, q}`.
+            // A group of ports `%( … )` receives a call's outputs alone. Over
+            // a stored product the pattern is `*{p, q}`.
             if outputs.is_none()
                 && self.cx().tree.node(binder.node).is_some_and(|node| {
                     matches!(
@@ -8955,18 +8961,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
 
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
 {
-    /// The component patterns of a tuple pattern `(p, q)`, a group of ports
-    /// `%(p, q)` or a product pattern `*{p, q}` standing as a `let` statement's
-    /// binder, in order.
+    /// The component patterns of a group of ports `%(p, q)` or a product
+    /// pattern `*{p, q}` standing as a `let` statement's binder, in order.
     ///
     /// # Specification
     /// - requires: `binder` is the pattern operand of the statement at
     ///   `statement`.
-    /// - ensures: each component of a tuple, a port group or a product pattern,
-    ///   in order, with its label when it is written `.l` or `.l = p`: the
-    ///   label tile itself is the component of a punned `.l`; the patterns of
-    ///   the same components give the same components; absent for any other
-    ///   pattern. Only a group opened by `%(` has one component.
+    /// - ensures: each component of a port group or a product pattern, in
+    ///   order, with its label when it is written `.l` or `.l = p`: the label
+    ///   tile itself is the component of a punned `.l`; the patterns of the
+    ///   same components give the same components; absent for any other
+    ///   pattern. Only a group of ports has one component.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and a
     ///   fault naming the `let` statement for a repaired pattern or a tile out
     ///   of place among the components.
@@ -8976,15 +8981,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// The pattern's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a two-component tuple binds both names in order, and
-    ///   three components bind all three, and a name pattern reads as no tuple;
-    ///   a labelled group binds each output by its label; a group of ports
-    ///   binds as the parenthesised group binds, and of one port too.
+    /// - hypothesis: L3 — a two-component group binds both names in order, and
+    ///   three components bind all three, and a name pattern reads as no group;
+    ///   a labelled group binds each output by its label; a group of one port
+    ///   binds its output.
     /// - witness: `gandr-surface-lowering::lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     /// - witness: `gandr-surface-lowering::lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `gandr-surface-lowering::lower::tests::a_split_of_three_components_lowers`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_labelled_pattern_binds_each_output_by_its_label`
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_group_returns_what_the_parenthesised_group_returns_5771`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_group_of_ports_returns_and_binds_its_outputs_5771`
     /// - witness: `gandr-surface-lowering::lower::tests::a_product_binder_splits_as_the_tuple_binder_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => !parts.is_empty(), Maybe::Absent(_) => true }))]
     fn tuple_binders(
@@ -9002,7 +9007,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             return Ok(Maybe::Absent(untupled::Absent::OtherPattern));
         };
         let (open, close) = match name {
-            FormName::TUPLE_PATTERN => (TileName::PAREN_OPEN, TileName::PAREN_CLOSE),
+            FormName::TUPLE_PATTERN => (TileName::PORT_GROUP_OPEN, TileName::PAREN_CLOSE),
             FormName::TELESCOPE_PATTERN => (TileName::RECORD, TileName::BRACE_CLOSE),
             _ => return Ok(Maybe::Absent(untupled::Absent::OtherPattern)),
         };
@@ -9012,17 +9017,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             return Err(repaired.refusal(name));
         }
         let mut cursor = Cursor::new(&pieces.pieces, binder.span);
-        let ported = matches!(cursor.at(TileName::PORT_GROUP_OPEN), Maybe::Present(_));
-        closed(
-            statement,
-            &mut cursor,
-            if ported {
-                TileName::PORT_GROUP_OPEN
-            }
-            else {
-                open
-            },
-        )?;
+        closed(statement, &mut cursor, open)?;
         let mut components = Vec::new();
         loop {
             let component = if let Maybe::Present(_dot) = cursor.tile(TileName::DOT) {
@@ -9047,7 +9042,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             closed(statement, &mut cursor, close)?;
             break;
         }
-        if components.len() < 2 && !ported {
+        if components.len() < 2 && name != FormName::TUPLE_PATTERN {
             return Err(statement.fault(binder.span, FormFault::MisplacedTile));
         }
         Ok(Maybe::Present(components))

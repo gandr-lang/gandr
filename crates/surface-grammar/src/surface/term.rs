@@ -1708,30 +1708,18 @@ fn patterns(
             opt(seq([t(TileLabel("(")), comma1(h(s)), t(TileLabel(")"))])),
         ]),
     ));
-    // A group of patterns receiving a call's outputs, positional `(q, r)` or
-    // labelled `(.q, .r)`, `(.r = rem, .q = quo)`. The labelled group takes a
-    // `(` of its own, decided by the very next tile, as the labelled telescope
-    // does, so a dot after an operand is never a label's. A stored product
-    // takes the pattern `*{p, q}`. The port group's opener `%(` reads the same
-    // groups, and a positional group of one port, `%(q)`, beside them.
+    // A group of patterns receiving a call's outputs: the port group's opener
+    // `%(`, then patterns positional `%(q, r)`, of one port `%(q)`, or
+    // labelled `%(.q, .r)`, `%(.r = rem, .q = quo)`. The labelled group is
+    // decided by the very next tile, as the labelled telescope is, so a dot
+    // after an operand is never a label's. A stored product takes the pattern
+    // `*{p, q}`.
     out.push(r(
         RuleName("tuple_pattern"),
         Provenance("tuple_pattern"),
         s,
         atom,
         alt([
-            seq([
-                t(TileLabel("(")),
-                comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
-                t(TileLabel(")")),
-            ]),
-            seq([
-                t(TileLabel("(")),
-                h(s),
-                repeat1(seq([t(TileLabel(",")), h(s)])),
-                opt(t(TileLabel(","))),
-                t(TileLabel(")")),
-            ]),
             seq([
                 t(TileLabel("%(")),
                 comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
@@ -4284,15 +4272,10 @@ fn primary_expressions(
     // language is unchanged; the folded kinds are recorded as adaptations
     // for the parity inventory.
     //
-    // A labelled group of outputs, `( .l = E, … )`, has its own `(`. The next
-    // tile selects it, as the next tile selects the labelled telescope
-    // `*{ .l = E }`. A `(` that takes a hole and a `.` after it reads the
-    // projection dot in `(p.x, p.y)` as a label. This alternative is last.
-    // Thus a `(` with no next tile closes as the unit `( )`.
-    //
     // The port group's opener `%(` reads a group of outputs, positional
-    // `%(E, E)`, of one port `%(E)`, or labelled `%(.l = E, …)`; no `%(`
-    // groups an expression.
+    // `%(E, E)`, of one port `%(E)`, or labelled `%(.l = E, …)`, the labelled
+    // group decided by the next tile, as the labelled telescope `*{ .l = E }`
+    // is; no `%(` groups an expression.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),
@@ -4324,12 +4307,6 @@ fn primary_expressions(
                         ]),
                     ]),
                 ]),
-            ]),
-            // a labelled group of outputs: `( .l = E , … )`
-            seq([
-                t(TileLabel("(")),
-                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
-                t(TileLabel(")")),
             ]),
             // a group of ports: `%( E (, E)* ,? )`
             seq([

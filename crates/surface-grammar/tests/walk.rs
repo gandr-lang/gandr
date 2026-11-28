@@ -106,14 +106,15 @@ use crate::failure::Failure;
 /// fields by juxtaposition, `Cons x rest`, and a group of one pattern,
 /// `Just (Just x)`, then by the group of ports `%( … )` in a tail and in a
 /// pattern (#5771), then by the handler's words `handle … with` leaving the
-/// grammar.
-const BUILT_IN_FINGERPRINT: u64 = 0x4477_3795_bb3b_9bda;
+/// grammar, then by the labelled group `( .l = E )` and the pattern group
+/// `( p, q )` leaving it.
+const BUILT_IN_FINGERPRINT: u64 = 0xfff8_a5ff_25c1_bd70;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2884);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2855);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
@@ -131,8 +132,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 1),
     ("&&", 1),
     ("&{", 2),
-    ("(", 113),
-    (")", 121),
+    ("(", 110),
+    (")", 118),
     ("*", 2),
     ("*=", 10),
     ("*{", 9),
@@ -141,13 +142,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 10),
     ("+U", 1),
     ("+{", 3),
-    (",", 277),
+    (",", 270),
     ("-", 6),
     ("-->", 31),
     ("-=", 10),
     ("->", 13),
     ("-F", 3),
-    (".", 80),
+    (".", 76),
     (".#[", 2),
     (".#{", 1),
     (".*{", 1),
@@ -160,7 +161,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
-    ("=", 132),
+    ("=", 128),
     ("==", 1),
     ("==>", 27),
     ("=>", 24),
@@ -238,7 +239,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("i32", 1),
     ("i64", 1),
     ("i8", 1),
-    ("identifier", 408),
+    ("identifier", 404),
     ("if", 16),
     ("import", 11),
     ("in", 1),
@@ -254,7 +255,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("mobile", 10),
     ("module", 12),
     ("node", 3),
-    ("number", 56),
+    ("number", 52),
     ("obs", 1),
     ("offer", 1),
     ("offers", 1),

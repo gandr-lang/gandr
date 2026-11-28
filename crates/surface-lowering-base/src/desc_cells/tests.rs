@@ -80,7 +80,7 @@ fn a_declared_single_output_operation_lets_its_rule_become_a_cell()
 #[test]
 fn a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output()
 {
-    let source = "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> (Zero, m); }";
+    let source = "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> %(Zero, m); }";
     let descriptions = descriptions(source);
     assert_eq!(descriptions.diagnostics, []);
     assert_eq!(

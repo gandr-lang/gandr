@@ -2191,7 +2191,7 @@ fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
         "tests/unformatted/a-tuple-pattern-binds-each-output-of-an-operation-4855-operation.gandr"
     );
     let source = format!(
-        "{operation}def second(a : Flag, b : Flag) -> Flag = {{ let (x, y) = swap(a, b); y }};\n"
+        "{operation}def second(a : Flag, b : Flag) -> Flag = {{ let %(x, y) = swap(a, b); y }};\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(source.as_str(), &mut arena);
@@ -2214,7 +2214,7 @@ fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
         "the last output is the innermost binder"
     );
     let three =
-        format!("{operation}def three(a : Flag) -> Flag = {{ let (x, y, z) = swap(a, a); x }};\n");
+        format!("{operation}def three(a : Flag) -> Flag = {{ let %(x, y, z) = swap(a, a); x }};\n");
     assert!(
         matches!(
             refused(three.as_str()),
@@ -2501,7 +2501,7 @@ fn a_labelled_group_returns_each_value_at_its_output()
         ["thunk", "lambda", "return0"],
         "`()` ending a body of no outputs returns none"
     );
-    let loose = "def loose(a : Integer) -> Integer = (.q = a, .r = a);";
+    let loose = "def loose(a : Integer) -> Integer = %(.q = a, .r = a);";
     assert!(
         matches!(refused(loose), LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::WrongSort,
@@ -2509,7 +2509,7 @@ fn a_labelled_group_returns_each_value_at_its_output()
         }),
         "a labelled group is no value"
     );
-    let stray = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (.q = n, .x = \
+    let stray = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = %(.q = n, .x = \
                  m);";
     assert!(
         matches!(refused(stray), LoweringRefusal::MalformedForm {
@@ -2546,9 +2546,9 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
         Some("#1"),
         "`.q = quo` binds the first output to `quo`, written last"
     );
-    let divmod = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n);\n";
+    let divmod = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = %(m, n);\n";
     let stray = format!(
-        "{divmod}def stray(a : Integer) -> Integer = {{ let (.x, .q) = divmod(a, a); q }};"
+        "{divmod}def stray(a : Integer) -> Integer = {{ let %(.x, .q) = divmod(a, a); q }};"
     );
     assert!(
         matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
@@ -2557,8 +2557,9 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
         }),
         "a label names an output of the call"
     );
-    let mixed =
-        format!("{divmod}def mixed(a : Integer) -> Integer = {{ let (.q, r) = divmod(a, a); r }};");
+    let mixed = format!(
+        "{divmod}def mixed(a : Integer) -> Integer = {{ let %(.q, r) = divmod(a, a); r }};"
+    );
     let mixed = refused(mixed.as_str());
     assert!(
         matches!(mixed, LoweringRefusal::OutOfFragment {
@@ -2580,28 +2581,13 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
     );
 }
 
-/// #5771: a group of ports, `%( … )`, in a body's tail and in a pattern,
-/// lowers to the core of the parenthesised group; a group of one port returns
-/// and binds its one output, and no group of ports stands as a value.
+/// #5771: a group of ports, `%( … )`, returns its outputs at a body's tail and
+/// binds a call's outputs in a pattern, a group of one port too; no group of
+/// ports stands as a value, and a group of outputs written with a bare `(` is
+/// refused by name.
 #[test]
-fn a_port_group_returns_what_the_parenthesised_group_returns_5771()
+fn a_group_of_ports_returns_and_binds_its_outputs_5771()
 {
-    let bodies = |open: &str| {
-        let source = format!(
-            "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = {open}m, n);\n\
-             def named(m : Integer, n : Integer) -> (q : Integer, r : Integer) = {open}.r = n, .q = m);\n\
-             def first(a : Integer) -> Integer = {{ let {open}q, r) = divmod(a, a); q }};\n\
-             def punned(a : Integer) -> Integer = {{ let {open}.r, .q) = divmod(a, a); r }};\n"
-        );
-        let mut arena = CoreArena::new();
-        let module = lowered(source.as_str(), &mut arena);
-        ["divmod", "named", "first", "punned"].map(|name| body(&arena, &module, name))
-    };
-    assert_eq!(
-        bodies("%("),
-        bodies("("),
-        "a group of ports lowers as the parenthesised group"
-    );
     let mut arena = CoreArena::new();
     let module = lowered(
         "def half(m : Integer) -> (q : Integer) = %(m);\ndef take(a : Integer) -> Integer = { let \
@@ -2629,6 +2615,14 @@ fn a_port_group_returns_what_the_parenthesised_group_returns_5771()
             }
         ),
         "a group of ports is no value"
+    );
+    let bare = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n);";
+    assert!(
+        matches!(refused(bare), LoweringRefusal::MalformedForm {
+            fault: FormFault::BarePortGroup,
+            ..
+        }),
+        "a group of outputs opens with `%(`"
     );
 }
 

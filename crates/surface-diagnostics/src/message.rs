@@ -584,6 +584,9 @@ fn lowered(
                 FormFault::BareIndex => {
                     f.write_str("this bracket after an operand indexes an element")
                 },
+                FormFault::BarePortGroup => {
+                    f.write_str("this parenthesised list ends a body of outputs as a group of ports")
+                },
                 FormFault::PositionalAfterNamed => {
                     f.write_str("this implicit is supplied by position after one supplied by name")
                 },

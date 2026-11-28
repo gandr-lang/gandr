@@ -150,11 +150,6 @@ pub enum RewriteName
     /// `s.m`; both forms write the selection alone, the one spelling of the
     /// call.
     BareRun,
-    /// A group of ports: `(q, r)`, `(.q = a, .r = b)` and `(v,)`, and
-    /// `%(q, r)`, `%(.q = a, .r = b)` and `%(v)`, in a body's tail and in a
-    /// pattern that receives a call's outputs; both forms write `%( … )`, the
-    /// one spelling of a group of ports.
-    PortGroup,
 }
 
 impl RewriteName
@@ -180,7 +175,6 @@ impl RewriteName
         Self::TypeApplication,
         Self::PatternApplication,
         Self::BareRun,
-        Self::PortGroup,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -211,7 +205,6 @@ impl RewriteName
             Self::TypeApplication => "type-application",
             Self::PatternApplication => "pattern-application",
             Self::BareRun => "bare-run",
-            Self::PortGroup => "port-group",
         }
     }
 
@@ -298,7 +291,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 41] = [
+pub const REWRITES: [Rewrite; 37] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -598,38 +591,6 @@ pub const REWRITES: [Rewrite; 41] = [
         from: Spelling("s.m ()"),
         to: Spelling("s.m"),
         enabled: Enabled::On,
-    },
-    Rewrite {
-        name: RewriteName::PortGroup,
-        direction: Direction::Sugar,
-        mold: MoldName("parenthesized_expression"),
-        from: Spelling("(q, r)"),
-        to: Spelling("%(q, r)"),
-        enabled: Enabled::Off,
-    },
-    Rewrite {
-        name: RewriteName::PortGroup,
-        direction: Direction::Desugar,
-        mold: MoldName("parenthesized_expression"),
-        from: Spelling("(q, r)"),
-        to: Spelling("%(q, r)"),
-        enabled: Enabled::Off,
-    },
-    Rewrite {
-        name: RewriteName::PortGroup,
-        direction: Direction::Sugar,
-        mold: MoldName("tuple_pattern"),
-        from: Spelling("let (q, r) = …"),
-        to: Spelling("let %(q, r) = …"),
-        enabled: Enabled::Off,
-    },
-    Rewrite {
-        name: RewriteName::PortGroup,
-        direction: Direction::Desugar,
-        mold: MoldName("tuple_pattern"),
-        from: Spelling("let (q, r) = …"),
-        to: Spelling("let %(q, r) = …"),
-        enabled: Enabled::Off,
     },
 ];
 
@@ -2542,19 +2503,6 @@ impl<'source> Respelling<'_, 'source>
                 }
                 self.juxtaposed_pattern(&mut out, parts)?
             },
-            (RewriteName::PortGroup, Direction::Sugar | Direction::Desugar) => {
-                // A call's argument is a product value, a glob's cell binds
-                // its ends, and an attribute's list holds its words: none is a
-                // group of ports. A pattern receives a call's outputs only as
-                // a `let` binder.
-                let rule = self.rule(at)?;
-                if self.argument_or_attribute(at)
-                    || (rule == MoldName("tuple_pattern") && !self.let_binder(at))
-                {
-                    return None;
-                }
-                return self.port_group(rule, parts, extent);
-            },
             (RewriteName::BareRun, Direction::Sugar | Direction::Desugar) => {
                 self.bare_run(&mut out, parts)?
             },
@@ -3233,175 +3181,6 @@ impl<'source> Respelling<'_, 'source>
         let operand = self.operand(body);
         out.place(&operand, Band::Loose);
         Some(operand.band)
-    }
-
-    /// The group of ports spanning `extent` whose parts are `parts`, written
-    /// with the opener `%(`: a positional group `(q, r)` as `%(q, r)`, a
-    /// labelled group `(.q = a, .r = b)` as `%(.q = a, .r = b)`, and a group of
-    /// one port `(v,)` as `%(v)`. Nothing for a grouping `(e)`, the empty
-    /// `()`, an annotation `(e : T)` or a group that `%(` opens already. The
-    /// meaning check withdraws the rewrite where the group is a product, which
-    /// `%(` does not spell.
-    ///
-    /// # Specification
-    /// - requires: `parts` are the parts of a parenthesised expression or of a
-    ///   tuple pattern, in source order, and `rule` is its rule.
-    /// - ensures: `None` unless the first own tile is `(`, an own `,` or `.`
-    ///   stands among the own tiles and no own `:` does; otherwise the form as
-    ///   written, but for that `(` written `%(` and, in a group of one operand
-    ///   and no label, its `,` left out.
-    /// - panics: none.
-    /// - executable: none — the clause names the roles of the form's parts,
-    ///   which no predicate on the arguments and the result states more simply.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a positional, a labelled and a one-port group in a
-    ///   tail and in a pattern are respelled, a comment kept; a grouping, an
-    ///   annotation and the empty group are kept.
-    /// - witness: `tests::rewrite::a_group_of_ports_is_written_with_its_opener_5771`
-    ///
-    /// # Cost
-    /// - allocation: the own tiles of the form, and the written leaves, growth
-    ///   within the form's parts
-    fn port_group(
-        &mut self,
-        rule: MoldName,
-        parts: &[Part<'source>],
-        extent: ByteSpan,
-    ) -> Option<Spelled<'source>>
-    {
-        let owns: Vec<&str> = parts
-            .iter()
-            .filter_map(|part| match part.role {
-                Role::Own(tile) => Some(<&str>::from(tile)),
-                Role::Operand(_) | Role::Comment => None,
-            })
-            .collect();
-        if owns.first() != Some(&"(")
-            || owns.contains(&":")
-            || !owns.iter().any(|&tile| tile == "," || tile == ".")
-        {
-            return None;
-        }
-        let operands = parts
-            .iter()
-            .filter(|part| matches!(part.role, Role::Operand(_)))
-            .count();
-        let tile = |text: &str| {
-            parts
-                .iter()
-                .find(|part| matches!(part.role, Role::Own(own) if <&str>::from(own) == text))
-                .and_then(|part| {
-                    part.leaves
-                        .iter()
-                        .find(|leaf| leaf.material == Material::Token)
-                })
-                .map(|leaf| leaf.span)
-        };
-        let open = tile("(")?;
-        let lone = if operands == 1 && !owns.contains(&".") {
-            tile(",")
-        }
-        else {
-            None
-        };
-        let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
-            Commented::Yes
-        }
-        else {
-            Commented::No
-        };
-        let kept = self.kept(rule, parts, extent, (commented, Open::Yes));
-        let mut out = Builder {
-            leaves: Vec::with_capacity(kept.leaves.len()),
-            position: ByteSpan::new(extent.start(), extent.start()).unwrap_or(extent),
-            form: extent,
-            owner: Owner::Form(self.form),
-        };
-        for &leaf in &kept.leaves {
-            if leaf.material != Material::Token {
-                out.leaves.push(leaf);
-            }
-            else if leaf.span == open {
-                out.token(Spelling("%("));
-            }
-            else if Some(leaf.span) != lone {
-                out.leaves.push(leaf);
-            }
-        }
-        self.changed = Changed::Yes;
-        Some(Spelled {
-            leaves: out.leaves,
-            rewritten: Changed::Yes,
-            ..kept
-        })
-    }
-
-    /// Whether the form at `at` is the operand of a call or of a glob, or
-    /// stands in an attribute: a group there is a product value, a cell's
-    /// ends or an attribute's words, never a group of ports.
-    ///
-    /// # Specification
-    /// trivial.
-    fn argument_or_attribute(
-        &self,
-        at: NodeIndex,
-    ) -> bool
-    {
-        let named = |node: NodeIndex| match self.tree.node(node).map(Node::label) {
-            Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) => {
-                self.grammar.rule_of(mold).ok().map(|rule| rule.name().0)
-            },
-            Some(
-                NodeLabel::Wald
-                | NodeLabel::Grout { .. }
-                | NodeLabel::GhostClose { .. }
-                | NodeLabel::Space
-                | NodeLabel::Doc,
-            )
-            | None => None,
-        };
-        let mut node = at;
-        while let Some(&parent) = self.parents.get(&node) {
-            match named(parent) {
-                Some("attribute_block" | "inner_attribute_block") => return true,
-                Some("call_expression" | "application_expression" | "glob_expression")
-                    if node == at =>
-                {
-                    return true;
-                },
-                _ => node = parent,
-            }
-        }
-        false
-    }
-
-    /// Whether the form at `at` is the binder of a `let` statement: the
-    /// written child before it in its parent is the tile `let`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn let_binder(
-        &self,
-        at: NodeIndex,
-    ) -> bool
-    {
-        let Some(&parent) = self.parents.get(&at)
-        else {
-            return false;
-        };
-        self.tree
-            .children(parent)
-            .take_while(|&child| child != at)
-            .filter(|&child| {
-                !matches!(
-                    self.tree.node(child).map(Node::label),
-                    Some(NodeLabel::Space | NodeLabel::Doc)
-                )
-            })
-            .last()
-            .and_then(|child| self.tree.fragment(child))
-            .is_some_and(|text| AsRef::<str>::as_ref(&text) == "let")
     }
 
     /// Write the call spanning `extent` whose parts are `parts` as its one
@@ -4283,7 +4062,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 49] = [
+const RULES: [MoldName; 48] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4315,7 +4094,6 @@ const RULES: [MoldName; 49] = [
     MoldName("as_pattern"),
     MoldName("or_pattern"),
     MoldName("cons_pattern"),
-    MoldName("tuple_pattern"),
     MoldName("forget_model_expression"),
     MoldName("path_type"),
     MoldName("bridge_type"),

@@ -11825,9 +11825,9 @@ mod tests
         ));
         let table = table(source);
         for (needle, ty, reason) in [
-            ("(a, b)", "-F (Integer, Bool)", "the positional group"),
+            ("%(a, b)", "-F (Integer, Bool)", "the positional group"),
             ("b) =", "Bool", "a positional binder nothing reads"),
-            ("(.rem = r", "-F (Integer, Bool)", "the labelled group"),
+            ("%(.rem = r", "-F (Integer, Bool)", "the labelled group"),
             (
                 "r, .quot",
                 "Bool",

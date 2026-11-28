@@ -309,19 +309,19 @@ impl Reader<'_, '_>
     ///   terms; an application whose head is a name of `instantiable` — a
     ///   variable of the rule's left side, read on its right — is that
     ///   variable's instantiation; a parenthesized term is its one component,
-    ///   and a parenthesized list of several is a results tuple of them in
-    ///   order, and a group of ports `%( … )` reads as that list does; `bind a
-    ///   . t` is the abstraction of the atom `a` over `t`, the name `a` inside
-    ///   it that atom's occurrence and outside it a variable; a variable
-    ///   spelled in a type hole, as a pinned rewrite endpoint is, is a
+    ///   and a group of ports `%( … )` of several is a results tuple of them in
+    ///   order; `bind a . t` is the abstraction of the atom `a` over `t`, the
+    ///   name `a` inside it that atom's occurrence and outside it a variable; a
+    ///   variable spelled in a type hole, as a pinned rewrite endpoint is, is a
     ///   variable; a port `C(a, …).l`, its call in parentheses or not, is the
     ///   constructor `C.l` over `a, …`; a lowercase word applied by
     ///   juxtaposition, `ext g a`, is the application its call pieces spell,
     ///   `ext(g, a)`. The written term holds one node per node of the term, in
     ///   pre-order, each at its own bytes and an application or an abstraction
     ///   with its head's or its atom's.
-    /// - fails: forms outside names, applications, parenthesized lists and
-    ///   abstractions are located.
+    /// - fails: forms outside names, applications, parenthesized terms, groups
+    ///   of ports and abstractions are located, a parenthesized list of several
+    ///   among them.
     /// - panics: none.
     ///
     /// # Errors
@@ -329,14 +329,14 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — constructor-wrapped operation calls distinguish head
-    ///   category and child order; a two-component tuple and a parenthesized
-    ///   variable distinguish a results tuple from grouping and a swapped
-    ///   component; an atom named inside and beside its abstraction separate
-    ///   the abstraction's scope from the term after it: the occurrence inside,
-    ///   a variable beside.
+    ///   category and child order; a two-component group of ports and a
+    ///   parenthesized variable distinguish a results tuple from grouping and a
+    ///   swapped component, and a parenthesized list of two is refused; an atom
+    ///   named inside and beside its abstraction separate the abstraction's
+    ///   scope from the term after it: the occurrence inside, a variable
+    ///   beside.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
-    /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
-    /// - witness: `description::tests::a_group_of_ports_on_a_rule_s_right_reads_as_the_results_tuple_5771`
+    /// - witness: `description::tests::a_group_of_ports_reads_as_a_results_tuple_5771`
     /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     /// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
@@ -425,7 +425,8 @@ impl Reader<'_, '_>
                         continue;
                     }
                     let mut run = Run::new(&pieces, at.span);
-                    if run.eat(Spelling("%(")).0 || run.eat(Spelling("(")).0 {
+                    let ported = run.eat(Spelling("%(")).0;
+                    if ported || run.eat(Spelling("(")).0 {
                         let mut components = Vec::new();
                         while !run.eat(Spelling(")")).0 {
                             components.push(run.take()?);
@@ -439,6 +440,13 @@ impl Reader<'_, '_>
                             // `c ()` applies a constant to no input, and the
                             // constant is its bare name `c`.
                             Err(components) if components.is_empty() => {
+                                return Err(DescriptionDiagnostic {
+                                    span: at.span,
+                                    fault: DescriptionFault::Malformed,
+                                });
+                            },
+                            // Several results are a group of ports, `%(a, b)`.
+                            Err(_) if !ported => {
                                 return Err(DescriptionDiagnostic {
                                     span: at.span,
                                     fault: DescriptionFault::Malformed,

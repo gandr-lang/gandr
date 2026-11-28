@@ -332,12 +332,15 @@ fn operation_and_rule_members_elaborate_with_arities_and_faces()
     );
 }
 
+/// #5771: a group of ports `%( … )` on a rule's right side of several
+/// components is the results tuple, one parenthesized component is that
+/// component, and a parenthesized list of several is refused.
 #[test]
-fn a_parenthesized_result_list_reads_as_a_results_tuple()
+fn a_group_of_ports_reads_as_a_results_tuple_5771()
 {
     use gandr_theory_levitation::FreeTerm;
     let report = elaborated(SourceText::from(
-        "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> (Zero, m); rule : divmod Zero n ==> (divmod n (n)); }",
+        "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> %(Zero, m); rule : divmod Zero n ==> (divmod n (n)); }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref delivered, ref grouped] = *report.declarations[0].description.rules
@@ -354,26 +357,17 @@ fn a_parenthesized_result_list_reads_as_a_results_tuple()
         FreeTerm::op("divmod", [FreeTerm::var("n"), FreeTerm::var("n")]),
         "one parenthesized component is that component"
     );
-}
-
-/// #5771: a group of ports, `%( … )`, on a rule's right side reads as the
-/// parenthesised list: two components are the results tuple.
-#[test]
-fn a_group_of_ports_on_a_rule_s_right_reads_as_the_results_tuple_5771()
-{
-    use gandr_theory_levitation::FreeTerm;
-    let report = elaborated(SourceText::from(
-        "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> %(Zero, m); }",
-    ));
-    assert_eq!(report.diagnostics, []);
-    let [ref delivered] = *report.declarations[0].description.rules
+    let source = "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> (Zero, m); }";
+    let bare = elaborated(SourceText::from(source));
+    let [ref diagnostic] = *bare.diagnostics.as_slice()
     else {
-        panic!("one face")
+        panic!("a parenthesized list of several is refused once")
     };
+    assert_eq!(diagnostic.fault, DescriptionFault::Malformed);
     assert_eq!(
-        delivered.rhs,
-        FreeTerm::results([FreeTerm::ctor("Zero", []), FreeTerm::var("m")]),
-        "a group of ports of two components is the results tuple"
+        source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
+        Some("(Zero, m)"),
+        "the refusal stands at the list"
     );
 }
 

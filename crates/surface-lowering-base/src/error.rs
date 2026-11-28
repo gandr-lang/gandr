@@ -522,6 +522,9 @@ pub enum FormFault
     /// bracket at this location holds static arguments. An index uses the
     /// selector `xs.#[i]`.
     BareIndex,
+    /// A group of outputs written with a bare parenthesis, `(q, r)`, where a
+    /// body ends with its outputs. A group of ports opens with `%(`.
+    BarePortGroup,
     /// An implicit supplied by position after one supplied by name,
     /// `f[.n = 3, T]`. Positional entries come first.
     PositionalAfterNamed,
@@ -635,6 +638,7 @@ impl fmt::Display for FormFault
             },
             Self::NotAName => f.write_str("binds a pattern where it takes a name"),
             Self::BareIndex => f.write_str("indexes an element with a bare bracket"),
+            Self::BarePortGroup => f.write_str("writes a group of outputs with a bare parenthesis"),
             Self::PositionalAfterNamed => {
                 f.write_str("supplies an implicit by position after one by name")
             },

@@ -1795,7 +1795,7 @@ fn a_closer_reaches_its_open_partner_6323() -> Result<(), Failure>
 /// A group pattern whose first label has no dot recovers with the one
 /// missing tile, and the declaration around it stays one form.
 ///
-/// The missing `.` leaves the positional group `(rem` open, and the `=` after
+/// The missing `.` leaves the positional group `%(rem` open, and the `=` after
 /// `rem` starts the entry with a label as a fragment whose head is absent.
 /// When the closer of the group ends only the fragment, the group stays open,
 /// the `=` of the `let` starts a second fragment, and the declaration

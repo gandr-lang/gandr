@@ -774,7 +774,11 @@ fn a_data_rule_answers_each_node_at_its_sort()
         ty(zero),
         "under a constructor, at its field's sort"
     );
-    let results = entry(&types, span("(Zero, m)", "(Zero, m)"), DescribedRole::Term);
+    let results = entry(
+        &types,
+        span("%(Zero, m)", "%(Zero, m)"),
+        DescribedRole::Term,
+    );
     assert_eq!(ty(results), ty(call), "the right side at the left's sort");
     let used = entry(&types, span(", m)", "m"), DescribedRole::Term);
     assert_eq!(

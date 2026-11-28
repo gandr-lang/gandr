@@ -7854,12 +7854,12 @@ mod tests
         }
     }
 
-    /// #5192: a group in parentheses receives a call's outputs alone. Over a
-    /// stored product, in a `let` with or without a type and in a match arm,
-    /// the group has a tile out of place: `*{p, q}` is the pattern. A group
-    /// over a call's outputs keeps its reading.
+    /// #5192: a group of ports receives a call's outputs alone. Over a stored
+    /// product, in a `let` with or without a type and in a match arm, the
+    /// group has a tile out of place: `*{p, q}` is the pattern. A group over a
+    /// call's outputs keeps its reading.
     #[test]
-    fn a_parenthesized_product_pattern_is_a_misplaced_tile_5192()
+    fn a_group_of_ports_over_a_product_is_a_misplaced_tile_5192()
     {
         let pbg = grammar();
         let lowered = |source: &'static str| {
@@ -7880,7 +7880,7 @@ mod tests
         let refused = |start: usize| {
             [DeclarationOutcome::Refused(
                 LoweringRefusal::MalformedForm {
-                    span: span(ByteOffset::from(start), ByteOffset::from(start + 6)),
+                    span: span(ByteOffset::from(start), ByteOffset::from(start + 7)),
                     form: FormName::TUPLE_PATTERN,
                     fault: FormFault::MisplacedTile,
                 },
@@ -7888,11 +7888,11 @@ mod tests
         };
         for (source, start) in [
             (
-                "def s() -> Integer = { let pair : *{Integer, Integer} = *{1, 2}; let (a, b) = pair; a };\n",
+                "def s() -> Integer = { let pair : *{Integer, Integer} = *{1, 2}; let %(a, b) = pair; a };\n",
                 69,
             ),
             (
-                "def t() -> Integer = { let (a, b) : *{Integer, Integer} = *{1, 2}; a };\n",
+                "def t() -> Integer = { let %(a, b) : *{Integer, Integer} = *{1, 2}; a };\n",
                 27,
             ),
             (
