@@ -1109,12 +1109,12 @@ fn a_fork_and_an_offer_keep_the_exits_they_end_in_815()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(returned)),
-        faithful(Written("let a = fork (a : end) { pure *{} } ; close a"))
+        faithful(Written("let a = fork (a : end) { pure *{} }\nclose a"))
     );
     assert_eq!(
         spelled(&source, body(offering)),
         faithful(Written(
-            "let a = fork (a : end) { offer a { | next => close a | retire => pure *{} } } ; close a"
+            "let a = fork (a : end) { offer a { | next => close a | retire => pure *{} } }\nclose a"
         ))
     );
     for fork in [returned, offering] {
@@ -3424,7 +3424,7 @@ fn a_block_body_holds_its_sequence_bare()
     agrees(&core, &[], CoreNode::Computation(recursive));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(recursive))),
-        faithful(Written("loop { let b = pure 1 ; break(b) }"))
+        faithful(Written("loop do\n  let b = pure 1\n  break(b)"))
     );
 }
 
@@ -5693,13 +5693,16 @@ fn an_elaborated_body_prints_with_its_exits_elided()
         ("<thunk>".to_owned(), Fidelity::Approximate),
         "a value presented alone keeps its thunks opaque"
     );
-    pin(&source, body(sequenced), Pinned {
-        name: "elided-body",
-        flat: "fun (a) { let b = { let b = pure 1 ; pure b } ; kept b }",
-        fidelity: Fidelity::Faithful,
-    });
-    // Written on one line, each body is its layout at a page no line
-    // overflows.
+    // A body of statements has no one-line spelling: its block breaks at
+    // each page.
+    assert_eq!(
+        spelled(&source, body(sequenced)),
+        faithful(Written(
+            "fun (a) do\n  let b =\n    let b = pure 1\n    pure b\n  kept b"
+        ))
+    );
+    // Written on one line, each body with no statement is its layout at a
+    // page no line overflows.
     for id in [
         identity,
         calling,
@@ -5717,7 +5720,6 @@ fn an_elaborated_body_prints_with_its_exits_elided()
         tripled,
         single,
         empty,
-        sequenced,
     ] {
         let root = CoreNode::Computation(id);
         let wide = present_computation(
@@ -5737,11 +5739,11 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     }
 }
 
-/// A block that breaks and ends its line opens after its layout word, `do`,
-/// `where`, `=>` or `=`, its statements one a line with no `;` and no
-/// closer; a block that a token follows on its line keeps its braces, its
-/// statements still one a line; a block that fits its line stands between
-/// braces, its statements apart by `;`. Each form writes the same layout.
+/// A block of statements that ends its line opens after its layout word,
+/// `do`, `where`, `=>` or `=`, its statements one a line with no `;` and no
+/// closer, at each page; a block that a token follows on its line, as in a
+/// bracket, keeps its braces, and stands between them with its statements
+/// apart by `;` where it fits its line. Each form writes the same layout.
 #[test]
 fn a_block_that_ends_its_line_breaks_after_its_layout_word()
 {
@@ -5795,7 +5797,7 @@ fn a_block_that_ends_its_line_breaks_after_its_layout_word()
             (
                 matched,
                 wide(),
-                "fun (a) { match a { | Zero => Zero | Succ b => { let c = kept b ; kept c c } } }",
+                "fun (a) do\n  match a where\n    | Zero => Zero\n    | Succ b =>\n      let c = kept b\n      kept c c",
             ),
             (
                 matched,
@@ -6365,7 +6367,7 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     assert_eq!(
         declared_whole(&source, (ty_two, two), wide),
         written(
-            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat =\n  match c { | Zero => a | Succ d => { let e = down[<] a b d ; b e } }"
+            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat =\n  match c where\n    | Zero => a\n    | Succ d =>\n      let e = down[<] a b d\n      b e"
         ),
         "a call passes both uniform parameters in order, a call of one passes nothing more"
     );
@@ -6929,27 +6931,23 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
     let branched = core.computation_case(one, &[in_order]);
     let source = CoreSource::new(&core, &names);
     for (root, sugared, explicit) in [
-        (
-            in_order,
-            "g (f 1) (f 2)",
-            "let a = f 1 ; let b = f 2 ; g a b",
-        ),
+        (in_order, "g (f 1) (f 2)", "let a = f 1\nlet b = f 2\ng a b"),
         (
             swapped,
-            "let a = f 1 ; g (f 2) a",
-            "let a = f 1 ; let b = f 2 ; g b a",
+            "let a = f 1\ng (f 2) a",
+            "let a = f 1\nlet b = f 2\ng b a",
         ),
-        (twice, "let a = f 1 ; g a a", "let a = f 1 ; g a a"),
-        (whole, "let a = f 1 ; a", "let a = f 1 ; a"),
+        (twice, "let a = f 1\ng a a", "let a = f 1\ng a a"),
+        (whole, "let a = f 1\na", "let a = f 1\na"),
         (
             chained,
-            "let a = f 1 ; g (f a)",
-            "let a = f 1 ; let b = f a ; g b",
+            "let a = f 1\ng (f a)",
+            "let a = f 1\nlet b = f a\ng b",
         ),
         (
             branched,
             "match 1 { | +{.0 = a} => g (f 1) (f 2) }",
-            "match 1 { | +{.0 = a} => { let b = f 1 ; let c = f 2 ; g b c } }",
+            "match 1 where\n  | +{.0 = a} =>\n    let b = f 1\n    let c = f 2\n    g b c",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -6989,8 +6987,8 @@ fn a_bind_of_several_outputs_is_written_as_its_pattern_5157()
     let bound = core.computation_bind_all(called, ComponentCount::from(2_usize), returned);
     let source = CoreSource::new(&core, &names);
     for (form, expected) in [
-        (Form::Sugared, "let (a, b) = f 1 2 ; *{b, a}"),
-        (Form::Explicit, "let (a, b) = f 1 2 ; *{b, a}"),
+        (Form::Sugared, "let (a, b) = f 1 2\n*{b, a}"),
+        (Form::Explicit, "let (a, b) = f 1 2\n*{b, a}"),
     ] {
         let presented = presented_in(
             &source,
@@ -7164,7 +7162,7 @@ fn a_case_nothing_types_writes_its_motive_815()
     for (root, expected) in [
         (
             running,
-            "fun (a) { let b = match a -> -F Nat { | Zero => pure Zero | Succ b => pure b } ; b }",
+            "fun (a) do\n  let b = match a -> -F Nat { | Zero => pure Zero | Succ b => pure b }\n  b",
         ),
         (
             holding,
@@ -7181,7 +7179,7 @@ fn a_case_nothing_types_writes_its_motive_815()
         (returns_nested, "pure (pure Zero)"),
         (
             depending,
-            "fun (a) { let b = match a { | Zero => pure Zero | Succ b => pure b } ; b }",
+            "fun (a) do\n  let b = match a { | Zero => pure Zero | Succ b => pure b }\n  b",
         ),
     ] {
         assert_eq!(
@@ -7465,7 +7463,7 @@ fn a_received_payload_is_bound_as_the_surface_reads_it_815()
     agrees(&core, &[], CoreNode::Computation(received));
     let (text, _fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(received)));
     assert!(
-        text.starts_with("let a = recv ") && text.ends_with(" ; a") && !text.contains("<-"),
+        text.starts_with("let a = recv ") && text.ends_with("\na") && !text.contains("<-"),
         "a `let` binds the receive's payload, and the rest reads it: {text}"
     );
 }
@@ -8032,10 +8030,7 @@ fn a_typed_bind_spells_as_written()
     agrees(&core, &[], CoreNode::Computation(typed));
     assert_eq!(
         spelled(&source, body(typed)),
-        (
-            "let a : Integer = pure 1 ; a".to_owned(),
-            Fidelity::Faithful
-        ),
+        ("let a : Integer = pure 1\na".to_owned(), Fidelity::Faithful),
         "the typed bind spells its annotation"
     );
     assert_eq!(
@@ -8085,12 +8080,12 @@ fn a_stated_parameter_spells_as_written_3943()
     );
     assert_eq!(
         spelled(&source, computation(holding)),
-        faithful(Written("fun (a) { let b : Integer = pure held ; a }")),
+        faithful(Written("fun (a) do\n  let b : Integer = pure held\n  a")),
         "a bind holding another value is a statement"
     );
     assert_eq!(
         spelled(&source, computation(reading)),
-        faithful(Written("fun (a) { let b : Integer = pure a ; b }")),
+        faithful(Written("fun (a) do\n  let b : Integer = pure a\n  b")),
         "a bind whose binder the body reads is a statement"
     );
     assert_eq!(
@@ -8600,7 +8595,7 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
     agrees(&core, &[], CoreNode::Computation(holds));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(holds))),
-        faithful(Written("var a = *{} ; let b : Unit at a = pure a ; b"))
+        faithful(Written("var a = *{}\nlet b : Unit at a = pure a\nb"))
     );
 }
 
@@ -8780,7 +8775,7 @@ fn an_operation_with_no_continuation_prints_as_written_7968()
     assert_eq!(
         written(exited),
         faithful(Written(
-            "effect a : std.process.Exit.Eff {\n  *{}\n} handle { | pure(a) => a | oper exit(a, b) => { let c = abandon b ; 7 } }"
+            "effect a : std.process.Exit.Eff { *{} } handle {\n  | pure(a) => a\n  | oper exit(a, b) =>\n    let c = abandon b\n    7\n}"
         )),
         "a clause of an operation that resumes keeps its stack and its abandonment"
     );
@@ -8948,7 +8943,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     assert_eq!(
         spelled(&source, body(whiled)),
         faithful(Written(
-            "fun (a) do\n  while force a { let e = force a ; match e { | +{.0 = f} => continue | +{.1 = f} => return *{} } }\n  *{}"
+            "fun (a) do\n  while force a do\n    let e = force a\n    match e { | +{.0 = f} => continue | +{.1 = f} => return *{} }\n  *{}"
         )),
         "a while a rest follows writes its exits"
     );
@@ -8960,7 +8955,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     assert_eq!(
         spelled(&source, body(nested)),
         faithful(Written(
-            "fun (a) { loop { while force a { continue } ; continue } }"
+            "fun (a) do\n  loop do\n    while force a { continue }\n    continue"
         )),
         "a loop ending another's pass goes on with that pass in its rest"
     );
@@ -9036,13 +9031,13 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(alone)),
-        faithful(Written("fun (a) { loop { break } ; a }")),
+        faithful(Written("fun (a) do\n  loop { break }\n  a")),
         "a `loop`'s break goes on with the rest written after it"
     );
     assert_eq!(
         spelled(&source, body(armed)),
         faithful(Written(
-            "fun (a) { loop { match a { | +{.0 = c} => break | +{.1 = c} => continue } } ; a }"
+            "fun (a) do\n  loop { match a { | +{.0 = c} => break | +{.1 = c} => continue } }\n  a"
         )),
         "a break in an arm goes on with the rest under the arm's binder"
     );
@@ -9062,7 +9057,7 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     );
     assert_eq!(
         spelled(&source, body(whiled)),
-        faithful(Written("fun (a) { while force a { break } ; a }")),
+        faithful(Written("fun (a) do\n  while force a { break }\n  a")),
         "a `while`'s break sharing its exit's rest is bare"
     );
 }
@@ -9121,7 +9116,7 @@ fn a_for_loop_prints_as_the_loop_it_lowered_from_941()
     );
     assert_eq!(
         spelled(&source, body(exiting)),
-        faithful(Written("fun (a) { for d in a { return d } ; a }")),
+        faithful(Written("fun (a) do\n  for d in a { return d }\n  a")),
         "a `for` a rest follows writes its returner as an exit"
     );
     assert_eq!(
@@ -9214,25 +9209,25 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(continuing)),
-        faithful(Written("fun (a) { var b = a ; loop { continue } }")),
+        faithful(Written("fun (a) do\n  var b = a\n  loop { continue }")),
         "the loop's own binder applied to the slot held again is `continue`"
     );
     assert_eq!(
         spelled(&source, body(breaking)),
-        faithful(Written("fun (a) { var b = a ; loop { break(b) } }")),
+        faithful(Written("fun (a) do\n  var b = a\n  loop { break(b) }")),
         "a pass reads the slot held again by the slot's own name"
     );
     assert_eq!(
         spelled(&source, body(continuing_both)),
         faithful(Written(
-            "fun (a) { var b = a ; var c = a ; loop { continue } }"
+            "fun (a) do\n  var b = a\n  var c = a\n  loop { continue }"
         )),
         "two slots are handed on as their tuple, in order"
     );
     assert_eq!(
         spelled(&source, body(swapping)),
         approximate(Written(
-            "fun (a) { var b = a ; var c = a ; loop { become (d *{c, b}) } }"
+            "fun (a) do\n  var b = a\n  var c = a\n  loop { become (d *{c, b}) }"
         )),
         "a pass handing the slots on out of order names the unwritten loop"
     );

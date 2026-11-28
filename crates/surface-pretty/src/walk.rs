@@ -2320,6 +2320,9 @@ struct Piece
     /// with no `;`. A token after it on its line would read into its last
     /// block, so only a piece that ends its line takes it.
     laid: Option<Doc>,
+    /// Whether the piece holds a block of statements after an opener, which
+    /// breaks wherever the block ends its line.
+    forced: Forced,
 }
 
 impl Piece
@@ -2335,6 +2338,65 @@ impl Piece
             None => self.doc,
         }
     }
+}
+
+/// Whether a block of statements breaks. The layout form writes a block of
+/// statements after an opener with one statement a line and no braces, and
+/// so does the formatter, however short the block is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Forced
+{
+    /// The piece takes its flat document where it fits.
+    No,
+    /// The piece holds a block of statements after an opener: the piece,
+    /// and each block around it, break.
+    Yes,
+}
+
+impl Forced
+{
+    /// `Yes` when either is.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn or(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        match (self, other) {
+            (Self::No, Self::No) => Self::No,
+            (Self::Yes, _) | (_, Self::Yes) => Self::Yes,
+        }
+    }
+}
+
+/// Whether the parts of an open block hold a statement: a statement's end, a
+/// line, or a bind's statements written bare.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stated
+{
+    /// The block holds one expression.
+    No,
+    /// The block holds a statement.
+    Yes,
+}
+
+/// A block that the parts of a former opened and have not closed: what the
+/// parts before it wrote, and what they held.
+#[derive(Debug)]
+struct OpenBlock
+{
+    /// The documents written before the block, which its head ends.
+    head: Vec<Doc>,
+    /// The same documents where the block around them breaks.
+    laid: Vec<Doc>,
+    /// What opens the block.
+    opener: BlockOpener,
+    /// Whether the parts before the block hold a forced block.
+    forced: Forced,
+    /// Whether the parts before the block hold a statement.
+    stated: Stated,
 }
 
 /// The fields a link of a dependent record spells, `l : A, …` without the
@@ -7088,6 +7150,9 @@ struct Walk<'walk, 'names>
     /// The document the join being closed writes where its piece ends its
     /// line, when it differs from the piece's own, which its piece takes.
     laid: Option<Doc>,
+    /// Whether the join being closed holds a block of statements that
+    /// breaks, which its piece takes.
+    forced: Forced,
     /// The parts of the formers spelled by parts whose children are being
     /// walked, innermost last; each join takes its own.
     forms: Vec<Vec<Part>>,
@@ -7272,6 +7337,7 @@ impl Walk<'_, '_>
             binding: Binding::Atom,
             fields: None,
             laid: None,
+            forced: Forced::No,
         });
         Ok(())
     }
@@ -7431,6 +7497,7 @@ impl Walk<'_, '_>
             },
             fields: None,
             laid: None,
+            forced: Forced::No,
         });
         Ok(())
     }
@@ -7733,6 +7800,7 @@ impl Walk<'_, '_>
             binding: Binding::Atom,
             fields: None,
             laid: None,
+            forced: Forced::No,
         });
         Ok(())
     }
@@ -8812,6 +8880,7 @@ impl Walk<'_, '_>
                 binding: domain.binding,
                 fields: None,
                 laid: None,
+                forced: Forced::No,
             });
         }
         entries.reverse();
@@ -9350,7 +9419,7 @@ impl Walk<'_, '_>
         }
         if piece.binding == Binding::Sequence {
             let open = self.leaf(Glyphs("{"))?;
-            return Ok(self.block(open, None, piece)?.0);
+            return Ok(self.block(open, None, piece, Forced::No)?.0);
         }
         self.parenthesized(piece.doc)
     }
@@ -9493,16 +9562,33 @@ impl Walk<'_, '_>
         self.builder.concat(head, diagram)
     }
 
+    /// [`Forced::Yes`] where a block of statements after an opener breaks:
+    /// where the composer lays out. Both forms write the block so, as the
+    /// formatter reads the block's spelling back in each form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forcing(&self) -> Forced
+    {
+        if self.builder.lays_out() {
+            Forced::Yes
+        }
+        else {
+            Forced::No
+        }
+    }
+
     /// `body` as a block after `braced`, and after `laid` where the block
     /// ends its line: on one line, `braced body }` with a space inside each
     /// brace, or `body` on its own lines two columns in, its statements one a
     /// line with no `;`. Broken after `braced`, the closing brace stands on a
     /// line of its own; broken after `laid`, no closer is written, and the
-    /// line after the block, to its left, closes it. `body` is aligned at the
+    /// line after the block, to its left, closes it. A `body` that is
+    /// [`Forced::Yes`] is broken in each, and an `own` one where the block
+    /// ends its line. `body` is aligned at the
     /// column it starts at: a line it breaks on the brace's own line starts at
     /// its first token's column, where the layout begins the block's next
     /// item, or past it under a nest, where the layout reads the item on.
-    ///
     /// # Specification
     /// - requires: `braced` ends with its opening brace, and `laid`, where
     ///   given, with the layout word that opens the block.
@@ -9511,8 +9597,11 @@ impl Walk<'_, '_>
     ///   `body`'s laid document two columns and puts the closer on its own
     ///   line; and, where `laid` is given and the composer lays out, the block
     ///   where it ends its line, the same choice with `laid` and no closer in
-    ///   the broken branch. A composer that writes one line takes the flat
-    ///   branch, so neither broken branch is built for it.
+    ///   the broken branch. Where the composer lays out, a `body` that is
+    ///   [`Forced::Yes`] makes each its broken branch alone, and an `own` that
+    ///   is makes the block where it ends its line its broken branch alone. A
+    ///   composer that writes one line takes the flat branch, so neither broken
+    ///   branch is built for it.
     /// - provides: the layout of a lambda's, a thunk's, a loop's, an arm list's
     ///   and a bound block's body.
     /// - fails: the builder's refusal.
@@ -9542,6 +9631,7 @@ impl Walk<'_, '_>
         braced: Doc,
         laid: Option<Doc>,
         body: Piece,
+        own: Forced,
     ) -> Result<(Doc, Option<Doc>), PresentationError>
     {
         let close = self.leaf(Glyphs("}"))?;
@@ -9561,11 +9651,15 @@ impl Walk<'_, '_>
         let broken = self
             .builder
             .concat_all(&[braced, inner, Doc::HARD_LINE, close])?;
-        let doc = self.builder.broken_or_flat(broken, flat)?;
+        let either = |walk: &mut Self, broken: Doc, forced: Forced| match forced {
+            Forced::Yes => Ok(broken),
+            Forced::No => walk.builder.broken_or_flat(broken, flat),
+        };
+        let doc = either(self, broken, body.forced)?;
         let opened = match laid {
             Some(head) => {
                 let broken = self.builder.concat(head, inner)?;
-                Some(self.builder.broken_or_flat(broken, flat)?)
+                Some(either(self, broken, body.forced.or(own))?)
             },
             None => None,
         };
@@ -9575,14 +9669,17 @@ impl Walk<'_, '_>
     /// The statement `head = bound` before `rest`: `head = bound ; rest`
     /// where the block around it stands on one line, and, where it breaks,
     /// the statement on its own line with no `;` and `rest` on the next. A
-    /// bound block of statements opens after the `=` that ends its line.
+    /// bound block of statements opens after the `=` that ends its line, and
+    /// breaks.
     ///
     /// # Specification
     /// - requires: `head` is the statement's head before its `=`, and `rest`
     ///   the statements after it.
     /// - ensures: the statement's document, and, where the composer lays out,
     ///   its document where the block breaks; `bound` written as its laid
-    ///   document, which ends the statement's line.
+    ///   document, which ends the statement's line. Where the composer lays
+    ///   out, the join is [`Forced::Yes`] when `bound` is a block of statements
+    ///   or holds one, or `rest` holds one.
     /// - fails: the builder's refusal.
     /// - panics: none.
     ///
@@ -9619,18 +9716,25 @@ impl Walk<'_, '_>
         if !self.builder.lays_out() {
             return Ok((doc, None));
         }
+        let own = if bound.binding == Binding::Sequence {
+            self.forcing()
+        }
+        else {
+            Forced::No
+        };
         let stated = if bound.binding == Binding::Sequence {
             let open = self.leaf(Glyphs(" = {"))?;
             let braced = self.builder.concat(head, open)?;
             let opener = self.leaf(Glyphs(" ="))?;
             let opened = self.builder.concat(head, opener)?;
-            self.block(braced, Some(opened), bound)?
+            self.block(braced, Some(opened), bound, own)?
                 .1
                 .ok_or(PresentationError::Unbalanced)?
         }
         else {
             self.builder.concat_all(&[head, equals, bound.laid()])?
         };
+        self.forced = own.or(bound.forced).or(rest.forced);
         let laid = self
             .builder
             .concat_all(&[stated, Doc::HARD_LINE, rest.laid()])?;
@@ -9644,7 +9748,8 @@ impl Walk<'_, '_>
     /// - requires: `head` is a lambda's, a thunk's or a loop's head before its
     ///   opener.
     /// - ensures: as [`Self::block`], its braced head `head {` and its laid
-    ///   head `head do`.
+    ///   head `head do`. Where the composer lays out, a `body` of statements is
+    ///   [`Forced::Yes`], and so is the join when `body` holds one.
     /// - fails: the builder's refusal.
     /// - panics: none.
     ///
@@ -9677,7 +9782,14 @@ impl Walk<'_, '_>
         else {
             None
         };
-        self.block(braced, laid, body)
+        let own = if body.binding == Binding::Sequence {
+            self.forcing()
+        }
+        else {
+            Forced::No
+        };
+        self.forced = own.or(body.forced);
+        self.block(braced, laid, body, own)
     }
 
     /// The document of a former spelled by `parts` over `children`, and the
@@ -9695,7 +9807,9 @@ impl Walk<'_, '_>
     ///   no `;`, each piece that ends its line its laid document, a block of
     ///   statements after a text that ends in `=` or `=>` opened by that sign,
     ///   and each block that ends its line under a layout word opened by the
-    ///   word.
+    ///   word. There a block of statements after a sign, and a `do` block that
+    ///   holds a statement, is [`Forced::Yes`], and so is the join when one of
+    ///   its parts holds one.
     /// - fails: the builder's refusal, or [`PresentationError::Unbalanced`]
     ///   where the parts take other than `children` or open a block they do not
     ///   close.
@@ -9734,7 +9848,11 @@ impl Walk<'_, '_>
                 .any(|part| matches!(*part, Part::Open(_) | Part::Separator | Part::Line));
         let mut current = Vec::new();
         let mut laid = Vec::new();
-        let mut heads: Vec<(Vec<Doc>, Vec<Doc>, BlockOpener)> = Vec::new();
+        let mut heads: Vec<OpenBlock> = Vec::new();
+        // Whether the parts since the block opened last hold a forced block,
+        // and a statement.
+        let mut forced = Forced::No;
+        let mut stated = Stated::No;
         // The text of the part written just before, which a block of
         // statements after it may open by.
         let mut written: Option<&str> = None;
@@ -9773,6 +9891,10 @@ impl Walk<'_, '_>
                     if !laying {
                         continue;
                     }
+                    forced = forced.or(piece.forced);
+                    if piece.binding == Binding::Sequence && piece.binding <= loosest {
+                        stated = Stated::Yes;
+                    }
                     let opener = before
                         .and_then(|text| text.strip_suffix(' '))
                         .filter(|text| text.ends_with(" =") || text.ends_with("=>"));
@@ -9786,13 +9908,16 @@ impl Walk<'_, '_>
                         && let (Some(text), Some(opener)) = (before, opener)
                     {
                         // The block opens after the `=` or `=>` that ends
-                        // its line, in place of the text written before it.
+                        // its line, in place of the text written before it,
+                        // and breaks.
                         let _text = laid.pop();
                         let sign = self.leaf(Glyphs(text))?;
                         let brace = self.leaf(Glyphs("{"))?;
                         let braced = self.builder.concat(sign, brace)?;
                         let opened = self.leaf(Glyphs(opener))?;
-                        self.block(braced, Some(opened), piece)?
+                        let own = self.forcing();
+                        forced = forced.or(own);
+                        self.block(braced, Some(opened), piece, own)?
                             .1
                             .ok_or(PresentationError::Unbalanced)?
                     }
@@ -9869,6 +9994,7 @@ impl Walk<'_, '_>
                     current.push(Doc::LINE);
                     if laying {
                         laid.push(Doc::HARD_LINE);
+                        stated = Stated::Yes;
                     }
                 },
                 Part::Separator => {
@@ -9877,16 +10003,41 @@ impl Walk<'_, '_>
                     current.push(Doc::LINE);
                     if laying {
                         laid.push(Doc::HARD_LINE);
+                        stated = Stated::Yes;
                     }
                 },
-                Part::Open(opener) => heads.push((
-                    core::mem::take(&mut current),
-                    core::mem::take(&mut laid),
-                    opener,
-                )),
+                Part::Open(opener) => {
+                    heads.push(OpenBlock {
+                        head: core::mem::take(&mut current),
+                        laid: core::mem::take(&mut laid),
+                        opener,
+                        forced,
+                        stated,
+                    });
+                    forced = Forced::No;
+                    stated = Stated::No;
+                },
                 Part::Close => {
-                    let (head, head_laid, opener) =
-                        heads.pop().ok_or(PresentationError::Unbalanced)?;
+                    let OpenBlock {
+                        head,
+                        laid: head_laid,
+                        opener,
+                        forced: before_forced,
+                        stated: before_stated,
+                    } = heads.pop().ok_or(PresentationError::Unbalanced)?;
+                    // A `do` block that holds a statement and ends its line
+                    // breaks, as the formatter writes it.
+                    let own = if laying
+                        && self.forcing() == Forced::Yes
+                        && opener == BlockOpener::Do
+                        && ends
+                        && stated == Stated::Yes
+                    {
+                        Forced::Yes
+                    }
+                    else {
+                        Forced::No
+                    };
                     let body = Piece {
                         doc: self.builder.concat_all(&core::mem::take(&mut current))?,
                         binding: Binding::Sequence,
@@ -9897,11 +10048,14 @@ impl Walk<'_, '_>
                         else {
                             None
                         },
+                        forced,
                     };
+                    forced = before_forced.or(body.forced).or(own);
+                    stated = before_stated;
                     let brace = self.leaf(Glyphs(" {"))?;
                     let head = self.builder.concat_all(&head)?;
                     let braced = self.builder.concat(head, brace)?;
-                    current = Vec::from([self.block(braced, None, body)?.0]);
+                    current = Vec::from([self.block(braced, None, body, Forced::No)?.0]);
                     if laying {
                         let head = self.builder.concat_all(&head_laid)?;
                         let braced = self.builder.concat(head, brace)?;
@@ -9912,7 +10066,7 @@ impl Walk<'_, '_>
                         else {
                             None
                         };
-                        let (doc, opened) = self.block(braced, word, body)?;
+                        let (doc, opened) = self.block(braced, word, body, own)?;
                         laid = Vec::from([opened.unwrap_or(doc)]);
                     }
                 },
@@ -9923,6 +10077,7 @@ impl Walk<'_, '_>
         }
         let doc = self.builder.concat_all(&current)?;
         let laid = if laying {
+            self.forced = forced;
             Some(self.builder.concat_all(&laid)?)
         }
         else {
@@ -10258,6 +10413,7 @@ impl Walk<'_, '_>
                                 binding: Binding::Prefix,
                                 fields: None,
                                 laid: None,
+                                forced: Forced::No,
                             });
                         }),
                     );
@@ -14558,6 +14714,7 @@ impl Walk<'_, '_>
                             binding: Binding::Arrow,
                             fields: None,
                             laid: None,
+                            forced: Forced::No,
                         },
                         Binding::Atom,
                     )?;
@@ -14939,11 +15096,13 @@ impl Walk<'_, '_>
         };
         let fields = self.fields.take();
         let laid = self.laid.take();
+        let forced = core::mem::replace(&mut self.forced, Forced::No);
         self.pieces.push(Piece {
             doc,
             binding,
             fields,
             laid,
+            forced,
         });
         Ok(())
     }
@@ -15121,6 +15280,7 @@ where
         unrecorded: BTreeSet::new(),
         fields: None,
         laid: None,
+        forced: Forced::No,
         forms: Vec::new(),
         form: style.form,
         crossed: false,
@@ -15352,8 +15512,14 @@ where
     }
     // A body's statements break together: on one line when the whole body
     // fits, one statement per line otherwise, each block that ends its line
-    // opened by its layout word. Nothing follows the body on its last line.
+    // opened by its layout word. A body of statements, or one that holds a
+    // forced block, breaks. Nothing follows the body on its last line.
     let doc = match admits {
+        Admits::Computation(_)
+            if root.binding == Binding::Sequence || root.forced == Forced::Yes =>
+        {
+            root.laid()
+        },
         Admits::Computation(_) => walk.builder.broken_or_flat(root.laid(), root.doc)?,
         Admits::Type
         | Admits::ValueType
@@ -15610,6 +15776,7 @@ mod tests
             unrecorded: super::BTreeSet::new(),
             fields: None,
             laid: None,
+            forced: super::Forced::No,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             crossed: false,
@@ -15710,6 +15877,7 @@ mod tests
             unrecorded: super::BTreeSet::new(),
             fields: None,
             laid: None,
+            forced: super::Forced::No,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             crossed: false,

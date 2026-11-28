@@ -6706,7 +6706,7 @@ mod tests
         for (written, expected) in [
             ("kept", "fun (a) { a }"),
             ("called", "fun (a) { kept a }"),
-            ("sequenced", "fun (a) { let b = kept a ; kept b }"),
+            ("sequenced", "fun (a) do\n  let b = kept a\n  kept b"),
             ("suspended", "fun (a) { thunk { kept a } }"),
         ] {
             let (elided, restated) = (format!("{written}_elided"), format!("{written}_printed"));
@@ -7010,7 +7010,7 @@ mod tests
             (presentation.to_string(), presentation.fidelity())
         };
         for (name, expected) in [
-            ("bound", "fun (a) { let b = kept a ; kept b }"),
+            ("bound", "fun (a) do\n  let b = kept a\n  kept b"),
             ("nested", "fun (a) { kept (kept a) }"),
             ("nested_printed", "fun (a) { kept (kept a) }"),
             ("written", "fun (a) { kept (run (kept a)) }"),
@@ -7110,7 +7110,7 @@ mod tests
             .within(&context);
         for (source, expected) in [
             (plain.restoring(&restoration), "fun (a) { S (S (dbl a)) }"),
-            (plain, "fun (a) { let b = dbl a ; S (S b) }"),
+            (plain, "fun (a) do\n  let b = dbl a\n  S (S b)"),
         ] {
             let presentation = present_computation(
                 &source,
