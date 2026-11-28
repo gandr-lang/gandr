@@ -12,7 +12,7 @@
 /// - see: #4718 — the schedules sketch, its rulings in the issue body
 
 // The strategies and their type.
-import std.par (Strategy, eager, latent, chunked, each);
+import std.par (Strategy, eager, latent, chunked, each)
 
 /// Each element in its own task, in chunks of a thousand.
 def perChunk : Strategy = chunked 1000 (each eager)

@@ -12,11 +12,11 @@
 /// - see: corpus/sketch/oracles/solver.gandr — the solver theory and its checked model
 
 // The outcome type.
-import std.oracle (Outcome);
+import std.oracle (Outcome)
 // The solver theory and its checked model.
-import "./solver.gandr";
+import "./solver.gandr"
 // The console the report goes to.
-import std.io (print);
+import std.io (print)
 
 /// One line of the report for one obligation's outcome.
 def line(name : String, o : Outcome Goal) -> String =

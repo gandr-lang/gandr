@@ -1,4 +1,5 @@
-/// A model forgets a fixed sort, an existential is a model, and sealing differs.
+/// A model forgets a fixed sort, an existential is a model,
+/// and sealing differs.
 ///
 /// A refined model passes where a reader expects a plain one, and the reader
 /// treats the sort as abstract. With no subtyping the crossing is a term, and
@@ -13,7 +14,7 @@
 /// - see: corpus/model/identity/model-counter-manifest-explicit.gandr — `forget[sort C = A]` today
 
 // `Counter` and its theory.
-import "counters.gandr";
+import "counters.gandr"
 
 /// A counter of integers, its counts fixed.
 def ints : Model Counter with { sort C = Integer } = *{

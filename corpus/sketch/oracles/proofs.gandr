@@ -12,9 +12,9 @@
 /// - see: corpus/sketch/specifications/proofs.gandr — `with` proofs by hand and by lemma
 
 // The specification theory and `old`.
-import std.spec (Spec, old);
+import std.spec (Spec, old)
 // The solver theory and its checked model.
-import "./solver.gandr";
+import "./solver.gandr"
 
 /// Removes the front element. The solver in scope proves its size bound.
 pub def pop[a : Type](q : Queue a) -> [State(Heap)] Maybe a #spec{

@@ -12,18 +12,19 @@
 /// - see: corpus/sketch/views-and-layouts/snoc.gandr — a view whose evidence is an equivalence
 
 /// Twice a natural.
-def double(n : Nat) -> Nat = n + n;
+def double(n : Nat) -> Nat = n + n
 
 /// One more than twice a natural.
-def doubleSucc(n : Nat) -> Nat = double n + 1;
+def doubleSucc(n : Nat) -> Nat = double n + 1
 
 /// Every natural is twice a half or one more. The two injections are apart,
 /// and the remainder by two decides which one reaches a natural.
-def parityCover() -> Cover Nat [double, doubleSucc] =
+def parityCover() -> Cover Nat[double, doubleSucc] =
   Cover.decide (fun (n) { n % 2 == 0 })
 
 /// A natural read as even or odd, each with its half.
-view Parity : Nat
+view
+Parity : Nat
   | even(half : Nat)
   | odd(half : Nat)
   with parityCover

@@ -12,9 +12,9 @@
 /// - see: corpus/model/projects/tools/package.gandr — a package manifest today
 
 // The manifest theories.
-import std.build (Gandr);
+import std.build (Gandr)
 // The capabilities a grant names.
-import std.io (Command, Host, Path);
+import std.io (Command, Host, Path)
 
 /// The package, which grants each provider its capabilities.
 pub module Package : Model(Gandr.Package) where

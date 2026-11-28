@@ -18,10 +18,10 @@
 // - see: `../providers/provider.gandr` — a provider and its effects
 
 // The JSON format and its codecs.
-import std.codec.json (Json);
+import std.codec.json (Json)
 
 // The native lists.
-import std.list (List);
+import std.list (List)
 
 // The Fetch specification, which the provider reads from its WebIDL.
 @[provide(std.provide.webidl.specification[.revision = "2026-10-01"] "fetch")]
@@ -58,7 +58,7 @@ def render (list : Dom.Element, xs : List Entry) -> [Html, Dom] () =
 /// The page's start, exported to the host as `start`. A page without the
 /// list, or a body that does not decode, changes nothing.
 pub def start() -> [Html, Dom, Fetch, Async] () =
-  let document = Html.Window.document (Html.window ())
+  let document = Html.Window.document Html.window
   match Dom.Document.getElementById document "entries" where
     | None => ()
     | Some list =>

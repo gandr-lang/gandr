@@ -14,7 +14,7 @@
 import std.math.category.Pasting;
 
 // The associator of three composable paths.
-import std.math.path (assoc);
+import std.math.path (assoc)
 
 /// The associator's naturality in its first cell: the square whose sides are
 /// the associators at `fm` and `fp`, and whose other sides whisker `fa`.

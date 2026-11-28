@@ -11,9 +11,9 @@
 /// - see: corpus/sketch/nominal/pi-calculus.gandr — the π-calculus whose processes this file builds
 
 // The effect, the abstraction type, `swap` and freshness.
-import std.nominal (Fresh, fresh, swap, Abs);
+import std.nominal (Fresh, fresh, swap, Abs)
 // The π-calculus.
-import "./pi-calculus.gandr";
+import "./pi-calculus.gandr"
 
 /// Runs a body under a private name that `fresh()` draws.
 def spawn(body : (a : Name) ->[#] Proc) -> [Fresh] Proc =

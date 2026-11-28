@@ -14,24 +14,24 @@
 /// A theory of two carriers and one value of each.
 pub theory Pairing where
   /// The first carrier.
-  sort A : Type;
+  sort A : Type
   /// The second carrier.
-  sort B : Type;
+  sort B : Type
   /// A value of the first.
-  oper left : A;
+  oper left : A
   /// A value of the second.
-  oper right : B;
+  oper right : B
 
 /// A counter: a zero, a step and a reading.
 pub theory Counter where
   /// The counts.
-  sort C : Type;
+  sort C : Type
   /// The first count.
-  oper zero : C;
+  oper zero : C
   /// One step on.
-  oper incr : (c : C) --> C;
+  oper incr : (c : C) --> C
   /// What a count reads as.
-  oper read : (c : C) --> Integer;
+  oper read : (c : C) --> Integer
 
 /// One and the unit as a pair, whose type fixes both carriers.
 def bothManifest : Model Pairing with {

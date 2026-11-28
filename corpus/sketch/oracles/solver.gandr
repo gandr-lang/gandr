@@ -13,29 +13,29 @@
 /// - see: corpus/model/effects/domhringr.gandr — `Judge`, an outside oracle as a theory with no laws
 
 // The outcome type, `Checked` and the replay of a certificate.
-import std.oracle (Outcome, Checked, Certificate);
+import std.oracle (Outcome, Checked, Certificate)
 
 /// The solver's interface: a query and the answer it may give.
 pub theory Smt where
   /// A question the solver takes.
-  sort Query : Type;
+  sort Query : Type
   /// What a question admits as its answer.
-  sort Answer : Query -> Type;
+  sort Answer : Query -> Type
   /// Asks one question.
-  oper ask : (q : Query) --> Answer q;
+  oper ask : (q : Query) --> Answer q
 
 /// The sheaf equations, which the oracle theory states as its laws.
 pub theory SmtSheaf where
   /// A question the solver takes.
-  sort Query : Type+;
+  sort Query : Type+
   /// What a question admits as its answer.
-  sort Answer : Query -> Type+;
+  sort Answer : Query -> Type+
   /// What runs after an answer.
-  sort C : Type;
+  sort C : Type
   /// Asks one question, then runs what follows on its answer.
-  oper ask : (q : Query, k : (a : Answer q) -> C) --> C;
+  oper ask : (q : Query, k : (a : Answer q) -> C) --> C
   /// A second ask of one question reads the first answer.
-  rule answered : ask q (bind a. (ask q (bind b. (k a b)))) <=> ask q (bind a. (k a a));
+  rule answered : ask q (bind a. (ask q (bind b. (k a b)))) <=> ask q (bind a. (k a a))
   /// Two questions commute.
   rule reorder : ask p (bind a. (ask q (bind b. (k a b)))) <=> ask
     q
@@ -49,7 +49,7 @@ extern Process from "bin:z3" {
 
 /// z3 with checked answers: the kernel replays each certificate, or the model
 /// refuses.
-pub def checkedZ3 : Model Smt = Checked[.replay = Smt.replay] z3;
+pub def checkedZ3 : Model Smt = Checked[.replay = Smt.replay] z3
 
 /// Whether a formula is satisfiable, asked of the model in scope, its
 /// answer one of four outcomes.

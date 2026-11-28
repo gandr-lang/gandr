@@ -11,7 +11,7 @@
 /// - see: corpus/sketch/specifications/queue.gandr — `#spec{ … }` on a definition's head
 
 // The specification theory.
-import std.spec (Spec);
+import std.spec (Spec)
 
 /// An open file, whose head states its protocol.
 pub data Handle : Type #spec{

@@ -12,9 +12,9 @@
 /// - see: #4717 — the providers sketch, whose reads a codec decodes
 
 // The format and codec theories.
-import std.codec (Format, Codec);
+import std.codec (Format, Codec)
 // TOML's document type and its printer.
-import std.codec.toml (Toml, Table, Value);
+import std.codec.toml (Toml, Table, Value)
 
 /// A semantic version, as a manifest records it.
 pub type Version = *{major : Nat, minor : Nat, patch : Nat};
@@ -24,7 +24,7 @@ pub def versionToml : Codec Toml Version = *{
   .encode = fun (v) { Value.string (show v.major ++ "." ++ show v.minor ++ "." ++ show v.patch) },
   .decode = fun (doc) {
     match doc where
-      | Value.string(s) => match split s "." where
+      | Value.string s => match split s "." where
         | #[a, b, c] => (zip3 (parseNat a) (parseNat b) (parseNat c)).map
           (fun (*{x, y, z}) { *{.major = x, .minor = y, .patch = z} })
         | _ => none

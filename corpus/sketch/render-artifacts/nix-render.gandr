@@ -11,12 +11,12 @@
 /// - see: `../../model/package/nix-derivation.gandr` — the same record, read from Nix
 
 // A module reflected as a value.
-import std.elab (Elab, Module);
+import std.elab (Elab, Module)
 // JSON's document type and the generic codec.
-import std.codec.json (Json, jsonCodec);
+import std.codec.json (Json, jsonCodec)
 
 /// An output, an input derivation and an environment variable, each a pair.
-pub type Pair = String * String;
+pub type Pair = String * String
 
 /// A derivation, as format version 4 of `nix derivation show` prints one.
 @[derive(Json)]
@@ -35,7 +35,7 @@ pub type Derivation = *{
 /// What a module rendered for Nix states: the one derivation it builds.
 pub theory Built where
   /// The derivation Nix builds.
-  oper derivation : Derivation;
+  oper derivation : Derivation
 
 /// The derivation of a static site, which copies its pages into the output.
 pub def siteDerivation(pages : String, bash : String, coreutils : String) -> Derivation =

@@ -13,7 +13,7 @@
 /// - see: corpus/model/modules/model-functor.gandr — a module over a model
 
 // The grade theory and its two models.
-import std.grade (Grade, Usage, Count);
+import std.grade (Grade, Usage, Count)
 
 /// A cache over any algebra of grades. A lookup uses its loader once, and a
 /// refresh uses it once more.

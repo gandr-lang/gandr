@@ -13,18 +13,18 @@
 /// - see: #4719 — the render sketch, whose `@[render(…)]` this uses
 
 // The document type, its formats and the render over a module.
-import std.doc (Document, Typst, Markdown, literate);
+import std.doc (Document, Typst, Markdown, literate)
 
 /// The notes on rotations, typeset as a Typst document beside this source.
 @[render(literate Typst)]
 pub module Rotations where
   /// A quarter turn.
-  def quarter : Integer = 90;
+  def quarter : Integer = 90
   /// Two rotations, one after the other.
-  def andThen(a : Integer, b : Integer) -> Integer = (a + b) % 360;
+  def andThen(a : Integer, b : Integer) -> Integer = (a + b) % 360
 
 /// The same notes as Markdown, a value a site generator reads.
-pub def rotationsPage : Markdown = (literate Markdown).render Rotations;
+pub def rotationsPage : Markdown = (literate Markdown).render Rotations
 
 /// The document both renders print, before any format reads it.
 pub def rotationsDocument : Document = Document.of Rotations;

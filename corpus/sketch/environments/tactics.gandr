@@ -12,7 +12,7 @@
 /// - see: #4571 — sketch 13, macros, which read `~env`
 
 // The tactic monad and its goal.
-import std.tactic (Tactic, Goal, exact, fail);
+import std.tactic (Tactic, Goal, exact, fail)
 
 /// Closes the goal with the first hypothesis whose type matches it.
 def assumption(hyps : Model *{ .. }) -> [Tactic] Unit =
@@ -22,10 +22,10 @@ def assumption(hyps : Model *{ .. }) -> [Tactic] Unit =
     | None => fail "no hypothesis matches the goal"
 
 /// A lemma that `assumption` closes, given only its hypotheses.
-def swap(p : A, q : B) -> *{B, A} =
+def swap(p : A, q : B) -> B * A =
   *{~assumption (~env (only q)), ~assumption (~env (only p))}
 
 /// The scope narrowed by ascription to the two bindings a check reads.
 def bounds(lo : Nat, hi : Nat, step : Nat) -> Bool =
   let e = ~env : Model *{ lo : Nat; hi : Nat })
-  e.lo <= e.hi 
+  e.lo <= e.hi

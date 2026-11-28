@@ -11,7 +11,7 @@
 /// - see: #4718 — the schedules sketch, its rulings in the issue body
 
 // The parallel pair and the sequential strategy.
-import std.par (both, sequential);
+import std.par (both, sequential)
 
 /// Two searches race over one index. The `[Par]` row demands both at once,
 /// so they run apart under every policy.

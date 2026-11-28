@@ -11,7 +11,7 @@
 /// - see: #4722 — the graded-rows sketch, its rulings in the issue body
 
 // The effects and the cost theory.
-import std.cost (Cost, charge);
+import std.cost (Cost, charge)
 
 /// A tokenizer's cost is at most its input's length. Each caller reads the
 /// limit from the signature alone.

@@ -10,7 +10,7 @@
 /// - see: corpus/sketch/model-refinement/counters.gandr — the theories and the block
 
 // `Counter` and `Pairing`.
-import "counters.gandr";
+import "counters.gandr"
 
 /// The inline form: a counter of integers.
 def readZero(a : Model Counter[.C = Integer]) -> Integer =

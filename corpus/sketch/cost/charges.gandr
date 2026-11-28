@@ -28,7 +28,7 @@ def lookup(cache : Ref (Map String String), load : String -> String, key : Strin
   Cost,
   State (Heap)
 ] String =
-  match (cache.get ()).#[key] where
+  match cache.get.#[key] where
     | Some v => {
       charge 1
       v
@@ -36,7 +36,7 @@ def lookup(cache : Ref (Map String String), load : String -> String, key : Strin
     | None => {
       charge 10
       let v = load key
-      cache.set (insert (cache.get ()) key v)
+      cache.set (insert cache.get key v)
       v
     }
 

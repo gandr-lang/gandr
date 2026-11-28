@@ -12,10 +12,10 @@
 /// - see: library/std/src/grade.gandr — `Count` and `Usage`
 
 // The two algebras the tags name.
-import std.grade (Usage, Count);
+import std.grade (Usage, Count)
 
 /// The probes a deployment allows each host, counted.
-def retries = Count.3;
+def retries = Count.3
 
 /// Probes a host as often as the deployment allows. The arms of an `if` add
 /// their uses, so the longest path makes three calls.

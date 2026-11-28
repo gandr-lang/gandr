@@ -12,9 +12,9 @@
 /// - see: corpus/sketch/foreign/folds.gandr — the shared theory this folds into
 
 // The MLIR importer and its operation form.
-import std.foreign.mlir (Mlir, Op);
+import std.foreign.mlir (Mlir, Op)
 // The place theory C's loads and stores fold into.
-import std.foreign.spec (Spec, Places);
+import std.foreign.spec (Spec, Places)
 
 /// A C allocator's ClangIR, from the C file at a pinned Clang.
 def allocModule : Mlir.Module = ~mlir.module[.path = "vendor/alloc.c", .via = "clangir", .clang = "21.1"];

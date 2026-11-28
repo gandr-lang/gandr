@@ -11,9 +11,9 @@
 /// - see: corpus/sketch/providers/package.gandr — the grants these providers run under
 
 // The quotation a macro answers, and the elaborator's effect.
-import std.elab (Elab, Quote);
+import std.elab (Elab, Quote)
 // The process and network effects and their capabilities.
-import std.io (Process, Net, Io, Command, Host);
+import std.io (Process, Net, Io, Command, Host)
 
 /// The Nix attribute provider: it runs `nix eval` and reads the JSON into a
 /// record type.

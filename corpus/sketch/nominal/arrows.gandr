@@ -12,7 +12,7 @@
 /// - see: corpus/sketch/nominal/fresh.gandr — the `Fresh` effect these abstractions consume
 
 // The effect and the abstraction type.
-import std.nominal (Fresh, fresh, Abs);
+import std.nominal (Fresh, fresh, Abs)
 
 /// Applies a function exactly once.
 def once[a : Type, b : Type](f : a -> [1] b, x : a) -> b =

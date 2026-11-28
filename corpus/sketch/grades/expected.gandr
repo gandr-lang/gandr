@@ -13,7 +13,7 @@
 /// - see: library/std/src/grade.gandr — `Count`, counting in the naturals
 
 // Counting, the algebra that grades the fetches below.
-import std.grade (Count);
+import std.grade (Count)
 
 /// The answer a server gives.
 data Status : Type where

@@ -13,7 +13,7 @@
 /// - see: #4566 — the oracles sketch, whose tactics `~smt` and `~intro` are macros
 
 // The elaboration row, quoted code and the elaborator's queries.
-import std.elab (Elab, Quote, Term, Type, inferType, signatureOf);
+import std.elab (Elab, Quote, Term, Type, inferType, signatureOf)
 
 /// The type of a quoted term, as the elaborator infers it.
 pub def typeof(e : Quote Term) -> [Elab] Quote Type =

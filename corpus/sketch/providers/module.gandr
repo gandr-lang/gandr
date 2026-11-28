@@ -12,7 +12,7 @@
 /// - see: corpus/sketch/providers/nix.gandr — a provided type and value
 
 // The Nix provider.
-import std.provide.nix;
+import std.provide.nix
 
 /// Every declaration `hello` exposes at a pinned revision.
 @[provide(nix.package[.revision = "3ec636362e18"] "hello")]

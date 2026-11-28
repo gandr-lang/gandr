@@ -12,10 +12,10 @@
 /// - see: corpus/sketch/specifications/measures.gandr — sketch 6's `measure` block
 
 // The cost theory.
-import std.cost (Cost);
+import std.cost (Cost)
 // The hash routine and the library search the wrappers call.
-import std.bytes (Bytes, Digest, blake3);
-import std.array (binarySearch);
+import std.bytes (Bytes, Digest, blake3)
+import std.array (binarySearch)
 
 /// Hashes a block, at one step for each 64 bytes and one more.
 @[cost(length block / 64 + 1)]

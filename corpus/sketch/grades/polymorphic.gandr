@@ -13,7 +13,7 @@
 /// - see: library/std/src/grade.gandr — `Grade`, `Hom` and `collapse`
 
 // The grade theory, counting, and the map from counting to usage.
-import std.grade (Grade, Count, usage, count, Hom, collapse);
+import std.grade (Grade, Count, usage, count, Hom, collapse)
 
 /// Runs `step` twice, the second time on what the first gives. The grade
 /// `r + r` counts both runs in whatever algebra grades `step`.

@@ -18,13 +18,13 @@
 // - see: `../abi-and-boundaries/computed-row.gandr` — a row the importer computes
 
 // The row vocabulary of the boundary check.
-import std.boundary (Arg, NoCode, Row, View);
+import std.boundary (Arg, NoCode, Row, View)
 
 // The scalar that codes an element.
-import std.layout (U8);
+import std.layout (U8)
 
 // The bytes a buffer holds.
-import std.buffer (Bytes);
+import std.buffer (Bytes)
 
 /// The row of `getRandomValues`. It takes a view of `n` `U8` elements and
 /// answers the same view.

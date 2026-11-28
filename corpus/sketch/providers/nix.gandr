@@ -11,17 +11,17 @@
 /// - see: corpus/model/package/nix-attribute.gandr — the same answer written by hand
 
 // The Nix provider: attributes, derivations and packages.
-import std.provide.nix;
+import std.provide.nix
 
 /// `hello`'s attribute at a pinned revision, whose type the provider answers.
-type Hello = ~nix.attribute[.revision = "3ec636362e18"] "hello";
+type Hello = ~nix.attribute[.revision = "3ec636362e18"] "hello"
 
 /// `hello`'s derivation, a provided value.
-def helloDerivation = ~nix.derivation[.revision = "3ec636362e18"] "hello";
+def helloDerivation = ~nix.derivation[.revision = "3ec636362e18"] "hello"
 
 /// The attribute at whatever revision the lock resolved, the pin left to the
 /// lock.
-type HelloLatest = ~nix.attribute ("hello");
+type HelloLatest = ~nix.attribute
 
 /// Whether `hello` builds on a system, read off its provided platforms.
 def buildsOn(system : String) -> Bool =

@@ -12,11 +12,11 @@
 /// - see: corpus/sketch/literate/monoid.gandr.md — a literate Markdown host
 
 // The document formats, their markup types and their readers.
-import std.doc (Latex, Typst, Markdown);
+import std.doc (Latex, Typst, Markdown)
 
 /// The angle of a rotation, set as a Greek letter.
 @[format(latex = "\\alpha", typst = "alpha", md = "α")]
-pub def alpha : Integer = 90;
+pub def alpha : Integer = 90
 
 /// Composition of two functions, set as a ring.
 @[format(latex = "\\circ", typst = "compose", md = "∘")]

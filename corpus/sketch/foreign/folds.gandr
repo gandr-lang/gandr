@@ -12,23 +12,23 @@
 /// - see: corpus/model/specification/tree-state-wp.gandr — the fold this generalises
 
 // THIR's datatype, from the Rust importer.
-import std.foreign.rust (Thir);
+import std.foreign.rust (Thir)
 
 /// The places of a language family with owned memory: allocate, read,
 /// write and free.
 pub theory Places where
   /// A place in memory.
-  sort Place : Type;
+  sort Place : Type
   /// A value a place holds.
-  sort Val : Type;
+  sort Val : Type
   /// A fresh place holding `v`.
-  oper alloc(v : Val) -> Place;
+  oper alloc(v : Val) -> Place
   /// The value at `p`.
-  oper load(p : Place) -> Val;
+  oper load(p : Place) -> Val
   /// `v` written at `p`.
-  oper store(p : Place, v : Val) -> Unit;
+  oper store(p : Place, v : Val) -> Unit
   /// `p` given back.
-  oper free(p : Place) -> Unit;
+  oper free(p : Place) -> Unit
 
 /// THIR's meaning, which folds each node into the specification monad over
 /// `Places`.

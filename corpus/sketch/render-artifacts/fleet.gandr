@@ -15,9 +15,9 @@
 /// - see: #3374 — the manifold, whose sites a later fixture types this way
 
 // The AWS provider.
-import std.provide.aws;
+import std.provide.aws
 // JSON's document type.
-import std.codec.json (Json);
+import std.codec.json (Json)
 
 /// The EC2 and S3 resource types, computed from their API schemas and locked.
 @[provide(aws.services[.region = "eu-central-1"] (#["ec2", "s3"]))]
@@ -46,7 +46,7 @@ pub def offers : Fleet = *{
 };
 
 /// What runs now, as the provider reads it into the same types.
-pub def live : Aws.State = ~aws.state[.region = "eu-central-1"];
+pub def live : Aws.State = ~aws.state[.region = "eu-central-1"]
 
 /// The changes from the live state to the fleet, each after what it reads.
 pub def plan(now : Aws.State, fleet : Fleet) -> List Change =

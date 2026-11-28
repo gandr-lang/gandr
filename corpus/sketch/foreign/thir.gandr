@@ -13,16 +13,16 @@
 /// - see: corpus/model/interop/thir/buddy-pop.gandr — the allocator's `pop` by hand
 
 // The Rust importer: THIR's datatype, a body as its value, and its folds.
-import std.foreign.rust (Rust);
+import std.foreign.rust (Rust)
 // The shared specification monad and the place theory folds land in.
-import std.foreign.spec (Spec, Places);
+import std.foreign.spec (Spec, Places)
 
 /// THIR's datatype at the crate's pinned toolchain, which the
 /// provider answers whole.
-type Thir = ~rust.thir[.toolchain = "nightly-2026-10-01"] "corten";
+type Thir = ~rust.thir[.toolchain = "nightly-2026-10-01"] "corten"
 
 /// The buddy allocator's `pop`, its body a THIR value.
-def popBody : Thir.Body = ~rust.body "corten::buddy::pop";
+def popBody : Thir.Body = ~rust.body "corten::buddy::pop"
 
 /// What `pop` promises: it answers the head of an order's free list and
 /// leaves the rest free.

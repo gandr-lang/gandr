@@ -12,9 +12,9 @@
 /// - see: #4560 — the cells sketch, whose readers are namespaced as these are
 
 // Quoted code and the token trees a reader takes.
-import std.elab (Quote, Tokens);
+import std.elab (Quote, Tokens)
 // JSON values.
-import std.json (Json);
+import std.json (Json)
 
 /// JSON written in place: the token tree becomes a `Json` value, each
 /// `${e}` a value the program supplies.

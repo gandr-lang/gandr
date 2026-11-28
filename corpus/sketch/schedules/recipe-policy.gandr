@@ -9,8 +9,8 @@
 /// - see: #4718 — the schedules sketch, its rulings in the issue body
 
 // The build recipe's types and the strategies.
-import std.build (Recipe, Program);
-import std.par (sequential, latent);
+import std.build (Recipe, Program)
+import std.par (sequential, latent)
 
 /// A tool built with its cuts free to run apart under `latent`.
 def tool : Recipe = *{

@@ -11,7 +11,7 @@
 /// - see: corpus/sketch/environments/merge.gandr — the configurations this file opens
 
 // The build configurations.
-import "./merge.gandr";
+import "./merge.gandr"
 
 /// The command line a build runs, which reads its fields
 /// from the configuration.

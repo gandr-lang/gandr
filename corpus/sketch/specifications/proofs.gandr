@@ -12,9 +12,9 @@
 /// - see: corpus/model/specification/specification-monad.gandr — the ordered theory a clause is a term of
 
 // The specification theory.
-import std.spec (Spec);
+import std.spec (Spec)
 // The lemmas on sums the proofs below use.
-import std.math.nat (sumAppend, sumNonNegative);
+import std.math.nat (sumAppend, sumNonNegative)
 
 /// The sum of a list, by a loop that keeps a running total.
 pub def total(xs : List Nat) -> Nat #spec{
