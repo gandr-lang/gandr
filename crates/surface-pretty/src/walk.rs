@@ -5448,6 +5448,10 @@ enum Part
     Separator,
     /// The parts so far are a block's head, before its opener.
     Open(BlockOpener),
+    /// The word `handle` after a handler's body: ` handle` after a body in
+    /// braces, and `handle` at the start of the next line after a laid body,
+    /// where the layout pass reads it on at the handler's column.
+    Handle,
     /// The block opened last ends: its body two columns in, the brace
     /// closing it on a line of its own, or, where its opener is a layout word
     /// and the block ends its line, no closer: the next line closes it.
@@ -5469,8 +5473,14 @@ enum BlockOpener
     Do,
     /// `where`: the arms of a `match` or an `offer`.
     Where,
+    /// `do`: a handler's body, laid where it holds a statement, though
+    /// `handle` follows it.
+    Handled,
+    /// A handler's clauses: laid after the line-final `handle` of a laid
+    /// body, with no word of their own.
+    Clauses,
     /// A brace in each layout: a form the printer writes with no layout
-    /// word, a handler, a notation of the printer and an access.
+    /// word, a notation of the printer and an access.
     Brace,
 }
 
@@ -5483,8 +5493,9 @@ impl BlockOpener
     const fn laid(self) -> &'static str
     {
         match self {
-            Self::Do => " do",
+            Self::Do | Self::Handled => " do",
             Self::Where => " where",
+            Self::Clauses => "",
             Self::Brace => " {",
         }
     }
@@ -9853,6 +9864,9 @@ impl Walk<'_, '_>
         // and a statement.
         let mut forced = Forced::No;
         let mut stated = Stated::No;
+        // Whether the handler's body closed last is laid: its `handle` and
+        // its clauses are laid too.
+        let mut handled = false;
         // The text of the part written just before, which a block of
         // statements after it may open by.
         let mut written: Option<&str> = None;
@@ -9925,6 +9939,19 @@ impl Walk<'_, '_>
                         doc
                     };
                     laid.push(at_end);
+                },
+                Part::Handle => {
+                    let word = self.leaf(Glyphs(" handle"))?;
+                    current.push(word);
+                    if laying {
+                        if handled {
+                            let word = self.leaf(Glyphs("handle"))?;
+                            laid.extend([Doc::HARD_LINE, word]);
+                        }
+                        else {
+                            laid.push(word);
+                        }
+                    }
                 },
                 Part::Spliced(ref content) => {
                     let _literal = children.pop().ok_or(PresentationError::Unbalanced)?;
@@ -10026,18 +10053,18 @@ impl Walk<'_, '_>
                         stated: before_stated,
                     } = heads.pop().ok_or(PresentationError::Unbalanced)?;
                     // A `do` block that holds a statement and ends its line
-                    // breaks, as the formatter writes it.
-                    let own = if laying
-                        && self.forcing() == Forced::Yes
-                        && opener == BlockOpener::Do
-                        && ends
-                        && stated == Stated::Yes
-                    {
-                        Forced::Yes
-                    }
-                    else {
-                        Forced::No
+                    // breaks, as the formatter writes it; so do a handler's
+                    // body that holds one, though `handle` follows it, and
+                    // that handler's clauses.
+                    let breaks = laying && self.forcing() == Forced::Yes;
+                    let own = match opener {
+                        BlockOpener::Do => breaks && ends && stated == Stated::Yes,
+                        BlockOpener::Handled => breaks && stated == Stated::Yes,
+                        BlockOpener::Clauses => handled,
+                        BlockOpener::Where | BlockOpener::Brace => false,
                     };
+                    handled = opener == BlockOpener::Handled && own;
+                    let own = if own { Forced::Yes } else { Forced::No };
                     let body = Piece {
                         doc: self.builder.concat_all(&core::mem::take(&mut current))?,
                         binding: Binding::Sequence,
@@ -10059,12 +10086,21 @@ impl Walk<'_, '_>
                     if laying {
                         let head = self.builder.concat_all(&head_laid)?;
                         let braced = self.builder.concat(head, brace)?;
-                        let word = if opener != BlockOpener::Brace && ends {
-                            let word = self.leaf(Glyphs(opener.laid()))?;
-                            Some(self.builder.concat(head, word)?)
-                        }
-                        else {
-                            None
+                        let word = match opener {
+                            BlockOpener::Do | BlockOpener::Where if ends => {
+                                let word = self.leaf(Glyphs(opener.laid()))?;
+                                Some(self.builder.concat(head, word)?)
+                            },
+                            BlockOpener::Handled if own == Forced::Yes => {
+                                let word = self.leaf(Glyphs(opener.laid()))?;
+                                Some(self.builder.concat(head, word)?)
+                            },
+                            BlockOpener::Clauses if own == Forced::Yes => Some(head),
+                            BlockOpener::Do
+                            | BlockOpener::Where
+                            | BlockOpener::Handled
+                            | BlockOpener::Clauses
+                            | BlockOpener::Brace => None,
                         };
                         let (doc, opened) = self.block(braced, word, body, own)?;
                         laid = Vec::from([opened.unwrap_or(doc)]);
@@ -13234,8 +13270,8 @@ impl Walk<'_, '_>
         let mut parts = Parts::default();
         let clauses = |walk: &mut Self, parts: &mut Parts, count: crate::former::Arity| {
             let _ = parts
-                .text(" handle")
-                .part(Part::Open(BlockOpener::Brace))
+                .part(Part::Handle)
+                .part(Part::Open(BlockOpener::Clauses))
                 .barred(Component::from(0_usize))
                 .text("pure(")
                 .part(Part::Binder(0_usize))
@@ -13876,7 +13912,7 @@ impl Walk<'_, '_>
                 }
             },
             Former::Handle { clauses: count, .. } => {
-                let _ = parts.text("effect").body(BlockOpener::Brace);
+                let _ = parts.text("effect").body(BlockOpener::Handled);
                 clauses(self, &mut parts, count);
                 writes(Production("handle_expression"), Binding::Prefix)
             },
@@ -13902,11 +13938,11 @@ impl Walk<'_, '_>
                             .part(Part::Last(Binding::Sum)),
                     );
                 }
-                let _ = parts.body(BlockOpener::Brace);
+                let _ = parts.body(BlockOpener::Handled);
                 match answered {
                     Some(Answered::Named(model)) => {
                         let model = self.spelled(Some(model), Unspelled::Missing);
-                        let _ = parts.text(" handle ").text(model);
+                        let _ = parts.part(Part::Handle).text(" ").text(model);
                     },
                     Some(Answered::InScope) => {},
                     None => clauses(self, &mut parts, count),

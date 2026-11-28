@@ -8417,7 +8417,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "effect a : std.process.Exit.Eff { let b : Integer at a = pure a ; b } handle { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff do\n  let b : Integer at a = pure a\n  b\nhandle\n  | pure(a) => a"
         ))
     );
     let bound = core.value_type_kept(integer, Region::Bound(RegionBinder::from(0_u32)));
@@ -8433,7 +8433,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
             Root::Computation(CoreNode::Computation(bound_scoped))
         ),
         approximate(Written(
-            "effect a : std.process.Exit.Eff { let b : Integer at ? = pure a ; b } handle { | pure(a) => a }"
+            "effect a : std.process.Exit.Eff do\n  let b : Integer at ? = pure a\n  b\nhandle\n  | pure(a) => a"
         ))
     );
 }
@@ -9300,7 +9300,7 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "effect a : std.io.Ring.Eff { let b = a.alloc 4096 ; a.free\n                               b } handle { | pure(a) => a | oper alloc(c, d, b) => b\n                                              d | oper free(a, b) => b *{} }"
+            "effect a : std.io.Ring.Eff do\n  let b = a.alloc 4096\n  a.free b\nhandle\n  | pure(a) => a\n  | oper alloc(c, d, b) => b d\n  | oper free(a, b) => b *{}"
         ))
     );
 }
