@@ -1,6 +1,6 @@
 //! A theory read as the interface a capability scope handles.
 //!
-//! `handle c : T with sort S = A { M } with { … }` handles the theory `T` as
+//! `effect c : T with sort S = A { M } handle { … }` handles the theory `T` as
 //! an effect interface, its handler a model of `T` whose carrier is the
 //! handler's answer. The carrier is the one unindexed sort every effect
 //! operation returns; every other sort is a value sort, which the manifest

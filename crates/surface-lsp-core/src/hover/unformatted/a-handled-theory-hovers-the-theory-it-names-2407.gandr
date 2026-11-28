@@ -4,9 +4,9 @@ theory State where {
   oper get : (k : (s : S) -> C) --> C;
 }
 def read() -> Integer = {
-  handle st : State with sort S = Integer {
+  effect st : State with sort S = Integer {
     st.get
-  } with {
+  } handle {
     | pure(x) => pure x
     | oper get(k) => k 4
   }

@@ -1067,7 +1067,7 @@ pub enum Former
     /// A record type with fixed fields, `Config.#{.port = 443}`, or with the
     /// fields of a face fixed, `Config.#{secure ↦ *{.port = 443}}`.
     ExtensionType,
-    /// The capability scope `handle c : I { … } with { … }`: a deep handler
+    /// The capability scope `effect c : I { … } handle { … }`: a deep handler
     /// for the host interface `I` whose body holds the capability it
     /// introduces.
     Scope,

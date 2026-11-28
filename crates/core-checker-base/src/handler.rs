@@ -16,7 +16,7 @@
 //! # Examples
 //!
 //! ```text
-//! handle st : StatePutGet with sort S = Integer { … } with {
+//! effect st : StatePutGet with sort S = Integer { … } handle {
 //!   pure(x) => pure x,
 //!   oper get(k) => k(4),
 //!   oper put(s, k) => k(unit)

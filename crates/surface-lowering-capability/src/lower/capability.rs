@@ -4,8 +4,8 @@
 //!
 //! The written forms are the capability type `Cap[op, …]`, the effect row
 //! `-F [I, …] A`, the exercise `c.op(v)`, the perform `I.op(v)` by an
-//! interface's name, the capability scope `handle c : I { M } with { … }`,
-//! `with N` or no `with`, and the resumption `k(v)` of a continuation that
+//! interface's name, the capability scope `effect c : I { M } handle { … }`,
+//! `handle N` or no `handle`, and the resumption `k(v)` of a continuation that
 //! an operation clause binds or a parameter states.
 //!
 //! The rules these forms lower into are `gandr-core-checker`'s `capability`
@@ -82,7 +82,7 @@
 //!
 //! # A scope's clauses
 //!
-//! `handle c : I { M } with { | pure(x) => N | oper op(p, k) => N_op | … }`
+//! `effect c : I { M } handle { | pure(x) => N | oper op(p, k) => N_op | … }`
 //! binds `c` over `M` alone, `x` over `N`, and `p` then `k` over `N_op`. The
 //! return clause is spelled `pure`, the returner's own keyword, because
 //! `return` is the function exit in this surface; an operation clause is led by
@@ -2087,9 +2087,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// }`, its interface a host's or a theory's with its value sorts,
     /// `effect c : T with sort S = A { M } handle { … }`, the clauses of a
     /// theory's scope given by a model of it the scope names, `handle N`, or
-    /// by the one model in scope, for a scope writing no `handle`. The other
-    /// spelling, `handle c : I { M } with { … }`, reads the same, its clauses
-    /// after `with`.
+    /// by the one model in scope, for a scope writing no `handle`.
     ///
     /// # Specification
     /// - requires: `site` is a capability scope in term position.
@@ -2104,18 +2102,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   for a theory's scope, whose written name is resolved to the theory's
     ///   declaration (`LoweredModule::resolutions`); the scope is planned over
     ///   the interface, [`CapabilityRef::handled`], the subject and the clauses
-    ///   in written order, or, for `with N`, the theory's slot at the
+    ///   in written order, or, for `handle N`, the theory's slot at the
     ///   manifest's sorts ([`Families::theory_slot`]) and what `N` passes for
-    ///   it ([`Families::named_model`]), or, for no `with`, that slot and its
+    ///   it ([`Families::named_model`]), or, for no `handle`, that slot and its
     ///   holes ([`Families::answering_model`]).
     /// - fails: the wrong-sort refusal where no computation is read and at a
     ///   module a host interface's scope names; a missing-operand fault where
-    ///   the subject of a host scope writing no `with` ends, which its clauses
-    ///   follow; [`LoweringRefusal::UnresolvedName`] at a clause over an extern
-    ///   block's interface that names an operation the block lacks; out of the
-    ///   fragment (`Arity`, the clause's binders) at a clause over that
-    ///   interface that binds a payload for a member of no argument, or none
-    ///   for a member of some; the refusals of [`CapabilityRef::handled`],
+    ///   the subject of a host scope writing no `handle` ends, which its
+    ///   clauses follow; [`LoweringRefusal::UnresolvedName`] at a clause over
+    ///   an extern block's interface that names an operation the block lacks;
+    ///   out of the fragment (`Arity`, the clause's binders) at a clause over
+    ///   that interface that binds a payload for a member of no argument, or
+    ///   none for a member of some; the refusals of [`CapabilityRef::handled`],
     ///   [`Families::theory_slot`], [`Families::named_model`] and
     ///   [`Families::answering_model`]; [`LoweringRefusal::UninterfacedMember`]
     ///   at the theory's name with [`InterfaceFault::Value`] for a scope
@@ -2152,41 +2150,22 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.host().require(site, Produced::Computation)?;
-        // The scope leads with `effect`, and its clauses follow `handle`; or
-        // it leads with `handle`, and its clauses follow the last `with`, the
-        // one no `sort` follows: every manifest sort's stands before the
-        // subject. A scope writing no clauses leaves its model to the models
-        // in scope.
-        let effect = matches!(
-            pieces.pieces.first(),
-            Some(&Piece::Tile { label, .. }) if label == TileName::EFFECT
-        );
-        let (lead, answer) = if effect {
-            (TileName::EFFECT, TileName::HANDLE)
-        }
-        else {
-            (TileName::HANDLE, TileName::WITH)
-        };
+        // The scope leads with `effect`, and its clauses follow `handle`. A
+        // scope writing no clauses leaves its model to the models in scope.
         let split = pieces
             .pieces
             .iter()
-            .enumerate()
-            .rev()
-            .find(|&(at, piece)| {
-                matches!(*piece, Piece::Tile { label, .. } if label == answer)
-                    && !matches!(
-                        pieces.pieces.get(at.saturating_add(1)),
-                        Some(&Piece::Tile { label, .. }) if label == TileName::SORT
-                    )
-            })
-            .map_or(pieces.pieces.len(), |(at, _)| at);
+            .rposition(
+                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::HANDLE),
+            )
+            .unwrap_or(pieces.pieces.len());
         let Some((head, handlers)) = pieces.pieces.split_at_checked(split)
         else {
             return Err(site.fault(site.at.span, FormFault::MisplacedTile));
         };
 
         let mut cursor = Cursor::new(head, site.at.span);
-        closed(site, &mut cursor, lead)?;
+        closed(site, &mut cursor, TileName::EFFECT)?;
         let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -2260,7 +2239,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 ..site
             };
             // Only clauses answer a host's interface, so a host scope that
-            // writes no `with` leaves them out where its subject ends. A
+            // writes no `handle` leaves them out where its subject ends. A
             // doubled `}` that closes the scope early leaves the same gap.
             if !matches!(interface, Interface::Theory(_)) {
                 return Err(site.fault(cursor.here(), FormFault::MissingOperand));
@@ -2287,7 +2266,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             return Ok(());
         }
         let mut cursor = Cursor::new(handlers, site.at.span);
-        closed(site, &mut cursor, answer)?;
+        closed(site, &mut cursor, TileName::HANDLE)?;
         if let Maybe::Present(module) = cursor.tile(TileName::TYPE_IDENTIFIER) {
             exhausted(site, &cursor)?;
             if !matches!(interface, Interface::Theory(_)) {

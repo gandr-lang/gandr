@@ -1,8 +1,8 @@
 def quiet(n : Integer) -> -F Integer = {
-  handle c : Proc {
+  effect c : Proc {
     c.exit(1);
     return n
-  with {
+  handle {
     pure(x) => pure x,
     oper exit(code, k) => k(*{})
   }

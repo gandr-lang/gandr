@@ -1,8 +1,8 @@
 //! A theory's laws as rewrites of the subject a scope over the theory
 //! handles.
 //!
-//! A scope `handle c : T { M } with { … }` runs `M` against a model of `T`, so
-//! every law of `T` holds of what `M` requests: a run of requests that is an
+//! A scope `effect c : T { M } handle { … }` runs `M` against a model of `T`,
+//! so every law of `T` holds of what `M` requests: a run of requests that is an
 //! instance of a law's oriented left side computes what its right side does.
 //! [`subject_rule`] reads a law, in the direction the theory's order orients
 //! it, as such a rewrite of `M`'s bind spine, and [`normalize`] rewrites the

@@ -810,7 +810,7 @@ pub struct OriginTable
     /// writes by a member's name, at that name. The core holds the type, and
     /// the printer writes the name.
     members: Vec<(ValueTypeId, Origin)>,
-    /// Each capability scope over a theory, `handle c : T with sort C = A …
+    /// Each capability scope over a theory, `effect c : T with sort C = A …
     /// { … }`, with the theory and the sorts its manifest fixes as written,
     /// in the order lowered. The scope's signature holds the carriers
     /// substituted, not the sorts they stand for.

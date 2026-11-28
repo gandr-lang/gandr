@@ -2056,8 +2056,8 @@ mod tests
             "def f(x : A) -> A = {\n  module m =\n    M⟪;⟫\n  x\n};\n"
         );
         assert_eq!(
-            marked("def f(x : A) -> A = {\n  handle c : S.Eff with sort T =\n    A { x }\n};\n"),
-            "def f(x : A) -> A = {\n  handle c : S.Eff with sort T =\n    A { x }\n};\n"
+            marked("def f(x : A) -> A = {\n  effect c : S.Eff with sort T =\n    A { x }\n};\n"),
+            "def f(x : A) -> A = {\n  effect c : S.Eff with sort T =\n    A { x }\n};\n"
         );
         // No `=` opens inside a bracket, in a `glob` block or before a line
         // that starts with an explicit `{`.
@@ -2097,9 +2097,9 @@ mod tests
         );
         assert_eq!(
             marked(
-                "def f() -> A = {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>\n      let y = g\n      k y\n  }\n};\n"
+                "def f() -> A = {\n  effect c : S.Eff { c.get } handle {\n    | oper get(k) =>\n      let y = g\n      k y\n  }\n};\n"
             ),
-            "def f() -> A = {\n  handle c : S.Eff { c.get } with {\n    | oper get(k) =>⟪{⟫\n      let y = g⟪;⟫\n      k y⟪}⟫\n  }\n};\n"
+            "def f() -> A = {\n  effect c : S.Eff { c.get } handle {\n    | oper get(k) =>⟪{⟫\n      let y = g⟪;⟫\n      k y⟪}⟫\n  }\n};\n"
         );
         // The last arm's block closes with the arms, and the statement that
         // binds the match takes its separator.

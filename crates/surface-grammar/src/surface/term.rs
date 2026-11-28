@@ -4512,10 +4512,8 @@ fn primary_expressions(
     // does; a clause is keyword-led after the bar this rule owns, so no
     // expression hole competes with it. A theory's scope may name a model of
     // the theory in place of the clauses, `handle M`, or write no `handle`,
-    // the one model of the theory in scope answering it. The form also reads
-    // its other spelling, `handle c : I { … } with { … }`, whose `with` follows
-    // the manifest sorts' `with`: the manifest's is followed by `sort`, the
-    // clauses' by `{` or a module's name, so the three never compete. The
+    // the one model of the theory in scope answering it. The manifest sorts'
+    // `with` is followed by `sort`, so it never competes with `handle`. The
     // tree-sitter grammar has no handler, so the kind is in `PBG_ONLY_KINDS`.
     let answered_by = |word: &'static str| {
         opt(seq([
@@ -4532,9 +4530,13 @@ fn primary_expressions(
             ]),
         ]))
     };
-    let scope = |lead: &'static str, answer: &'static str| {
+    out.push(r(
+        RuleName("handle_expression"),
+        Provenance("handle_expression"),
+        s,
+        p,
         seq([
-            t(TileLabel(lead)),
+            t(TileLabel("effect")),
             t(TileLabel("identifier")),
             t(TileLabel(":")),
             effect_path(Sort::Type),
@@ -4546,15 +4548,8 @@ fn primary_expressions(
                 h(Sort::Type),
             ])),
             braced_statements(),
-            answered_by(answer),
-        ])
-    };
-    out.push(r(
-        RuleName("handle_expression"),
-        Provenance("handle_expression"),
-        s,
-        p,
-        alt([scope("effect", "handle"), scope("handle", "with")]),
+            answered_by("handle"),
+        ]),
     ));
     let mut if_expression = r(
         RuleName("if_expression"),

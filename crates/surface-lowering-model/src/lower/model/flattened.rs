@@ -46,11 +46,11 @@
 //! # A scope names a model or leaves it to the models in scope
 //!
 //! A capability scope over a theory may name a module in place of its clauses,
-//! `handle c : T with sort x = A { M } with N`: the slot is the theory's at
+//! `effect c : T with sort x = A { M } handle N`: the slot is the theory's at
 //! the manifest's sorts, as a model implicit at `Model(T) with sort x = A`
 //! reads it, and `N` passes its members as a supply naming it does. Each
 //! operation's component is stated at its derived type, the carrier read as
-//! the type `N` gives it. A scope writing no `with` leaves the slot to the
+//! the type `N` gives it. A scope writing no `handle` leaves the slot to the
 //! models in scope as a call omitting it does: a hole per component, the slot
 //! planned at the scope with its candidates.
 

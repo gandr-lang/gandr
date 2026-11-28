@@ -10607,8 +10607,8 @@ mod tests
         };
         let scope = |name: &str, theory: &str| {
             format!(
-                "def {name}() -> -F Integer = {{\n  handle st : {theory} with sort S = Integer {{\n    \
-                 let a = st.get;\n    let b = st.get;\n    pure a + b\n  }} with {{\n    \
+                "def {name}() -> -F Integer = {{\n  effect st : {theory} with sort S = Integer {{\n    \
+                 let a = st.get;\n    let b = st.get;\n    pure a + b\n  }} handle {{\n    \
                  | pure(x) => pure x\n    | oper get(k) => k 4\n  }}\n}};\n\n"
             )
         };

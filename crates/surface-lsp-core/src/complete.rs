@@ -1357,10 +1357,6 @@ mod tests
                 "effect ${1:identifier} : ${2:type} { ${3:computation} \\}",
             ),
             row(
-                "handle",
-                "handle ${1:identifier} : ${2:type} { ${3:computation} \\}",
-            ),
-            row(
                 "if",
                 "if ${1:value} { ${2:computation} \\} else { ${3:computation} \\}",
             ),

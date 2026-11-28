@@ -2491,7 +2491,7 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "`{function}` performs `{interface}` through its instance `{instance}`, and no \
                  instance of `{interface}` is handled where this call stands: handle one around \
-                 the call, `handle c : {interface} {{ … }}`, or supply one by name, \
+                 the call, `effect c : {interface} {{ … }}`, or supply one by name, \
                  `{function}[{instance} = c](…)`"
             ),
             Self::InstanceAmbiguous {

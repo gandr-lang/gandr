@@ -170,7 +170,7 @@ const DEFINERS: &[&str] = &[
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[
-    "as", "effect", "feed", "for", "handle", "hold", "module", "node", "var",
+    "as", "effect", "feed", "for", "hold", "module", "node", "var",
 ];
 
 /// The bracket a tile occurrence stands inside within its own form.

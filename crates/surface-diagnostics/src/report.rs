@@ -815,7 +815,7 @@ impl Report<'_>
                              …](…)"
                         )),
                         Maybe::Present(&Omitted::Scope { .. }) => Maybe::Present(String::from(
-                            "name the model after the scope's subject, as `} with M`",
+                            "name the model after the scope's subject, as `} handle M`",
                         )),
                         Maybe::Present(&Omitted::Wildcard) => {
                             Maybe::Present(String::from("write the term in place of the `_`"))
@@ -1637,8 +1637,8 @@ impl fmt::Display for MessageText<'_>
                         })?;
                     }
                     f.write_str(
-                        "; name one after its subject, `} with M`, or write its clauses, `} with \
-                         { … }`",
+                        "; name one after its subject, `} handle M`, or write its clauses, `} \
+                         handle { … }`",
                     )
                 },
                 Maybe::Present(
@@ -1698,7 +1698,7 @@ impl fmt::Display for MessageText<'_>
                     if beyond > 0 {
                         write!(f, ", and {beyond} more")?;
                     }
-                    f.write_str("; name the one meant after its subject, `} with M`")
+                    f.write_str("; name the one meant after its subject, `} handle M`")
                 },
                 Maybe::Present(
                     &(Omitted::Implicit { .. } | Omitted::Wildcard | Omitted::Classifier { .. }),

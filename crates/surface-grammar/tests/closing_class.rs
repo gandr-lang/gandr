@@ -52,8 +52,8 @@ fn one_rule(regex: Regex) -> Result<Pbg, Failure>
 /// something that closes nothing derives nothing, which keeps `def name = E ;`
 /// unclassed. And every brace derives `Brace` but a handle's body and a
 /// renaming's list, so a container family that stops deriving its class is
-/// caught: a handle may end at the name of the model answering it, `handle c :
-/// T { M } with N`, and a renaming ends before the rest of its import or its
+/// caught: a handle may end at the name of the model answering it, `effect c :
+/// T { M } handle N`, and a renaming ends before the rest of its import or its
 /// offer, so neither closes anything.
 #[test]
 fn closing_class_is_form_level() -> Result<(), Failure>
@@ -80,9 +80,9 @@ fn closing_class_is_form_level() -> Result<(), Failure>
     }
     assert!(module_bodies > 0);
 
-    // Every brace derives `Brace` but the body of a handler, in each of its
-    // two spellings, and a translation's renaming: a renaming's braces close
-    // a list of names, and its import or its offer goes on after them.
+    // Every brace derives `Brace` but the body of a handler and a
+    // translation's renaming: a renaming's braces close a list of names, and
+    // its import or its offer goes on after them.
     let unclassed: Vec<RuleName> = braces
         .iter()
         .filter(|&&mold| pbg.closing_class(mold).is_none())
@@ -94,7 +94,6 @@ fn closing_class_is_form_level() -> Result<(), Failure>
             RuleName("import_declaration"),
             RuleName("offers_declaration"),
             RuleName("offers_declaration"),
-            RuleName("handle_expression"),
             RuleName("handle_expression"),
         ],
         "unclassed braces"

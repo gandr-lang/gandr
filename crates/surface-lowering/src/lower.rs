@@ -5511,23 +5511,36 @@ mod tests
     }
 
     /// A `handle` at the column of its handler's body is a statement of the
-    /// body: a scope's lead with no binder, which stops at the end of the
-    /// word.
+    /// body, where no form takes the word: the handler refuses it as a
+    /// misplaced tile, at the start of the word.
     #[test]
     fn a_handle_right_of_its_effect_is_refused_at_the_word_8067()
     {
         let pbg = grammar();
-        let source = "def quit() -> -F Unit =\n  effect c : std.process.Exit.Eff do\n    c.exit 1\n    handle\n      | pure(x) => pure x\n";
-        let end = source.find("handle").unwrap_or_default().saturating_add(6);
+        let source = "theory State where\n  sort S : Type+\n  sort C : Type\n  oper get : (k : (s : S) -> C) --> C\n  oper put : (s : S, k : C) --> C\n\ndef quit() -> -F Unit =\n  effect st : State with sort S = Integer do\n    pure *{}\n    handle\n      | pure(x) => pure x\n";
+        let start = source.find("handle").unwrap_or_default();
         let tree = repaired(&pbg, SourceText::from(source));
+        let mut arena = CoreArena::new();
+        let module = lower_module(
+            &pbg,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
+        let Some(DeclarationOutcome::Refused(refusal)) = outcomes(&module).last().copied()
+        else {
+            panic!("the `def` after its theory is refused");
+        };
         assert_eq!(
-            refusal_in(&pbg, &tree),
+            refusal,
             LoweringRefusal::MalformedForm {
-                span: span(ByteOffset::from(end), ByteOffset::from(end)),
+                span: span(ByteOffset::from(start), ByteOffset::from(start)),
                 form: FormName::from(NamedKind("handle_expression")),
-                fault: FormFault::Repaired(Repair::Unended(crate::form::Ending::Unnamed)),
+                fault: FormFault::MisplacedTile,
             },
-            "the `handle` right of its `effect` stops at the end of the word"
+            "the `handle` right of its `effect` is refused at the word"
         );
     }
 

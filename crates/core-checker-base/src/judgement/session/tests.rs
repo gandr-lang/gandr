@@ -325,8 +325,8 @@ fn exit(
     arena.computation_exercise(capability, host.proc.clone(), "exit".into(), code)
 }
 
-/// `handle c : Proc { subject } with { | pure(x) => pure x | oper exit(code, k)
-/// => body }`.
+/// `effect c : Proc { subject } handle { | pure(x) => pure x | oper exit(code,
+/// k) => body }`.
 ///
 /// # Specification
 /// trivial.
@@ -347,8 +347,9 @@ fn answering(
     arena.computation_scope(host.proc.clone(), subject, passes, clauses)
 }
 
-/// `handle c : Proc { subject } with { | pure(x) => pure x | oper exit(code, k)
-/// => pure *{} }`, its clause dropping the continuation, and the clause's body.
+/// `effect c : Proc { subject } handle { | pure(x) => pure x | oper exit(code,
+/// k) => pure *{} }`, its clause dropping the continuation, and the clause's
+/// body.
 ///
 /// # Specification
 /// trivial.
@@ -418,7 +419,7 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
     let mut arena = CoreArena::new();
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
-    // handle c : Proc { let d = fork (s : end) { close(s) }; c.exit(1);
+    // effect c : Proc { let d = fork (s : end) { close(s) }; c.exit(1);
     // close(d) }
     let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
     let closed = Program::new(&mut arena).close();
@@ -434,7 +435,7 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
         }),
         "the scope's clause drops the close"
     );
-    // handle c : Proc { let d = fork (s : end) { close(s) }; close(d);
+    // effect c : Proc { let d = fork (s : end) { close(s) }; close(d);
     // c.exit(1) }
     let closed = Program::new(&mut arena).close();
     let exited_after = exit(&mut arena, &host, DeBruijnIndex::from(1_u32));
@@ -584,7 +585,7 @@ fn a_child_exercises_only_what_outlives_every_region_1334()
         Ok(()),
         "the child exits through the run's capability"
     );
-    // handle c : Proc { let d = fork (s : end) { c.exit(1); close(s) };
+    // effect c : Proc { let d = fork (s : end) { c.exit(1); close(s) };
     // close(d) }
     let (scoped, _) = dropping(&mut arena, &host, exchange);
     assert!(
@@ -623,7 +624,7 @@ fn then_unit(
     arena.computation_bind(operation, returned)
 }
 
-/// `handle r : std.rand.Eff { subject } with { | pure(x) => pure x | oper
+/// `effect r : std.rand.Eff { subject } handle { | pure(x) => pure x | oper
 /// draw(width, k) => pure *{} }`, its clause dropping the continuation.
 ///
 /// # Specification
@@ -714,7 +715,7 @@ fn a_draw_under_a_handler_inside_the_task_captures_its_end_6058()
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
     // let d = fork (s : end) {
-    //   (handle r : std.rand.Eff { draw(1); pure *{} } with { … } : F_[Rand]
+    //   (effect r : std.rand.Eff { draw(1); pure *{} } handle { … } : F_[Rand]
     // 1);   close(s)
     // }; close(d)
     let drawn = draw(&mut arena, &host);
@@ -760,9 +761,9 @@ fn a_task_owes_its_draw_past_its_parent_s_handler_6058()
     let mut arena = CoreArena::new();
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
-    // handle r : std.rand.Eff {
+    // effect r : std.rand.Eff {
     //   let d = fork (s : end) { close(s); draw(1); pure *{} }; close(d)
-    // } with { … }
+    // } handle { … }
     let closed = Program::new(&mut arena).close();
     let drawn = draw(&mut arena, &host);
     let after = then_unit(&mut arena, drawn);

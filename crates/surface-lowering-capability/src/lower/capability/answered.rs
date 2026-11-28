@@ -1,8 +1,8 @@
-//! A capability scope a model answers, `handle c : T with sort x = A { M }
-//! with N`: each operation's clause hands the operation to `N`'s component of
-//! its name, and the scope answers `N`'s carrier. A scope writing no `with` is
-//! answered so by the one model of `T` in scope, its components holes the
-//! checker fills from it.
+//! A capability scope a model answers, `effect c : T with sort x = A { M }
+//! handle N`: each operation's clause hands the operation to `N`'s component
+//! of its name, and the scope answers `N`'s carrier. A scope writing no
+//! `handle` is answered so by the one model of `T` in scope, its components
+//! holes the checker fills from it.
 //!
 //! A theory's operation `op : (p : P, k : K) --> C` is, in a model, the
 //! component `op : P -> K -> -F C`: its port `K` is the carrier where it binds
