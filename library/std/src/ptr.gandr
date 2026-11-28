@@ -222,32 +222,32 @@ pub module Extent : Model(Ptr.Eff) with sort A = u64 with sort W8 = u8 with sort
 /// and the fourth byte are `6` and `5`.
 @[runs("Kept (Memory 4096u64 (cons 8u8 (cons 7u8 (cons 6u8 (cons 5u8 (cons 4u8 (cons 3u8 (cons 2u8 (cons 1u8 (cons 6u8 (cons 5u8 nil)))))))))))")]
 def stored_and_loaded() -> Ended =
-  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
     p.store64 4096u64 72623859790382856u64
     let third = p.offset 4096u64 2u32
     let half = p.load16 third
     let ninth = p.offset 4096u64 8u32
     p.store16 ninth half
     pure fun (memory) { pure Kept memory }
-  } with Extent
+  } handle Extent
   program (Memory 4096u64 #[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])
 
 /// A load of 32 bits whose last byte is one past the extent is refused by
 /// name, and the run does not resume.
 @[runs("Outside \"load32\" 4103u64")]
 def one_past_the_end() -> Ended =
-  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
     let word = p.load32 4103u64
     p.store32 4096u64 word
     pure fun (memory) { pure Kept memory }
-  } with Extent
+  } handle Extent
   program (Memory 4096u64 #[1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8, 9u8, 10u8])
 
 /// A store of a byte below the base is refused by name.
 @[runs("Outside \"store8\" 4095u64")]
 def below_the_base() -> Ended =
-  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
     p.store8 4095u64 1u8
     pure fun (memory) { pure Kept memory }
-  } with Extent
+  } handle Extent
   program (Memory 4096u64 #[0u8])

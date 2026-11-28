@@ -240,10 +240,10 @@ def echo() -> [
 /// output, and the fourth stays.
 @[runs("Tape (cons 4u8 nil) (cons 1u8 (cons 2u8 (cons 3u8 nil)))")]
 def echoed() -> Tape =
-  let program : Tape -> Tape = handle io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
     let count = echo
     pure fun (tape) { pure tape }
-  } with Scripted
+  } handle Scripted
   program (Tape #[1u8, 2u8, 3u8, 4u8] #[])
 
 /// A write to the file 2, which `Scripted` does not hold, gets the count `-9`.
@@ -251,9 +251,9 @@ def echoed() -> Tape =
 /// and the tape before the run otherwise.
 @[runs("Tape nil (cons 9u8 nil)")]
 def refused() -> Tape =
-  let program : Tape -> Tape = handle io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
     let wrote = returned (io.write 2 #[7u8] 1)
     let named = wrote.0 == bad_file
     pure fun (tape) { if named { pure Tape #[] #[9u8] } else { pure tape } }
-  } with Scripted
+  } handle Scripted
   program (Tape #[] #[])
