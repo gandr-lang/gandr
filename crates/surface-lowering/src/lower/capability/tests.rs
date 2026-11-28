@@ -65,6 +65,7 @@ use crate::origin::ScopeAnswer;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 use crate::unit::Unit;
 
 /// The module the parser and the lowering make of `source`.
@@ -349,6 +350,56 @@ fn a_capability_type_lowers_to_its_authority()
         ),
         "a grade written as a name is refused by that name: {:?}",
         outcome_of(&module, "named".into())
+    );
+}
+
+/// A capability is a staged type whose head names the prelude's declaration
+/// of the row `cap`: under the prelude, `Cap[exit]` is a capability over the
+/// operation `exit`. A source that declares its own `Cap`, with no `builtin`
+/// mark, reads the same text as a staged type of its own head.
+#[test]
+fn a_capability_is_the_declaration_of_its_row()
+{
+    let mut arena = CoreArena::new();
+    let text = prelude_hosting("def held : Cap[exit] ;\n");
+    let module = preluded_imported(&text, &mut arena);
+    let DeclarationOutcome::Uncompleted { declared_type } = outcome_of(&module, "held".into())
+    else {
+        panic!("the prelude's `Cap` heads a capability");
+    };
+    let (authority, grade, region) = capability(&arena, declared_type);
+    let granted: Vec<&str> = authority
+        .signatures()
+        .flat_map(|signature| {
+            signature
+                .operations()
+                .map(|operation| operation.name.as_ref())
+        })
+        .collect();
+    assert_eq!(
+        (granted, grade, region),
+        (alloc::vec!["exit"], CapabilityGrade::Durable, Region::Held)
+    );
+
+    let mut arena = CoreArena::new();
+    let text = prelude_hosting("type Cap(ops : Type) = ops ;\ndef held : Cap[exit] ;\n");
+    let module = preluded_imported(&text, &mut arena);
+    let Some(written) = text.rfind("Cap[exit]")
+    else {
+        panic!("the type is written");
+    };
+    assert!(
+        matches!(
+            outcome_of(&module, "held".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::StagedType),
+                ..
+            }) if usize::from(span.start()) == written
+                && usize::from(span.end()) == written + "Cap[exit]".len()
+        ),
+        "the source's own `Cap` is no capability: {:?}",
+        outcome_of(&module, "held".into())
     );
 }
 
