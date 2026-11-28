@@ -280,19 +280,88 @@ impl Roots
     {
         [&self.strict, &self.fixture]
     }
+
+    /// Every source under the two roots, in name order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one source per `.gandr` file under the two roots, outside
+    ///   each root's held-out directories, reached without following a symbolic
+    ///   link — the dispatcher walk's rule — each named by [`Root::name`],
+    ///   sorted by name.
+    /// - provides: the candidates of a sweep that states its own roots, such as
+    ///   one that reads a directory the corpus's roots hold out.
+    /// - fails: [`SweepError::Walk`] when a root, one of its directories or one
+    ///   of their entries cannot be read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus holds strict sources, fixture sources two
+    ///   directories deep and the pending set; a shallow walk, a walk of one
+    ///   root, or an unsorted result fails the first witness. The fixture root
+    ///   with nothing held out reaches a source of each held-out directory, and
+    ///   a walk that ignores the roots it is given fails the second.
+    /// - witness: `corpus::tests::the_walk_reaches_every_class_in_name_order`
+    /// - witness: `corpus::tests::a_root_with_nothing_held_out_reaches_each_directory`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |sources| sources.is_sorted_by(|left, right| left.name < right.name) && sources.iter().all(|source| Class::of(&source.name) == source.class)))]
+    #[inline]
+    pub fn sources(&self) -> Result<Vec<Source>, SweepError>
+    {
+        let mut found = Vec::new();
+        for root in self.each() {
+            let base = &root.directory;
+            let mut pending = vec![base.clone()];
+            while let Some(at) = pending.pop() {
+                let unreadable = |error: std::io::Error| SweepError::Walk {
+                    path: at.clone(),
+                    detail: error.to_string(),
+                };
+                for entry in std::fs::read_dir(&at).map_err(unreadable)? {
+                    let entry = entry.map_err(unreadable)?;
+                    let kind = entry.file_type().map_err(unreadable)?;
+                    let path = entry.path();
+                    if kind.is_dir() {
+                        if at == *base
+                            && path
+                                .strip_prefix(base)
+                                .is_ok_and(|below| root.place(below) == Place::HeldOut)
+                        {
+                            continue;
+                        }
+                        pending.push(path);
+                    }
+                    else if !kind.is_symlink()
+                        && path
+                            .extension()
+                            .is_some_and(|extension| extension == "gandr")
+                    {
+                        let below = path.strip_prefix(base).map_err(|error| SweepError::Walk {
+                            path: path.clone(),
+                            detail: error.to_string(),
+                        })?;
+                        let name = root.name(below);
+                        let class = Class::of(&name);
+                        found.push(Source { path, name, class });
+                    }
+                }
+            }
+        }
+        found.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(found)
+    }
 }
 
-/// Every source under the corpus's strict and fixture roots, in name order.
+/// Every source under the corpus's strict and fixture roots, in name order:
+/// [`Roots::sources`] of [`Roots::asked`].
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one source per `.gandr` file under the [`Roots::asked`] roots,
-///   outside each root's held-out directories, reached without following a
-///   symbolic link — the dispatcher walk's rule — each named by [`Root::name`],
-///   sorted by name.
+/// - ensures: as [`Roots::sources`], for the roots that [`Roots::asked`] gives.
 /// - provides: the candidates a sweep samples.
-/// - fails: [`SweepError::Walk`] when a root, one of its directories or one of
-///   their entries cannot be read.
+/// - fails: as [`Roots::asked`] and [`Roots::sources`].
 /// - panics: none.
 ///
 /// # Errors
@@ -303,52 +372,10 @@ impl Roots
 ///   directories deep and the pending set; a shallow walk, a walk of one root,
 ///   or an unsorted result fails the witness.
 /// - witness: `corpus::tests::the_walk_reaches_every_class_in_name_order`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |sources| sources.is_sorted_by(|left, right| left.name < right.name) && sources.iter().all(|source| Class::of(&source.name) == source.class)))]
 #[inline]
 pub fn sources() -> Result<Vec<Source>, SweepError>
 {
-    let roots = Roots::asked()?;
-    let mut found = Vec::new();
-    for root in roots.each() {
-        let base = &root.directory;
-        let mut pending = vec![base.clone()];
-        while let Some(at) = pending.pop() {
-            let unreadable = |error: std::io::Error| SweepError::Walk {
-                path: at.clone(),
-                detail: error.to_string(),
-            };
-            for entry in std::fs::read_dir(&at).map_err(unreadable)? {
-                let entry = entry.map_err(unreadable)?;
-                let kind = entry.file_type().map_err(unreadable)?;
-                let path = entry.path();
-                if kind.is_dir() {
-                    if at == *base
-                        && path
-                            .strip_prefix(base)
-                            .is_ok_and(|below| root.place(below) == Place::HeldOut)
-                    {
-                        continue;
-                    }
-                    pending.push(path);
-                }
-                else if !kind.is_symlink()
-                    && path
-                        .extension()
-                        .is_some_and(|extension| extension == "gandr")
-                {
-                    let below = path.strip_prefix(base).map_err(|error| SweepError::Walk {
-                        path: path.clone(),
-                        detail: error.to_string(),
-                    })?;
-                    let name = root.name(below);
-                    let class = Class::of(&name);
-                    found.push(Source { path, name, class });
-                }
-            }
-        }
-    }
-    found.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(found)
+    Roots::asked()?.sources()
 }
 
 #[cfg(test)]
@@ -358,6 +385,8 @@ mod tests
 
     use super::Class;
     use super::CorpusName;
+    use super::Roots;
+    use super::Source;
     use super::sources;
 
     #[test]
@@ -417,5 +446,27 @@ mod tests
             }),
             "each path is the source its name stands for"
         );
+    }
+
+    #[test]
+    fn a_root_with_nothing_held_out_reaches_each_directory()
+    {
+        let classes = |found: &[Source]| -> BTreeSet<String> {
+            found
+                .iter()
+                .map(|source| source.class.to_string())
+                .collect()
+        };
+        let mut roots = Roots::asked().expect("the roots of the corpus resolve");
+        let held = roots.fixture.held_out;
+        assert!(!held.is_empty(), "the fixture root holds a directory out");
+        let kept = classes(&roots.sources().expect("the corpus reads"));
+        roots.fixture.held_out = &[];
+        let whole = classes(&roots.sources().expect("the corpus reads"));
+        for directory in held {
+            let class = format!("fixture/{directory}");
+            assert!(!kept.contains(&class), "{class} is held out of {kept:?}");
+            assert!(whole.contains(&class), "{class} in {whole:?}");
+        }
     }
 }

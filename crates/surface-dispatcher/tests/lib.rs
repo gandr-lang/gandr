@@ -32,6 +32,8 @@ mod entry;
 #[cfg(test)]
 mod exercised;
 #[cfg(test)]
+mod features;
+#[cfg(test)]
 mod locality;
 #[cfg(test)]
 mod manifold;

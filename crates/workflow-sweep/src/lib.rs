@@ -214,18 +214,17 @@ pub struct Sweep
 
 impl Sweep
 {
-    /// The sweep the running profile asks for, visiting the fixed portion.
+    /// The sweep the running profile asks for over the corpus's roots,
+    /// visiting the fixed portion: [`Sweep::under`] of [`Roots::asked`].
+    ///
+    /// [`Roots::asked`]: corpus::Roots::asked
     ///
     /// # Specification
-    /// - requires: when sampled, as [`Changed::asked`].
-    /// - ensures: the coverage [`Coverage::asked`] reads and
-    ///   [`Portion::Fixed`]; when sampled, the change [`Changed::asked`] lists
-    ///   against the corpus's roots and the whole rotation; when full, no
-    ///   change and the rotation [`Rotation::asked`] reads.
+    /// - requires: as [`Sweep::under`].
+    /// - ensures: as [`Sweep::under`], for the corpus's roots.
     /// - provides: what a sweep test reads once before choosing its inputs.
-    /// - fails: [`SweepError::Walk`] when a corpus root cannot be resolved,
-    ///   [`SweepError::Git`] when the change cannot be listed, and
-    ///   [`SweepError::Night`] when the night cannot be read.
+    /// - fails: [`SweepError::Walk`] when a corpus root cannot be resolved, and
+    ///   as [`Sweep::under`].
     /// - panics: none.
     /// - executable: none — the outcome is the environment's and Git's.
     ///
@@ -239,13 +238,39 @@ impl Sweep
     #[inline]
     pub fn asked() -> Result<Self, SweepError>
     {
+        Self::under(&corpus::Roots::asked()?)
+    }
+
+    /// The sweep the running profile asks for over `roots`, visiting the
+    /// fixed portion.
+    ///
+    /// # Specification
+    /// - requires: when sampled, as [`Changed::asked`].
+    /// - ensures: the coverage [`Coverage::asked`] reads and
+    ///   [`Portion::Fixed`]; when sampled, the change [`Changed::asked`] lists
+    ///   against `roots` and the whole rotation; when full, no change and the
+    ///   rotation [`Rotation::asked`] reads.
+    /// - provides: the sweep of a test that states its own roots: its change
+    ///   lists a source of a directory that the corpus's roots hold out.
+    /// - fails: [`SweepError::Git`] when the change cannot be listed, and
+    ///   [`SweepError::Night`] when the night cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the environment's and Git's.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the parts are witnessed where they live; this joins
+    ///   them, and every sweep test runs it in both budgets.
+    /// - witness: `tests::a_full_sweep_visits_every_candidate`
+    #[inline]
+    pub fn under(roots: &corpus::Roots) -> Result<Self, SweepError>
+    {
         let coverage = Coverage::asked();
         let (changed, rotation) = match coverage {
             Coverage::Full => (Changed::default(), Rotation::asked()?),
-            Coverage::Sampled => {
-                let changed = Changed::asked(&corpus::Roots::asked()?)?;
-                (changed, Rotation::Whole)
-            },
+            Coverage::Sampled => (Changed::asked(roots)?, Rotation::Whole),
         };
         Ok(Self {
             coverage,
