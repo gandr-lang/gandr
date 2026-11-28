@@ -356,6 +356,27 @@ fn a_parenthesized_result_list_reads_as_a_results_tuple()
     );
 }
 
+/// #5771: a group of ports, `%( … )`, on a rule's right side reads as the
+/// parenthesised list: two components are the results tuple.
+#[test]
+fn a_group_of_ports_on_a_rule_s_right_reads_as_the_results_tuple_5771()
+{
+    use gandr_theory_levitation::FreeTerm;
+    let report = elaborated(SourceText::from(
+        "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> %(Zero, m); }",
+    ));
+    assert_eq!(report.diagnostics, []);
+    let [ref delivered] = *report.declarations[0].description.rules
+    else {
+        panic!("one face")
+    };
+    assert_eq!(
+        delivered.rhs,
+        FreeTerm::results([FreeTerm::ctor("Zero", []), FreeTerm::var("m")]),
+        "a group of ports of two components is the results tuple"
+    );
+}
+
 #[test]
 fn the_ruled_face_arrow_elaborates()
 {

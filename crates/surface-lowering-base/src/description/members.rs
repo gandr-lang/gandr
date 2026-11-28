@@ -310,9 +310,10 @@ impl Reader<'_, '_>
     ///   variable of the rule's left side, read on its right — is that
     ///   variable's instantiation; a parenthesized term is its one component,
     ///   and a parenthesized list of several is a results tuple of them in
-    ///   order; `bind a . t` is the abstraction of the atom `a` over `t`, the
-    ///   name `a` inside it that atom's occurrence and outside it a variable; a
-    ///   variable spelled in a type hole, as a pinned rewrite endpoint is, is a
+    ///   order, and a group of ports `%( … )` reads as that list does; `bind a
+    ///   . t` is the abstraction of the atom `a` over `t`, the name `a` inside
+    ///   it that atom's occurrence and outside it a variable; a variable
+    ///   spelled in a type hole, as a pinned rewrite endpoint is, is a
     ///   variable; a port `C(a, …).l`, its call in parentheses or not, is the
     ///   constructor `C.l` over `a, …`; a lowercase word applied by
     ///   juxtaposition, `ext g a`, is the application its call pieces spell,
@@ -335,6 +336,7 @@ impl Reader<'_, '_>
     ///   a variable beside.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
     /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
+    /// - witness: `description::tests::a_group_of_ports_on_a_rule_s_right_reads_as_the_results_tuple_5771`
     /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     /// - witness: `tests::described::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
@@ -423,7 +425,7 @@ impl Reader<'_, '_>
                         continue;
                     }
                     let mut run = Run::new(&pieces, at.span);
-                    if run.eat(Spelling("(")).0 {
+                    if run.eat(Spelling("%(")).0 || run.eat(Spelling("(")).0 {
                         let mut components = Vec::new();
                         while !run.eat(Spelling(")")).0 {
                             components.push(run.take()?);
