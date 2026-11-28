@@ -1,4 +1,4 @@
-@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
 
 /// `std-authority`: The ambient authority.
 /// Implemented: `std.authority`, `library/std/src/authority.gandr`, names
@@ -18,12 +18,12 @@
 /// - owes: #1106 — an exercise on a value typed by the alias
 /// - see: #2970
 
-import std.authority (Authority, console);
+import std.authority (Authority, console)
 // The console's host interface.
-import std.io;
+import std.io
 
 /// A greeting, printed through a capability that holds `print` alone.
-pub def greet(console : Cap { print }) -> [std.io.Console.Eff] Unit =
+pub def greet(console : Cap[print]) -> [std.io.Console.Eff] Unit =
   console.print "hello, world!"
 
 /// The greeting through the console that `main` opens from its authority.
