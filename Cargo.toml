@@ -1455,10 +1455,17 @@ opt-level = 3
 # assertions and overflow checks: arithmetic boundary tests rely on them to
 # expose defects. Specification enforcement remains graph-wide and separate
 # through `--cfg anodized_panic`.
+#
+# The profile builds incrementally. After a local edit of `surface-grammar`, a
+# rebuild of the workspace tests takes 15 s against 105 s. The plain suite
+# takes 10 % longer. The incremental state takes about 6.5 GB in a target
+# directory. The hosted workflows set `CARGO_INCREMENTAL=0`, because their
+# cache holds no incremental state.
 [profile.test]
 inherits = "release"
 debug-assertions = true
 overflow-checks = true
+incremental = true
 
 # The shipped binary: `cargo build-dist` (`.cargo/config.toml`), which also
 # applies `.cargo/config.dist.toml` (a size-optimized std, immediate abort on
