@@ -103,6 +103,7 @@ members = [
   "crates/workflow-lane-budget",
   "crates/workflow-ledger-split",
   "crates/workflow-ledger-tasks",
+  "crates/workflow-output-store",
   "crates/workflow-outputs",
   "crates/workflow-parser-report",
   "crates/workflow-prose",
@@ -252,6 +253,7 @@ default-features = false
 # - workflow-lane-budget
 # - workflow-ledger-split
 # - workflow-ledger-tasks
+# - workflow-output-store
 # - workflow-outputs
 # - workflow-spec-cost
 # - workflow-sweep
@@ -300,6 +302,7 @@ default-features = false
 # - surface-lsp-base
 # - surface-syntax
 # - theory-exact-reals
+# - workflow-output-store
 # - workflow-outputs
 # - workflow-prose
 # - workflow-sweep
@@ -1539,6 +1542,14 @@ path = "crates/workflow-github"
 # - workflow-parser-report
 [workspace.dependencies.gandr-workflow-ledger-tasks]
 path = "crates/workflow-ledger-tasks"
+
+# The store of the outputs: each value by its key, the list of the values of
+# each tree, and the values that a test gives.
+# consumers:
+# - workflow-outputs
+# - workflow-prose
+[workspace.dependencies.gandr-workflow-output-store]
+path = "crates/workflow-output-store"
 
 # The writer of each kind of output: a value that a program computes from
 # the tree and that the tree does not hold.

@@ -18,8 +18,7 @@ use std::process::Command;
 use std::process::Stdio;
 
 use anodized::spec;
-
-use crate::store::Store;
+use gandr_workflow_output_store::Store;
 
 /// The bound of the size of the store, in bytes, when
 /// `GANDR_OUTPUT_STORE_BOUND` sets none: 4 GiB.

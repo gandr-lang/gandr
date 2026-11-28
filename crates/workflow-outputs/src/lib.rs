@@ -1,12 +1,12 @@
 //! **Outputs**: the values that a program computes from the tree and that the
-//! tree does not hold. A store outside the tree holds each value by the
-//! digest of its tool and its input, so a run computes each value one time.
+//! tree does not hold. The store of `gandr-workflow-output-store` holds each
+//! value by the digest of its tool and its input, so a run computes each
+//! value one time.
 //!
 //! - [`recovery`] writes the recovery record of a corpus source.
 //! - [`refusals`] writes the refusals that `gandr check` prints for each
 //!   refusing source of a checkout.
 //! - [`roles`] writes the roles that the highlight gives a corpus source.
-//! - [`store`] holds each value in one file, named by its key.
 //! - [`tree`] reads a tree of the repository from git: its sources and the tool
 //!   of a kind.
 //! - [`workspace`] gives the packages that build a package.
@@ -33,7 +33,6 @@ pub mod gauge;
 pub mod recovery;
 pub mod refusals;
 pub mod roles;
-pub mod store;
 pub mod tree;
 pub mod word;
 pub mod workspace;

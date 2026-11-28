@@ -13,6 +13,10 @@ use std::path::Path;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_workflow_output_store::Digest;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::Listed;
+use gandr_workflow_output_store::Store;
 
 use crate::recovery::RecordError;
 use crate::recovery::Recorder;
@@ -20,10 +24,6 @@ use crate::refusals;
 use crate::refusals::RefusalsError;
 use crate::roles::Roles;
 use crate::roles::RolesError;
-use crate::store::Digest;
-use crate::store::Kind;
-use crate::store::Listed;
-use crate::store::Store;
 use crate::tree::Source;
 use crate::tree::Tree;
 use crate::tree::TreeError;
@@ -47,6 +47,10 @@ pub const TOOL_PACKAGE: &str = "gandr-workflow-outputs";
 
 /// The directory below `crates/` of the package that holds each writer.
 pub const TOOL_DIRECTORY: &str = "workflow-outputs";
+
+/// The directory below `crates/` of the package of the store, whose keys
+/// each kind writes.
+pub const STORE_DIRECTORY: &str = "workflow-output-store";
 
 /// The packages that compute the kind `kind`, beside the package of the
 /// writers.
@@ -89,7 +93,8 @@ pub fn packages(kind: Kind) -> &'static [&'static str]
 /// order, each one time.
 ///
 /// They are the closure of each package that computes the kind in the output
-/// of `cargo metadata`, with the package of the writers.
+/// of `cargo metadata`, with the package of the writers and the package of
+/// the store.
 ///
 /// # Specification
 /// trivial.
@@ -103,7 +108,7 @@ pub fn tool_packages(
     let mut directories: Vec<String> = packages(kind)
         .iter()
         .flat_map(|package| workspace::closure(metadata, package))
-        .chain([TOOL_DIRECTORY.to_owned()])
+        .chain([TOOL_DIRECTORY.to_owned(), STORE_DIRECTORY.to_owned()])
         .collect();
     directories.sort();
     directories.dedup();
@@ -716,6 +721,8 @@ pub fn work_tree_refusals(
 mod tests
 {
     use gandr_surface_grammar::built_in;
+    use gandr_workflow_output_store::Digest;
+    use gandr_workflow_output_store::Store;
 
     use super::RECOVERY;
     use super::REFUSALS;
@@ -727,8 +734,6 @@ mod tests
     use super::values;
     use crate::recovery::Recorder;
     use crate::roles::Roles;
-    use crate::store::Digest;
-    use crate::store::Store;
     use crate::tree::Tree;
     use crate::tree::scratch_repository;
 

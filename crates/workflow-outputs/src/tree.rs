@@ -17,8 +17,7 @@ use std::process::Command;
 use std::process::Stdio;
 
 use anodized::spec;
-
-use crate::store::Digest;
+use gandr_workflow_output_store::Digest;
 
 /// Why a tree could not be read.
 ///

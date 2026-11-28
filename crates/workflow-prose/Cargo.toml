@@ -26,11 +26,13 @@ path = "tests/lib.rs"
 # cache and the base. clap reads the invocation. serde reads the parse
 # script's JSON and the glossary's TOML. The shape crate supplies the `Maybe`
 # that a sentence without a root has. The outputs crate gives the refusals of
-# the corpus from its store, and the procedural rule reads them.
+# the corpus from the store of the outputs, and the procedural rule reads
+# them.
 [dependencies]
 blake3.workspace = true
 clap.workspace = true
 gandr-workflow-debt-ledger.workspace = true
+gandr-workflow-output-store.workspace = true
 gandr-workflow-outputs.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true

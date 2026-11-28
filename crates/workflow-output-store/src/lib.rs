@@ -1,4 +1,5 @@
-//! The store of outputs: one file for each value, named by its key.
+//! **The store of outputs**: one file for each value of a program that the
+//! tree does not hold, named by its key.
 //!
 //! The key of a value is the BLAKE3 digest of two digests: the tool and the
 //! input. The tool is the git tree identifier of each package that computes
@@ -20,6 +21,12 @@
 //! The list is a value of the kind, named by the digest of its bytes, and a
 //! file named by the tree holds that digest. A reader of a tree thus needs no
 //! key of the tool that computed the tree.
+//!
+//! A test can give a value of a kind that only a test computes ([`given`]).
+//! The test writes the value to the store, and an entry with its name to the
+//! directory of its run, which the run of the tests reads into a list.
+
+pub mod given;
 
 use core::fmt::Write as _;
 use std::fs;
@@ -313,7 +320,7 @@ impl Store
 ///
 /// # Errors
 /// A directory or a file that cannot be written.
-fn write_whole(
+pub(crate) fn write_whole(
     place: &Path,
     bytes: &[u8],
 ) -> io::Result<()>
