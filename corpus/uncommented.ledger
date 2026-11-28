@@ -1820,7 +1820,7 @@ pending/surface/data-operation-members.gandr:NatRule:48bc1087d354c32d uncommente
 pending/surface/desc-declined-metadata.gandr:<file> uncommented
 pending/surface/desc-declined-metadata.gandr:Declared.Mk:8ebba07737aad3eb uncommented
 pending/surface/desc-declined-metadata.gandr:Declared:3c7079fcd8fbb7e1 uncommented
-sketch/environments/tactics.gandr:module_declaration:60fba5b69a59e301 uncommented
+sketch/environments/tactics.gandr:module_declaration:84228a794487f1b8 uncommented
 sketch/environments/tactics.gandr:module_declaration:a93c288035ae3d0e uncommented
 sketch/foreign/mlir.gandr:module_declaration:4d448e00aa27c165 uncommented
 sketch/grades/expected.gandr:Retrying.onceMore:dbbac5635210e7fa uncommented
