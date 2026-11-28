@@ -151,6 +151,10 @@ pub enum RewriteName
     /// `s.m`; both forms write the selection alone, the one spelling of the
     /// call.
     BareRun,
+    /// A capability that `at` places: `Cap {o} at r` and `(Cap {o}) at r`;
+    /// both forms write the capability in parentheses, so that `at` places
+    /// the whole application of `Cap` and not its label set.
+    PlacedCapability,
 }
 
 impl RewriteName
@@ -176,6 +180,7 @@ impl RewriteName
         Self::TypeApplication,
         Self::HandlerWords,
         Self::BareRun,
+        Self::PlacedCapability,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -206,6 +211,7 @@ impl RewriteName
             Self::TypeApplication => "type-application",
             Self::HandlerWords => "handler-words",
             Self::BareRun => "bare-run",
+            Self::PlacedCapability => "placed-capability",
         }
     }
 
@@ -292,7 +298,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 42] = [
+pub const REWRITES: [Rewrite; 44] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -631,6 +637,22 @@ pub const REWRITES: [Rewrite; 42] = [
         mold: APPLICATION,
         from: Spelling("s.m ()"),
         to: Spelling("s.m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PlacedCapability,
+        direction: Direction::Sugar,
+        mold: AT,
+        from: Spelling("Cap {o} at r"),
+        to: Spelling("(Cap {o}) at r"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::PlacedCapability,
+        direction: Direction::Desugar,
+        mold: AT,
+        from: Spelling("Cap {o} at r"),
+        to: Spelling("(Cap {o}) at r"),
         enabled: Enabled::On,
     },
 ];
@@ -2522,6 +2544,9 @@ impl<'source> Respelling<'_, 'source>
             (RewriteName::BareRun, Direction::Sugar | Direction::Desugar) => {
                 self.bare_run(&mut out, parts)?
             },
+            (RewriteName::PlacedCapability, Direction::Sugar | Direction::Desugar) => {
+                self.placed_capability(&mut out, parts)?
+            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -3380,6 +3405,47 @@ impl<'source> Respelling<'_, 'source>
         Some(operand.band)
     }
 
+    /// Write the placed type whose parts are `parts` with its capability in
+    /// parentheses, answering the band of `at`: `Cap {exit} at c` as `(Cap
+    /// {exit}) at c`. Nothing when a comment stands among its parts, or when
+    /// the type it places is no capability written bare.
+    ///
+    /// # Specification
+    /// trivial.
+    fn placed_capability(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[placed], &[_, _]) = (operands.as_slice(), owns.as_slice())
+        else {
+            return None;
+        };
+        if !matches!(placed, Child::Node(node) if self.rule(node) == Some(CAPABILITY)) {
+            return None;
+        }
+        // The capability is placed as an application, which `at` admits only
+        // in parentheses; `at` and the region keep their source leaves.
+        let capability = Operand {
+            band: Band::Application,
+            inner: None,
+            ..self.operand(placed)
+        };
+        out.place(&capability, Band::Atom);
+        for part in parts {
+            if let Role::Own(_) = part.role {
+                out.gap(Spelling(" "));
+                out.leaves.extend(part.leaves.iter().copied());
+            }
+        }
+        Some(Band::of(AT))
+    }
+
     /// Write the forgetting map's form spanning `extent` whose parts are
     /// `parts` as its model, answering the model's band, when the checker
     /// would apply a forgetting map there; nothing when a comment stands
@@ -4216,7 +4282,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 43] = [
+const RULES: [MoldName; 44] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4232,7 +4298,8 @@ const RULES: [MoldName; 43] = [
     MoldName("f_type.result"),
     MoldName("f_type.row.labelled"),
     MoldName("f_type.result.labelled"),
-    MoldName("at_type"),
+    AT,
+    CAPABILITY,
     MoldName("function_type"),
     MoldName("lambda_expression"),
     MoldName("union_type"),
@@ -4261,6 +4328,12 @@ const RULES: [MoldName; 43] = [
     MoldName("attributed_module_member"),
     HANDLER,
 ];
+
+/// A placed type: `T at r`.
+const AT: MoldName = MoldName("at_type");
+
+/// A capability: `Cap {read, write}`.
+const CAPABILITY: MoldName = MoldName("capability_type");
 
 /// A capability scope: `effect c : I { M } handle { … }`.
 const HANDLER: MoldName = MoldName("handle_expression");
