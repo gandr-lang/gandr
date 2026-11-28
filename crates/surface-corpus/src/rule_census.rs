@@ -507,7 +507,7 @@ mod sweeps
     /// Each rule that the check refuses in a source of `corpus/` or of the
     /// crates: the source, the declaration, the refusal, the rule in the
     /// inspection notation, and its form.
-    pub(super) const CENSUS: [(&str, &str, &str, &str, Form); 49] = [
+    pub(super) const CENSUS: [(&str, &str, &str, &str, Form); 47] = [
         (
             "corpus/ledger/diagnostics/RulesDiverge.gandr",
             "Circle",
@@ -731,20 +731,6 @@ mod sweeps
             "RulesUncompleted",
             "x' <=> x",
             Form::Different,
-        ),
-        (
-            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-first.gandr",
-            "Flat",
-            "RulesUncompleted",
-            "pair(y, x) <=> pair(x, y)",
-            Form::Permutation,
-        ),
-        (
-            "crates/surface-lowering-base/tests/coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-last.gandr",
-            "Flat",
-            "RulesUncompleted",
-            "pair(y, x) <=> pair(x, y)",
-            Form::Permutation,
         ),
         (
             "crates/surface-lowering-base/tests/coincide/fixtures/a-permuted-call-no-order-orients-is-uncompleted.gandr",

@@ -1647,42 +1647,89 @@ fn a_pair_with_a_symmetry_joins_under_the_symmetry()
     }
 }
 
-/// A pair of two rules is compared as written beside a symmetry. One rule
-/// takes a wrapped pair to the pair in the other order, and one rule takes a
-/// wrapped term to the term. Their two normal forms are the two orders of one
-/// pair, and the block is refused in each place of the symmetry.
+/// Two rules whose normal forms are the two orders of one pair join beside a
+/// symmetry. One rule takes a wrapped pair to the pair in the other order, and
+/// one rule takes a wrapped term to the term. A step of the symmetry takes one
+/// normal form of their pair to the other, and the block is admitted in each
+/// place of the symmetry. In the `data` block the two rules are rules of an
+/// operation, and the store of the commands has no cell for the symmetry of
+/// the constructor: the reading over terms keeps the certificate of the pair.
 #[test]
-fn a_pair_of_two_rules_is_compared_as_written_beside_a_symmetry()
+fn two_rules_that_give_the_two_orders_of_one_term_join_beside_a_symmetry()
 {
-    for (source, place) in [
+    for (source, block, call, orders) in [
         (
             include_str!(
-                "coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-first.gandr"
+                "coincide/fixtures/two-rules-that-give-the-two-orders-of-one-term-join-beside-a-symmetry-data-first.gandr"
             ),
-            "first",
+            "a `data` block with the symmetry first",
+            "wrap(Pair(Low, High))",
+            ["Pair(Low, High)", "Pair(High, Low)"],
         ),
         (
             include_str!(
-                "coincide/fixtures/a-pair-of-two-rules-is-compared-as-written-beside-a-symmetry-last.gandr"
+                "coincide/fixtures/two-rules-that-give-the-two-orders-of-one-term-join-beside-a-symmetry-data-last.gandr"
             ),
-            "last",
+            "a `data` block with the symmetry last",
+            "wrap(Pair(Low, High))",
+            ["Pair(Low, High)", "Pair(High, Low)"],
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/two-rules-that-give-the-two-orders-of-one-term-join-beside-a-symmetry-theory-first.gandr"
+            ),
+            "a `theory` block with the symmetry first",
+            "wrap(pair(low, high))",
+            ["pair(low, high)", "pair(high, low)"],
+        ),
+        (
+            include_str!(
+                "coincide/fixtures/two-rules-that-give-the-two-orders-of-one-term-join-beside-a-symmetry-theory-last.gandr"
+            ),
+            "a `theory` block with the symmetry last",
+            "wrap(pair(low, high))",
+            ["pair(low, high)", "pair(high, low)"],
         ),
     ] {
         lowered(SourceText::from(source), |module| {
-            let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+            assert!(
+                module.cells().diagnostics.is_empty(),
+                "{block}: {:?}",
+                module.cells().diagnostics
+            );
+            let [ref cells] = *module.cells().declarations.as_slice()
             else {
-                panic!(
-                    "one cell diagnostic with the symmetry written {place}: {:?}",
-                    module.cells().diagnostics
-                )
+                panic!("{block}: one block")
+            };
+            let Coincidence::Joined(ref certificates) = cells.coincidence
+            else {
+                panic!("{block}: the pair joins: {:?}", cells.coincidence)
+            };
+            let Maybe::Present(ref presented) = cells.presented
+            else {
+                panic!("{block}: the block is read over terms")
             };
             assert!(
-                matches!(
-                    diagnostic.fault,
-                    CellFault::Coherence(CoherenceFault::Uncompleted { .. })
-                ),
-                "the symmetry written {place}: the two rules give two orders of one pair: {:?}",
-                diagnostic.fault
+                certificates.derived_terms.is_empty()
+                    && certificates.derived_commands.is_empty()
+                    && !certificates.terms.is_empty()
+                    && certificates
+                        .terms
+                        .iter()
+                        .all(|certificate| bool::from(certificate.replay(&presented.store))),
+                "{block}: the pair joins with no derived rule, and its certificate replays over \
+                 the term store: {certificates:?}"
+            );
+            let family = module.declarations().iter().next().unwrap();
+            let normal = module
+                .normal_form(family, CallText::from(call))
+                .map(|form| form.normal.to_string());
+            assert!(
+                orders
+                    .iter()
+                    .any(|&order| normal == Ok(String::from(order))),
+                "{block}: the normal form of {call} is the pair in one of its two orders: \
+                 {normal:?}"
             );
         });
     }
