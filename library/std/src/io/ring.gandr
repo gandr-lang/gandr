@@ -157,7 +157,9 @@ def rec field_of(fields : List Field, name : String) -> Integer * Integer =
 def rec counted(fields : List Field) -> Integer =
   match fields where
     | #[] => 0
-    | #[field, ..rest] => { let n = counted[<] rest; n + 1 }
+    | #[field, ..rest] =>
+      let n = counted[<] rest
+      n + 1
 
 /// The size in bytes of the structure `structure`, or `-1` when the ring has
 /// no structure of the name.

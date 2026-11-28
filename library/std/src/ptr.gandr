@@ -99,7 +99,9 @@ pub data Ended : Type where
 def rec size(bytes : List u8) -> Integer =
   match bytes where
     | #[] => 0
-    | #[b, ..rest] => { let n = size[<] rest; n + 1 }
+    | #[b, ..rest] =>
+      let n = size[<] rest
+      n + 1
 
 /// The position in `bytes`, from `base`, of the `width` bytes at `address`,
 /// or `-1` when one of them is outside the bytes.

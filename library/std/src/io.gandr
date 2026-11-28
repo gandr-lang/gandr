@@ -142,7 +142,9 @@ def rec front(buffer : List u8, count : Integer) -> List u8 =
 def rec size(bytes : List u8) -> Integer =
   match bytes where
     | #[] => 0
-    | #[b, ..rest] => { let n = size[<] rest; n + 1 }
+    | #[b, ..rest] =>
+      let n = size[<] rest
+      n + 1
 
 /// The bytes of `first`, then the bytes of `second`.
 def rec joined(first : List u8, second : List u8) -> List u8 =
