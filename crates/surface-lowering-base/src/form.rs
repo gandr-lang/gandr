@@ -762,6 +762,9 @@ impl TileName
     pub const TYPE: Self = Self("type");
     /// The opener `type(` of a type quoted where an expression stands.
     pub const TYPE_QUOTE_OPEN: Self = Self("type(");
+    /// The opener `%(` of a group of ports: a body's outputs, or the patterns
+    /// that receive a call's outputs.
+    pub const PORT_GROUP_OPEN: Self = Self("%(");
     /// A type identifier written as one of a form's own tiles.
     pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
     /// A type variable written as one of a form's own tiles.

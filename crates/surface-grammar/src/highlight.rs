@@ -129,7 +129,7 @@ use crate::parity::NamedKind;
 /// The tiles that open a bracket: every tile after one, up to its closer,
 /// stands inside it.
 const OPENERS: &[&str] = &[
-    "#[", "${", "&{", "(", "*{", "+{", ".#[", ".#{", ".*{", "@![", "@[", "[", "type(", "{",
+    "#[", "${", "%(", "&{", "(", "*{", "+{", ".#[", ".#{", ".*{", "@![", "@[", "[", "type(", "{",
 ];
 
 /// The tiles that close the innermost open bracket.
@@ -1068,7 +1068,7 @@ mod tests
         let walk = occurrences(&pbg).expect("the walk numbers every tile");
         assert_eq!(pbg.mold_count().0, walk.len(), "one occurrence per mold");
         let closes: &[(&str, &[&str])] = &[
-            (")", &["(", "type("]),
+            (")", &["%(", "(", "type("]),
             ("]", &["#[", ".#[", "@![", "@[", "["]),
             ("}", &["${", "&{", "*{", "+{", ".#{", ".*{", "{"]),
         ];
@@ -1154,6 +1154,8 @@ mod tests
             ("+", "sum_type", HlRole::Operator),
             ("_", "wildcard", HlRole::Variable),
             ("(", "parenthesized_expression", HlRole::Other),
+            ("%(", "parenthesized_expression", HlRole::Other),
+            ("%(", "tuple_pattern", HlRole::Other),
             (";", "import_declaration", HlRole::Other),
             ("identifier", "identifier", HlRole::Variable),
             ("identifier", "projection_expression", HlRole::Member),

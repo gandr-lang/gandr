@@ -3943,12 +3943,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
 
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host, F>
 {
-    /// Classify a labelled group, `(.r = e, .q = e)`, ending a body whose
-    /// result is a group of named outputs, as the return of each value at the
-    /// output its label names.
+    /// Classify a labelled group, `(.r = e, .q = e)` or `%(.r = e, .q = e)`,
+    /// ending a body whose result is a group of named outputs, as the return of
+    /// each value at the output its label names.
     ///
     /// # Specification
-    /// - requires: `cursor` stands at the group's `(`.
+    /// - requires: `cursor` stands at the group's `open`, `(` or `%(`.
     /// - ensures: each entry's value read as a value under the computation's
     ///   frame and planned as a [`Plan::ReturnAll`] in the order the result
     ///   writes its outputs, whatever order the group writes them in.
@@ -3971,12 +3971,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   returns each value at its own output, and a group standing as a value
     ///   is refused.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_labelled_group_returns_each_value_at_its_output`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_group_returns_what_the_parenthesised_group_returns_5771`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::ReturnAll(_))))]
     #[inline]
     pub fn labelled_outputs(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
+        open: TileName,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let Some(outputs) = self.answered_outputs(site)?
@@ -3984,7 +3986,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
             return Err(site.out(FragmentBoundary::WrongSort));
         };
         let frame = self.host().require(site, Produced::Computation)?;
-        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
+        closed(site, &mut cursor, open)?;
         // Each label in written order, and each label's key and value.
         let mut order: Vec<(SurfaceName<'source>, Placed)> = Vec::new();
         let mut written: BTreeMap<SurfaceName<'source>, (Placed, Placed)> = BTreeMap::new();

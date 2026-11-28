@@ -1712,7 +1712,8 @@ fn patterns(
     // labelled `(.q, .r)`, `(.r = rem, .q = quo)`. The labelled group takes a
     // `(` of its own, decided by the very next tile, as the labelled telescope
     // does, so a dot after an operand is never a label's. A stored product
-    // takes the pattern `*{p, q}`.
+    // takes the pattern `*{p, q}`. The port group's opener `%(` reads the same
+    // groups, and a positional group of one port, `%(q)`, beside them.
     out.push(r(
         RuleName("tuple_pattern"),
         Provenance("tuple_pattern"),
@@ -1728,6 +1729,18 @@ fn patterns(
                 t(TileLabel("(")),
                 h(s),
                 repeat1(seq([t(TileLabel(",")), h(s)])),
+                opt(t(TileLabel(","))),
+                t(TileLabel(")")),
+            ]),
+            seq([
+                t(TileLabel("%(")),
+                comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
+                t(TileLabel(")")),
+            ]),
+            seq([
+                t(TileLabel("%(")),
+                h(s),
+                opt(repeat1(seq([t(TileLabel(",")), h(s)]))),
                 opt(t(TileLabel(","))),
                 t(TileLabel(")")),
             ]),
@@ -4276,6 +4289,10 @@ fn primary_expressions(
     // `*{ .l = E }`. A `(` that takes a hole and a `.` after it reads the
     // projection dot in `(p.x, p.y)` as a label. This alternative is last.
     // Thus a `(` with no next tile closes as the unit `( )`.
+    //
+    // The port group's opener `%(` reads a group of outputs, positional
+    // `%(E, E)`, of one port `%(E)`, or labelled `%(.l = E, …)`; no `%(`
+    // groups an expression.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),
@@ -4311,6 +4328,20 @@ fn primary_expressions(
             // a labelled group of outputs: `( .l = E , … )`
             seq([
                 t(TileLabel("(")),
+                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
+                t(TileLabel(")")),
+            ]),
+            // a group of ports: `%( E (, E)* ,? )`
+            seq([
+                t(TileLabel("%(")),
+                h(s),
+                opt(repeat1(seq([t(TileLabel(",")), h(s)]))),
+                opt(t(TileLabel(","))),
+                t(TileLabel(")")),
+            ]),
+            // a labelled group of ports: `%( .l = E , … )`
+            seq([
+                t(TileLabel("%(")),
                 comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
                 t(TileLabel(")")),
             ]),

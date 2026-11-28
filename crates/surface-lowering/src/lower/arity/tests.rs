@@ -2580,6 +2580,58 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
     );
 }
 
+/// #5771: a group of ports, `%( … )`, in a body's tail and in a pattern,
+/// lowers to the core of the parenthesised group; a group of one port returns
+/// and binds its one output, and no group of ports stands as a value.
+#[test]
+fn a_port_group_returns_what_the_parenthesised_group_returns_5771()
+{
+    let bodies = |open: &str| {
+        let source = format!(
+            "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = {open}m, n);\n\
+             def named(m : Integer, n : Integer) -> (q : Integer, r : Integer) = {open}.r = n, .q = m);\n\
+             def first(a : Integer) -> Integer = {{ let {open}q, r) = divmod(a, a); q }};\n\
+             def punned(a : Integer) -> Integer = {{ let {open}.r, .q) = divmod(a, a); r }};\n"
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(source.as_str(), &mut arena);
+        ["divmod", "named", "first", "punned"].map(|name| body(&arena, &module, name))
+    };
+    assert_eq!(
+        bodies("%("),
+        bodies("("),
+        "a group of ports lowers as the parenthesised group"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def half(m : Integer) -> (q : Integer) = %(m);\ndef take(a : Integer) -> Integer = { let \
+         %(q) = half(a); q };\n",
+        &mut arena,
+    );
+    assert_eq!(
+        body(&arena, &module, "half"),
+        ["thunk", "lambda", "return", "#0"],
+        "a group of one port returns its output"
+    );
+    assert_eq!(
+        body(&arena, &module, "take"),
+        [
+            "thunk", "lambda", "bind", "app", "force", "const0", "#0", "return", "#0"
+        ],
+        "a pattern of one port binds the one output of the call"
+    );
+    assert!(
+        matches!(
+            refused("def loose(a : Integer) -> Integer = %(a, a);"),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            }
+        ),
+        "a group of ports is no value"
+    );
+}
+
 /// #2179: a dependent arrow and a telescope whose binder is named as a type
 /// is, `(A : Type) -> A -> -F A`, bind it as the lowercase binder does, so
 /// the type a parameter list naming `A` declares reads back as written.

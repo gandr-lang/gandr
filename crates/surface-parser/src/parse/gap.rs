@@ -344,7 +344,7 @@ fn class(
             },
             edge: match spelled {
                 ")" | "]" | "}" => Edge::Ends,
-                "(" | "*{" | "#[" => Edge::Begins,
+                "(" | "%(" | "*{" | "#[" => Edge::Begins,
                 _ => Edge::Neither,
             },
             separates: matches!(spelled, "," | ";"),

@@ -6320,19 +6320,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(())
     }
 
-    /// Classify a parenthesised expression: a grouping, a pair or an
-    /// annotation.
+    /// Classify a parenthesised expression: a grouping, a pair, an annotation
+    /// or a group of ports.
     ///
     /// # Specification
     /// - requires: `site` is a parenthesised expression in term position.
     /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
-    ///   answer its position states passed on; a comma list is read as a pair;
-    ///   a labelled group as `Models::labelled_outputs` reads it; `()` ending a
-    ///   body of no outputs returns none; `(e : T)` is read as
-    ///   `Native::annotated` reads it, adopting a constructor that takes `T` as
-    ///   its classifier, or the value an ascription its position makes carries,
-    ///   and otherwise planned as a value ascription, an injection among them,
-    ///   its label read in the sum `T` states.
+    ///   answer its position states passed on; a comma list, and each
+    ///   positional group opened by `%(`, `%(e)` included, is read as a pair; a
+    ///   labelled group, opened by `(` or by `%(`, as
+    ///   `Models::labelled_outputs` reads it; `()` ending a body of no outputs
+    ///   returns none; `(e : T)` is read as `Native::annotated` reads it,
+    ///   adopting a constructor that takes `T` as its classifier, or the value
+    ///   an ascription its position makes carries, and otherwise planned as a
+    ///   value ascription, an injection among them, its label read in the sum
+    ///   `T` states.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
     /// - fails: yields the pair's own refusal, the annotation's refusal as
@@ -6348,6 +6350,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   comma-separated tuple plans one tuple rather than treating the commas
     ///   as grouping, and an annotation no form carries plans its ascription.
     /// - witness: `gandr-surface-lowering::lower::tests::a_grouping_lowers_to_what_it_wraps`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_group_returns_what_the_parenthesised_group_returns_5771`
     /// - witness: `gandr-surface-lowering::lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_parameterized_constructor_needs_its_classifier`
@@ -6368,13 +6371,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let list = cursor.clone();
-        let _open = cursor.tile(TileName::PAREN_OPEN);
+        let open = match cursor.tile(TileName::PORT_GROUP_OPEN) {
+            Maybe::Present(_) => TileName::PORT_GROUP_OPEN,
+            Maybe::Absent(_) => {
+                let _open = cursor.tile(TileName::PAREN_OPEN);
+                TileName::PAREN_OPEN
+            },
+        };
         if let Maybe::Present(_) = cursor.at(TileName::DOT) {
-            return Models::new(self.host()).labelled_outputs(site, list);
+            return Models::new(self.host()).labelled_outputs(site, list, open);
         }
         let run = cursor.operands();
-        if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
-            return self.pair(site, list);
+        if open == TileName::PORT_GROUP_OPEN
+            || matches!(cursor.at(TileName::COMMA), Maybe::Present(_))
+        {
+            return self.pair(site, list, open);
         }
         if let Maybe::Present(_) = cursor.at(TileName::COLON) {
             return Native::new(self.host()).annotated(site, run, cursor);
@@ -6556,11 +6567,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
 
     /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included, or,
     /// ending a body whose result is a group of outputs, the return of one
-    /// value per output.
+    /// value per output. A group opened by `%(`, `%(v)` included, is a group
+    /// of ports, which stands only there.
     ///
     /// # Specification
-    /// - requires: `cursor` stands at the `(` of a parenthesised expression
-    ///   whose first member a comma follows.
+    /// - requires: `cursor` stands at the `open` of a parenthesised expression
+    ///   whose first member a comma follows, or at the `%(` of a positional
+    ///   group of ports.
     /// - ensures: ending a body whose written result is a group of outputs, as
     ///   `Models::answered_outputs` reads it, the tuple stands as a computation
     ///   and is planned as the return of its members; otherwise it stands as a
@@ -6573,9 +6586,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   [`Self::classify_member`] gives it.
     /// - provides: the introduction of the eager product, and the return of
     ///   several values.
-    /// - fails: yields the wrong-sort refusal where no value is read, and the
-    ///   list's refusal for a member out of shape, both naming the tuple; the
-    ///   walk's refusal reading the product.
+    /// - fails: yields the wrong-sort refusal where no value is read, and where
+    ///   a group opened by `%(` ends no body of outputs; the list's refusal for
+    ///   a member out of shape, both naming the tuple; the walk's refusal
+    ///   reading the product.
     /// - panics: none.
     ///
     /// # Errors
@@ -6607,6 +6621,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
+        open: TileName,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let tuple = Site {
@@ -6616,11 +6631,20 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let outputs = Models::new(self.host()).answered_outputs(site)?;
         let produced = match outputs {
             Some(_) => Produced::Computation,
+            None if open == TileName::PORT_GROUP_OPEN => {
+                return Err(site.out(FragmentBoundary::WrongSort));
+            },
             None => Produced::Value,
         };
         let frame = self.require(tuple, produced)?;
         let start = self.cx().operands.entries().len();
-        if let Err(refusal) = arguments(tuple, &mut cursor, &mut self.cx_mut().operands) {
+        if let Err(refusal) = delimited(
+            tuple,
+            &mut cursor,
+            &mut self.cx_mut().operands,
+            open,
+            TileName::PAREN_CLOSE,
+        ) {
             self.cx_mut().operands.truncate(At::from(start));
             return Err(refusal);
         }
@@ -8931,16 +8955,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
 
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
 {
-    /// The component patterns of a tuple pattern `(p, q)` or a product
-    /// pattern `*{p, q}` standing as a `let` statement's binder, in order.
+    /// The component patterns of a tuple pattern `(p, q)`, a group of ports
+    /// `%(p, q)` or a product pattern `*{p, q}` standing as a `let` statement's
+    /// binder, in order.
     ///
     /// # Specification
     /// - requires: `binder` is the pattern operand of the statement at
     ///   `statement`.
-    /// - ensures: each component of a tuple or a product pattern, in order,
-    ///   with its label when it is written `.l` or `.l = p`: the label tile
-    ///   itself is the component of a punned `.l`; the two patterns of the same
-    ///   components give the same components; absent for any other pattern.
+    /// - ensures: each component of a tuple, a port group or a product pattern,
+    ///   in order, with its label when it is written `.l` or `.l = p`: the
+    ///   label tile itself is the component of a punned `.l`; the patterns of
+    ///   the same components give the same components; absent for any other
+    ///   pattern. Only a group opened by `%(` has one component.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and a
     ///   fault naming the `let` statement for a repaired pattern or a tile out
     ///   of place among the components.
@@ -8952,13 +8978,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// # Adequacy
     /// - hypothesis: L3 — a two-component tuple binds both names in order, and
     ///   three components bind all three, and a name pattern reads as no tuple;
-    ///   a labelled group binds each output by its label.
+    ///   a labelled group binds each output by its label; a group of ports
+    ///   binds as the parenthesised group binds, and of one port too.
     /// - witness: `gandr-surface-lowering::lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     /// - witness: `gandr-surface-lowering::lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `gandr-surface-lowering::lower::tests::a_split_of_three_components_lowers`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_labelled_pattern_binds_each_output_by_its_label`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_group_returns_what_the_parenthesised_group_returns_5771`
     /// - witness: `gandr-surface-lowering::lower::tests::a_product_binder_splits_as_the_tuple_binder_4853`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => parts.len() >= 2, Maybe::Absent(_) => true }))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => !parts.is_empty(), Maybe::Absent(_) => true }))]
     fn tuple_binders(
         &self,
         statement: Site,
@@ -8984,7 +9012,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             return Err(repaired.refusal(name));
         }
         let mut cursor = Cursor::new(&pieces.pieces, binder.span);
-        closed(statement, &mut cursor, open)?;
+        let ported = matches!(cursor.at(TileName::PORT_GROUP_OPEN), Maybe::Present(_));
+        closed(
+            statement,
+            &mut cursor,
+            if ported {
+                TileName::PORT_GROUP_OPEN
+            }
+            else {
+                open
+            },
+        )?;
         let mut components = Vec::new();
         loop {
             let component = if let Maybe::Present(_dot) = cursor.tile(TileName::DOT) {
@@ -9009,7 +9047,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             closed(statement, &mut cursor, close)?;
             break;
         }
-        if components.len() < 2 {
+        if components.len() < 2 && !ported {
             return Err(statement.fault(binder.span, FormFault::MisplacedTile));
         }
         Ok(Maybe::Present(components))

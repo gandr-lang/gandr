@@ -2279,7 +2279,8 @@ fn run_end(
 /// operator's tile. Any other run that starts with `!`, `?` or `~` gives that
 /// sigil a tile of its own, and the rest is read as the next run. `type` with
 /// a `(` written straight after it is one tile with the parenthesis, a type
-/// quoted where an expression stands. Every other run is one word: an
+/// quoted where an expression stands, and so is `%` with a `(` written straight
+/// after it, the opener of a group of ports. Every other run is one word: an
 /// uppercase lead makes an upper word, and any other printable lead a lower
 /// word, `-x` and `\T` included. A run led by a control character or a prime
 /// names no tile.
@@ -2289,8 +2290,8 @@ fn run_end(
 /// - ensures: scanning advances; a connective's opener is punctuation through
 ///   the brace; a pipeline field is punctuation through its dot; an operator
 ///   run is punctuation to its end; a sigil run is punctuation for its sigil
-///   alone; `type(` is punctuation through the parenthesis; a word ends where
-///   the run does.
+///   alone; `type(` and `%(` are punctuation through the parenthesis; a word
+///   ends where the run does.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2299,8 +2300,9 @@ fn run_end(
 ///   word, a digit or a run's end, operators, an operator written against a
 ///   name, an operator-led run the table lacks, sigils, a sigil before an
 ///   operator, words of either case, a `_`-led word, the lone wildcard, a
-///   primed word, a lone prime, a non-ASCII word, `type(` against `type (`, and
-///   a run before each delimiter and a comment separate the decisions.
+///   primed word, a lone prime, a non-ASCII word, `type(` against `type (`,
+///   `%(` against `% (` and a glued `m%(`, and a run before each delimiter and
+///   a comment separate the decisions.
 /// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
 #[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && ret.next <= bytes.len() && matches!(ret.lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct | Lexeme::Unknown))]
 fn scan_run(
@@ -2317,6 +2319,11 @@ fn scan_run(
     // A connective's sign written straight before `{` opens it: `*{`, `+{`
     // and `&{` are one tile each.
     if matches!(text.0, b"*" | b"+" | b"&") && bytes.byte(end) == Some(SourceByte::from(b'{')) {
+        return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
+    }
+    // `type` and the port sign `%` written straight before `(` open with it:
+    // `type(` and `%(` are one tile each, before `%` reads as an operator.
+    if matches!(text.0, b"type" | b"%") && bytes.byte(end) == Some(SourceByte::from(b'(')) {
         return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
     }
     // The pipe written straight before a dot and a word is the pipeline
@@ -2338,9 +2345,6 @@ fn scan_run(
             .any(|operator| operator.as_bytes() == text.0)
     {
         return ScanResult::new(Lexeme::Punct, end);
-    }
-    if text.0 == b"type" && bytes.byte(end) == Some(SourceByte::from(b'(')) {
-        return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
     }
     match lead {
         b'!' | b'?' | b'~' => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
@@ -3170,6 +3174,22 @@ mod tests
             lower("types"),
             punct("("),
             lower("x"),
+            punct(")"),
+        ]);
+        // The port sign written straight before `(` opens a group of ports;
+        // spaced, it is the operator, and glued to a word it ends the word.
+        assert_eq!(lexed("%(a) m % (n) m%(n)"), vec![
+            punct("%("),
+            lower("a"),
+            punct(")"),
+            lower("m"),
+            lower("%"),
+            punct("("),
+            lower("n"),
+            punct(")"),
+            lower("m%"),
+            punct("("),
+            lower("n"),
             punct(")"),
         ]);
         // A comment's opener ends a run; a number is a token only where its
