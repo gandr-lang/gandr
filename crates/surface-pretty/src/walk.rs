@@ -13596,15 +13596,17 @@ impl Walk<'_, '_>
                             .text(" ")
                             .binders(Arity(arm.fields));
                     }
-                    else if arm.fields > 0_usize {
-                        let _ = parts.text("(").binders(Arity(arm.fields)).text(")");
+                    else {
+                        for offset in 0_usize .. arm.fields {
+                            let _ = parts.text(" ").part(Part::Binder(offset));
+                        }
                     }
                     let _ = parts.text(" => ").piece(Binding::Arrow);
                 }
                 let _ = parts.part(Part::Close);
-                // An arm's pattern is its constructor, applied to its field
-                // binders when it has fields, or a letter of a word before
-                // the rest of the word.
+                // An arm's pattern is its constructor, its field binders
+                // juxtaposed after it, `Cons x rest`, or a letter of a word
+                // before the rest of the word.
                 writes(
                     Production("match_expression"),
                     writes(
