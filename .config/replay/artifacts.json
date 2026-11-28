@@ -29,8 +29,8 @@
   },
   {
     "each": "crate",
-    "name": "the debug traces and goldens of {crate}",
-    "paths": ["crates/{crate}/tests/debug-traces/", "crates/{crate}/tests/golden/"],
+    "name": "the goldens of {crate}",
+    "paths": ["crates/{crate}/tests/golden/"],
     "inputs": ["crates/{crate}/"],
     "check": ".config/mise/scope cargo nextest run --locked --manifest-path crates/{crate}/Cargo.toml",
     "stale": [100],
