@@ -1,6 +1,7 @@
-# The plain suite of `main` on the hosted runner for macOS arm64, one time
-# each day. The gates of a landing run on Linux only, so this run is the
-# check that the tree still builds and passes its tests on macOS.
+# The plain suite and the rustdoc passes of `main` on the hosted runner for
+# macOS arm64, one time each day. The gates of a landing run on Linux only.
+# This run is the check that the tree builds, passes its tests and documents
+# on macOS.
 #
 # The run reads and saves one target cache of its own. Cargo compares sources
 # by content (`.cargo/config.toml`), so a restored unit whose source did not
@@ -89,6 +90,23 @@ jobs:
         run: cargo fetch --locked
       - name: run the plain suite
         run: cargo nextest run --workspace --locked --no-fail-fast
+      # The items of some crates stand on the targets of one system alone. The
+      # rustdoc gates of a landing document them on Linux. These passes
+      # document each crate on macOS, with the private items and each rustdoc
+      # lint denied. One pass takes the default features, and one takes each
+      # feature.
+      #
+      # The passes render no page, and they run after a failed suite too.
+      # Their build directory is not in the cache, so the cache holds the build
+      # of the suite alone.
+      - name: document the workspace
+        if: ${{ !cancelled() }}
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/gate-doc
+          RUSTDOCFLAGS: -D warnings -Zunstable-options --check
+        run: |
+          cargo doc --workspace --locked --no-deps --document-private-items
+          cargo doc --workspace --locked --no-deps --document-private-items --all-features
       - name: save the target directory
         if: ${{ always() && steps.target.outcome == 'success' && steps.target.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
