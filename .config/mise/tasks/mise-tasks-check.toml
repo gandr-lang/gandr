@@ -1570,21 +1570,16 @@ run = ".config/mise/scope cargo test --doc {{ env.GATE_SCOPE | default(value='--
 description = "Spelling"
 run = "typos"
 
-# Documentation shape. `README.md` is a crate's only document: an overview
-# linking into the crate's rustdoc, where mechanism, decisions and
-# specification detail live. The first command refuses tracked markdown
-# outside the list `.config/markdown/readmes`: the rule `markdown` of
-# `tree-rules` (`crates/workflow-tree-rules`), whose `*` stays within one
-# directory, which sizelint's patterns cannot express. The ledger's README,
-# its generated syntax ledger and its bootstrap census (#2896) are on it, a
-# library's README (its module map, `library/std/README.md`), the pull
-# request template, which GitHub reads as markdown, and the filers' issue
-# templates (#3112), which `issue:file` posts as markdown. A literate sketch
-# host, `corpus/sketch/*/*.gandr.md` (#4723), is a program in markdown, not
-# documentation. The unit issue template is a form,
-# `.github/ISSUE_TEMPLATE/unit.yml` (#3113). The
-# second holds every tracked markdown file to its budget in `sizelint.toml`;
-# treefmt's sizelint pass leaves markdown to this gate.
+# The shape of the documents. A crate has one document, its `README.md`. The
+# README is an overview with links into the rustdoc of the crate. The
+# mechanism, the decisions and the specification are in the rustdoc.
+#
+# The first command refuses each tracked Markdown file that the list of
+# READMEs does not hold. In that list, a `*` matches within one directory, and
+# the patterns of sizelint cannot state that. The second command holds each
+# tracked Markdown file to its budget of `sizelint.toml`. The pass of sizelint
+# in treefmt does not read Markdown.
+# - see: `.config/markdown/readmes`, `crates/workflow-tree-rules`
 ["check:markdown"]
 description = "Tracked markdown on the README allowlist and within its budgets"
 run = [
@@ -1876,37 +1871,37 @@ done
 exec .config/mise/gated .config/mise/scope cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" "${packages[@]}" -E 'test(/^corpus::/)'
 '''
 
-# Merge residue never lands: a conflict marker, or what a merge driver writes
-# as a comment, its resolution trailer or the `refused_by:` line it puts atop
-# each side of a block it could not resolve (#1560). The driver writes that
-# line under the file's comment leader: `//`, SQL's `--` (#7588) or `#`. The
-# scan reads it at a line's start and, whole as `refused_by: <name> ·
-# collision:` after a leader, anywhere on a line, where a formatter that
-# reflows the block joins it (#3217). Nor does a file named as residue land:
-# a driver's `.orig` backup or a `.rej` hunk, or the
-# `_BACKUP_`, `_BASE_`, `_LOCAL_` and `_REMOTE_` copies `git mergetool`
-# writes, which hold clean text no marker scan sees (#1642), or `wt:warm`'s
-# clone probe, `.wt-warm-probe`, a tool's leftover (#3222). The rule
-# `residue` of `tree-rules` (`crates/workflow-tree-rules`) reads the line
-# patterns of `.config/merge-residue/patterns` and the path patterns of
-# `names` beside it, one regular expression a line. Each case of
-# `cases.json` is a test of that crate, and the line scan skips that file,
-# whose cases are residue by design. Git writes conflict markers as EXACTLY
-# seven marker characters followed by end-of-line or whitespace plus a label
-# (`<<<<<<< HEAD`, bare `=======`). Anchoring on `([[:space:]]|$)` keeps real
-# markers matched while rejecting longer decorative runs -- setext underlines
-# and `====` delimiter rules are not conflicts. The trailer patterns bracket
-# a character so the patterns file does not match itself.
+# No merge residue lands. Residue is a conflict marker, or a comment that a
+# merge driver writes. Such a comment is the resolution trailer, or the line
+# `refused_by:` above each side of a block that the driver cannot resolve. The
+# driver writes that line under the comment leader of the file: `//`, `--` or
+# `#`.
+# The scan reads the line at its start, and after a leader at any place in a
+# line, because a formatter can join the block.
+# - see: #1560, #7588, #3217
+#
+# A file named as residue does not land either. Such a file is a backup
+# `.orig` or a hunk `.rej` of a driver, or a copy `_BACKUP_`, `_BASE_`,
+# `_LOCAL_` or `_REMOTE_` of `git mergetool`. No scan of markers reads the
+# clean text of such a copy. The probe `.wt-warm-probe` of `wt:warm` is
+# residue too.
+# - see: #1642, #3222
+#
+# The rule `residue` of `tree-rules` reads the patterns of lines and of paths,
+# one regular expression a line. Each case of `cases.json` is a test of that
+# crate, and the scan of lines skips that file. A conflict marker is exactly
+# seven marker characters, then a space or the end of the line. A longer run,
+# such as the underline of a heading, is no conflict.
+# - see: `.config/merge-residue/patterns`, `crates/workflow-tree-rules`
 ["check:merge-residue"]
 description = "Detect conflict markers and merge-driver residue in tracked files"
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-tree-rules --bin tree-rules -- --rule residue"
 
-# No line of the tree holds the path of a home directory, which names an
-# account of a host on a public surface (#7041). The rule `paths` of
-# `tree-rules` reads each tracked file that is not binary against the
-# patterns of `.config/local-paths/patterns`. A placeholder name of
-# `placeholders` stands. Each case of `cases.json` is a test of
-# `crates/workflow-tree-rules`.
+# No line of the tree holds the path of a home directory. Such a path names an
+# account of a host, and the tree is public. The rule `paths` of `tree-rules`
+# reads each tracked file that is not binary. A name of `placeholders` after
+# the home directory stands. Each case of `cases.json` is a test of the crate.
+# - see: #7041, `.config/local-paths/patterns`, `crates/workflow-tree-rules`
 ["check:local-paths"]
 description = "No line of the tree holds the path of a home directory"
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-tree-rules --bin tree-rules -- --rule paths"

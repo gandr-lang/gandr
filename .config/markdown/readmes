@@ -1,7 +1,14 @@
-# The Markdown files of the tree, one glob a line. A `*` stands for any run of
+# The Markdown files of the tree, one glob a line. A `*` matches any run of
 # characters within one segment of a path. The rule `markdown` of
-# `crates/workflow-tree-rules` refuses each tracked Markdown file that no glob
-# matches: its prose goes into rustdoc.
+# `tree-rules` refuses each tracked Markdown file that no glob matches. Its
+# prose goes into rustdoc.
+# - see: `crates/workflow-tree-rules`
+#
+# The list holds each README, the changelog, the census of the ledger, and
+# the templates of an issue and of a pull request. GitHub reads a template as
+# Markdown. A literate sketch of the corpus is a program in Markdown, and the
+# list holds it too.
+# - see: #2896, #3112, #4723
 README.md
 CHANGELOG.md
 crates/README.md

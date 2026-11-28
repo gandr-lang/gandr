@@ -1049,9 +1049,9 @@ features = ["crossterm"]
 version = "1.12.0"
 default-features = false
 
-# The regular expressions of the rules of the tree, which read each line of
-# each tracked file: the lazy DFA and the literal prefilters read the tree in
-# seconds, where the pike VM of regex-lite took minutes.
+# The regular expressions of the rules of the tree. They check each line of
+# each tracked file. The lazy DFA and the literal prefilters check the tree in
+# less than one second. The pike VM of regex-lite needs minutes.
 # features:
 # - std: required by the crate
 # - perf: the lazy DFA, the literal prefilters and the caches
@@ -1059,7 +1059,7 @@ default-features = false
 [workspace.dependencies.regex]
 version = "1.13.2"
 default-features = false
-features = ["std", "perf"]
+features = ["perf", "std"]
 
 # The regular expressions a witness runs to check a pattern the parser
 # exports against its scanner.
