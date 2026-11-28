@@ -525,6 +525,9 @@ pub enum FormFault
     /// A group of outputs written with a bare parenthesis, `(q, r)`, where a
     /// body ends with its outputs. A group of ports opens with `%(`.
     BarePortGroup,
+    /// A port of an application selected with a bare dot, `(f a).l`. A port
+    /// is selected with `.%`, `(f a).%l`.
+    BarePort,
     /// An implicit supplied by position after one supplied by name,
     /// `f[.n = 3, T]`. Positional entries come first.
     PositionalAfterNamed,
@@ -639,6 +642,7 @@ impl fmt::Display for FormFault
             Self::NotAName => f.write_str("binds a pattern where it takes a name"),
             Self::BareIndex => f.write_str("indexes an element with a bare bracket"),
             Self::BarePortGroup => f.write_str("writes a group of outputs with a bare parenthesis"),
+            Self::BarePort => f.write_str("selects a port with a bare dot"),
             Self::PositionalAfterNamed => {
                 f.write_str("supplies an implicit by position after one by name")
             },

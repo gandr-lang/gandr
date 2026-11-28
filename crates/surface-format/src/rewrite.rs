@@ -150,9 +150,6 @@ pub enum RewriteName
     /// `s.m`; both forms write the selection alone, the one spelling of the
     /// call.
     BareRun,
-    /// A port of an application: `(f a).l` and `(f a).%l`; both forms write
-    /// the port selector, where the meaning check finds `l` a port.
-    PortSelect,
 }
 
 impl RewriteName
@@ -178,7 +175,6 @@ impl RewriteName
         Self::TypeApplication,
         Self::PatternApplication,
         Self::BareRun,
-        Self::PortSelect,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -209,7 +205,6 @@ impl RewriteName
             Self::TypeApplication => "type-application",
             Self::PatternApplication => "pattern-application",
             Self::BareRun => "bare-run",
-            Self::PortSelect => "port-select",
         }
     }
 
@@ -296,7 +291,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 39] = [
+pub const REWRITES: [Rewrite; 37] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -596,22 +591,6 @@ pub const REWRITES: [Rewrite; 39] = [
         from: Spelling("s.m ()"),
         to: Spelling("s.m"),
         enabled: Enabled::On,
-    },
-    Rewrite {
-        name: RewriteName::PortSelect,
-        direction: Direction::Sugar,
-        mold: PROJECTION,
-        from: Spelling("(f a).l"),
-        to: Spelling("(f a).%l"),
-        enabled: Enabled::Off,
-    },
-    Rewrite {
-        name: RewriteName::PortSelect,
-        direction: Direction::Desugar,
-        mold: PROJECTION,
-        from: Spelling("(f a).l"),
-        to: Spelling("(f a).%l"),
-        enabled: Enabled::Off,
     },
 ];
 
@@ -2527,9 +2506,6 @@ impl<'source> Respelling<'_, 'source>
             (RewriteName::BareRun, Direction::Sugar | Direction::Desugar) => {
                 self.bare_run(&mut out, parts)?
             },
-            (RewriteName::PortSelect, Direction::Sugar | Direction::Desugar) => {
-                self.port_select(&mut out, parts)?
-            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -3285,50 +3261,6 @@ impl<'source> Respelling<'_, 'source>
         let operand = self.operand(callee);
         out.place(&operand, Band::Loose);
         Some(operand.band)
-    }
-
-    /// Write the selection whose parts are `parts` with the port selector,
-    /// answering an atom's band, when it selects a lowercase name off an
-    /// application or a parenthesised form: `(f a).l` as `(f a).%l`, `f(a).l`
-    /// as `f(a).%l`. Nothing when a comment stands among its parts, or for any
-    /// other selection. The meaning check withdraws the rewrite where `l` is
-    /// no port of the application, as off a record.
-    ///
-    /// # Specification
-    /// trivial.
-    fn port_select(
-        &self,
-        out: &mut Builder<'source>,
-        parts: &[Part<'source>],
-    ) -> Option<Band>
-    {
-        let [ref target, ref dot, ref name] = *parts
-        else {
-            return None;
-        };
-        let (Role::Operand(child @ Child::Node(at)), Role::Own(dot), Role::Own(label)) =
-            (target.role, dot.role, name.role)
-        else {
-            return None;
-        };
-        let lowercase = <&str>::from(label)
-            .chars()
-            .next()
-            .is_some_and(|first| first.is_lowercase() || first == '_');
-        if <&str>::from(dot) != "."
-            || !lowercase
-            || !matches!(
-                self.rule(at),
-                Some(APPLICATION | MoldName("parenthesized_expression"))
-            )
-        {
-            return None;
-        }
-        let operand = self.operand(child);
-        out.place(&operand, Band::Atom);
-        out.token(PORT_SELECT);
-        out.leaves.extend(name.leaves.iter().copied());
-        Some(Band::Atom)
     }
 
     /// Write the forgetting map's form spanning `extent` whose parts are
@@ -4130,7 +4062,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 49] = [
+const RULES: [MoldName; 48] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4156,7 +4088,6 @@ const RULES: [MoldName; 49] = [
     MoldName("manifest_type"),
     MoldName("manifest_sort"),
     APPLICATION,
-    PROJECTION,
     MoldName("type_application.juxtaposed"),
     MoldName("constructor_pattern"),
     MoldName("constructor_pattern.juxtaposed"),
@@ -4191,12 +4122,6 @@ const STATEMENT_BLOCK: MoldName = MoldName("statement_block");
 
 /// The application `f a`, a call written by juxtaposition.
 const APPLICATION: MoldName = MoldName("application_expression");
-
-/// A selection `t.l`, and a port `t.%l`.
-const PROJECTION: MoldName = MoldName("projection_expression");
-
-/// `.%`, the port selector.
-const PORT_SELECT: Spelling = Spelling(".%");
 
 /// `*{`, the product's opener.
 const OPEN_PRODUCT: Spelling = Spelling("*{");

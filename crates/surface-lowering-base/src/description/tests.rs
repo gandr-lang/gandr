@@ -515,8 +515,8 @@ fn a_multi_output_constructor_describes_one_constructor_per_port()
     );
 }
 
-/// #4853: a rule names a port through parentheses, `(Split t).l`, as it names
-/// it with the constructor's argument glued, `(Split(t)).l`.
+/// #4853: a rule names a port through parentheses, `(Split t).%l`, as it
+/// names it with the constructor's argument glued, `(Split(t)).%l`.
 #[test]
 fn a_rule_names_a_port_through_parentheses_4853()
 {
@@ -539,8 +539,8 @@ fn a_rule_names_a_port_through_parentheses_4853()
             .collect::<alloc::vec::Vec<_>>()
     };
     assert_eq!(
-        rules("(Split t).l"),
-        rules("(Split(t)).l"),
+        rules("(Split t).%l"),
+        rules("(Split(t)).%l"),
         "a port written with its argument juxtaposed is the port written glued"
     );
 }

@@ -2627,37 +2627,54 @@ fn a_group_of_ports_returns_and_binds_its_outputs_5771()
 }
 
 /// #5771: the port selector `.%` selects a port of an application: an output
-/// of a call returning a group, as `.` selects it, and a port of a
-/// multi-output constructor, as `.` selects it. A `.%` off a value that has
-/// no ports is refused at the selector.
+/// of a call returning a group, and a port of a multi-output constructor. A
+/// bare `.` that selects a port is refused by name at the port, and a `.%`
+/// off a value that has no ports is refused at the selector.
 #[test]
 fn a_port_is_selected_with_its_selector_5771()
 {
-    let mut arena = CoreArena::new();
-    let module = lowered(
-        "data Expr : Type where { | Lit : (n : Integer) --> Expr | Share : (e : Expr) --> (left : \
-         Expr, right : Expr) }\ndef divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) \
-         = %(m, n);\ndef ported(n : Integer) -> Integer = (divmod n n).%r;\ndef dotted(n : \
-         Integer) -> Integer = (divmod n n).r;\ndef left : Expr = (Share (Lit 1)).%left;\ndef \
-         dotted_left : Expr = (Share (Lit 1)).left;\n",
-        &mut arena,
+    let declared = "data Expr : Type where { | Lit : (n : Integer) --> Expr | Share : (e : Expr) --> \
+                    (left : Expr, right : Expr) }\ndef divmod(m : Integer, n : Integer) -> (q : \
+                    Integer, r : Integer) = %(m, n);\n";
+    let text = format!(
+        "{declared}def ported(n : Integer) -> Integer = (divmod n n).%r;\ndef left : Expr = (Share \
+         (Lit 1)).%left;\n"
     );
+    let mut arena = CoreArena::new();
+    let module = lowered(text.as_str(), &mut arena);
     let ported = body(&arena, &module, "ported");
     assert_eq!(
         ported.get(ported.len().saturating_sub(2_usize) ..),
         Some(&[String::from("return"), String::from("#0")][..]),
         "`.%r` returns the second output, {ported:?}"
     );
-    assert_eq!(
-        ported,
-        body(&arena, &module, "dotted"),
-        "`.%r` selects the output `.r` selects"
+    let port = body(&arena, &module, "left").join(" ");
+    assert!(
+        port.contains("Constructor {") && port.contains("tag: ConstructorTag(1)"),
+        "`.%left` is the port `left`, the constructor after `Lit`: {port}"
     );
-    for name in ["left", "dotted_left"] {
-        let port = body(&arena, &module, name).join(" ");
-        assert!(
-            port.contains("Constructor {") && port.contains("tag: ConstructorTag(1)"),
-            "`{name}` is the port `left`, the constructor after `Lit`: {port}"
+    for (selection, name) in [
+        ("def dotted(n : Integer) -> Integer = (divmod n n).r", "r"),
+        ("def dotted : Expr = (Share (Lit 1)).left", "left"),
+        (
+            "def dotted(e : Expr) -> Integer = match e { | Share(x).left => return 3 | _ => return \
+             4 }",
+            "left",
+        ),
+    ] {
+        let source = format!("{declared}{selection};\n");
+        let LoweringRefusal::MalformedForm {
+            span,
+            fault: FormFault::BarePort,
+            ..
+        } = refused(source.as_str())
+        else {
+            panic!("`{selection}` selects a port with a bare dot");
+        };
+        assert_eq!(
+            source.get(usize::from(span.start()) .. usize::from(span.end())),
+            Some(name),
+            "the refusal stands at the port of `{selection}`"
         );
     }
     let record = "def record(n : Integer) -> Integer = { let p = *{.a = n}; p.%a };";

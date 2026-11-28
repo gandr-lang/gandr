@@ -587,6 +587,7 @@ fn lowered(
                 FormFault::BarePortGroup => {
                     f.write_str("this parenthesised list ends a body of outputs as a group of ports")
                 },
+                FormFault::BarePort => f.write_str("this dot selects a port of an application"),
                 FormFault::PositionalAfterNamed => {
                     f.write_str("this implicit is supplied by position after one supplied by name")
                 },

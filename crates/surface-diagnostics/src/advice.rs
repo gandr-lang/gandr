@@ -736,6 +736,7 @@ fn malformed(
         FormFault::NotAName => String::from("write a name before the `@`"),
         FormFault::BareIndex => String::from("write the index as the selector `.#[ … ]`"),
         FormFault::BarePortGroup => String::from("open the group of ports with `%(`"),
+        FormFault::BarePort => String::from("select the port with `.%`"),
         FormFault::PositionalAfterNamed => {
             String::from("write the positional entries before the named ones")
         },

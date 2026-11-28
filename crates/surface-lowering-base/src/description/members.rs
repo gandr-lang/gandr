@@ -313,9 +313,9 @@ impl Reader<'_, '_>
     ///   order; `bind a . t` is the abstraction of the atom `a` over `t`, the
     ///   name `a` inside it that atom's occurrence and outside it a variable; a
     ///   variable spelled in a type hole, as a pinned rewrite endpoint is, is a
-    ///   variable; a port `C(a, …).%l` or `C(a, …).l`, its call in parentheses
-    ///   or not, is the constructor `C.l` over `a, …`; a lowercase word applied
-    ///   by juxtaposition, `ext g a`, is the application its call pieces spell,
+    ///   variable; a port `C(a, …).%l`, its call in parentheses or not, is the
+    ///   constructor `C.l` over `a, …`; a lowercase word applied by
+    ///   juxtaposition, `ext g a`, is the application its call pieces spell,
     ///   `ext(g, a)`. The written term holds one node per node of the term, in
     ///   pre-order, each at its own bytes and an application or an abstraction
     ///   with its head's or its atom's.
@@ -480,8 +480,7 @@ impl Reader<'_, '_>
                         continue;
                     }
                     // `C(a, …).%l` names the port `l` of the multi-output
-                    // constructor `C`: the constructor `C.l` over `a, …`, and
-                    // so does `C(a, …).l`.
+                    // constructor `C`: the constructor `C.l` over `a, …`.
                     if let [
                         Piece::Operand(target),
                         Piece::Tile { label: dot, .. },
@@ -490,7 +489,7 @@ impl Reader<'_, '_>
                             at: output,
                         },
                     ] = *pieces.as_slice()
-                        && (dot == TileName::DOT || dot == TileName::PORT_SELECT)
+                        && dot == TileName::PORT_SELECT
                         && field == TileName::IDENTIFIER
                     {
                         // `(C a).l` names the port `C(a).l` does.

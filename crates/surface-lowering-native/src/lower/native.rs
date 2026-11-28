@@ -5237,8 +5237,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         Ok(arity::Planned(true))
     }
 
-    /// Classify a selection `C(a, …).%l` or `C(a, …).l` off a multi-output
-    /// constructor as the port `l` of `C` applied to `a, …`.
+    /// Classify a port `C(a, …).%l` of a multi-output constructor as the port
+    /// `l` of `C` applied to `a, …`.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
@@ -5248,7 +5248,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///   [`Self::construct`] constructs it. Nothing is planned for any other
     ///   selection.
     /// - fails: [`LoweringRefusal::PartialField`] at the member when the
-    ///   constructor has no output `l`; as [`Self::construct`] otherwise.
+    ///   constructor has no output `l`; the bare-port refusal at the member
+    ///   when a bare `.` selects the port, `C(a, …).l`; as [`Self::construct`]
+    ///   otherwise.
     /// - panics: none.
     ///
     /// # Errors
@@ -5256,7 +5258,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each output of a two-output constructor, and an
-    ///   output it lacks, separate the two ports from the refusal.
+    ///   output it lacks, separate the two ports from the refusal, and a port
+    ///   selected with a bare dot is refused.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_is_selected_with_its_selector_5771`
     #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Constructor(_))))]
@@ -5268,8 +5271,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
         let unplanned = Ok(arity::Planned(false));
-        let Some((target, selected)) = Context::port_link(&pieces.pieces)
-            .or_else(|| Context::link(site, &pieces.pieces, site.at.span).ok())
+        let selector = Context::port_link(&pieces.pieces);
+        let Some((target, selected)) =
+            selector.or_else(|| Context::link(site, &pieces.pieces, site.at.span).ok())
         else {
             return unplanned;
         };
@@ -5304,6 +5308,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 constructor: self.cx().name_at(ported.named),
             });
         };
+        if selector.is_none() {
+            return Err(site.fault(selected.span, FormFault::BarePort));
+        }
         self.host().constructed_at(head.span, constructor);
         let _head = cursor.operands();
         let start = self.cx().operands.entries().len();
@@ -6292,7 +6299,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         Err(here.out(FragmentBoundary::Unadmitted(super::unread_pattern(name))))
     }
 
-    /// The port a projection pattern `C(x, …).l` matches: the port `l` of the
+    /// The port a projection pattern `C(x, …).%l` matches: the port `l` of the
     /// multi-output constructor `C`, its field patterns `x, …`.
     ///
     /// # Specification
@@ -6303,16 +6310,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///   field patterns in order; the unnamed absence for a projection off
     ///   anything else.
     /// - fails: [`LoweringRefusal::PartialField`] at the member when the
-    ///   constructor has no such output; a misplaced tile inside the
-    ///   parentheses.
+    ///   constructor has no such output; the bare-port refusal at the member
+    ///   when a bare `.` selects the port, `C(x, …).l`; a misplaced tile inside
+    ///   the parentheses.
     /// - panics: none.
     ///
     /// # Errors
     /// The pattern's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an arm per port covers a two-output constructor, and
-    ///   an arm missing one port is refused for it.
+    /// - hypothesis: L3 — an arm per port covers a two-output constructor, an
+    ///   arm missing one port is refused for it, and a port selected with a
+    ///   bare dot is refused.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| match ret {
         Ok(Maybe::Present(ref read)) => read.fields.len() == read.port.arity,
@@ -6325,7 +6334,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ) -> Result<Maybe<PortPattern, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Ok(Maybe::Absent(constructed::Absent::Unnamed));
-        let Ok((target, selected)) = Context::link(here, &pieces.pieces, here.at.span)
+        let selector = Context::port_link(&pieces.pieces);
+        let Some((target, selected)) =
+            selector.or_else(|| Context::link(here, &pieces.pieces, here.at.span).ok())
         else {
             return unnamed;
         };
@@ -6399,6 +6410,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 constructor: self.cx().name_at(ported.named),
             });
         };
+        if selector.is_none() {
+            return Err(here.fault(selected.span, FormFault::BarePort));
+        }
 
         Ok(Maybe::Present(PortPattern { head, port, fields }))
     }

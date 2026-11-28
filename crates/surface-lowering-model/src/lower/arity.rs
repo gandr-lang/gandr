@@ -4037,8 +4037,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         Ok(())
     }
 
-    /// Classify a selection `f(a, …).%l` or `f(a, …).l` off a call whose
-    /// result is a group of outputs as the output `l` alone.
+    /// Classify a port `f(a, …).%l` of a call whose result is a group of
+    /// outputs as the output `l` alone.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
@@ -4047,8 +4047,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///   it, one of whose outputs the link names: the call read as a
     ///   computation, every output bound and the named one returned, with no
     ///   product built. Nothing is planned for any other selection.
-    /// - fails: the wrong-sort refusal where no computation is read; as
-    ///   [`Self::called_outputs`].
+    /// - fails: the wrong-sort refusal where no computation is read; the
+    ///   bare-port refusal at the member when a bare `.` selects the output,
+    ///   `f(a, …).l`; as [`Self::called_outputs`].
     /// - panics: none.
     ///
     /// # Errors
@@ -4056,7 +4057,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each output of a two-output call, selected, returns
-    ///   its own binder.
+    ///   its own binder, and an output selected with a bare dot is refused.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_port_is_selected_with_its_selector_5771`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::SelectedOutput { .. })))]
@@ -4067,8 +4068,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Some((target, selected)) = Context::port_link(&pieces.pieces)
-            .or_else(|| Context::link(site, &pieces.pieces, site.at.span).ok())
+        let selector = Context::port_link(&pieces.pieces);
+        let Some((target, selected)) =
+            selector.or_else(|| Context::link(site, &pieces.pieces, site.at.span).ok())
         else {
             return Ok(Planned(false));
         };
@@ -4088,6 +4090,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         else {
             return Ok(Planned(false));
         };
+        if selector.is_none() {
+            return Err(site.fault(selected.span, FormFault::BarePort));
+        }
         let frame = self.host().require(site, Produced::Computation)?;
         self.host().read(target.node, Reading::Computation(frame));
         self.host().plan(site, Plan::SelectedOutput {

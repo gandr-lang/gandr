@@ -1635,7 +1635,6 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "type-application",
             "pattern-application",
             "bare-run",
-            "port-select",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2689,48 +2688,6 @@ fn a_method_call_of_its_receiver_alone_is_its_bare_selection_8316()
             spelled(&grammar, source, form, only),
             moved,
             "{form}: the calls move alike"
-        );
-        assert_eq!(
-            spelled(&grammar, moved.as_str(), form, only),
-            moved,
-            "{form}: a second pass changes nothing"
-        );
-    }
-}
-
-/// #5771: a port of an application is written with the port selector in
-/// either form: `(divmod n n).q` is `(divmod n n).%q`, and a port of a
-/// constructor's application is `(Share (Lit 1)).%left`. A field of a record
-/// keeps its `.`, because the meaning check withdraws the rewrite there, and
-/// a selection off a name stays. A second pass changes nothing.
-#[test]
-fn a_port_is_written_with_its_selector_5771()
-{
-    let grammar = grammar();
-    let source = include_str!("rewrite/unformatted/a-port-is-written-with-its-selector-5771.gandr");
-    let only = Selection::Only(&[RewriteName::PortSelect]);
-    let moved = spelled(&grammar, source, Form::Sugared, only);
-    expect![[r#"
-        data Expr : Type where
-          | Lit : (n : Integer) --> Expr
-          | Share : (e : Expr) --> (left : Expr, right : Expr)
-
-        def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = %(m, n)
-
-        def half(n : Integer) -> Integer = (divmod n n).%q
-
-        def left : Expr = (Share (Lit 1)).%left
-
-        def field(n : Integer) -> Integer = (*{.a = n}).a
-
-        def named(p : *{a : Integer}) -> Integer = p.a;
-    "#]]
-    .assert_eq(&moved);
-    for form in [Form::Sugared, Form::Explicit] {
-        assert_eq!(
-            spelled(&grammar, source, form, only),
-            moved,
-            "{form}: the ports move alike"
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, only),
