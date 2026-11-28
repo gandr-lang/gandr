@@ -1,5 +1,5 @@
 //! The coverage of names: each name that the highlighter marks answers the
-//! editor, or the coverage ledger holds its kind.
+//! editor, or the sweep gives its kind as a gap.
 //!
 //! A use answers a definition request with one link at least. The type table
 //! names each binder at its span, and rename, references and a binder's hover
@@ -8,9 +8,8 @@
 //!
 //! A gap's key is its surface, its highlight role and the rule of the tile at
 //! it. A key holds no path and no line, so an edit of a source keeps it. The
-//! ledger `coverage.ledger` at the crate's root holds the kinds the corpus
-//! owes. A gap whose key the ledger lacks fails the sweep. A whole sweep also
-//! fails on a held key that no gap carries.
+//! sweep gives the keys of the corpus as the kind `unanswered` of the outputs.
+//! That kind is a ratchet: its difference refuses a head that adds a key.
 
 use alloc::collections::BTreeMap;
 use std::path::Path;
@@ -20,9 +19,6 @@ use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
-use gandr_workflow_debt_ledger::Header;
-use gandr_workflow_debt_ledger::Ledger;
-use gandr_workflow_debt_ledger::Text;
 use quenchant_shape::shape::Maybe;
 
 use super::super::TILE_OF;
@@ -37,13 +33,6 @@ use crate::protocol::Answer;
 use crate::protocol::DocumentUri;
 use crate::protocol::Linked;
 use crate::reading::Reading;
-
-/// The ledger's header: the owner of its keys and the shape of each line.
-const HEADER: Header<'static> = Header(
-    "The kinds of name that the editor answers nothing at, owed by gandr #4304.\n\
-     key: <surface> <role> <rule>. The surface is definition, binder or hover.\n\
-     SURFACE_LSP_COVERAGE_WRITE_LEDGER=1 under the sweeps profile writes this file.",
-);
 
 /// Which answer a name lacks.
 ///
@@ -62,7 +51,7 @@ enum Surface
 
 impl core::fmt::Display for Surface
 {
-    /// Writes the surface as the ledger spells it.
+    /// Writes the surface as the key of a gap spells it.
     ///
     /// # Specification
     /// trivial.
@@ -141,7 +130,7 @@ struct Gaps(BTreeMap<String, String>);
 /// - requires: `path` is absolute.
 /// - ensures: one key for each kind of gap among the source's name spans, with
 ///   the first site of that kind in source order.
-/// - provides: the gaps a test asserts and the sweep compares with the ledger.
+/// - provides: the gaps a test asserts and the sweep gives to the outputs.
 /// - fails: never.
 /// - panics: when `path` names no file URI, or a span starts off a character
 ///   boundary.
@@ -240,15 +229,6 @@ fn gaps(
     found
 }
 
-/// The path of the ledger.
-///
-/// # Specification
-/// trivial.
-fn ledger_path() -> std::path::PathBuf
-{
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("coverage.ledger")
-}
-
 /// A parameter that no use reads is a binder the table does not name. Its
 /// hover still gives its type. The builtin `Integer` has no definition.
 #[test]
@@ -288,16 +268,13 @@ fn the_exemplar_answers_each_name_it_declares()
 }
 
 /// The sweep over the names of the corpus. Under a pull-request profile it
-/// visits the sample below and each source the change adds or modifies.
-/// Under `nightly` it visits the night's slice. Under `sweeps` it visits each
-/// source, and it judges each held key.
+/// visits the sample below. Under `nightly` it visits the night's slice.
+/// Under `sweeps`, and in a run of the outputs, it visits each source.
 mod sweeps
 {
     use gandr_workflow_output_store::Kind;
     use gandr_workflow_output_store::given;
-    use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
-    use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -305,17 +282,13 @@ mod sweeps
     use gandr_workflow_sweep::corpus;
 
     use super::BTreeMap;
-    use super::HEADER;
-    use super::Ledger;
     use super::SourceText;
-    use super::Text;
     use super::gaps;
-    use super::ledger_path;
 
     /// The sample: seven sources, as the tile sweep draws, within the suite's
     /// bound of a second for each test.
     const SAMPLE: Sample = Sample {
-        name: SampleName("every_corpus_name_answers_or_is_owed"),
+        name: SampleName("every_corpus_name_gives_its_gaps"),
         size: SampleSize(7),
     };
 
@@ -323,55 +296,14 @@ mod sweeps
     /// sweep takes.
     const NIGHTS: Nights = Nights(7);
 
-    /// Whether a run judges a held key that no gap carries.
-    ///
-    /// # Specification
-    /// - provides: the half of the verdict that a whole run alone can give.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Stale
-    {
-        /// The run visits each source, so a held key with no gap is stale.
-        Judged,
-        /// The run visits a part, so a held key with no gap may be elsewhere.
-        Unjudged,
-    }
-
-    /// No name of the corpus answers nothing unless the ledger holds its kind.
+    /// Each source that the sweep visits gives its gaps. When the environment
+    /// names a run of the outputs, the sweep visits each source, and it gives
+    /// the keys as the one value `corpus` of the kind `unanswered`, one line
+    /// for each key.
     #[test]
-    fn every_corpus_name_answers_or_is_owed()
+    fn every_corpus_name_gives_its_gaps()
     {
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let stale = if sweep.coverage() == Coverage::Full && sweep.rotation() == Rotation::Whole {
-            Stale::Judged
-        }
-        else {
-            Stale::Unjudged
-        };
-        answers_or_is_owed(&sweep, stale);
-    }
-
-    /// The change's sources beside the fixed set.
-    #[test]
-    fn every_corpus_name_answers_or_is_owed_changed()
-    {
-        answers_or_is_owed(
-            &Sweep::asked().expect("the run's sweep resolves").changed(),
-            Stale::Unjudged,
-        );
-    }
-
-    /// Each gap of each source `sweep` visits has its key in the ledger, and,
-    /// when `stale` is judged, each held key has a gap. When the environment
-    /// names a run of the outputs, the sweep visits each source, and it gives
-    /// its keys as the one value `corpus` of the kind `unanswered`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn answers_or_is_owed(
-        sweep: &Sweep,
-        stale: Stale,
-    )
-    {
         eprintln!("{}", sweep.rotation());
         let corpus = corpus::sources().expect("the corpus reads");
         let asked = given::asked().is_some();
@@ -390,6 +322,9 @@ mod sweeps
                     .or_insert_with(|| format!("{}:{site}", source.name));
             }
         }
+        for (key, site) in &found {
+            eprintln!("{key} at {site}");
+        }
         if asked {
             let mut value = String::new();
             for key in found.keys() {
@@ -399,36 +334,5 @@ mod sweeps
             let _given = given::give(Kind("unanswered"), "corpus", value.as_bytes())
                 .unwrap_or_else(|error| panic!("the gaps of the corpus go to the store: {error}"));
         }
-        let path = ledger_path();
-        if stale == Stale::Judged && std::env::var_os("SURFACE_LSP_COVERAGE_WRITE_LEDGER").is_some()
-        {
-            let text = gandr_workflow_debt_ledger::write(HEADER, found.keys());
-            std::fs::write(&path, text).expect("the ledger is written");
-            return;
-        }
-        let held_text = std::fs::read_to_string(&path).expect("the ledger is read");
-        let held = Ledger::<String>::read(Text(&held_text)).expect("each ledger line is a key");
-        let keys: Vec<&String> = found.keys().collect();
-        let verdict = held.check(&keys, |key| (*key).clone());
-        let mut refused: Vec<String> = verdict
-            .new
-            .iter()
-            .map(|key| {
-                format!(
-                    "new: {key} at {}",
-                    found.get(**key).map_or("", String::as_str)
-                )
-            })
-            .collect();
-        if stale == Stale::Judged {
-            refused.extend(verdict.stale.iter().map(|key| format!("stale: {key}")));
-        }
-        assert!(
-            refused.is_empty(),
-            "{} kinds disagree with the ledger. Close a new kind, or hold it in the \
-             ledger under its issue. Delete the line of a stale kind:\n{}",
-            refused.len(),
-            refused.join("\n")
-        );
     }
 }

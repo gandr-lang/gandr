@@ -11,7 +11,7 @@
 //! Limits: no source declares the builtin `Type`. The coverage sweep of the
 //! language server keys it as the one gap of this source.
 //!
-//! - see: crates/surface-lsp-core/coverage.ledger
+//! - see: crates/surface-lsp-core/src/hover/tests/coverage.rs
 
 @![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
 

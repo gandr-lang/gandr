@@ -13,7 +13,7 @@ The debt ledger two workflow gates share: the findings a gate has committed to o
 
 **What.** `gandr-workflow-debt-ledger` is a library. `Ledger::read` reads a ledger's text, `Ledger::check` compares a check's findings with it, and `write` gives the text that regenerates it.
 
-**Why.** The prose check (`corpus/prose.ledger`) and the hover coverage gate (`crates/surface-lsp-core/coverage.ledger`) keep the same discipline: a finding the ledger holds passes, a new one refuses, a held line no finding carries is stale and refuses, and a write mode regenerates the file. One module gives both the same reading and the same verdict.
+**Why.** The prose check (`corpus/prose.ledger`) keeps this discipline: a finding the ledger holds passes, a new one refuses, a held line no finding carries is stale and refuses, and a write mode regenerates the file. One module gives the reading and the verdict.
 
 **How.** The ledger is generic over its key, which reads from a line, writes back as one and orders. The prose check keys a finding by path, rule and sentence digest. A key holds no line number, so a moved finding keeps its key. What a check prints for a new finding or a stale line stays with the check.
 

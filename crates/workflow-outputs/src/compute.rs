@@ -139,7 +139,7 @@ pub const TESTED: [Tested; 7] = [
     Tested {
         kind: UNANSWERED,
         package: "gandr-surface-lsp-core",
-        filter: "test(=hover::tests::coverage::sweeps::every_corpus_name_answers_or_is_owed)",
+        filter: "test(=hover::tests::coverage::sweeps::every_corpus_name_gives_its_gaps)",
         inputs: &["corpus"],
     },
     Tested {

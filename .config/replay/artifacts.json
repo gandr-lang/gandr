@@ -71,14 +71,6 @@
     "record": "mise run check:prose --write"
   },
   {
-    "name": "the hover coverage ledger",
-    "kind": "ratchet",
-    "pending": "debt-ledgers-by-the-base",
-    "paths": ["crates/surface-lsp-core/coverage.ledger"],
-    "inputs": ["corpus/", "crates/surface-lsp-core/"],
-    "record": "SURFACE_LSP_COVERAGE_WRITE_LEDGER=1 cargo nextest run --cargo-profile sweeps --package gandr-surface-lsp-core"
-  },
-  {
     "name": "the locks of cargo",
     "kind": "first input",
     "paths": [
