@@ -169,7 +169,7 @@ fn an_entry_returns_the_unit_2279()
 }
 
 /// An entry takes the ambient authority, a capability, as it takes the
-/// arguments: `U (Cap {…} → F^e R)` is an entry's type, and a `main` printing
+/// arguments: `U (Cap[…] → F^e R)` is an entry's type, and a `main` printing
 /// through the capability it is handed is lowered as written; one taking the
 /// authority and returning a string is refused at its name (#2970).
 #[test]
@@ -197,8 +197,7 @@ fn an_entry_takes_the_ambient_authority_2970()
         entry_shape(&arena, declared_type),
         Maybe::Present(Arguments::Authority)
     );
-    let source =
-        prelude_single("def main(authority : Cap { print }) -> -F String = return \"x\";\n");
+    let source = prelude_single("def main(authority : Cap[print]) -> -F String = return \"x\";\n");
     let mut arena = CoreArena::new();
     let module = preluded_single(&source, &mut arena);
     assert!(

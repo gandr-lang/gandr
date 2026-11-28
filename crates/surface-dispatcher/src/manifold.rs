@@ -2122,7 +2122,7 @@ impl Offering<'_>
             let start = ByteOffset::from(written.len());
             let _written = write!(
                 written,
-                "def {GRANTED}{at}(authority : Authority) -> Cap {{ ",
+                "def {GRANTED}{at}(authority : Authority) -> Cap[",
                 at = interface.position.0,
             );
             written.push_str(first.name.as_ref());
@@ -2130,7 +2130,7 @@ impl Offering<'_>
                 written.push_str(", ");
                 written.push_str(operation.name.as_ref());
             }
-            written.push_str(" } = authority;\n");
+            written.push_str("] = authority;\n");
             wrote.push(Wrote {
                 position: interface.position,
                 start,

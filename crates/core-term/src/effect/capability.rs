@@ -17,7 +17,7 @@
 //! An authority is an [`EffectRow`] whose interfaces are restrictions: each
 //! names an interface and the operations of it the capability grants, with
 //! their payload and reply types, so a grant atom is an (interface, operation)
-//! pair. `Cap {read, write}` over the host's `Fs` interface carries `Fs`
+//! pair. `Cap[read, write]` over the host's `Fs` interface carries `Fs`
 //! restricted to `read` and `write`. Attenuation is inclusion on grant atoms,
 //! [`EffectRow::grants_within`]: `Cap E` stands where `Cap E′` is expected when
 //! every atom of `E′` is an atom of `E`, so authority only narrows. The

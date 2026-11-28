@@ -1763,7 +1763,6 @@ pub fn spine_domains<'source>(
             | Former::FlowType
             | Former::RelationType
             | Former::ManifestType
-            | Former::LabelSet
             | Former::AtType
             | Former::StagedType
             | Former::ExtensionType

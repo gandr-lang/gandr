@@ -1052,10 +1052,7 @@ pub enum Former
     /// A model type with manifest sorts, `Model(T) with sort x = A`: the
     /// bundled record `Model(T)` with the component `x` fixed as `A`.
     ManifestType,
-    /// A label set `{op, …}`: a term of the sort `Row`, which the capability
-    /// type `Cap {op, …}` takes as its one argument.
-    LabelSet,
-    /// A capability type placed in a scope's region, `Cap {op, …} at c`: the
+    /// A capability type placed in a scope's region, `Cap[op, …] at c`: the
     /// capability lives until the scope binding `c` ends.
     AtType,
     /// A data type at a stage a definition's signature binds, `Nat[i]`, or
@@ -1147,7 +1144,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 73_usize] = [
+    pub const ALL: [Self; 72_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1200,7 +1197,6 @@ impl Former
         Self::BridgeType,
         Self::RelationType,
         Self::ManifestType,
-        Self::LabelSet,
         Self::StagedType,
         Self::ExtensionType,
         Self::Scope,
@@ -1247,7 +1243,7 @@ impl Former
 ///   grammar gains breaks the table rather than silently declining the form.
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 124_usize] = [
+pub const FORMERS: [(&str, Former); 123_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1309,7 +1305,6 @@ pub const FORMERS: [(&str, Former); 124_usize] = [
     ("isomorphism_type", Former::RelationType),
     ("universe_flow_type", Former::RelationType),
     ("manifest_type", Former::ManifestType),
-    ("label_set", Former::LabelSet),
     ("at_type", Former::AtType),
     ("staged_type", Former::StagedType),
     ("extension_type", Former::ExtensionType),
@@ -6223,7 +6218,6 @@ pub enum Family
                     | Former::FlowType
                     | Former::RelationType
                     | Former::ManifestType
-                    | Former::LabelSet
                     | Former::AtType
                     | Former::StagedType
                     | Former::ExtensionType
@@ -6311,7 +6305,6 @@ pub const fn family_of(former: Former) -> Family
         | Former::FlowType
         | Former::RelationType
         | Former::ManifestType
-        | Former::LabelSet
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType

@@ -1013,7 +1013,7 @@ fn a_list_type_needs_its_listing_from_std_list_4520()
 fn a_host_interface_needs_the_import_of_its_module_4523()
 {
     let scratch = Scratch::new(Path::new("host-home"));
-    let body = "def peek(c : Cap { read, print }) -> [std.io.Console.Eff, std.fs.Eff] String =\n  \
+    let body = "def peek(c : Cap[read, print]) -> [std.io.Console.Eff, std.fs.Eff] String =\n  \
                 c.read \"notes\"\n";
     let imported_text = format!("import std.fs;\nimport std.io;\n{body}");
     let imported = scratch.file(
@@ -4796,7 +4796,7 @@ fn a_grant_bounds_held_capabilities_and_refuses_an_unknown_operation()
     let scratch = Scratch::new(Path::new("grant"));
     let source = scratch.file(
         Path::new("held.gandr"),
-        Text::from("def fs : Cap {read, write} ;\n"),
+        Text::from("def fs : Cap[read, write] ;\n"),
     );
     let at = |grant: &[&str]| {
         let mut command = gandr(&["check"]);
@@ -7020,7 +7020,7 @@ fn a_program_leaves_with_its_entry_s_status_1881()
         ),
         (
             "exited.gandr",
-            "import std.process ;\ndef proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer = { proc.exit 7 ; return 0 };\n",
+            "import std.process ;\ndef proc : Cap[exit] ;\ndef main() -> -F [std.process.Exit.Eff] Integer = { proc.exit 7 ; return 0 };\n",
             &[][..],
             7_i32,
         ),

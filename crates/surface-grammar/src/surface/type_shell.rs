@@ -82,7 +82,7 @@ use crate::model::Sym;
 ///   aliases and allocation failure are not exhausted.
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 43 && rules.iter().all(|rule| rule.sort() == Sort::Type) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "string.type")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 42 && rules.iter().all(|rule| rule.sort() == Sort::Type) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "string.type")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -113,7 +113,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// # Cost
 /// - allocation: the rules of the type grammar and their adaptation records,
 ///   setup
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 43 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 42 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -901,31 +901,6 @@ fn add_type_rules(
             tile(TileLabel("[")),
             tile(TileLabel("<")),
             tile(TileLabel("]")),
-        ]),
-    ));
-    // A label set `{read, write}`: a term of the sort `Row` that names no
-    // head, a brace list of names, the notation the record fixes. No other
-    // type opens on `{`, so the set is decided at its first tile. A label is
-    // a name or a type name, so `{Unit}`, a labelled sum with its `+` left
-    // out, reads clean, and the lowering refuses it where it stands. The
-    // capability `Cap {read, write}` applies the prelude's `Cap` to one label
-    // set, and the optional bracket after the head, `Cap[1] {write}`, is the
-    // grade that `staged_type` reads. The rule follows the type atoms so its
-    // molds number after theirs: where a damaged type leaves a stray name,
-    // brace or comma that two molds read equally well, the molder keeps the
-    // smaller mold. The tree-sitter grammar has no label set, so the kind is
-    // in `PBG_ONLY_KINDS`.
-    rules.push(rule(
-        RuleName("label_set"),
-        ty,
-        type_atom,
-        Regex::seq([
-            tile(TileLabel("{")),
-            comma1(Regex::alt([
-                tile(TileLabel("identifier")),
-                tile(TileLabel("type_identifier")),
-            ])),
-            tile(TileLabel("}")),
         ]),
     ));
     // Identity endpoints: a number literal is a Type-sort atom, so

@@ -3041,7 +3041,7 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
         .expect("every mark lies in the unit");
     assert_eq!(
         marked,
-        ["Cap[1] { write }"],
+        ["Cap[1][write]"],
         "the refused payload, where the import writes it"
     );
 }

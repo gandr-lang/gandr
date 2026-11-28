@@ -64,7 +64,7 @@ pub enum RuleGate
 ///   grammar, and each of the twelve forms of the first twin is in the core.
 /// - witness: `gate::tests::each_rule_has_one_line_and_each_line_one_rule`
 /// - witness: `gate::tests::the_forms_of_the_first_twin_are_in_the_core`
-pub const RULE_GATES: [(&str, RuleGate); 162_usize] = [
+pub const RULE_GATES: [(&str, RuleGate); 161_usize] = [
     ("abort_expression", RuleGate::Feature("temporary-access")),
     ("access_expression", RuleGate::Feature("temporary-access")),
     ("acquire_expression", RuleGate::Feature("shared-endpoints")),
@@ -217,7 +217,6 @@ pub const RULE_GATES: [(&str, RuleGate); 162_usize] = [
         RuleGate::Core(CoreReason::Group),
     ),
     ("isomorphism_type", RuleGate::Feature("equivalence-record")),
-    ("label_set", RuleGate::Feature("capabilities")),
     (
         "labelled_sum_expression",
         RuleGate::Feature("products-and-sums"),

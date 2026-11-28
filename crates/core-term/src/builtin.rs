@@ -211,7 +211,7 @@ pub enum SurfaceFormer
     /// receiver of a method at a deduced mode, and the answer of a method
     /// that answers a place. The core writes the lent slot, and no type.
     View,
-    /// `Cap {read, write}`, the authority to exercise the operations of its
+    /// `Cap[read, write]`, the authority to exercise the operations of its
     /// label set, each an operation of a host interface. The core forms the
     /// capability type from the authority, the grade and the region.
     Cap,

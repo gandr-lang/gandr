@@ -1468,7 +1468,7 @@ pub fn present_whole(
     };
     let names = binders.split_off(regions.len());
     // A row's labelled entry over a theory is written as its label, `[st : T
-    // with sort C = A]`: `Cap {…}` names a host interface's operations alone,
+    // with sort C = A]`: `Cap[…]` names a host interface's operations alone,
     // so its capability and its region binder go unwritten, the row's label
     // the capability's name. Each such entry pairs the first parameter that
     // is a capability at its label's binder with that binder's position, and

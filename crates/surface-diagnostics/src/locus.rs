@@ -2193,7 +2193,7 @@ impl fmt::Display for Shape
             ExpectedShape::Session => {
                 "a session type `A >! S`, `A >? S`, `+{l : S}`, `&{l : S}` or `end`"
             },
-            ExpectedShape::Capability => "a capability `Cap {op, …}`",
+            ExpectedShape::Capability => "a capability `Cap[op, …]`",
             ExpectedShape::Flow => "a flow type `Flow[.A = A](a, b)`",
             ExpectedShape::Run => "a run type `Run(s)` or a prefix type `Prefix(s)`",
             ExpectedShape::Dialogue => "a dialogue type `Dialogue(s)`",

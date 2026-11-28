@@ -535,7 +535,6 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "inner_attribute_block",
     "isomorphism_type",
     "circuit_declaration",
-    "label_set",
     "labelled_sum_expression",
     "labelled_sum_pattern",
     "labelled_sum_type",

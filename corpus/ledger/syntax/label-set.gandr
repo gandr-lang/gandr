@@ -1,6 +1,0 @@
-@![features(("call-by-push-value", "capabilities", "let-statements", "records"))]
-
-/// `label_set`: the operations that a capability grants, a label set that
-/// `Cap` takes as its one argument.
-def peek(c : Cap[read, write]) -> Unit =
-  pure *{}

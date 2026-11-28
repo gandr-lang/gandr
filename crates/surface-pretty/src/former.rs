@@ -582,7 +582,7 @@ pub enum Former<'source, Node>
         /// The classifier of the second, under the first's binder.
         second: Node,
     },
-    /// The capability `Cap {op, …}`, `Cap[1] {op, …}` at the consumable
+    /// The capability `Cap[op, …]`, `Cap[1][op, …]` at the consumable
     /// grade; a scoped region has no spelling.
     Capability
     {

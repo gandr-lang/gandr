@@ -258,7 +258,6 @@ const KINDS: &[(&str, Standing)] = &[
         "Type with",
         Standing::Design("a manifest model type: the model type whose sorts it fixes answers"),
     ),
-    ("Type {", Standing::Owed(0)),
     ("Type ⇝", Standing::Owed(0)),
     ("Type ≃", Standing::Owed(0)),
     ("Type ≅", Standing::Owed(0)),

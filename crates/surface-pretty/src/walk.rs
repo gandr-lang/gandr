@@ -10283,17 +10283,16 @@ impl Walk<'_, '_>
                 if grade == gandr_core_term::effect::capability::CapabilityGrade::Consumable {
                     spelled.push_str("[1]");
                 }
-                spelled.push_str(" {");
+                spelled.push('[');
                 spelled.push_str(&authority.granted().join(", "));
-                spelled.push('}');
+                spelled.push(']');
                 return match region {
                     gandr_core_term::effect::capability::Region::Held => writes(
-                        Production("type_application.juxtaposed"),
+                        Production("staged_type"),
                         self.atom(Glyphs(spelled.as_str())),
                     ),
                     // A scoped capability names the scope whose region it
-                    // lives in, `(Cap {…}) at c`, in parentheses so that `at`
-                    // places the whole capability; past the scopes the source
+                    // lives in, `Cap[…] at c`; past the scopes the source
                     // names, and at a definition's region binder, whose name
                     // the core keeps no record of, its region goes unwritten.
                     gandr_core_term::effect::capability::Region::Scoped(_)
@@ -10303,17 +10302,13 @@ impl Walk<'_, '_>
                         });
                         match named {
                             Some(name) => {
-                                spelled.insert(0, '(');
-                                spelled.push_str(") at ");
+                                spelled.push_str(" at ");
                                 spelled.push_str(&name.0);
                                 writes(
                                     Production("at_type"),
                                     writes(
-                                        Production("parenthesized_type"),
-                                        writes(
-                                            Production("type_application.juxtaposed"),
-                                            self.atom(Glyphs(spelled.as_str())),
-                                        ),
+                                        Production("staged_type"),
+                                        self.atom(Glyphs(spelled.as_str())),
                                     ),
                                 )
                             },

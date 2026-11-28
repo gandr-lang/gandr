@@ -121,39 +121,6 @@ where
     )
 }
 
-/// `source` formatted under `form` and `rewrites` beside the prelude, laid
-/// before it as a program lays it: a source that writes `Cap` reads the
-/// prelude's declaration of its row.
-///
-/// # Specification
-/// trivial.
-fn preluded_spelled(
-    grammar: &Pbg,
-    source: &str,
-    form: Form,
-    rewrites: Selection,
-) -> String
-{
-    let parsed = parse(grammar, SourceText::from(source)).expect("the source parses");
-    let (laid, unit) =
-        gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
-            .expect("a single source lays no prelude");
-    let base = usize::from(gandr_surface_lowering::prelude::base());
-    let beside = Beside::Imports {
-        before: SourceText::from(laid.get(.. base).unwrap_or_default()),
-        unit: &unit,
-    };
-    let options = FormatOptions {
-        form,
-        rewrites,
-        ..FormatOptions::default()
-    };
-    format_beside(grammar, &parsed, options, (beside, None)).map_or_else(
-        |error| panic!("the source formats as {form}: {error}"),
-        Formatted::into_text,
-    )
-}
-
 /// Each rewrite moves its pair both ways, and each spelling is the one its
 /// form keeps.
 #[test]
@@ -1666,7 +1633,6 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "type-application",
             "handler-words",
             "bare-run",
-            "capability-bracket",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2726,52 +2692,6 @@ fn a_method_call_of_its_receiver_alone_is_its_bare_selection_8316()
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, only),
-            moved,
-            "{form}: a second pass changes nothing"
-        );
-    }
-}
-
-/// A capability's labels are written in the bracket after its head in either
-/// form and alone in a selection: `Cap {print}` is `Cap[print]`, and `Cap[1]
-/// {exit}` is `Cap[1][exit]`. A placed capability loses its needless
-/// parenthesis, and a comment keeps its place. A second pass changes nothing.
-#[test]
-fn a_capability_writes_its_labels_in_the_bracket_8077()
-{
-    let grammar = grammar();
-    let source = include_str!(
-        "rewrite/unformatted/a-capability-writes-its-labels-in-the-bracket-8077.gandr"
-    );
-    let only = Selection::Only(&[RewriteName::CapabilityBracket]);
-    let moved = preluded_spelled(&grammar, source, Form::Sugared, only);
-    expect![[r#"
-        // a held capability
-        def held(a : Cap[print, eprint]) -> Integer =
-          1
-
-        def spent(c : Cap[1][exit]) -> Integer =
-          1
-
-        def placed[r : Region, q : Region](
-          a : Cap[print] at r,
-          // the second region
-          b : Cap[print] at q
-        ) -> Integer =
-          1
-
-        def kept(a : Cap[print]) -> Integer =
-          1
-    "#]]
-    .assert_eq(&moved);
-    for form in [Form::Sugared, Form::Explicit] {
-        assert_eq!(
-            preluded_spelled(&grammar, source, form, only),
-            moved,
-            "{form}: the capabilities move alike"
-        );
-        assert_eq!(
-            preluded_spelled(&grammar, moved.as_str(), form, only),
             moved,
             "{form}: a second pass changes nothing"
         );
