@@ -6,8 +6,9 @@ INSERT INTO purpose VALUES('workflow-sweep','changed::Revision','struct','A revi
 INSERT INTO purpose VALUES('workflow-sweep','corpus::Class','struct','The class a source belongs to by where it sits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::CorpusName','struct','A source''s name: its root''s prefix, then its path below that root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::Root','struct','One root a sweep draws sources from: the prefix its sources are named by, its directory and the directory below it that holds no source.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-sweep','corpus::Roots','struct','The corpus''s strict and fixture roots, stated once for the walk and for a change.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','corpus::Roots','struct','The corpus''s strict and fixture roots and its ledger, stated once for the walk and for a change.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::Source','struct','One corpus source: where it is on disk, its name and its class.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','corpus::ledger','function','Every source of the ledger, in name order: the candidates of a sweep of the ledger''s exemplars.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::sources','function','Every source under the corpus''s strict and fixture roots, in name order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','coverage::Coverage','enum','How much of its inputs a sweep visits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','coverage::NIGHTLY_PROFILE','constant','The nextest profile the nightly-sweeps workflow runs: every input a sweep visits is visited whole, and a rotating sweep visits the night''s slice of its inputs (Rotation).',NULL,'fits','sound',NULL);

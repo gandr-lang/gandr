@@ -1,5 +1,7 @@
-//! The corpus a sweep draws from: every source under the strict and fixture
-//! roots, each with its name and its class.
+//! The corpus a sweep draws from: each source with its name and its class.
+//!
+//! The strict and fixture roots hold the corpus. The ledger is a root apart,
+//! which a sweep of the ledger's exemplars reads.
 
 use core::fmt;
 use std::path::Path;
@@ -16,10 +18,13 @@ const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus");
 /// The fixture root, at the repository's top.
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus");
 
-/// The fixture root's directories that hold no source a sweep reads: the
-/// ledgers, and the sketch set, which no gate parses
-/// (`gandr-surface-corpus`'s `root` module, § The sketch set).
+/// The fixture root's directories that hold no source a sweep of the corpus
+/// reads: the ledger, a root of its own, and the sketch set, which no gate
+/// parses (`gandr-surface-corpus`'s `root` module, § The sketch set).
 const FIXTURE_HELD_OUT: &[&str] = &["ledger", "sketch"];
+
+/// The ledger's directory below the fixture root.
+const LEDGER: &str = "ledger";
 
 /// A source's name: its root's prefix, then its path below that root.
 ///
@@ -90,8 +95,8 @@ impl Class
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `strict` for a name under the strict root; the root and the
-    ///   first directory below it for a name under the fixture root that sits
-    ///   in a directory; the first component alone otherwise.
+    ///   first directory below it for a name under the fixture root or the
+    ///   ledger that sits in a directory; the first component alone otherwise.
     /// - provides: the stratum a sample keeps at least one source of.
     /// - panics: none.
     ///
@@ -110,7 +115,7 @@ impl Class
         let root = parts.next().unwrap_or_default();
         let below: Vec<&str> = parts.collect();
         match (root, below.as_slice()) {
-            ("fixture", &[directory, _, ..]) => Self(format!("{root}/{directory}")),
+            ("fixture" | "ledger", &[directory, _, ..]) => Self(format!("{root}/{directory}")),
             _ => Self(root.to_owned()),
         }
     }
@@ -213,8 +218,9 @@ impl Root
     }
 }
 
-/// The corpus's two roots: the strict root in the corpus crate, and the
-/// fixture root at the repository's top, its `ledger/` and `sketch/` held out.
+/// The corpus's roots: the strict root in the corpus crate, the fixture root
+/// at the repository's top, its `ledger/` and `sketch/` held out, and the
+/// ledger below it.
 ///
 /// # Specification
 /// - provides: the one statement of where the corpus lies and how its sources
@@ -226,6 +232,9 @@ pub struct Roots
     pub strict: Root,
     /// The fixture root, named `fixture/…`.
     pub fixture: Root,
+    /// The ledger, named `ledger/…`: [`sources`] leaves it out, [`ledger`]
+    /// walks it, and a change lists it.
+    pub ledger: Root,
 }
 
 impl Roots
@@ -235,8 +244,9 @@ impl Roots
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the strict root `crates/surface-corpus/strict`, prefixed
-    ///   `strict`, and the fixture root `corpus`, prefixed `fixture` with
-    ///   `ledger` and `sketch` held out, each canonical.
+    ///   `strict`; the fixture root `corpus`, prefixed `fixture` with `ledger`
+    ///   and `sketch` held out; and the ledger `corpus/ledger`, prefixed
+    ///   `ledger`; each canonical.
     /// - provides: the roots the walk starts from and `git` runs in.
     /// - fails: [`SweepError::Walk`] when a root cannot be resolved.
     /// - panics: none.
@@ -269,16 +279,21 @@ impl Roots
                 directory: canonical(Path::new(FIXTURE))?,
                 held_out: FIXTURE_HELD_OUT,
             },
+            ledger: Root {
+                prefix: LEDGER,
+                directory: canonical(&Path::new(FIXTURE).join(LEDGER))?,
+                held_out: &[],
+            },
         })
     }
 
-    /// Both roots, strict first.
+    /// Each root, strict first, the ledger last.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn each(&self) -> [&Root; 2]
+    pub(crate) const fn each(&self) -> [&Root; 3]
     {
-        [&self.strict, &self.fixture]
+        [&self.strict, &self.fixture, &self.ledger]
     }
 }
 
@@ -286,10 +301,8 @@ impl Roots
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one source per `.gandr` file under the [`Roots::asked`] roots,
-///   outside each root's held-out directories, reached without following a
-///   symbolic link — the dispatcher walk's rule — each named by [`Root::name`],
-///   sorted by name.
+/// - ensures: one source per `.gandr` file under the strict and the fixture
+///   root of [`Roots::asked`], as [`walk`] reaches them.
 /// - provides: the candidates a sweep samples.
 /// - fails: [`SweepError::Walk`] when a root, one of its directories or one of
 ///   their entries cannot be read.
@@ -308,8 +321,60 @@ impl Roots
 pub fn sources() -> Result<Vec<Source>, SweepError>
 {
     let roots = Roots::asked()?;
+    walk(&[&roots.strict, &roots.fixture])
+}
+
+/// Every source of the ledger, in name order: the candidates of a sweep of the
+/// ledger's exemplars.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one source per `.gandr` file under the ledger of
+///   [`Roots::asked`], as [`walk`] reaches them.
+/// - provides: the candidates a sweep of the ledger samples.
+/// - fails: [`SweepError::Walk`] when the ledger, one of its directories or one
+///   of their entries cannot be read.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the ledger holds its diagnostics exemplars two
+///   directories below the corpus; a walk of another root, or a name with
+///   another prefix, fails the witness.
+/// - witness: `corpus::tests::the_ledger_is_walked_apart_from_the_corpus`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |sources| sources.is_sorted_by(|left, right| left.name < right.name) && sources.iter().all(|source| Class::of(&source.name) == source.class)))]
+#[inline]
+pub fn ledger() -> Result<Vec<Source>, SweepError>
+{
+    let roots = Roots::asked()?;
+    walk(&[&roots.ledger])
+}
+
+/// Every source under `roots`, in name order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one source per `.gandr` file under each of `roots`, outside each
+///   root's held-out directories, reached without following a symbolic link —
+///   the dispatcher walk's rule — each named by [`Root::name`], sorted by name.
+/// - provides: the walk of [`sources`] and [`ledger`].
+/// - fails: [`SweepError::Walk`] when a root, one of its directories or one of
+///   their entries cannot be read.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`sources`] and [`ledger`].
+/// - witness: `corpus::tests::the_walk_reaches_every_class_in_name_order`
+/// - witness: `corpus::tests::the_ledger_is_walked_apart_from_the_corpus`
+fn walk(roots: &[&Root]) -> Result<Vec<Source>, SweepError>
+{
     let mut found = Vec::new();
-    for root in roots.each() {
+    for root in roots {
         let base = &root.directory;
         let mut pending = vec![base.clone()];
         while let Some(at) = pending.pop() {
@@ -358,6 +423,7 @@ mod tests
 
     use super::Class;
     use super::CorpusName;
+    use super::ledger;
     use super::sources;
 
     #[test]
@@ -369,6 +435,10 @@ mod tests
             ("fixture/model/identity/circle.gandr", "fixture/model"),
             ("fixture/pending/records.gandr", "fixture/pending"),
             ("fixture/loose.gandr", "fixture"),
+            (
+                "ledger/diagnostics/CompoundEndpoint.gandr",
+                "ledger/diagnostics",
+            ),
         ] {
             assert_eq!(
                 Class::of(&CorpusName::from(name)).to_string(),
@@ -416,6 +486,27 @@ mod tests
                 source.path.ends_with(below)
             }),
             "each path is the source its name stands for"
+        );
+    }
+
+    #[test]
+    fn the_ledger_is_walked_apart_from_the_corpus()
+    {
+        let found = ledger().expect("the ledger reads");
+        assert!(
+            found
+                .iter()
+                .any(|source| source.class.to_string() == "ledger/diagnostics"),
+            "the diagnostics exemplars are reached"
+        );
+        assert!(
+            found.iter().all(|source| {
+                source.name.as_ref().starts_with("ledger/")
+                    && source
+                        .path
+                        .ends_with(source.name.as_ref().trim_start_matches("ledger/"))
+            }),
+            "each source is named by the ledger's prefix and its path below the ledger"
         );
     }
 }

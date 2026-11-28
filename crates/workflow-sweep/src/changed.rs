@@ -154,7 +154,7 @@ impl Changed
     /// - hypothesis: L3 — the base's own resolution is Git's; against a
     ///   committed corpus, an uncommitted edit and an untracked source are
     ///   listed by their names and an edited non-source is not, a source under
-    ///   either root is named by that root's prefix and one in the held-out
+    ///   each root is named by that root's prefix and one in a held-out
     ///   directory is not listed, the key is the commit `HEAD` names, and a
     ///   base that does not exist is refused naming the command. Reading `HEAD`
     ///   instead of the working tree, dropping untracked files, listing one
@@ -440,8 +440,8 @@ mod tests
         assert!(status.success(), "git {args:?}");
     }
 
-    /// The corpus's two roots laid out under `scratch` as the workspace lays
-    /// them out, each directory made.
+    /// The corpus's roots laid out under `scratch` as the workspace lays them
+    /// out, each directory made.
     ///
     /// # Specification
     /// trivial.
@@ -449,9 +449,11 @@ mod tests
     {
         let strict = scratch.join("crates").join("surface-corpus").join("strict");
         let fixture = scratch.join("corpus");
+        let ledger = fixture.join("ledger");
         std::fs::create_dir_all(&strict).expect("the scratch strict root is made");
         std::fs::create_dir_all(fixture.join("model")).expect("the scratch fixture root is made");
-        std::fs::create_dir_all(fixture.join("ledger")).expect("the scratch ledger is made");
+        std::fs::create_dir_all(fixture.join("sketch")).expect("the scratch sketch set is made");
+        std::fs::create_dir_all(&ledger).expect("the scratch ledger is made");
         Roots {
             strict: Root {
                 prefix: "strict",
@@ -461,7 +463,12 @@ mod tests
             fixture: Root {
                 prefix: "fixture",
                 directory: fixture,
-                held_out: &["ledger"],
+                held_out: &["ledger", "sketch"],
+            },
+            ledger: Root {
+                prefix: "ledger",
+                directory: ledger,
+                held_out: &[],
             },
         }
     }
@@ -577,9 +584,10 @@ mod tests
         );
     }
 
-    /// #2949: the change lists both roots, the strict root in the corpus crate
-    /// and the fixture root at the repository's top, and names each source by
-    /// its root's prefix; a source in the fixture root's ledger is none.
+    /// #2949: the change lists each root, the strict root in the corpus crate,
+    /// the fixture root at the repository's top and the ledger below it, and
+    /// names each source by its root's prefix; a source in the fixture root's
+    /// sketch set is none.
     #[test]
     fn a_change_names_each_root_s_sources_by_its_prefix_2949()
     {
@@ -596,6 +604,7 @@ mod tests
             (strict, "added.gandr"),
             (fixture, "model/staged.gandr"),
             (fixture, "ledger/entry.gandr"),
+            (fixture, "sketch/entry.gandr"),
         ] {
             std::fs::write(directory.join(name), "def b = 1 ;\n").expect("a new source is written");
         }
@@ -609,9 +618,10 @@ mod tests
             [
                 &CorpusName::from("fixture/loose.gandr"),
                 &CorpusName::from("fixture/model/staged.gandr"),
+                &CorpusName::from("ledger/entry.gandr"),
                 &CorpusName::from("strict/added.gandr"),
             ],
-            "each root's sources by its prefix, the ledger held out"
+            "each root's sources by its prefix, the sketch set held out"
         );
     }
 }
