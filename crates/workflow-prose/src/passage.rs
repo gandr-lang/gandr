@@ -20,7 +20,10 @@ use std::fs;
 use std::path::Path;
 
 use gandr_workflow_output_store::Store;
+use gandr_workflow_outputs::compute::RENDERED;
+use gandr_workflow_outputs::compute::tested;
 use gandr_workflow_outputs::compute::work_tree_refusals;
+use gandr_workflow_outputs::compute::work_tree_tested;
 use gandr_workflow_outputs::refusals::REFUSING;
 
 use crate::error::ProseError;
@@ -1316,20 +1319,20 @@ pub struct Gathered
     pub goldens: Vec<Golden>,
 }
 
-/// The directory of the rendered diagnostic goldens of the renderer's tests.
-const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
+/// The tests of the renderer, whose values of the kind `rendered` the check
+/// reads.
+const RENDER_TESTS: &str = "crates/surface-render-terminal/tests/render.rs";
 
 /// Reads every tracked gandr source under `root` and every rendered
-/// diagnostic: the goldens of the renderer's tests, and the refusals of each
-/// refusing source of the corpus.
+/// diagnostic: the texts that the renderer's tests give, and the refusals of
+/// each refusing source of the corpus.
 ///
 /// # Specification
 /// - requires: `root` is a repository checkout.
 /// - ensures: the passages of every `.gandr` file git tracks under `root`, in
-///   path order; the goldens of every `.txt` file under the render goldens,
-///   walked in path order; then the refusals of the corpus ([`refusals`]). A
-///   markdown document is not read here: the documents reader reads it under
-///   the base.
+///   path order; the goldens of each text of the kind `rendered`, in name order
+///   ([`rendered`]); then the refusals of the corpus ([`refusals`]). A markdown
+///   document is not read here: the documents reader reads it under the base.
 /// - provides: the check's input under the ledger.
 /// - fails: [`ProseError::Io`] naming the directory or file that could not be
 ///   read, the root whose tracked files git could not list, or the root whose
@@ -1345,9 +1348,9 @@ const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a scratch repository with a tracked source outside
-///   `corpus/`, a nested one, an untracked one, a README and a golden; a file
-///   skipped, an untracked one or the README read, or one read twice or out of
-///   order changes the gathered input.
+///   `corpus/`, a nested one, an untracked one and a README; a file skipped, an
+///   untracked one or the README read, or one read twice or out of order
+///   changes the gathered input.
 /// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 #[inline]
 pub fn gather(root: &Path) -> Result<Gathered, ProseError>
@@ -1363,19 +1366,54 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
         }
         gathered.passages.extend(passages);
     }
-    let mut goldens = Vec::new();
-    walk(&root.join(GOLDENS), &mut goldens)?;
-    goldens.retain(|path| path.extension().is_some_and(|extension| extension == "txt"));
-    for path in &goldens {
-        let key = relative(root, path);
-        gathered
-            .goldens
-            .extend(golden(Text(&key), Text(&read(path)?)));
-    }
+    gathered
+        .goldens
+        .extend(rendered(root, &Store::asked(root))?);
     gathered
         .goldens
         .extend(refusals(root, &Store::asked(root))?);
     Ok(gathered)
+}
+
+/// The rendered diagnostics that the tests of the renderer under `root` give,
+/// each at the key `rendered/<name>`, in name order.
+///
+/// # Specification
+/// - requires: `root` is a repository checkout.
+/// - ensures: for each value of the kind `rendered` of the work tree of `root`,
+///   the goldens of its text. The texts come from `store` when it holds the
+///   list of a run of the tests with the same tool and inputs, else from one
+///   run of the tests in the checkout, which fills `store`. A root with no
+///   tests of the renderer gives none.
+/// - fails: [`ProseError::Io`] naming the root that could not be resolved, or
+///   whose texts the store and the run of the tests could not give.
+/// - panics: none.
+/// - executable: none — the outcome is the run's.
+///
+/// # Errors
+/// As `fails` lists.
+fn rendered(
+    root: &Path,
+    store: &Store,
+) -> Result<Vec<Golden>, ProseError>
+{
+    let refused = |message: String| ProseError::Io {
+        path: root.to_owned(),
+        message,
+    };
+    if !root.join(RENDER_TESTS).is_file() {
+        return Ok(Vec::new());
+    }
+    let root = fs::canonicalize(root).map_err(|error| refused(error.to_string()))?;
+    let tested = tested(RENDERED).ok_or_else(|| refused(String::from("no kind `rendered`")))?;
+    let values =
+        work_tree_tested(store, &root, tested).map_err(|error| refused(error.to_string()))?;
+    let mut goldens = Vec::new();
+    for &(ref source, ref text) in &values.values {
+        let key = format!("rendered/{}", source.name);
+        goldens.extend(golden(Text(&key), Text(&String::from_utf8_lossy(text))));
+    }
+    Ok(goldens)
 }
 
 /// The rendered diagnostics of each refusing source of the corpus under
@@ -1473,27 +1511,6 @@ fn tracked(root: &Path) -> Result<Vec<String>, ProseError>
     Ok(keys)
 }
 
-/// `path` relative to `root`, `/`-separated.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
-fn relative(
-    root: &Path,
-    path: &Path,
-) -> String
-{
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
 /// The text of `path`.
 ///
 /// # Specification
@@ -1508,56 +1525,6 @@ fn read(path: &Path) -> Result<String, ProseError>
         path: path.to_owned(),
         message: error.to_string(),
     })
-}
-
-/// The entries of `dir`, unsorted.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
-fn listed(dir: &Path) -> Result<Vec<std::path::PathBuf>, ProseError>
-{
-    let io = |error: std::io::Error| ProseError::Io {
-        path: dir.to_owned(),
-        message: error.to_string(),
-    };
-    fs::read_dir(dir)
-        .map_err(io)?
-        .map(|entry| entry.map(|entry| entry.path()).map_err(io))
-        .collect()
-}
-
-/// Every file under `dir`, in path order, followed by its subdirectories.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
-fn walk(
-    dir: &Path,
-    files: &mut Vec<std::path::PathBuf>,
-) -> Result<(), ProseError>
-{
-    let mut pending = vec![dir.to_owned()];
-    while let Some(next) = pending.pop() {
-        let mut entries = listed(&next)?;
-        entries.sort();
-        for entry in entries.into_iter().rev() {
-            if entry.is_dir() {
-                pending.push(entry);
-            }
-            else {
-                files.push(entry);
-            }
-        }
-    }
-    files.sort();
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1951,10 +1918,6 @@ mod tests
         write("corpus/notes.txt", "/// Not a source.\n");
         write("crates/x/README.md", "Ex.\n");
         write("crates/x/src/lib.rs", "/// Not read.\n");
-        write(
-            "crates/surface-render-terminal/tests/golden/g.txt",
-            "error[E]: wrong\nhelp: fix it\n",
-        );
         let git = |arguments: &[&str]| {
             let status = std::process::Command::new("git")
                 .arg("-C")
@@ -1993,14 +1956,10 @@ mod tests
             ["corpus/a.gandr", "corpus/model/b.gandr"],
             "the features ledger and a library source keep no head rule"
         );
-        let goldens: Vec<&str> = gathered
-            .goldens
-            .iter()
-            .map(|golden| golden.what.path.as_str())
-            .collect();
-        assert_eq!(goldens, [
-            "crates/surface-render-terminal/tests/golden/g.txt"
-        ]);
+        assert!(
+            gathered.goldens.is_empty(),
+            "a root with no tests of the renderer and no refusing source gives no golden"
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 

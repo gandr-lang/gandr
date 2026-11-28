@@ -2,7 +2,9 @@
 //!
 //! Each case composes its source through the dispatcher — a walk over a
 //! scratch tree, or the composition itself where a golden needs a fixed path —
-//! takes the diagnostics its step yields, and compares their rendered text.
+//! takes the diagnostics its step yields, and gives their rendered text to the
+//! store of outputs as values of the kind `rendered`. The gate of outputs
+//! compares each with the text of the base.
 //!
 //! The cases, in a `cfg(test)` module so the crate's lint wall reads them as
 //! test code rather than as shipping code.
@@ -13,7 +15,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
-use expect_test::expect_file;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckRefusalOf;
 use gandr_core_checker::TermNode;
@@ -232,8 +233,7 @@ fn only(
     printed.remove(0)
 }
 
-/// `diagnostic` in plain text at `verbosity`, closed with the line ending
-/// a golden file ends with.
+/// `diagnostic` in plain text at `verbosity`, closed with a line ending.
 ///
 /// # Specification
 /// trivial.
@@ -246,19 +246,17 @@ fn plain(
 }
 
 /// Gives the rendered text `text` to the store of outputs as the value `name`
-/// of the kind `rendered`, when the environment names a run, and compares it
-/// with the file `name` under `golden/`.
+/// of the kind `rendered`, when the environment names a run.
 ///
 /// # Specification
 /// trivial.
-fn compared(
+fn given_text(
     name: &str,
     text: &str,
 )
 {
     let _given = given::give(Kind("rendered"), name, text.as_bytes())
         .unwrap_or_else(|error| panic!("the text `{name}` goes to the store: {error}"));
-    expect_file![format!("golden/{name}")].assert_eq(text);
 }
 
 /// Remove complete SGR styling from the backend's escape-free input.
@@ -408,7 +406,7 @@ fn a_type_mismatch_renders_as_a_located_report()
         rendered.contains("mismatch.gandr:2:13"),
         "the diagnostic names its source at the term: {rendered}"
     );
-    compared("type-mismatch.txt", &rendered);
+    given_text("type-mismatch.txt", &rendered);
 }
 
 #[test]
@@ -420,7 +418,7 @@ fn a_two_parameter_lambda_names_its_nested_form_6065()
         SourceText::from(LAMBDA_ARITY),
         Verb::Check(Goals::Gated),
     );
-    compared(
+    given_text(
         "lambda-arity-6065.txt",
         &plain(&diagnostic, Verbosity::User),
     );
@@ -435,7 +433,7 @@ fn an_unimplemented_refusal_closes_with_its_tracking_issue()
         SourceText::from("def half = 0.5f32 ;\n"),
         Verb::Check(Goals::Gated),
     );
-    compared("unimplemented.txt", &plain(&diagnostic, Verbosity::User));
+    given_text("unimplemented.txt", &plain(&diagnostic, Verbosity::User));
 }
 
 /// A declaration over a datatype that is refused at its rule renders as a
@@ -456,7 +454,7 @@ fn a_declaration_over_a_refused_datatype_renders_as_a_note_8342()
     else {
         panic!("the rule, then the two declarations over the block: {printed:?}");
     };
-    compared("refused-datatype-8342.txt", &plain(low, Verbosity::User));
+    given_text("refused-datatype-8342.txt", &plain(low, Verbosity::User));
 }
 
 #[test]
@@ -493,7 +491,7 @@ fn each_causal_shape_renders_as_its_golden()
         ),
         (unlocated_rules(), "unlocated-rule.txt"),
     ] {
-        compared(golden, &plain(&diagnostic, Verbosity::User));
+        given_text(golden, &plain(&diagnostic, Verbosity::User));
     }
 }
 
@@ -521,7 +519,7 @@ fn an_unended_form_renders_what_is_missing_where()
         let rendered: String = entries::<Evaluator>(&step, check)
             .map(|diagnostic| plain(&diagnostic, Verbosity::User))
             .collect();
-        compared(golden, &rendered);
+        given_text(golden, &rendered);
     }
 }
 
@@ -540,7 +538,7 @@ fn one_refusal_renders_at_every_verbosity()
         (Verbosity::Debug, "verbosity-debug.txt"),
         (Verbosity::Json, "verbosity-json.txt"),
     ] {
-        compared(golden, &plain(&diagnostic, verbosity));
+        given_text(golden, &plain(&diagnostic, verbosity));
     }
     let styled = render(&diagnostic, RenderStyle::Styled, Verbosity::Json);
     assert_eq!(
@@ -591,7 +589,7 @@ fn the_other_kinds_render_as_their_goldens()
             "explicit-exits.txt",
         ),
     ] {
-        compared(golden, &plain(&diagnostic, Verbosity::User));
+        given_text(golden, &plain(&diagnostic, Verbosity::User));
     }
 }
 

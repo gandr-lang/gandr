@@ -411,7 +411,7 @@
       "groups": ["rust", "doc", "corpus", "extension", "prose"]
     },
     {
-      "path": "crates/surface-render-terminal/tests/golden/",
+      "path": "crates/surface-render-terminal/",
       "groups": ["rust", "doc", "corpus", "extension", "prose"]
     },
     { "path": "crates/*/README.md", "groups": ["rust", "doc", "corpus", "extension", "prose"] },

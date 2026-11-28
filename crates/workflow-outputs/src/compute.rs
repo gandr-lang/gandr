@@ -809,8 +809,56 @@ pub fn work_tree_refusals(
     root: &Path,
 ) -> Result<Values, ComputeError>
 {
+    let (tree, tool) = work_tree_tool(root, REFUSALS)?;
+    refusals(store, &tree, &tool, Some(root))?.ok_or_else(|| {
+        ComputeError::Refusals(RefusalsError {
+            faults: vec![root.to_path_buf()],
+        })
+    })
+}
+
+/// The values of the kind of `tested` of the work tree of the checkout
+/// `root`, under the tool of that work tree.
+///
+/// The values come from the list that `store` holds for the run of the tests
+/// with the inputs of the work tree, or from one run of the tests in the
+/// checkout, which fills `store`. An earlier run of `outputs` on a tree with
+/// the same tool and inputs thus spares the run of the tests.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ComputeError`] when cargo, the tree, the tests or the store refuses.
+#[inline]
+pub fn work_tree_tested(
+    store: &Store,
+    root: &Path,
+    tested: &Tested,
+) -> Result<Values, ComputeError>
+{
+    let (tree, tool) = work_tree_tool(root, tested.kind)?;
+    tested_values(store, &tree, &tool, tested, Some(root))?.ok_or_else(|| ComputeError::Tests {
+        kind: tested.kind.0,
+        line: String::from("the checkout gives no values"),
+    })
+}
+
+/// The work tree of the checkout `root`, and the digest of the tool of the
+/// kind `kind` in it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ComputeError`] when cargo or the tree refuses.
+fn work_tree_tool(
+    root: &Path,
+    kind: Kind,
+) -> Result<(Tree, Digest), ComputeError>
+{
     let metadata = workspace::metadata(root).map_err(ComputeError::Metadata)?;
-    let packages = tool_packages(&metadata, REFUSALS);
+    let packages = tool_packages(&metadata, kind);
     let packages: Vec<&str> = packages.iter().map(String::as_str).collect();
     let manifests = workspace::closure(&metadata, TOOL_PACKAGE);
     let manifests: Vec<&str> = manifests.iter().map(String::as_str).collect();
@@ -818,11 +866,7 @@ pub fn work_tree_refusals(
     let tool = tree
         .tool(&packages, &manifests)
         .map_err(ComputeError::Tree)?;
-    refusals(store, &tree, &tool, Some(root))?.ok_or_else(|| {
-        ComputeError::Refusals(RefusalsError {
-            faults: vec![root.to_path_buf()],
-        })
-    })
+    Ok((tree, tool))
 }
 
 /// The values of the kind of `tested` of `tree` under the tool `tool`.
