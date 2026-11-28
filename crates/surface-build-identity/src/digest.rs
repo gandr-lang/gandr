@@ -177,16 +177,7 @@ impl Workspace
             .cloned()
             .unwrap_or_default();
         let mut members = BTreeMap::new();
-        for member in workspace
-            .get("members")
-            .and_then(toml::Value::as_array)
-            .ok_or_else(|| io::Error::other("the root manifest lists its members"))?
-        {
-            let directory = root.join(
-                member
-                    .as_str()
-                    .ok_or_else(|| io::Error::other("a member is a path"))?,
-            );
+        for directory in member_directories(&root, workspace)? {
             let manifest = table(&directory.join("Cargo.toml"))?;
             let name = PackageName::from(
                 manifest
@@ -489,6 +480,64 @@ impl Workspace
     }
 }
 
+/// The directory of each member of the workspace table `workspace` under
+/// `root`, in the order of `members`.
+///
+/// A member is a path, or a directory and `/*`: each directory below it, in
+/// name order, but the paths of `exclude`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A table with no `members`, a member that is not a path or holds another
+/// glob, or a directory of a glob that cannot be read.
+fn member_directories(
+    root: &Path,
+    workspace: &toml::Table,
+) -> io::Result<Vec<PathBuf>>
+{
+    let listed = workspace
+        .get("members")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| io::Error::other("the root manifest lists its members"))?;
+    let excluded: BTreeSet<PathBuf> = workspace
+        .get("exclude")
+        .and_then(toml::Value::as_array)
+        .map_or_else(BTreeSet::new, |excluded| {
+            excluded
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .map(|path| root.join(path))
+                .collect()
+        });
+    let mut directories = Vec::new();
+    for member in listed {
+        let member = member
+            .as_str()
+            .ok_or_else(|| io::Error::other("a member is a path"))?;
+        let Some(parent) = member.strip_suffix("/*")
+        else {
+            if member.contains('*') {
+                return Err(io::Error::other(format!(
+                    "the member `{member}` is a path or a directory and `/*`"
+                )));
+            }
+            directories.push(root.join(member));
+            continue;
+        };
+        let mut below: Vec<PathBuf> = std::fs::read_dir(root.join(parent))?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<io::Result<Vec<PathBuf>>>()?
+            .into_iter()
+            .filter(|path| path.is_dir() && !excluded.contains(path))
+            .collect();
+        below.sort();
+        directories.extend(below);
+    }
+    Ok(directories)
+}
+
 /// The TOML table at `path`.
 ///
 /// # Specification
@@ -715,6 +764,35 @@ source = "registry+https://example.org"
                 "an edit of `{path}` gives a new digest"
             );
         }
+        drop(std::fs::remove_dir_all(&root));
+    }
+
+    #[test]
+    fn a_glob_of_members_reads_as_its_list()
+    {
+        let root = fixture(Fixture("glob"));
+        let listed = digested(&root).digest;
+        write(&root, &File {
+            path: "Cargo.toml",
+            text: "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/d\"]\n\n[workspace.dependencies]\nb = { path = \"crates/b\" }\n",
+        });
+        write(&root, &File {
+            path: "crates/d/README.md",
+            text: "# d\n",
+        });
+        assert_eq!(
+            digested(&root).digest,
+            listed,
+            "each directory of the glob but the excluded one is a member"
+        );
+        write(&root, &File {
+            path: "Cargo.toml",
+            text: "[workspace]\nmembers = [\"crates/[ab]\"]\n",
+        });
+        assert!(
+            Workspace::read(root.clone()).is_err(),
+            "a glob other than `/*` is refused"
+        );
         drop(std::fs::remove_dir_all(&root));
     }
 
