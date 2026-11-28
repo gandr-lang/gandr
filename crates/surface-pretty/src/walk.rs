@@ -10288,7 +10288,7 @@ impl Walk<'_, '_>
                 spelled.push('}');
                 return match region {
                     gandr_core_term::effect::capability::Region::Held => writes(
-                        Production("capability_type"),
+                        Production("type_application.juxtaposed"),
                         self.atom(Glyphs(spelled.as_str())),
                     ),
                     // A scoped capability names the scope whose region it
@@ -10311,7 +10311,7 @@ impl Walk<'_, '_>
                                     writes(
                                         Production("parenthesized_type"),
                                         writes(
-                                            Production("capability_type"),
+                                            Production("type_application.juxtaposed"),
                                             self.atom(Glyphs(spelled.as_str())),
                                         ),
                                     ),

@@ -598,7 +598,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
             | Former::FlowType
             | Former::RelationType
             | Former::ManifestType
-            | Former::CapabilityType
+            | Former::LabelSet
             | Former::AtType
             | Former::StagedType
             | Former::ExtensionType

@@ -4589,7 +4589,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
                 | Former::LabelledSumType
                 | Former::LazyRecordType
                 | Former::BridgeType
-                | Former::CapabilityType
+                | Former::LabelSet
                 | Former::AtType
                 | Former::StagedType
                 | Former::ExtensionType

@@ -1633,7 +1633,6 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "type-application",
             "handler-words",
             "bare-run",
-            "placed-capability",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2690,55 +2689,6 @@ fn a_method_call_of_its_receiver_alone_is_its_bare_selection_8316()
             spelled(&grammar, source, form, only),
             moved,
             "{form}: the calls move alike"
-        );
-        assert_eq!(
-            spelled(&grammar, moved.as_str(), form, only),
-            moved,
-            "{form}: a second pass changes nothing"
-        );
-    }
-}
-
-/// A capability that `at` places is written in parentheses in either form and
-/// alone in a selection: `Cap {get} at r` is `(Cap { get }) at r`. A
-/// capability in parentheses stays, a held capability stays, another placed
-/// type stays, and a comment between two parameters keeps its place. A second
-/// pass changes nothing.
-#[test]
-fn a_placed_capability_is_written_in_parentheses_8077()
-{
-    let grammar = grammar();
-    let source = include_str!(
-        "rewrite/unformatted/a-placed-capability-is-written-in-parentheses-8077.gandr"
-    );
-    let only = Selection::Only(&[RewriteName::PlacedCapability]);
-    let moved = spelled(&grammar, source, Form::Sugared, only);
-    expect![[r#"
-        theory State where
-          sort S : Type+
-          sort C : Type
-          oper get : (k : (s : S) -> C) --> C
-
-        // a held capability names no region
-        def held(a : Cap { get }) -> Integer =
-          1
-
-        def placed[r : Region, q : Region](
-          a : (Cap { get }) at r,
-          // the second region
-          b : (Cap { get }) at q
-        ) -> [r : State, q : State] Unit =
-          pure *{}
-
-        def kept[r : Region](a : (Cap { get }) at r, b : Integer at r) -> [r : State] Unit =
-          pure *{}
-    "#]]
-    .assert_eq(&moved);
-    for form in [Form::Sugared, Form::Explicit] {
-        assert_eq!(
-            spelled(&grammar, source, form, only),
-            moved,
-            "{form}: the capabilities move alike"
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, only),

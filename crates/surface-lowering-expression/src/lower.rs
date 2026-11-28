@@ -343,7 +343,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ExtensionType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::LabelSet | Former::AtType | Former::StagedType | Former::ExtensionType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -401,7 +401,7 @@ fn ending(former: Former) -> Ending
         | Former::FlowType
         | Former::RelationType
         | Former::ManifestType
-        | Former::CapabilityType
+        | Former::LabelSet
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType
@@ -444,7 +444,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ExtensionType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::LabelSet | Former::AtType | Former::StagedType | Former::ExtensionType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -3450,7 +3450,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             Former::FlowType => Identities::new(self.host()).supplied_flow(site, cursor),
             Former::RelationType => Identities::new(self.host()).relation_type(site, cursor),
             Former::ManifestType => Models::new(self.host()).manifest_model(site, cursor),
-            Former::CapabilityType => Capability::new(self.host()).capability_type(site, cursor),
+            // A label set stands only as the argument of `Cap`, which reads it
+            // whole.
+            Former::LabelSet => Err(site.fault(site.at.span, FormFault::MisplacedTile)),
             Former::AtType => Capability::new(self.host()).at_type(site, cursor),
             Former::StagedType => self.staged_type(site, cursor),
             Former::ExtensionType => self.extension_type(site, cursor),
@@ -12331,6 +12333,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         {
             let (name, relating) = named;
             return Identities::new(self.host()).carried_path(site, (name, head), cursor, relating);
+        }
+        // The prelude's `Cap` applied to one label set, `Cap {read}` or
+        // `Cap[1] {write}`, is a capability type.
+        if let Some(capability) = CapabilityRef::new(self.host_ref()).capability_at(site.at)? {
+            return Capability::new(self.host()).capability_type(site, capability);
         }
         // A staged head applied to its element, `View[m] a`, is the view type
         // a method answering a place records as its result: it stands as its

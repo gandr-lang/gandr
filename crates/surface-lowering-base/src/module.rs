@@ -2049,32 +2049,34 @@ impl<'source> Collected<'source>
     }
 
     /// Whether the type name at `head` names the declaration that binds the
-    /// row `view`: the declaration of that name at the top level of the
+    /// row of `former`: the declaration of that name at the top level of the
     /// head's source, or else the prelude's.
     ///
     /// # Specification
     /// - requires: `tree` holds `head`.
     /// - ensures: true exactly when the slot that the head's name resolves to,
     ///   at its source's top level or else at the prelude's, carries a
-    ///   `builtin` attribute whose text keys the row `view`.
+    ///   `builtin` attribute whose text keys the row of `former`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a receiver and an answer written as a view under the
-    ///   prelude, and a source whose own `View` binds no row.
+    ///   prelude, a source whose own `View` binds no row, and a capability
+    ///   under the prelude and under a source's own `Cap`.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_is_the_declaration_of_its_row`
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_is_the_declaration_of_its_row`
     #[inline]
     #[must_use]
-    pub fn names_view(
+    pub fn names_former(
         &self,
         tree: &SyntaxTree<'source>,
         head: Placed,
+        former: gandr_core_term::builtin::SurfaceFormer,
     ) -> bool
     {
         use gandr_core_term::builtin::Key;
         use gandr_core_term::builtin::Row;
-        use gandr_core_term::builtin::SurfaceFormer;
         let Some(fragment) = tree.fragment(head.node)
         else {
             return false;
@@ -2110,8 +2112,7 @@ impl<'source> Collected<'source>
                     };
                     attribute.name.as_ref()
                         == crate::attribute::RegisteredAttribute::BUILTIN.as_ref()
-                        && Row::named(Key(key.as_ref()))
-                            == Maybe::Present(Row::Surface(SurfaceFormer::View))
+                        && Row::named(Key(key.as_ref())) == Maybe::Present(Row::Surface(former))
                 })
             })
     }
@@ -5412,7 +5413,7 @@ impl<'source> Collector<'_, 'source>
                     | Former::FlowType
                     | Former::RelationType
                     | Former::ManifestType
-                    | Former::CapabilityType
+                    | Former::LabelSet
                     | Former::AtType
                     | Former::StagedType
                     | Former::ExtensionType
@@ -6921,7 +6922,11 @@ impl<'source> Collector<'_, 'source>
                         let mut pieces = Pieces::new();
                         matches!(
                             view_type(self.pbg, self.tree, operand, &mut pieces, |head| {
-                                self.collected.names_view(self.tree, head)
+                                self.collected.names_former(
+                                    self.tree,
+                                    head,
+                                    gandr_core_term::builtin::SurfaceFormer::View,
+                                )
                             }),
                             Ok(Maybe::Present(_))
                         )

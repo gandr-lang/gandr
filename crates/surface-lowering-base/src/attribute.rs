@@ -1703,7 +1703,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::FlowType
         | Former::RelationType
         | Former::ManifestType
-        | Former::CapabilityType
+        | Former::LabelSet
         | Former::AtType
         | Former::StagedType
         | Former::ExtensionType
