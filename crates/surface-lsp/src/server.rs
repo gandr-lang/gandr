@@ -17042,7 +17042,7 @@ mod tests
             "the scope checks without its import"
         );
         let (uri, text, judged) = opened(&mut server, "model/strings/methods.gandr");
-        let offered = ask(&mut server, &uri, 18, &judged);
+        let offered = ask(&mut server, &uri, 28, &judged);
         assert_eq!(
             offered
                 .iter()
@@ -17054,11 +17054,11 @@ mod tests
             [
                 (
                     Value::from("Remove the unused import `./nul-terminated.gandr`"),
-                    serde_json::json!([lines(18, 19)])
+                    serde_json::json!([lines(28, 29)])
                 ),
                 (
                     Value::from("Remove all unused imports"),
-                    serde_json::json!([lines(18, 19), lines(19, 20)])
+                    serde_json::json!([lines(28, 29), lines(29, 30)])
                 ),
             ],
             "the first import is offered its own removal, then both unused ones at once"
@@ -17067,7 +17067,7 @@ mod tests
             refusals(
                 &mut server,
                 &uri,
-                without(&text, &[18_usize, 19_usize].into())
+                without(&text, &[28_usize, 29_usize].into())
             ),
             0,
             "the methods check without both"
