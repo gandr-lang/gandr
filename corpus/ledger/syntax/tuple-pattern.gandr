@@ -1,7 +1,7 @@
 @![features(("let-statements", "products-and-sums"))]
 
 /// `tuple_pattern`: a group of patterns that receives a call's outputs.
-def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n);
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = %(m, n)
 
 /// The second output of `divmod`, bound by the group.
-def second(a : Integer, b : Integer) -> Integer = { let (q, r) = divmod a b; r };
+def second(a : Integer, b : Integer) -> Integer = { let %(q, r) = divmod a b; r };

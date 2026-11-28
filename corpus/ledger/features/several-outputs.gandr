@@ -1,23 +1,30 @@
-@![features(("effect-rows", "let-statements", "native-primitives", "products-and-sums", "several-outputs", "tactics-over-goals"))]
+@![features((
+  "effect-rows",
+  "let-statements",
+  "native-primitives",
+  "products-and-sums",
+  "several-outputs",
+  "tactics-over-goals"
+))]
 
 /// `several-outputs`: a function returns several values at its outputs. A
 /// caller binds, selects or plugs them, and the program builds no product.
 def sumDiff(m : Integer, n : Integer) -> (s : Integer, d : Integer) =
-  (m + n, m - n)
+  %(m + n, m - n)
 
 /// A labelled tail returns each value at the output its label names.
 def diffSum(m : Integer, n : Integer) -> (s : Integer, d : Integer) =
-  (.d = m - n, .s = m + n)
+  %(.d = m - n, .s = m + n)
 
 /// A caller binds each output to its own name.
 @[runs("14")]
 def bound() -> Integer =
-  let (s, d) = sumDiff 7 2
+  let %(s, d) = sumDiff 7 2
   s + d
 
 /// A caller binds the outputs by label.
 def labelled() -> Integer =
-  let (.s, .d) = diffSum 7 2
+  let %(.s, .d) = diffSum 7 2
   s - d
 
 /// A caller collects the outputs into the record of its outputs.
@@ -40,4 +47,4 @@ def roundTrip(n : Integer) -> Integer =
 
 /// A function returns a group of outputs under a row.
 def guarded(m : Integer, n : Integer) -> [Partial] (s : Integer, d : Integer) =
-  (m + n, m - n)
+  %(m + n, m - n)
