@@ -88,7 +88,7 @@ fn an_entry_runs_to_its_exit_status_1881()
             7_u8,
         ),
     ] {
-        let listed = Listed::new(SourceText::from(source));
+        let listed = Listed::new(SourceText::from(source)).preluded();
         let mut ran = listed_program(&listed);
         let Maybe::Present(entry) = ran.entry()
         else {
@@ -274,7 +274,7 @@ fn an_entry_prints_through_its_console_2279()
 fn an_entry_prints_through_its_authority_2970()
 {
     let source = include_str!("tests/fixtures/an-entry-prints-through-its-authority-2970.gandr");
-    let listed = Listed::hosted(source);
+    let listed = Listed::hosted(source).preluded();
     let mut ran = listed_program(&listed);
     let Maybe::Present(entry) = ran.entry()
     else {

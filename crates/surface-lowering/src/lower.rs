@@ -6395,18 +6395,16 @@ mod tests
     fn a_quoted_term_is_refused_at_its_quote_2341()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let block_as_type = |span| LoweringRefusal::OutOfFragment {
-            span,
-            form: FormName::from(NamedKind("block")),
-            sort: FragmentSort::ValueType,
-            boundary: FragmentBoundary::WrongSort,
-        };
 
         assert_eq!(
             refusal(SourceText::from("def code = Flow.stay (type({Unit})) ;")),
-            block_as_type(at(22_usize, 34_usize)),
-            "a labelled sum with its `+` left out quotes a block, refused at the quote, which \
-             touches where the `+` stood, not at the statement inside it"
+            LoweringRefusal::MalformedForm {
+                span: at(27_usize, 33_usize),
+                form: FormName::from(NamedKind("label_set")),
+                fault: FormFault::MisplacedTile,
+            },
+            "a labelled sum with its `+` left out is a label set, which stands only as the \
+             argument of `Cap`, refused at the set"
         );
     }
 

@@ -158,21 +158,7 @@ pub fn preluded_listed<'source>(
     arena: &mut CoreArena,
 ) -> LoweredModule<'source>
 {
-    let pbg = grammar();
-    let tree = parsed(&pbg, SourceText::from(text));
-    // The laid unit follows from the listed unit's layout alone.
-    let (_laid, unit) = crate::prelude::lay(SourceText::from(""), &listed_unit())
-        .expect("the listed unit lays no prelude");
-    lower_unit(
-        &pbg,
-        &tree,
-        &unit,
-        arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-        &mut Decisions::none(),
-    )
-    .expect("the preluded listing lowers")
+    preluded_in(text, &listed_unit(), arena)
 }
 
 /// The lines a source writes to import the module of every host interface
@@ -283,18 +269,7 @@ fn importing<'source>(
     arena: &mut CoreArena,
 ) -> LoweredModule<'source>
 {
-    let imports = <&str>::from(tree.source())
-        .lines()
-        .filter(|line| line.starts_with("import "))
-        .count();
-    let unit = Unit::new(Vec::from([
-        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
-        UnitSource::new(
-            ByteOffset::from(1_usize),
-            alloc::vec![ImportTarget::Source(SourceIndex::from(0_usize)); imports],
-        ),
-    ]))
-    .expect("the importing source imports the source before it");
+    let unit = importing_unit(<&str>::from(tree.source()));
     lower_unit(
         pbg,
         tree,
@@ -305,4 +280,134 @@ fn importing<'source>(
         &mut Decisions::none(),
     )
     .expect("the imported unit lowers")
+}
+
+/// The unit of two sources that [`imported`] lowers `text` in: the stand-in,
+/// then the source, whose path imports each resolve to the stand-in.
+///
+/// # Specification
+/// trivial.
+fn importing_unit(text: &str) -> Unit
+{
+    let imports = text
+        .lines()
+        .filter(|line| line.starts_with("import "))
+        .count();
+    Unit::new(Vec::from([
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(
+            ByteOffset::from(1_usize),
+            alloc::vec![ImportTarget::Source(SourceIndex::from(0_usize)); imports],
+        ),
+    ]))
+    .expect("the importing source imports the source before it")
+}
+
+/// `source` as [`hosting`] writes it, after the prelude: the text
+/// [`preluded_imported`] lowers. A source that writes `Cap` reads the
+/// prelude's declaration of its row there.
+///
+/// # Specification
+/// trivial.
+pub fn prelude_hosting<Source>(source: Source) -> String
+where
+    Source: core::fmt::Display,
+{
+    prelude_imported(&hosting(source))
+}
+
+/// `text`, which [`imported`] would lower, after the prelude: the text
+/// [`preluded_imported`] lowers.
+///
+/// # Specification
+/// trivial.
+pub fn prelude_imported(text: &str) -> String
+{
+    let (laid, _unit) = crate::prelude::lay(SourceText::from(text), &importing_unit(text))
+        .expect("the importing unit lays no prelude");
+    laid
+}
+
+/// `text`, which [`prelude_imported`] or [`prelude_hosting`] made, lowered as
+/// [`imported`] lowers its text, after the prelude.
+///
+/// # Specification
+/// - requires: `text` is what [`prelude_imported`] made and parses cleanly.
+/// - ensures: as [`imported`], in the unit the prelude is laid before.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the unit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness that writes `Cap` and imports a host module
+///   reads the prelude's declaration of its row through here.
+/// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
+pub fn preluded_imported<'source>(
+    text: &'source str,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    let own = text
+        .get(usize::from(crate::prelude::base()) ..)
+        .unwrap_or_default();
+    preluded_in(text, &importing_unit(own), arena)
+}
+
+/// `source` after the prelude, one source: the text [`preluded_single`]
+/// lowers.
+///
+/// # Specification
+/// trivial.
+pub fn prelude_single(source: &str) -> String
+{
+    let (laid, _unit) = crate::prelude::lay(SourceText::from(source), &Unit::single())
+        .expect("a single source lays no prelude");
+    laid
+}
+
+/// `text`, which [`prelude_single`] made, lowered as one source after the
+/// prelude.
+///
+/// # Specification
+/// - requires: `text` is what [`prelude_single`] made and parses cleanly.
+/// - ensures: the module of the source, in the unit the prelude is laid before.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the unit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness of one source that writes `Cap` reads the
+///   prelude's declaration of its row through here.
+/// - witness: `lower::capability::tests::a_capability_type_lowers_to_its_authority`
+pub fn preluded_single<'source>(
+    text: &'source str,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    preluded_in(text, &Unit::single(), arena)
+}
+
+/// `text` lowered in the unit that the prelude is laid before `unit` in.
+///
+/// # Specification
+/// trivial.
+fn preluded_in<'source>(
+    text: &'source str,
+    unit: &Unit,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, SourceText::from(text));
+    // The laid unit follows from the unit's layout alone.
+    let (_laid, laid_unit) =
+        crate::prelude::lay(SourceText::from(""), unit).expect("the unit lays no prelude");
+    lower_unit(
+        &pbg,
+        &tree,
+        &laid_unit,
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut Decisions::none(),
+    )
+    .expect("the preluded unit lowers")
 }

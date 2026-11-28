@@ -13,6 +13,10 @@ use crate::fixture::hosted;
 use crate::fixture::hosting;
 use crate::fixture::listed;
 use crate::fixture::listing;
+use crate::fixture::prelude_hosting;
+use crate::fixture::prelude_single;
+use crate::fixture::preluded_imported;
+use crate::fixture::preluded_single;
 use crate::lower::native::tests::lowered;
 use crate::lower::native::tests::refusal_of;
 use crate::module::DeclarationOutcome;
@@ -173,11 +177,14 @@ fn an_entry_takes_the_ambient_authority_2970()
 {
     let source = include_str!("tests/fixtures/an-entry-takes-the-ambient-authority-2970.gandr");
     let mut arena = CoreArena::new();
-    let text = hosting(source);
-    let module = hosted(&text, &mut arena);
-    let [declaration] = *module.declarations().iter().collect::<alloc::vec::Vec<_>>()
+    let text = prelude_hosting(source);
+    let module = preluded_imported(&text, &mut arena);
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == crate::resolve::SurfaceName::from("main"))
     else {
-        panic!("one declaration: {source}");
+        panic!("the source declares `main`: {source}");
     };
     let DeclarationOutcome::Completed { declared_type, .. } = declaration.outcome()
     else {
@@ -190,13 +197,15 @@ fn an_entry_takes_the_ambient_authority_2970()
         entry_shape(&arena, declared_type),
         Maybe::Present(Arguments::Authority)
     );
-    let source = "def main(authority : Cap { print }) -> -F String = return \"x\";\n";
+    let source =
+        prelude_single("def main(authority : Cap { print }) -> -F String = return \"x\";\n");
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
+    let module = preluded_single(&source, &mut arena);
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("main")),
-            LoweringRefusal::EntryType { span } if usize::from(span.start()) == 4_usize
+            LoweringRefusal::EntryType { span }
+                if usize::from(span.start()) == usize::from(crate::prelude::base()) + 4_usize
         ),
         "an entry of the authority returning a string is refused at its name"
     );
