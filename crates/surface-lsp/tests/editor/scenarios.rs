@@ -351,13 +351,13 @@ pub(super) struct Source
 /// - requires: the corpus crate sits beside this one.
 /// - ensures: one source per `.gandr` file under the corpus's `strict` and
 ///   `fixture` roots, in path order, each with its percent-escaped `file` URI.
-/// - provides: the texts the hover goldens read.
+/// - provides: the texts that the hover transcripts read.
 /// - panics: the corpus cannot be read.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the goldens find each headline source here; an empty or
-///   truncated walk loses one.
-/// - witness: `tests::editor::shapes::the_headline_sources_hover_as_their_goldens`
+/// - hypothesis: L3 — the transcripts find each headline source here; an empty
+///   or truncated walk loses one.
+/// - witness: `tests::editor::shapes::the_headline_sources_give_their_hovers`
 #[spec(ensures: |ret| ret.len() > 100)]
 pub(super) fn corpus() -> Vec<Source>
 {
@@ -884,14 +884,15 @@ pub(super) struct Hovered
 ///   order, each with whether a comment holds it — a line comment holding the
 ///   newline that closes it — the owner of the written leaf holding it — none
 ///   for layout and comments — and the hover's answer.
-/// - provides: the input of the sweep and of the hover goldens.
+/// - provides: the input of the sweep and of the hover transcripts.
 /// - panics: a written byte lies in no leaf, or the server faults.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the sweep counts the non-comment positions of the corpus
-///   it hovers through this, and the goldens pin every answer of five sources.
+///   it hovers through this, and the transcripts hold every answer of six
+///   sources.
 /// - witness: `tests::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
-/// - witness: `tests::editor::shapes::the_headline_sources_hover_as_their_goldens`
+/// - witness: `tests::editor::shapes::the_headline_sources_give_their_hovers`
 /// - witness: `tests::editor::scenarios::a_line_comment_holds_the_newline_closing_it_456`
 #[spec(ensures: |ret| ret.len() <= source.text.chars().count().saturating_add(1)
     && (every.0 > 1 || ret.len() == source.text.chars().count().saturating_add(1)))]

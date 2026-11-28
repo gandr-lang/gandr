@@ -68,7 +68,7 @@ pub struct Tested
 pub const TESTED: [Tested; 1] = [Tested {
     kind: HOVERS,
     package: "gandr-surface-lsp",
-    filter: "test(=editor::shapes::the_headline_sources_hover_as_their_goldens)",
+    filter: "test(=editor::shapes::the_headline_sources_give_their_hovers)",
     inputs: &crate::tree::REFUSAL_INPUTS,
 }];
 

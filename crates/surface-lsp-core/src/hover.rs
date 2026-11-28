@@ -151,15 +151,15 @@
 //!   shape per kind (`editor::shapes`). Every type the table prints is read
 //!   back — parsed, lowered beside the source, compared with the certificate's
 //!   type (`TypeTable::read_back`) — and the dispatcher's census pins the types
-//!   that do not, by why. Five headline sources keep a golden of every hover
-//!   under `tests/highlight/` of `gandr-surface-grammar`.
+//!   that do not, by why. The hovers of six headline sources are values of the
+//!   kind `hovers` of the outputs, and the gate compares them with the base.
 //! - **Totality, statically**: the `answer-totality` lint, queued — every path
 //!   through the hover ends in an answer or a named absence.
 //!
-//! The alternative was a golden of every corpus hover: it pins everything
-//! and no review can read it. Shapes hold the corpus; the goldens hold five
-//! sources a reader checks line by line. The choice returns to goldens when
-//! a generator over types draws the sources the goldens pin (issue #386).
+//! The alternative was a transcript of every corpus hover: it holds everything
+//! and no review can read it. Shapes hold the corpus; the transcripts hold six
+//! sources a reader checks line by line. The choice returns to transcripts of
+//! the whole corpus when a generator over types draws the sources (issue #386).
 
 use alloc::format;
 use alloc::string::String;

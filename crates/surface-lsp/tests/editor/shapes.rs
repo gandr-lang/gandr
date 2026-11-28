@@ -1,5 +1,5 @@
 //! The content half of the hover guarantee: the shape each node kind's answer
-//! takes, and the goldens of the headline sources' hovers.
+//! takes, and the transcripts of the headline sources' hovers.
 //!
 //! The sweep counts, per node kind, the positions answered at the node; the
 //! shapes say what such an answer holds. A name — a declaration's, a binder's,
@@ -13,10 +13,11 @@
 //! whose answers have no stable shape is named in [`SHAPELESS`] with why and
 //! not held.
 //!
-//! The alternative was goldens for the whole corpus, which no review can
-//! read; the goldens here pin five sources, and the shapes hold the rest. The
-//! shapes return to goldens of a generated distribution when one exists
-//! (issue #386).
+//! The alternative was a transcript for the whole corpus, which no review can
+//! read. The transcripts here hold six sources, and the shapes hold the rest.
+//! The gate of outputs compares each transcript with the transcript of the
+//! base. The shapes return to transcripts of a generated distribution when one
+//! exists (issue #386).
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -25,7 +26,6 @@ use core::fmt::Write as _;
 use std::path::Path;
 
 use anodized::spec;
-use expect_test::expect_file;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::parse;
@@ -50,12 +50,12 @@ use super::scenarios::spot;
 /// sweep counts their positions but holds no shape on them.
 const SHAPELESS: &[(&str, &str)] = &[];
 
-/// The sources whose every hover is pinned in a golden:
-/// univalence's computation rule by `here`, path induction over the based
-/// path space, transport at `here`, function extensionality by computation,
-/// the circle, and a theory with a documented model module, whose hover shows
-/// the module's documentation (#1135).
-const GOLDENS: [&str; 6] = [
+/// The sources whose every hover is a value of the kind `hovers` of the store
+/// of outputs: univalence's computation rule by `here`, path induction over
+/// the based path space, transport at `here`, function extensionality by
+/// computation, the circle, and a theory with a documented model module, whose
+/// hover shows the module's documentation (#1135).
+const HEADLINE: [&str; 6] = [
     "fixture/model/higher-cells/ua-corolla.gandr",
     "fixture/model/identity/transport-dependent.gandr",
     "fixture/model/identity/transport-path.gandr",
@@ -397,8 +397,8 @@ pub(super) fn judged(
         .collect()
 }
 
-/// The golden of `source`'s hovers: one line per run of written positions a
-/// hover answers alike, in source order.
+/// The transcript of `source`'s hovers: one line per run of written positions
+/// a hover answers alike, in source order.
 ///
 /// # Specification
 /// - requires: `hovers` is [`hovered`] over `source`.
@@ -411,11 +411,11 @@ pub(super) fn judged(
 /// - panics: when the corpus directory beside this crate does not resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the five goldens pin every answer of their sources; a
+/// - hypothesis: L3 — the six transcripts hold every answer of their sources; a
 ///   changed type, range or gap moves a line.
-/// - witness: `tests::editor::shapes::the_headline_sources_hover_as_their_goldens`
+/// - witness: `tests::editor::shapes::the_headline_sources_give_their_hovers`
 #[spec(ensures: |ret| ret.lines().count() <= hovers.len())]
-fn golden(
+fn transcript(
     source: &Source,
     hovers: &[Hovered],
 ) -> String
@@ -488,7 +488,7 @@ fn golden(
     out
 }
 
-/// The hover text `value` as a golden writes it: its fences dropped, its
+/// The hover text `value` as a transcript writes it: its fences dropped, its
 /// newlines as `⏎`, each absolute path between backticks made canonical, and
 /// the path of the repository root `root` as `<corpus>`.
 ///
@@ -499,9 +499,9 @@ fn golden(
 ///   `<corpus>` when its file is in the repository.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a checkout whose path is not canonical writes the golden
-///   that a canonical checkout writes.
-/// - witness: `tests::editor::shapes::a_golden_names_each_path_under_the_root_alone`
+/// - hypothesis: L3 — a checkout whose path is not canonical writes the
+///   transcript that a canonical checkout writes.
+/// - witness: `tests::editor::shapes::a_transcript_names_each_path_under_the_root_alone`
 #[spec(ensures: |ret| !ret.contains(root))]
 fn shown_value(
     value: &str,
@@ -536,7 +536,7 @@ fn shown_value(
     canonical.replace(root, "<corpus>")
 }
 
-/// The first absolute path that the golden `text` holds: a word that starts
+/// The first absolute path that the transcript `text` holds: a word that starts
 /// with `/` and a name, and holds a second `/`. A word ends at a space, a
 /// newline, `⏎`, a backtick, a quote or a parenthesis.
 ///
@@ -544,9 +544,9 @@ fn shown_value(
 /// - ensures: a found path starts with `/` and is a word of `text`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a golden written from a checkout outside the repository
-///   root's canonical path names that path, and this finds it.
-/// - witness: `tests::editor::shapes::a_golden_names_each_path_under_the_root_alone`
+/// - hypothesis: L3 — a transcript written from a checkout outside the
+///   repository root's canonical path names that path, and this finds it.
+/// - witness: `tests::editor::shapes::a_transcript_names_each_path_under_the_root_alone`
 #[spec(ensures: |ret| ret.is_none_or(|held| held.starts_with('/') && text.contains(held)))]
 fn host_path(text: &str) -> Option<&str>
 {
@@ -561,18 +561,17 @@ fn host_path(text: &str) -> Option<&str>
     })
 }
 
-/// Each headline source's hovers, against its golden under
-/// `gandr-surface-grammar`'s `tests/highlight/`. `UPDATE_EXPECT=1` rewrites
-/// them. Each text goes to the store of outputs as a value of the kind
-/// `hovers`, when the environment names a run of the tests of the kind.
+/// Each headline source's hovers, as one text that names no absolute path.
+/// Each text goes to the store of outputs as a value of the kind `hovers`,
+/// when the environment names a run of the tests of the kind. The gate of
+/// outputs compares each value with the value of the base.
 #[test]
-fn the_headline_sources_hover_as_their_goldens()
+fn the_headline_sources_give_their_hovers()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let sources = corpus();
-    let goldens = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-grammar/tests/highlight");
     let mut suffix = String::new();
-    for path in GOLDENS {
+    for path in HEADLINE {
         suffix.clear();
         let _written = write!(
             suffix,
@@ -584,22 +583,21 @@ fn the_headline_sources_hover_as_their_goldens()
             .find(|source| source.uri.ends_with(suffix.as_str()))
             .unwrap_or_else(|| panic!("`{path}` is a corpus source"));
         let hovers = hovered(&grammar, source, Every(1));
-        let text = golden(source, &hovers);
+        let text = transcript(source, &hovers);
         if let Some(held) = host_path(&text) {
             panic!(
-                "the hover golden of `{path}` holds the absolute path `{held}`; a golden names a path under `<corpus>` alone"
+                "the hovers of `{path}` hold the absolute path `{held}`; a hover names a path under `<corpus>` alone"
             );
         }
         let _given = given::give(Kind("hovers"), path, text.as_bytes())
             .unwrap_or_else(|error| panic!("the hovers of `{path}` go to the store: {error}"));
-        expect_file![goldens.join(path).with_extension("hover")].assert_eq(&text);
     }
 }
 
 /// A hover path through a `..` segment is written under `<corpus>`, and a
-/// golden that names a path outside the repository root is found.
+/// transcript that names a path outside the repository root is found.
 #[test]
-fn a_golden_names_each_path_under_the_root_alone()
+fn a_transcript_names_each_path_under_the_root_alone()
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
