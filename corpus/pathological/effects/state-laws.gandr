@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "native-primitives", "records", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "records",
+  "thunks-and-force"
+))]
 
 // A handler that does not satisfy a law of the theory it handles is refused
 // where it stands: put-get asks a read after a store to see the stored
@@ -32,6 +41,10 @@ def accumulating() -> (Integer -> Integer) =
     pure thunk { fun (s : Integer) { pure a } }
   } handle {
     | pure(x) => pure x
-    | oper get(k) => pure thunk { fun (s : Integer) { let g = k s; g s } }
-    | oper put(s, k) => pure thunk { fun (t : Integer) { let g = k *{}; g (s + t) } }
+    | oper get(k) => pure thunk { fun (s : Integer) do
+      let g = k s
+      g s }
+    | oper put(s, k) => pure thunk { fun (t : Integer) do
+      let g = k *{}
+      g (s + t) }
   }

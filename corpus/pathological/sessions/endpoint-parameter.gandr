@@ -1,4 +1,11 @@
-@![features(("explicit-exits", "lazy-records", "let-statements", "records", "session-types", "structural-recursion"))]
+@![features((
+  "explicit-exits",
+  "lazy-records",
+  "let-statements",
+  "records",
+  "session-types",
+  "structural-recursion"
+))]
 
 // A parameter at a session type is spent by its body, as an end a fork binds
 // is. A call that moves an endpoint into such a parameter spends it at the
@@ -49,6 +56,10 @@ def rec follow(operator : rec open => &{
   retire : Integer >? end
 }) -> Unit =
   offer operator {
-    | report => { let next = recv operator; become follow[<] operator }
-    | retire => { let last = recv operator; close operator }
+    | report =>
+      let next = recv operator
+      become follow[<] operator
+    | retire =>
+      let last = recv operator
+      close operator
   }

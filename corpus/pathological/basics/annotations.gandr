@@ -1,4 +1,11 @@
-@![features(("dependent-functions", "explicit-exits", "let-statements", "products-and-sums", "records", "thunks-and-force"))]
+@![features((
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "products-and-sums",
+  "records",
+  "thunks-and-force"
+))]
 
 // What an annotation states is checked, not trusted: wherever it stands, the
 // value it ascribes is checked against it. An annotated value is still a
@@ -36,4 +43,6 @@ def splitWrong() -> Integer =
 
 /// An annotated value written as a statement, where no value stands.
 @[refuses("OutOfFragment.WrongSort")]
-def stated() -> Integer = { (3 : Integer); return 1 };
+def stated() -> Integer =
+  (3 : Integer)
+  return 1

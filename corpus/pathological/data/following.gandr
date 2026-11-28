@@ -17,4 +17,6 @@ import "../../model/data/data-base.gandr"
 def rec halvedThroughPlus(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ p => { let q = plus Zero p; Succ (halvedThroughPlus[<] q) }
+    | Succ p =>
+      let q = plus Zero p
+      Succ (halvedThroughPlus[<] q)

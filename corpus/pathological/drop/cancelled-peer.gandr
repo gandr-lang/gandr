@@ -15,7 +15,14 @@
 //!
 //! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "session-types"
+))]
 
 // The import provides the early-exit host interface.
 import std.process
@@ -36,5 +43,7 @@ def cancelled() -> Integer =
     pure second
   } handle {
     | pure(y) => pure y
-    | oper exit(code, k) => { abandon k; pure 7 }
+    | oper exit(code, k) =>
+      abandon k
+      pure 7
   }

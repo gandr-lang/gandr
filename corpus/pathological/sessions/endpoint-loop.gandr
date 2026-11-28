@@ -1,4 +1,11 @@
-@![features(("effect-rows", "lazy-records", "let-statements", "loops", "pattern-matching", "session-types"))]
+@![features((
+  "effect-rows",
+  "lazy-records",
+  "let-statements",
+  "loops",
+  "pattern-matching",
+  "session-types"
+))]
 
 // A loop hands its endpoint on at its head's state, and spends it to leave.
 //
@@ -23,7 +30,10 @@ def hasty(operator : rec open => &{
   loop {
     offer operator {
       | report => { continue }
-      | retire => { let last = recv operator; close operator; break }
+      | retire =>
+        let last = recv operator
+        close operator
+        break
     }
   }
 
@@ -35,8 +45,12 @@ def abandoned(operator : rec open => &{
 }) -> [Partial] Unit =
   loop {
     offer operator {
-      | report => { let next = recv operator; continue }
-      | retire => { let last = recv operator; break }
+      | report =>
+        let next = recv operator
+        continue
+      | retire =>
+        let last = recv operator
+        break
     }
   }
 
@@ -51,7 +65,12 @@ def idle(waiting : Bool, operator : rec open => &{
     match waiting where
       | true => continue
       | false => offer operator {
-        | report => { let next = recv operator; continue }
-        | retire => { let last = recv operator; close operator; break }
+        | report =>
+          let next = recv operator
+          continue
+        | retire =>
+          let last = recv operator
+          close operator
+          break
       }
   }

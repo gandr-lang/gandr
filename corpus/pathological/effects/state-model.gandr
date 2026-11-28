@@ -1,4 +1,12 @@
-@![features(("dependent-functions", "imports", "let-statements", "modules", "stated-laws", "tactics-over-goals", "thunks-and-force"))]
+@![features((
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "modules",
+  "stated-laws",
+  "tactics-over-goals",
+  "thunks-and-force"
+))]
 
 // The twin of `model/effects/state-model.gandr`: where a module is not a
 // model of a theory of state.
@@ -29,7 +37,9 @@ module PutGet : Model(StatePutGet) with sort S = Integer where
   type C = Integer -> Integer
   /// Reading hands the current state on.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
-    thunk { fun (s) { let after = k s; after s } }
+    thunk { fun (s) do
+      let after = k s
+      after s }
   /// Storing runs what comes after at the stored value.
   def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
     thunk { fun (_old) { k s } }

@@ -57,4 +57,6 @@ def rec forged(c : Circle) -> Path (spin (wind c)) c =
   match c where
     | Base => Path.here Base
     | Loop x => forged[<] x
-    | Unloop x => { let p = forged[<] x; Path.ap unaround p }
+    | Unloop x =>
+      let p = forged[<] x
+      Path.ap unaround p

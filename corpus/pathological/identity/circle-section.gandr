@@ -63,7 +63,9 @@ def rec forged(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] B
   match p where
     | here => Path.here (Path.here Base)
     | loop ∷ q => forged[<] q
-    | back(loop) ∷ q => { let ih = forged[<] q; Path.ap unloopOn ih }
+    | back(loop) ∷ q =>
+      let ih = forged[<] q
+      Path.ap unloopOn ih
 
 /// A path at every loop whose inverse arm drops its rest's path: each arm
 /// checks at its letter, but at `loop ∷ back(loop) ∷ q` the loop arm carries
@@ -75,5 +77,7 @@ def rec forged(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] B
 def rec rewound(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] p p =
   match p where
     | here => Path.here (Path.here Base)
-    | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
+    | loop ∷ q =>
+      let ih = rewound[<] q
+      Path.ap loopOn ih
     | back(loop) ∷ q => Path.here (back loop ∷ q)
