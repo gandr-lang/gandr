@@ -40,12 +40,11 @@ def sequenced(n : Nat) -> -F Nat =
 def nested(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
-    | Succ p => {
+    | Succ p =>
       let q = match p where
         | Zero => return p
         | Succ r => pure r
       pure q
-    }
 
 @[checks]
 def thunked() -> -F Nat = pure Zero

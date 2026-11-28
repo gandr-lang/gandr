@@ -210,26 +210,24 @@ def predecessor_elided(n : Nat) -> -F Nat =
 def pick(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => return n
-    | Succ p => {
+    | Succ p =>
       let q = match p {
         | Zero => return n
         | Succ r => pure r
       }
       pure q
-    }
   return Succ m
 
 @[checks]
 def pick_elided(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => return n
-    | Succ p => {
+    | Succ p =>
       let q = match p {
         | Zero => return n
         | Succ r => pure r
       }
       pure q
-    }
   Succ m
 
 @[runs("Zero")]
@@ -268,23 +266,21 @@ def handed_elided(n : Nat) -> -F Nat =
 def rec skim(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
-    | Succ p => {
+    | Succ p =>
       let _ = match p where
         | Zero => return p
         | Succ r => pure r
       become skim[<] p
-    }
 
 @[checks]
 def rec skim_elided(n : Nat) -> -F Nat =
   match n where
     | Zero => n
-    | Succ p => {
+    | Succ p =>
       let _ = match p where
         | Zero => return p
         | Succ r => pure r
       skim_elided[<] p
-    }
 
 @[runs("Zero")]
 def skimmed() -> -F Nat = become skim (Succ (Succ (Succ Zero)))
