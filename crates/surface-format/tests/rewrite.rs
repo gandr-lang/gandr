@@ -256,10 +256,10 @@ def succeeded(n : Nat) -> Nat = Succ n
 
 def early(k : Nat) -> Nat = match k {
   | Zero => k
-  | Succ(j) => {
+  | Succ j => {
     let q = match j {
       | Zero => return j
-      | Succ(r) => pure r
+      | Succ r => pure r
     }
     pure q
   }
@@ -275,7 +275,7 @@ def nested(n : Nat) -> Nat -> Nat = thunk { fun (x) { Succ x } };
 
 def blocked(n : Nat) -> Nat = match n {
   | Zero => { let y = succeeded n; y }
-  | Succ(p) => p
+  | Succ p => p
 };
 
 def noted(n : Nat) -> Nat = return /* the argument */ n
@@ -1631,6 +1631,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "function-form",
             "joined-definition",
             "type-application",
+            "pattern-application",
             "handler-words",
             "bare-run",
         ],

@@ -141,6 +141,10 @@ pub enum RewriteName
     /// forms write the juxtaposition, an argument that is no atom in its
     /// parentheses.
     TypeApplication,
+    /// A constructor pattern: `Cons(x, rest)` and `Cons x rest`, as a pattern
+    /// reads a juxtaposition; both forms write the juxtaposition, a field
+    /// that is no atom in its parentheses.
+    PatternApplication,
     /// A capability scope's words: `handle c : I { M } with { … }` and
     /// `effect c : I { M } handle { … }`, the clauses or the model after
     /// `handle`; both forms write `effect … handle`, the one spelling of a
@@ -173,6 +177,7 @@ impl RewriteName
         Self::FunctionForm,
         Self::JoinedDefinition,
         Self::TypeApplication,
+        Self::PatternApplication,
         Self::HandlerWords,
         Self::BareRun,
     ];
@@ -203,6 +208,7 @@ impl RewriteName
             Self::FunctionForm => "function-form",
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
+            Self::PatternApplication => "pattern-application",
             Self::HandlerWords => "handler-words",
             Self::BareRun => "bare-run",
         }
@@ -291,7 +297,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 38] = [
+pub const REWRITES: [Rewrite; 40] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -569,6 +575,22 @@ pub const REWRITES: [Rewrite; 38] = [
         enabled: Enabled::On,
     },
     Rewrite {
+        name: RewriteName::PatternApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("constructor_pattern"),
+        from: Spelling("Cons(x, rest)"),
+        to: Spelling("Cons x rest"),
+        enabled: Enabled::Off,
+    },
+    Rewrite {
+        name: RewriteName::PatternApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("constructor_pattern"),
+        from: Spelling("Cons(x, rest)"),
+        to: Spelling("Cons x rest"),
+        enabled: Enabled::Off,
+    },
+    Rewrite {
         name: RewriteName::HandlerWords,
         direction: Direction::Sugar,
         mold: HANDLER,
@@ -794,11 +816,19 @@ impl Band
                 | "f_type.result.labelled",
                 _,
             )
-            | ("application_expression" | "type_application.juxtaposed", Position::First) => {
-                Self::Application
-            },
+            | (
+                "application_expression"
+                | "type_application.juxtaposed"
+                | "constructor_pattern.juxtaposed",
+                Position::First,
+            ) => Self::Application,
             ("u_type" | "at_type", _)
-            | ("application_expression" | "type_application.juxtaposed", Position::Later)
+            | (
+                "application_expression"
+                | "type_application.juxtaposed"
+                | "constructor_pattern.juxtaposed",
+                Position::Later,
+            )
             // A postfix `.`, `[` or `.#{` reads the atom before it, so `f(x).l`
             // juxtaposed is `(f x).l`.
             | ("type_path" | "staged_type" | "extension_type", Position::First) => Self::Atom,
@@ -827,7 +857,9 @@ impl Band
             | "f_type.row.labelled"
             | "f_type.result.labelled"
             | "at_type" => Self::Bridge,
-            "application_expression" | "type_application.juxtaposed" => Self::Application,
+            "application_expression"
+            | "type_application.juxtaposed"
+            | "constructor_pattern.juxtaposed" => Self::Application,
             "product_type" => Self::Product,
             "sum_type" => Self::Sum,
             "lazy_product_type" => Self::Lazy,
@@ -2159,6 +2191,31 @@ impl<'source> Respelling<'_, 'source>
         operand
     }
 
+    /// The operand `child` as a field of a constructor pattern written by
+    /// juxtaposition. A binding, an alternation and a word cons bind looser
+    /// than the juxtaposition, so each takes parentheses there, `Just (n @
+    /// 1)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn field(
+        &self,
+        child: Child<'source>,
+    ) -> Operand<'source>
+    {
+        let loose = |child: Child<'source>| matches!(child, Child::Node(at) if self.rule(at).is_some_and(|rule| matches!(rule.0, "as_pattern" | "or_pattern" | "cons_pattern")));
+        let mut operand = self.operand(child);
+        if loose(child) {
+            operand.band = Band::Loose;
+        }
+        if self.unwrapped(child).is_some_and(loose)
+            && let Some((_, ref mut band)) = operand.inner
+        {
+            *band = Band::Loose;
+        }
+        operand
+    }
+
     /// The source bytes the operand `child` covers.
     ///
     /// # Specification
@@ -2459,6 +2516,22 @@ impl<'source> Respelling<'_, 'source>
                     return None;
                 }
                 self.juxtaposed_type(&mut out, parts)?
+            },
+            (RewriteName::PatternApplication, Direction::Sugar | Direction::Desugar) => {
+                // A port pattern selects one output of a constructor,
+                // `Share(x).left`: the selection reads the glued pattern
+                // before it, so the pattern keeps its list.
+                let ported = self.parents.get(&at).is_some_and(|&parent| {
+                    matches!(
+                        self.tree.node(parent).map(gandr_surface_syntax::Node::label),
+                        Some(NodeLabel::Meld(mold))
+                            if self.grammar.rule_of(mold).is_ok_and(|rule| rule.name().0 == "projection_expression")
+                    )
+                });
+                if ported {
+                    return None;
+                }
+                self.juxtaposed_pattern(&mut out, parts)?
             },
             (RewriteName::HandlerWords, Direction::Sugar | Direction::Desugar) => {
                 return self.handler_words(parts, extent);
@@ -3875,6 +3948,61 @@ impl<'source> Respelling<'_, 'source>
         Some(self.arguments(out, first))
     }
 
+    /// Write the constructor pattern whose parts are `parts` as
+    /// juxtaposition: `Cons(x, rest)` as `Cons x rest` and `Tree.Leaf(x)` as
+    /// `Tree.Leaf x`. Parenthesize each field that is no atom.
+    /// Do not write a pattern with no list.
+    /// Do not write a pattern that holds a comment.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operands, growth within the pattern's fields
+    fn juxtaposed_pattern(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let open = parts.iter().position(
+            |part| matches!(part.role, Role::Own(text) if <&str>::from(text) == OPEN_PAREN.0),
+        )?;
+        let (head, listed) = parts.split_at(open);
+        if !head.iter().all(|part| matches!(part.role, Role::Own(_))) {
+            return None;
+        }
+        let mut fields = Vec::new();
+        let mut closed = false;
+        for part in listed.get(1_usize ..)? {
+            match part.role {
+                Role::Own(text) if !closed && <&str>::from(text) == "," => {},
+                Role::Own(text) if !closed && <&str>::from(text) == CLOSE_PAREN.0 => {
+                    closed = true;
+                },
+                Role::Operand(child) if !closed => fields.push(child),
+                Role::Own(_) | Role::Operand(_) | Role::Comment => return None,
+            }
+        }
+        if !closed || fields.is_empty() {
+            return None;
+        }
+        for (index, part) in head.iter().enumerate() {
+            if index > 0 {
+                out.leaves.extend(part.before.iter().copied());
+            }
+            out.leaves.extend(part.leaves.iter().copied());
+        }
+        for child in fields {
+            out.glue();
+            out.place(&self.field(child), Band::Atom);
+        }
+        Some(Band::Application)
+    }
+
     /// Write `arguments` after a head into `out`, each an atom or in its
     /// parentheses after the empty tile of a type's juxtaposition, and answer
     /// the band of the juxtaposition they make as [`juxtaposition`] reads an
@@ -4068,7 +4196,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 43] = [
+const RULES: [MoldName; 48] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4095,6 +4223,11 @@ const RULES: [MoldName; 43] = [
     MoldName("manifest_sort"),
     APPLICATION,
     MoldName("type_application.juxtaposed"),
+    MoldName("constructor_pattern"),
+    MoldName("constructor_pattern.juxtaposed"),
+    MoldName("as_pattern"),
+    MoldName("or_pattern"),
+    MoldName("cons_pattern"),
     MoldName("forget_model_expression"),
     MoldName("path_type"),
     MoldName("bridge_type"),
