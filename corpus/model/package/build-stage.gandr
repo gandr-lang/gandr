@@ -1,4 +1,10 @@
-@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 /// The default build stage: a package's `package.gandr.toml` body, rendered by
 /// a gandr function from its model's fields and modules.
@@ -29,7 +35,7 @@ import "../data/data-base.gandr"
 def rec lines(modules : List String) -> String =
   match modules where
     | Nil => ""
-    | Cons(path, rest) => {
+    | Cons path rest => {
       let more = lines[<] rest
       "  \"${ path }\",\n${ more }"
     }
@@ -39,7 +45,7 @@ def rec lines(modules : List String) -> String =
 def listed(modules : List String) -> String =
   match modules where
     | Nil => "[]"
-    | Cons(_, _) => {
+    | Cons _ _ => {
       let each = lines modules
       "[\n${ each }]"
     }

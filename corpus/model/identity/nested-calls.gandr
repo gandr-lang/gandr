@@ -11,7 +11,15 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // This import supplies free naturals and integers with `up` and `down` steps.
 import "./circle-base.gandr"
@@ -20,7 +28,7 @@ import "./circle-base.gandr"
 def rec doubleNat(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (Succ (doubleNat[<] p))
+    | Succ p => Succ (Succ (doubleNat[<] p))
 
 /// The outer `doubleNat` call waits for the inner call.
 /// The checker unfolds the inner call.

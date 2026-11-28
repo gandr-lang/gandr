@@ -14,7 +14,17 @@
 //! - see: `model/identity/transport-list.gandr` — a walk along a path at its
 //!   written type
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "pattern-matching", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "type-codes",
+  "universes"
+))]
 
 /// A value of the first type with a value of the type it picks.
 data Picked(a : Type, b : a -> Type) : Type where
@@ -35,7 +45,7 @@ def walkSecond(
   v : o j
 ) -> o k =
   match m where
-    | MkPicked(u, q) => Path.walk (fun (n) { o n }) q v
+    | MkPicked u q => Path.walk (fun (n) { o n }) q v
 
 /// The same walk along a path a binder holds at its written type.
 def walkWritten(i : Type, o : i -> Type, j : i, k : i, q : Path[.A = i] j k, v : o j) -> o k =

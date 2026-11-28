@@ -1,4 +1,16 @@
-@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "equivalence-record",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "visibility"
+))]
 
 /// This source transports a Boolean along a composite of negation paths.
 /// It follows cctt's `tests/bench/negPath.cctt`, a rung of the Brunerie
@@ -38,7 +50,7 @@ def negPath : Path[.A = Type] Bool Bool = ua negEquiv
 def rec boolPathN(n : Nat) -> Path[.A = Type] Bool Bool =
   match n where
     | Zero => negPath
-    | Succ(k) => Path.step (boolPathN[<] k) negPath
+    | Succ k => Path.step (boolPathN[<] k) negPath
 
 /// The `negVal` function is cctt's `val`, the transport of `true`.
 pub def negVal(n : Nat) -> Bool = Path.walk (fun (X) { X }) (boolPathN n) true

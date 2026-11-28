@@ -28,7 +28,7 @@ def three : M.Box = M.Box.B 3
 
 /// `open` matches a box through `M.B`.
 def open(b : M.Box) -> Integer =
-  match b { | M.B(x) => x }
+  match b { | M.B x => x }
 
 /// `five` builds and opens a box.
 @[runs("5")]

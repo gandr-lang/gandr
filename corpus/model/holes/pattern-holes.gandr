@@ -34,7 +34,7 @@ data Option : Type where
 @[refuses("UndecidedCoverage")]
 def weigh(m : Option) -> Integer =
   match m where
-    | Value(?) => 100
+    | Value ? => 100
     | NoValue => 200
 
 /// A pattern hole refuses `weigh` before this function runs. This function

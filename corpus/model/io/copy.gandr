@@ -58,7 +58,7 @@ def rec copy(buffer : List u8, passes : Passes) -> [
 ] Unit =
   match passes where
     | Spent => pure *{}
-    | Pass(rest) => {
+    | Pass rest => {
       let read = returned (io.read 0 buffer)
       if read.0 <= 0 {
         pure *{}

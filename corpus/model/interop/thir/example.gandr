@@ -11,7 +11,19 @@
 //!
 //! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "indexed-data", "let-statements", "nominal-data", "pattern-matching", "rust-semantics-thir", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "indexed-data",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "rust-semantics-thir",
+  "universes",
+  "visibility"
+))]
 
 // The values, the expressions over the crate's items, and the transformers.
 import std.thir (Value, Int, True, False, Expr, Lit, Param, If, Return, Call, wpFn)
@@ -54,7 +66,7 @@ pub def exampleSpec(b : Value, post : Value -> Type) -> Type =
   match b where
     | True => post (Int 1)
     | False => post (Int 0)
-    | Int(_n) => return Void
+    | Int _n => return Void
 
 /// `example` meets its specification at every value and postcondition, given
 /// `identity`'s: Fig. 2's lemma.
@@ -65,7 +77,7 @@ pub def exampleMeets(
   match b where
     | True => fun (h) { h }
     | False => fun (h) { h }
-    | Int(_n) => fun (h) { h }
+    | Int _n => fun (h) { h }
 
 /// At false the early return answers zero under every table: the call of
 /// `identity` is never reached.

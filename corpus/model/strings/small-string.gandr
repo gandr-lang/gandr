@@ -1,4 +1,17 @@
-@![features(("call-by-push-value", "data-parameters", "effect-rows", "imports", "let-statements", "loops", "native-primitives", "nominal-data", "pattern-matching", "temporary-access", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "loops",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "temporary-access",
+  "universes",
+  "visibility"
+))]
 
 // This source models short string storage.
 //
@@ -39,8 +52,8 @@ pub def own(cs : List Integer) -> Repr =
 /// `place` reads byte storage from a string representation.
 pub def place(s : Repr) -> Place =
   match s where
-    | Inline(bs) => Inside
-    | Shared(n, bs) => OnHeap
+    | Inline bs => Inside
+    | Shared n bs => OnHeap
 
 /// This function adds `n` copies of `c` before `onto`.
 

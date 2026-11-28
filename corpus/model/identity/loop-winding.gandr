@@ -1,4 +1,14 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "records", "rule-respect", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "records",
+  "rule-respect",
+  "structural-recursion",
+  "visibility"
+))]
 
 /// This source maps loop words to presented and native integers.
 ///
@@ -27,8 +37,8 @@ import "./loop-shape.gandr"
 pub def rec windWords(c : Words) -> Int =
   match c where
     | Nil => Z
-    | Loop(x) => S (windWords[<] x)
-    | Unloop(x) => P (windWords[<] x)
+    | Loop x => S (windWords[<] x)
+    | Unloop x => P (windWords[<] x)
 
 /// Two loops map to two successors.
 @[runs("S (S Z)")]
@@ -49,8 +59,8 @@ def wound_never : Path[.A = Int] (windWords (Loop (Unloop Nil))) Z = Path.here Z
 def rec native_wind(c : Words) -> Integer =
   match c where
     | Nil => 0
-    | Loop(x) => NativeWinding.turn (native_wind[<] x)
-    | Unloop(x) => NativeWinding.unturn (native_wind[<] x)
+    | Loop x => NativeWinding.turn (native_wind[<] x)
+    | Unloop x => NativeWinding.unturn (native_wind[<] x)
 
 /// Two loops map to two native integer units.
 @[runs("2")]

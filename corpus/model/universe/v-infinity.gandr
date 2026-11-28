@@ -13,7 +13,18 @@
 //!
 //! - see: Aczel's hierarchy
 
-@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "thunks-and-force",
+  "universes"
+))]
 
 // The type with no element.
 import "../data/empty.gandr"
@@ -35,13 +46,13 @@ data Ord : Type[+, 1] where
 @[checks]
 def rec rank(v : Vinf) -> -F Ord =
   match v where
-    | Sup(a, f) => Lim a (thunk { fun (x) { rank[<] (f x) } })
+    | Sup a f => Lim a (thunk { fun (x) { rank[<] (f x) } })
 
 /// The members function returns a set's member type.
 @[checks]
 def members(v : Vinf) -> -F Type =
   match v where
-    | Sup(a, f) => return a
+    | Sup a f => return a
 
 /// The `Lone` type has one element.
 @[checks]

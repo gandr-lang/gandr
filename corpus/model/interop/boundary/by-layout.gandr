@@ -1,4 +1,16 @@
-@![features(("data-parameters", "dependent-functions", "effect-rows", "imports", "interop-boundary", "let-statements", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "effect-rows",
+  "imports",
+  "interop-boundary",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "visibility"
+))]
 
 // Values Rust holds cross into gandr as words, read by their layouts.
 //
@@ -64,7 +76,7 @@ def low(w : u64) -> i32 = i32.from_integer (u64.to_integer w)
 def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
   match fuel where
     | Zero => None
-    | Succ(rest) => {
+    | Succ rest => {
       let n = u64.to_integer w
       let bit = int.mod n 2
       match bit == 1 where
@@ -76,7 +88,7 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
           let tail = readTagged[<] rest t
           match tail where
             | None => None
-            | Some(l) => Some (TagCons head l)
+            | Some l => Some (TagCons head l)
         }
     }
 
@@ -86,7 +98,7 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
 def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe Packed =
   match fuel where
     | Zero => None
-    | Succ(rest) => {
+    | Succ rest => {
       let n = u64.to_integer w
       let tag = int.mod n 4
       match tag == 0 where
@@ -103,7 +115,7 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe Packed =
               let tail = readPacked[<] rest r
               match tail where
                 | None => None
-                | Some(l) => Some (Many x y l)
+                | Some l => Some (Many x y l)
             }
             | false => None
     }
@@ -113,7 +125,7 @@ pub def taggedLengthAt(w : u64) -> [Memory] Integer =
   let read = readTagged fuel w
   match read where
     | None => - 1
-    | Some(l) => {
+    | Some l => {
       let f = Path.walk (fun (X) { X -> Integer }) taggedPath (fun (l) { length l })
       f l
     }
@@ -123,7 +135,7 @@ pub def packedLengthAt(w : u64) -> [Memory] Integer =
   let read = readPacked fuel w
   match read where
     | None => - 1
-    | Some(l) => {
+    | Some l => {
       let f = Path.walk (fun (X) { X -> Integer }) packedPath (fun (l) { length l })
       f l
     }

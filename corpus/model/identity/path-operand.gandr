@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// This source states how derived path operations find an operand path type.
 /// The operations are the HoTT book's inverse and composite (Lemmas 2.1.1 and
@@ -63,7 +72,7 @@ def stayUp(a : Nat) -> Path[.A = Nat] (Succ a) (Succ a) =
 def rec still(b : Nat) -> Path[.A = Nat] b b =
   match b where
     | Zero => Path.here Zero
-    | Succ(x) => Path.step (Path.ap next (still[<] x)) (Path.here (Succ x))
+    | Succ x => Path.step (Path.ap next (still[<] x)) (Path.here (Succ x))
 
 /// The `mappedLoop` proof reads the parameter function result.
 def mappedLoop(f : Circle -> Nat) -> Path[.A = Nat] (f Base) (f Base) =

@@ -1,4 +1,14 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "records", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "visibility"
+))]
 
 /// This source gives an equivalence between loop words and presented integers.
 ///
@@ -24,8 +34,8 @@ import "./loop-winding.gandr"
 pub def rec spinWords(n : Int) -> Words =
   match n where
     | Z => Nil
-    | S(x) => Loop (spinWords[<] x)
-    | P(x) => Unloop (spinWords[<] x)
+    | S x => Loop (spinWords[<] x)
+    | P x => Unloop (spinWords[<] x)
 
 /// The sample spins two successors to two loops.
 @[runs("Loop (Loop Nil)")]
@@ -68,15 +78,15 @@ def unaround(c : Words) -> Words =
 def rec sectWords(c : Words) -> Path[.A = Words] (spinWords (windWords c)) c =
   match c where
     | Nil => Path.here Nil
-    | Loop(x) => { let p = sectWords[<] x; Path.ap around p }
-    | Unloop(x) => { let p = sectWords[<] x; Path.ap unaround p }
+    | Loop x => { let p = sectWords[<] x; Path.ap around p }
+    | Unloop x => { let p = sectWords[<] x; Path.ap unaround p }
 
 /// At every integer, `retrWords` proves that winding follows spinning.
 def rec retrWords(n : Int) -> Path[.A = Int] (windWords (spinWords n)) n =
   match n where
     | Z => Path.here Z
-    | S(x) => { let p = retrWords[<] x; Path.ap Winding.turn p }
-    | P(x) => { let p = retrWords[<] x; Path.ap Winding.unturn p }
+    | S x => { let p = retrWords[<] x; Path.ap Winding.turn p }
+    | P x => { let p = retrWords[<] x; Path.ap Winding.unturn p }
 
 /// The `wordsWinding` record gives the two maps and their round trips.
 def wordsWinding : *{

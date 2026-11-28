@@ -11,7 +11,23 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "tarski-universes", "thunks-and-force", "type-codes", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "tarski-universes",
+  "thunks-and-force",
+  "type-codes",
+  "universes"
+))]
 
 // The naturals.
 import "../data/data-base.gandr"
@@ -35,7 +51,7 @@ data UProd : Type where
 def rec elProd(u : UProd) -> -F Type =
   match u where
     | NatX => return Nat
-    | ProdX(a, b) => return (Both (elProd[<] a) (elProd[<] b))
+    | ProdX a b => return (Both (elProd[<] a) (elProd[<] b))
 
 /// The dependent pair code and its decoder, in one block.
 rec {
@@ -56,7 +72,7 @@ rec {
   def rec elSig(u : USig) -> -F Type =
     match u where
       | NatS => return Nat
-      | SigS(a, b) => return (Sig (elSig[<] a) (thunk { fun (x) { elSig[<] (b x) } }))
+      | SigS a b => return (Sig (elSig[<] a) (thunk { fun (x) { elSig[<] (b x) } }))
 }
 
 /// The path code and its decoder, in one block.
@@ -77,5 +93,5 @@ rec {
   def rec elPath(u : UPath) -> -F Type =
     match u where
       | NatP => return Nat
-      | PathP(a, x, y) => return (type(Path[.A = elPath [<] a] x y))
+      | PathP a x y => return (type(Path[.A = elPath [<] a] x y))
 }

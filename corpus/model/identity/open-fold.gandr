@@ -11,7 +11,14 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // This import supplies integers and free naturals.
 import "./circle-base.gandr"
@@ -47,11 +54,11 @@ def base_case() -> Path[.A = Words] (spinWords (windWords Nil)) Nil =
 def rec parity(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => {
+    | Succ p => {
       let q = parity[<] p
       match q where
         | Zero => Succ Zero
-        | Succ(r) => Zero
+        | Succ r => Zero
     }
 
 /// The `parity_stuck` endpoint keeps a bind over a variable call.

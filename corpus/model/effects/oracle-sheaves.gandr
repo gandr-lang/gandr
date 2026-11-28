@@ -1,4 +1,19 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "tarski-universes", "thunks-and-force", "type-codes", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "tarski-universes",
+  "thunks-and-force",
+  "type-codes",
+  "universes"
+))]
 
 // This source ports the parts of Ahman and Bauer's oracle sheaves that gandr
 // checks.
@@ -49,8 +64,8 @@ def rec bindTree(
   f : x -> Tree s p y
 ) -> Tree s p y =
   match t where
-    | Leaf(v) => f v
-    | Node(a, k) => Node a (fun (u) { bindTree[<] s p x y (k u) f })
+    | Leaf v => f v
+    | Node a k => Node a (fun (u) { bindTree[<] s p x y (k u) f })
 
 /// The fold runs a tree against an oracle that answers each query.
 def rec answer(
@@ -61,8 +76,8 @@ def rec answer(
   t : Tree s p x
 ) -> x =
   match t where
-    | Leaf(v) => v
-    | Node(a, k) => answer[<] s p x o (k (o a))
+    | Leaf v => v
+    | Node a k => answer[<] s p x o (k (o a))
 
 /// Each query has two answers.
 def branches(a : Two) -> Type = return Two
@@ -111,8 +126,8 @@ def rec least(
   t : Tree s p q
 ) -> mode q =
   match t where
-    | Leaf(v) => ret q v
-    | Node(a, k) => seq (p a) q (asks a) (fun (u) { least[<] s p mode ret seq asks q (k u) })
+    | Leaf v => ret q v
+    | Node a k => seq (p a) q (asks a) (fun (u) { least[<] s p mode ret seq asks q (k u) })
 
 /// The trees at the fixed container, as a static family.
 def treesTwo : Type -> Type = fun (q) { type(Tree Two branches q) };
@@ -156,15 +171,15 @@ data OracleAlgebra(s : Type, p : +U (s -> -F Type), x : Type) : Type where
 /// a node holds what each subtree holds. No truncation hides the tree.
 def rec holds(s : Type, p : s -> Type, x : Type, v : x, t : Tree s p x) -> Type =
   match t where
-    | Leaf(y) => return (Tree s p (type(Path[.A = x] v y)))
-    | Node(a, k) => return ((u : p a) -> holds [<] s p x v (k u))
+    | Leaf y => return (Tree s p (type(Path[.A = x] v y)))
+    | Node a k => return ((u : p a) -> holds [<] s p x v (k u))
 
 /// A tree is equifoliate when its subtrees are, and when all of them hold the
 /// same members.
 def rec equifoliate(s : Type, p : s -> Type, x : Type, t : Tree s p x) -> Type =
   match t where
-    | Leaf(y) => return Unit
-    | Node(a, k) => return (type(*{
+    | Leaf y => return Unit
+    | Node a k => return (type(*{
       sub : (u : p a) -> equifoliate [<] s p x (k u),
       same : (v : x, u : p a, w : p a, holds s p x v (k u)) -> holds s p x v (k w)
     }))

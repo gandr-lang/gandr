@@ -1,4 +1,16 @@
-@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "let-statements", "modules", "native-lists", "nominal-data", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "directed-paths",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-lists",
+  "nominal-data",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 /// This source states a data-type flow from a translator.
 ///
@@ -40,7 +52,7 @@ module Rename where {
   @[checks]
   def toOther(old : Old) -> Other =
     match old where
-      | Mk(n) => Make n
+      | Mk n => Make n
   /// The translator defines the flow from `Old` to `Other`.
   @[checks]
   def renamed : Flow[.A = Type](Old, Other) = Flow.into toOther
@@ -59,8 +71,8 @@ pub module Shapes where {
   @[checks]
   def toFigure(shape : Shape) -> Figure =
     match shape where
-      | Circle(r) => Round r
-      | Rect(w, h) => Box h w
+      | Circle r => Round r
+      | Rect w h => Box h w
   /// The translator defines the flow from shapes to figures.
   @[checks]
   def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure

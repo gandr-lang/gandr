@@ -1,4 +1,14 @@
-@![features(("data-parameters", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "products-and-sums", "records", "universes"))]
+@![features((
+  "data-parameters",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "products-and-sums",
+  "records",
+  "universes"
+))]
 
 // This source shows applied families inside a module.
 //
@@ -45,4 +55,4 @@ def boxed() -> Shapes.Box Integer = Shapes.Hold 2
 /// A match opens the box through the module's constructor.
 @[runs("2")]
 def opened() -> Integer =
-  match boxed { | Shapes.Hold(x) => x }
+  match boxed { | Shapes.Hold x => x }

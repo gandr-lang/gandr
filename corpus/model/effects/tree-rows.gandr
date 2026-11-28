@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // This source handles rows as explicit effect trees.
 //
@@ -23,29 +34,29 @@ pub data Outcome(a : Type) : Type where
 /// `runState` handles state at the front and forwards the remaining row.
 pub def rec runState(e : Type, a : Type, p : Prog (Either StateOp e) a, s : Integer) -> Prog e a =
   match p where
-    | Done(x) => (Done x : Prog e a)
-    | Op(o, k) => match o where
-      | Left(Get) => runState[<] e a (k s) s
-      | Left(Put(t)) => runState[<] e a (k 0) t
-      | Right(other) => (Op other (fun (r) {
+    | Done x => (Done x : Prog e a)
+    | Op o k => match o where
+      | Left Get => runState[<] e a (k s) s
+      | Left (Put t) => runState[<] e a (k 0) t
+      | Right other => (Op other (fun (r) {
         runState[<] e a (k r) s
       }) : Prog e a)
 
 /// `runExn` handles exceptions at the front and forwards the remaining row.
 pub def rec runExn(e : Type, a : Type, p : Prog (Either ExnOp e) a) -> Prog e (Outcome a) =
   match p where
-    | Done(x) => (Done (Returned x) : Prog e (Outcome a))
-    | Op(o, k) => match o where
-      | Left(Raise(c)) => (Done (Raised c) : Prog e (Outcome a))
-      | Right(other) => (Op other (fun (r) {
+    | Done x => (Done (Returned x) : Prog e (Outcome a))
+    | Op o k => match o where
+      | Left (Raise c) => (Done (Raised c) : Prog e (Outcome a))
+      | Right other => (Op other (fun (r) {
         runExn[<] e a (k r)
       }) : Prog e (Outcome a))
 
 /// `pureOf` extracts a result from an empty row.
 pub def pureOf(a : Type, p : Prog Void a) -> a =
   match p where
-    | Done(x) => x
-    | Op(o, _k) => match o {}
+    | Done x => x
+    | Op o _k => match o {}
 
 /// `guarded` reads state, stores its successor and returns the next read.
 pub def guarded : Prog (Either ExnOp (Either StateOp Void)) Integer = Op (Right (Left Get)) (fun (a) {

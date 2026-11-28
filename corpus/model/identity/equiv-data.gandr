@@ -1,4 +1,11 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching"
+))]
 
 /// This source states an equivalence between two data types.
 ///
@@ -14,8 +21,8 @@ import "./flow-data.gandr"
 /// The `toShape` function swaps figure sides into shape order.
 def toShape(figure : Figure) -> Shape =
   match figure where
-    | Round(r) => Circle r
-    | Box(h, w) => Rect w h
+    | Round r => Circle r
+    | Box h w => Rect w h
 
 /// The two round trips make shapes and figures one type.
 def redrawing : Path[.A = Type] Shape Figure = equiv Shapes.toFigure toShape

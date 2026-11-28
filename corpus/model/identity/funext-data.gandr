@@ -1,4 +1,13 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 /// This source states function extensionality for data types.
 ///
@@ -14,14 +23,14 @@ import "./flow-data.gandr"
 /// The `width` function reads the first shape dimension.
 pub def width(shape : Shape) -> Integer =
   match shape where
-    | Circle(r) => r
-    | Rect(w, h) => w
+    | Circle r => r
+    | Rect w h => w
 
 /// The `figureWidth` function reads the figure width.
 def figureWidth(figure : Figure) -> Integer =
   match figure where
-    | Round(r) => r
-    | Box(h, w) => w
+    | Round r => r
+    | Box h w => w
 
 /// The `throughFigure` function reads width through the figure translation.
 /// The figure translation swaps the sides.
@@ -35,8 +44,8 @@ def widths : Path width throughFigure = Path.funext width throughFigure
 /// The figure translation swaps the sides.
 def drawn(shape : Shape) -> Figure =
   match shape where
-    | Circle(r) => Round r
-    | Rect(a, b) => Box b a
+    | Circle r => Round r
+    | Rect a b => Box b a
 
 /// The `drawings` path proves that the two drawing functions agree.
 def drawings : Path Shapes.toFigure drawn = Path.funext Shapes.toFigure drawn

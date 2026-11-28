@@ -12,7 +12,20 @@
 //!
 //! - see: #577 — `idNat`
 
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "tarski-universes", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "tarski-universes",
+  "thunks-and-force",
+  "universes"
+))]
 
 // The naturals.
 import "../data/data-base.gandr"
@@ -34,7 +47,7 @@ rec {
   def rec elPi(u : UPi) -> -F Type =
     match u where
       | NatC => return Nat
-      | PiC(a, b) => return (+U ((x : elPi [<] a) -> -F (elPi [<] (b x))))
+      | PiC a b => return (+U ((x : elPi [<] a) -> -F (elPi [<] (b x))))
 }
 
 /// The `toNat` family picks the natural code at each natural.
@@ -78,8 +91,8 @@ rec {
   @[checks]
   def rec elM(n : Nat, u : UM n) -> -F Type =
     match u where
-      | NatM(m) => return Nat
-      | PiM(m, a, b) => return (+U ((x : elM [<] m a) -> -F (elM [<] m (b x))))
+      | NatM m => return Nat
+      | PiM m a b => return (+U ((x : elM [<] m a) -> -F (elM [<] m (b x))))
 }
 
 /// The `natAtZero` code is the natural code at level zero.

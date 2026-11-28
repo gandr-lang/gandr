@@ -1,4 +1,17 @@
-@![features(("call-by-push-value", "data-parameters", "explicit-exits", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // The lists of pairwise distinct naturals are an inductive-recursive family.
 // The family is no universe.
@@ -31,10 +44,10 @@ pub def rec apart(x : Nat, y : Nat) -> -F Type =
   match x where
     | Zero => match y where
       | Zero => return Empty
-      | Succ(n) => return Unit
-    | Succ(m) => match y where
+      | Succ n => return Unit
+    | Succ m => match y where
       | Zero => return Unit
-      | Succ(n) => apart[<] m n
+      | Succ n => apart[<] m n
 
 /// The fresh lists and their freshness, in one block.
 rec {
@@ -53,7 +66,7 @@ rec {
   pub def rec fresh(x : Nat, xs : Fresh) -> -F Type =
     match xs where
       | FNil => return Unit
-      | FCons(y, ys, q) => return (Both (apart x y) (fresh[<] x ys))
+      | FCons y ys q => return (Both (apart x y) (fresh[<] x ys))
 }
 
 /// The fresh list of one. Each natural is fresh for the empty list.

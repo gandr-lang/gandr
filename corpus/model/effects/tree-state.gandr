@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "universes"
+))]
 
 // This source writes state handlers as explicit trees and folds.
 //
@@ -23,11 +34,11 @@ def constantTree : Prog (Either StateOp Void) Integer = Op (Left Get) (fun (a) {
 /// `answeringFour` gives four to each read.
 def rec answeringFour(p : Prog (Either StateOp Void) Integer) -> Integer =
   match p where
-    | Done(x) => x
-    | Op(o, k) => match o where
-      | Left(Get) => answeringFour[<] (k 4)
-      | Left(Put(_s)) => answeringFour[<] (k 0)
-      | Right(none) => match none {}
+    | Done x => x
+    | Op o k => match o where
+      | Left Get => answeringFour[<] (k 4)
+      | Left (Put _s) => answeringFour[<] (k 0)
+      | Right none => match none {}
 
 /// `constantByFold` runs `answeringFour`.
 @[runs("9")]
@@ -45,11 +56,11 @@ def passingTree : Prog (Either StateOp Void) Integer = Op (Left (Put 4)) (fun (_
 /// `passingState` threads state through a program tree.
 def rec passingState(p : Prog (Either StateOp Void) Integer, s : Integer) -> Integer =
   match p where
-    | Done(x) => x
-    | Op(o, k) => match o where
-      | Left(Get) => passingState[<] (k s) s
-      | Left(Put(t)) => passingState[<] (k 0) t
-      | Right(none) => match none {}
+    | Done x => x
+    | Op o k => match o where
+      | Left Get => passingState[<] (k s) s
+      | Left (Put t) => passingState[<] (k 0) t
+      | Right none => match none {}
 
 /// `passingByFold` runs `passingState` from zero.
 @[runs("44")]
@@ -71,9 +82,9 @@ def constantProgram : StateModel Integer = Read (*{}) (fun (a) {
 /// `constantFold` answers reads with four and writes with unit.
 def rec constantFold(p : StateModel Integer) -> Integer =
   match p where
-    | Answer(x) => x
-    | Read(_u, k) => constantFold[<] (k 4)
-    | Write(_s, k) => constantFold[<] (k *{})
+    | Answer x => x
+    | Read _u k => constantFold[<] (k 4)
+    | Write _s k => constantFold[<] (k *{})
 
 /// `constantByModel` runs `constantFold`.
 @[runs("9")]

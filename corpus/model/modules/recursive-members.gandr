@@ -1,4 +1,14 @@
-@![features(("dependent-functions", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// This source shows recursive module members.
 ///
@@ -24,16 +34,16 @@ module Counting where {
   def rec double(n : Nat) -> Nat =
     match n where
       | Zero => Zero
-      | Succ(k) => Succ (Succ (double[<] k))
+      | Succ k => Succ (Succ (double[<] k))
 
   /// `half` rounds a natural number down.
   @[checks]
   def rec half(n : Nat) -> Nat =
     match n where
       | Zero => Zero
-      | Succ(m) => match m where
+      | Succ m => match m where
         | Zero => Zero
-        | Succ(k) => Succ (half[<] k)
+        | Succ k => Succ (half[<] k)
 }
 
 /// `twoDoubled` calls `Counting.double`.
@@ -57,7 +67,7 @@ module Iterating(S : Model(Stepping)) where
   def rec times(n : Nat, x : S.M) -> S.M =
     match n where
       | Zero => x
-      | Succ(k) => S.step (times[<] k x)
+      | Succ k => S.step (times[<] k x)
 
 /// `Up` steps integers by one.
 module Up : Model(Stepping) where

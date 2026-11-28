@@ -1,4 +1,11 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 /// This source states a recursive path with a call under
 /// an integer constructor.
@@ -18,13 +25,13 @@ import "./int-sum.gandr"
 def rec underSuccessor(b : Int) -> Path[.A = Int] (S (plus Z b)) (S b) =
   match b where
     | Z => Path.here (S Z)
-    | S(x) => Path.ap up (underSuccessor[<] x)
-    | P(x) => Path.ap down (underSuccessor[<] x)
+    | S x => Path.ap up (underSuccessor[<] x)
+    | P x => Path.ap down (underSuccessor[<] x)
 
 /// The checker refuses the zero arm because `S(Z)` has no path to `Z`.
 @[refuses("EndpointMismatch")]
 def rec offByOne(b : Int) -> Path[.A = Int] (S (plus Z b)) b =
   match b where
     | Z => Path.here (S Z)
-    | S(x) => Path.ap up (offByOne[<] x)
-    | P(x) => Path.ap down (offByOne[<] x)
+    | S x => Path.ap up (offByOne[<] x)
+    | P x => Path.ap down (offByOne[<] x)

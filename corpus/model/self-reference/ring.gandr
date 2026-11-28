@@ -12,7 +12,18 @@
 //!
 //! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
-@![features(("call-by-push-value", "data-parameters", "effect-rows", "imports", "let-statements", "loops", "native-primitives", "pattern-matching", "structural-recursion", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "loops",
+  "native-primitives",
+  "pattern-matching",
+  "structural-recursion",
+  "temporary-access"
+))]
 
 // The source imports definitions for lists.
 import "../data/data-base.gandr"
@@ -21,7 +32,7 @@ import "../data/data-base.gandr"
 def rec node(nodes : List Integer, i : Integer) -> Integer =
   match nodes where
     | Nil => pure 0
-    | Cons(n, rest) => {
+    | Cons n rest => {
       let here = i == 0
       match here { | true => pure n | false => node[<] rest (i - 1) }
     }

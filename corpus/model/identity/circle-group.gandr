@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "list-case", "native-lists", "pattern-matching", "structural-recursion", "type-codes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "list-case",
+  "native-lists",
+  "pattern-matching",
+  "structural-recursion",
+  "type-codes"
+))]
 
 /// This source states the group laws of the circle loop space.
 ///
@@ -39,8 +50,8 @@ def rec spinHom(
 ) -> Path[.A = Path[.A = Circle] Base Base] (spin (plus a b)) (Path.step (spin b) (spin a)) =
   match b where
     | Z => Path.here (spin a)
-    | S(x) => Path.ap loopOn (spinHom[<] a x)
-    | P(x) => Path.ap unloopOn (spinHom[<] a x)
+    | S x => Path.ap loopOn (spinHom[<] a x)
+    | P x => Path.ap unloopOn (spinHom[<] a x)
 
 /// The `windHom` induction sums windings in reverse order because `wind` folds
 /// its second summand.

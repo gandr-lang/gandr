@@ -11,7 +11,14 @@
 //! - see: #427 — `plusCommAlong`
 //! - see: HoTT Book Definition 3.1.1
 
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // This import supplies the circle and integers with their steps.
 import "./circle-base.gandr"
@@ -58,8 +65,8 @@ def downAlong(a : Int, x : Int, e : Path[.A = Int] (plus a x) (plus x a)) -> Pat
 def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int] (plus a b) (plus b a) =
   match b where
     | Z => Path.back (plusZ a)
-    | S(x) => upAlong a x (plusCommAlong[<] a x)
-    | P(x) => downAlong a x (plusCommAlong[<] a x)
+    | S x => upAlong a x (plusCommAlong[<] a x)
+    | P x => downAlong a x (plusCommAlong[<] a x)
 
 /// The `turned` recursion maps integers to circle loops.
 /// At `S(P(x))`, the checker refuses unequal loops.
@@ -67,13 +74,13 @@ def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int] (plus a b) (plus b a) 
 def rec turned(b : Int) -> Path[.A = Circle] Base Base =
   match b where
     | Z => Path.here Base
-    | S(x) => Path.step (turned[<] x) loop
-    | P(x) => turned[<] x
+    | S x => Path.step (turned[<] x) loop
+    | P x => turned[<] x
 
 /// The `rewound` recursion gives each word a path to itself.
 /// The set rule equates the inverse arm with its endpoint path.
 def rec rewound(w : Words) -> Path[.A = Words] w w =
   match w where
     | Nil => Path.here Nil
-    | Loop(x) => Path.ap around (rewound[<] x)
-    | Unloop(x) => Path.here (Unloop x)
+    | Loop x => Path.ap around (rewound[<] x)
+    | Unloop x => Path.here (Unloop x)

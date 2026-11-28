@@ -12,7 +12,17 @@
 //!
 //! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
-@![features(("data-parameters", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // This source imports declarations for lists.
 import "../data/data-base.gandr"
@@ -26,20 +36,20 @@ pub data Repr : Type where
 /// This function returns a string's bytes.
 pub def bytes(s : Repr) -> List Integer =
   match s where
-    | Inline(bs) => bs
-    | Shared(n, bs) => bs
+    | Inline bs => bs
+    | Shared n bs => bs
 
 /// This function counts bytes in a list.
 pub def rec count(bs : List Integer) -> Integer =
   match bs where
     | Nil => 0
-    | Cons(b, rest) => { let n = count[<] rest; n + 1 }
+    | Cons b rest => { let n = count[<] rest; n + 1 }
 
 /// This function joins two byte lists.
 pub def rec concat(xs : List Integer, ys : List Integer) -> List Integer =
   match xs where
     | Nil => ys
-    | Cons(x, rest) => (Cons x (concat[<] rest ys) : List Integer)
+    | Cons x rest => (Cons x (concat[<] rest ys) : List Integer)
 
 /// `inlineCapacity` gives the inline byte count.
 /// The count includes the terminating zero.

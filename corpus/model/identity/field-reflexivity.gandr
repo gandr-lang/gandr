@@ -1,4 +1,16 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "type-codes",
+  "universes"
+))]
 
 /// This source states reflexivity in a field with a computed path type.
 ///
@@ -26,7 +38,7 @@ data Held(a : Type, b : a -> Type) : Type where
 def rec twofold(n : Count) -> Count =
   match n where
     | Z => Z
-    | S(m) => S (S (twofold[<] m))
+    | S m => S (S (twofold[<] m))
 
 /// The field holds reflexivity at the path type that `twofold Z` computes.
 def reflField : Held Unit (fun (u) { return (type(Path[.A = Count] (twofold Z) Z)) }) = MkHeld

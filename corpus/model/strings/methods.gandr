@@ -11,7 +11,17 @@
 //!
 //! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
 
-@![features(("call-by-push-value", "data-parameters", "imports", "let-statements", "modules", "native-primitives", "pattern-matching", "temporary-access", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "pattern-matching",
+  "temporary-access",
+  "visibility"
+))]
 
 // This source imports declarations for lists, bytes, ownership and writes.
 import "../data/data-base.gandr"
@@ -26,8 +36,8 @@ pub module Str where
   /// `len` reads a string that a shared receiver lends.
   def len(self : shared Repr) -> Integer =
     match self where
-      | Inline(bs) => count bs
-      | Shared(n, bs) => count bs
+      | Inline bs => count bs
+      | Shared n bs => count bs
   /// `push` writes `b` before the terminating zero.
   /// It writes the receiver back.
   def push(self : Repr, b : Integer) -> Unit =
@@ -36,8 +46,8 @@ pub module Str where
   /// No code reads that string later.
   def bytes(self : consumed Repr) -> List Integer =
     match self where
-      | Inline(bs) => bs
-      | Shared(n, bs) => bs
+      | Inline bs => bs
+      | Shared n bs => bs
 
 /// `lengths` adds the lengths before and after it appends `!`.
 /// The result is seven.
@@ -71,8 +81,8 @@ def taken() -> List Integer =
 def takenInOneArm(t : Repr) -> List Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   match t where
-    | Inline(bs) => s.bytes
-    | Shared(n, bs) => bs
+    | Inline bs => s.bytes
+    | Shared n bs => bs
 
 /// `takenOnInline` runs the arm that takes the string.
 @[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
@@ -91,8 +101,8 @@ def keptOnShared() -> List Integer =
 def readWhereNotTaken() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   match Shared 1 (Nil : List Integer) where
-    | Inline(bs) => { count (s.bytes) }
-    | Shared(n, bs) => s.len
+    | Inline bs => { count (s.bytes) }
+    | Shared n bs => s.len
 
 /// `lenBound` binds the shared method `len` as a value, then applies it.
 /// A shared receiver needs no hold, so the value reads the length.

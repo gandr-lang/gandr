@@ -1,4 +1,14 @@
-@![features(("data-parameters", "identity-types", "let-statements", "modules", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "nominal-data",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 // This source shows rule witnesses in a model.
 //
@@ -39,19 +49,19 @@ def tick(n : Ticks) -> Ticks = Tick n
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
   match m where
     | NoTick => n
-    | Tick(k) => Tick (joinLeft[<] k n)
+    | Tick k => Tick (joinLeft[<] k n)
 
 /// `joinRight` recurses on its right argument.
 def rec joinRight(m : Ticks, n : Ticks) -> Ticks =
   match n where
     | NoTick => m
-    | Tick(k) => Tick (joinRight[<] m k)
+    | Tick k => Tick (joinRight[<] m k)
 
 /// `noTickJoinsRight` proves a left unit for `joinRight`.
 def rec noTickJoinsRight(n : Ticks) -> Path (joinRight NoTick n) n =
   match n where
     | NoTick => Path.here NoTick
-    | Tick(k) => Path.ap tick (noTickJoinsRight[<] k)
+    | Tick k => Path.ap tick (noTickJoinsRight[<] k)
 
 /// `ByLeft` proves the rule by conversion.
 module ByLeft : Model(LeftUnit) where

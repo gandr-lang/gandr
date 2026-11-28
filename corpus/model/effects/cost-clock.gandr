@@ -1,4 +1,23 @@
-@![features(("call-by-push-value", "conditionals", "data-parameters", "dependent-functions", "effect-handlers", "effect-rows", "identity-types", "imports", "let-statements", "loops", "modules", "named-instances", "native-primitives", "nominal-data", "pattern-matching", "signature-models", "structural-recursion", "universes"))]
+@![features((
+  "call-by-push-value",
+  "conditionals",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "effect-rows",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "loops",
+  "modules",
+  "named-instances",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "signature-models",
+  "structural-recursion",
+  "universes"
+))]
 
 // A bound over a recursion that may not end holds at each clock.
 //
@@ -33,7 +52,7 @@ data Fuel : Type where
 def rec passes(clock : Fuel) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
   match clock where
     | Stop => pure 0
-    | Tick(rest) => {
+    | Tick rest => {
       cost.charge (costs (1 : Nat))
       passes[<] rest
     }

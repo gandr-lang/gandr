@@ -25,4 +25,4 @@ def circuit() -> Ket = hadamard (eighth (hadamard ground))
 @[runs("Amp 1 0 0 0 Whole")]
 def total() -> Amplitude =
   match circuit where
-    | Ket(x, y) => plus (norm x) (norm y)
+    | Ket x y => plus (norm x) (norm y)

@@ -11,7 +11,18 @@
 //!
 //! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
-@![features(("data-parameters", "effect-rows", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // This source imports declarations for lists, bytes, ownership and locations.
 import "../data/data-base.gandr"
@@ -27,17 +38,17 @@ pub data Written : Type where
 /// `copy` preserves inline bytes or shares a buffer with one new holder.
 pub def copy(s : Repr) -> Repr =
   match s where
-    | Inline(bs) => Inline bs
-    | Shared(n, bs) => Shared (n + 1) bs
+    | Inline bs => Inline bs
+    | Shared n bs => Shared (n + 1) bs
 
 /// This function places `b` before the final zero byte.
 pub def rec beforeZero(bs : List Integer, b : Integer) -> List Integer =
   match bs where
     | Nil => Nil
-    | Cons(x, rest) => {
+    | Cons x rest => {
       match rest where
         | Nil => (Cons b (Cons x Nil) : List Integer)
-        | Cons(y, more) => (Cons x (beforeZero[<] rest b) : List Integer)
+        | Cons y more => (Cons x (beforeZero[<] rest b) : List Integer)
     }
 
 /// `push` appends `b` before the terminating zero.
@@ -45,14 +56,14 @@ pub def rec beforeZero(bs : List Integer, b : Integer) -> List Integer =
 /// place and copies a shared buffer.
 pub def push(s : Repr, b : Integer) -> Written =
   match s where
-    | Inline(bs) => {
+    | Inline bs => {
       let grown = beforeZero bs b
       let stored = store grown
       match stored where
-        | Inline(kept) => Written stored 0
-        | Shared(n, moved) => Written stored 1
+        | Inline kept => Written stored 0
+        | Shared n moved => Written stored 1
     }
-    | Shared(n, bs) => {
+    | Shared n bs => {
       let grown = beforeZero bs b
       let alone = n == 1
       match alone where
@@ -63,12 +74,12 @@ pub def push(s : Repr, b : Integer) -> Written =
 /// This function counts the buffers that the write fills anew.
 pub def copies(w : Written) -> Integer =
   match w where
-    | Written(s, n) => n
+    | Written s n => n
 
 /// This function returns the string after the write.
 pub def written(w : Written) -> Repr =
   match w where
-    | Written(s, n) => s
+    | Written s n => s
 
 /// `long` builds a string with twenty-four bytes and a terminating zero.
 /// Its loop and forced calls state `Partial`.

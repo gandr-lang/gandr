@@ -17,7 +17,21 @@
 //!
 //! [Baudon-2024-algebraic_data_types_highperformance_computing]: https://doi.org/10.70675/7bb9b51ezf689z4cb5z8d80z794397b5f052 "Baudon, Algebraic Data Types for High-Performance Computing"
 
-@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "equivalence-record",
+  "identity-types",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "type-codes",
+  "universes",
+  "visibility"
+))]
 
 /// The list of Ribbit's Example 3.1: empty, or an `i32` before the rest.
 pub data Ints : Type where
@@ -50,19 +64,19 @@ pub data Packed : Type where
 pub def rec tag(l : Ints) -> Tagged =
   match l where
     | Nil => TagNil
-    | Cons(x, rest) => TagCons x (tag[<] rest)
+    | Cons x rest => TagCons x (tag[<] rest)
 
 /// A tagged list read back as the list.
 pub def rec untag(l : Tagged) -> Ints =
   match l where
     | TagNil => Nil
-    | TagCons(x, rest) => Cons x (untag[<] rest)
+    | TagCons x rest => Cons x (untag[<] rest)
 
 /// Reading a tagged list back undoes laying it out, cell by cell.
 pub def rec untagged(l : Ints) -> Path (untag (tag l)) l =
   match l where
     | Nil => Path.here Nil
-    | Cons(x, rest) => Path.walk
+    | Cons x rest => Path.walk
       (fun (z) { type(Path[.A = Ints] (Cons x (untag (tag rest))) (Cons x z)) })
       (untagged[<] rest)
       (Path.here (Cons x (untag (tag rest))))
@@ -71,7 +85,7 @@ pub def rec untagged(l : Ints) -> Path (untag (tag l)) l =
 pub def rec tagged(l : Tagged) -> Path (tag (untag l)) l =
   match l where
     | TagNil => Path.here TagNil
-    | TagCons(x, rest) => Path.walk
+    | TagCons x rest => Path.walk
       (fun (z) { type(Path[.A = Tagged] (TagCons x (tag (untag rest))) (TagCons x z)) })
       (tagged[<] rest)
       (Path.here (TagCons x (tag (untag rest))))
@@ -81,22 +95,22 @@ pub def rec tagged(l : Tagged) -> Path (tag (untag l)) l =
 pub def rec packInts(l : Ints) -> Packed =
   match l where
     | Nil => Empty
-    | Cons(x, Nil) => One x
-    | Cons(x, Cons(y, rest)) => Many x y (packInts[<] rest)
+    | Cons x Nil => One x
+    | Cons x (Cons y rest) => Many x y (packInts[<] rest)
 
 /// A packed list read back as the list.
 pub def rec unpack(p : Packed) -> Ints =
   match p where
     | Empty => Nil
-    | One(x) => Cons x Nil
-    | Many(x, y, rest) => Cons x (Cons y (unpack[<] rest))
+    | One x => Cons x Nil
+    | Many x y rest => Cons x (Cons y (unpack[<] rest))
 
 /// Reading a packed list back undoes packing it, two elements at a time.
 pub def rec unpacked(l : Ints) -> Path (unpack (packInts l)) l =
   match l where
     | Nil => Path.here Nil
-    | Cons(x, Nil) => Path.here (Cons x Nil)
-    | Cons(x, Cons(y, rest)) => Path.walk
+    | Cons x Nil => Path.here (Cons x Nil)
+    | Cons x (Cons y rest) => Path.walk
       (fun (z) {
         type(Path[.A = Ints] (Cons x (Cons y (unpack (packInts rest)))) (Cons x (Cons y z)))
       })
@@ -107,8 +121,8 @@ pub def rec unpacked(l : Ints) -> Path (unpack (packInts l)) l =
 pub def rec packed(p : Packed) -> Path (packInts (unpack p)) p =
   match p where
     | Empty => Path.here Empty
-    | One(x) => Path.here (One x)
-    | Many(x, y, rest) => Path.walk
+    | One x => Path.here (One x)
+    | Many x y rest => Path.walk
       (fun (z) { type(Path[.A = Packed] (Many x y (packInts (unpack rest))) (Many x y z)) })
       (packed[<] rest)
       (Path.here (Many x y (packInts (unpack rest))))
@@ -154,7 +168,7 @@ def movedNamed() -> Packed = Path.walk (fun (X) { X }) taggedIsPacked oneTwoThre
 pub def rec length(l : Ints) -> Integer =
   match l where
     | Nil => 0
-    | Cons(x, rest) => {
+    | Cons x rest => {
       let n = length[<] rest
       n + 1
     }

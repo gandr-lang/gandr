@@ -1,4 +1,14 @@
-@![features(("data-parameters", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // This source models C strings from owned strings.
 //
@@ -34,7 +44,7 @@ pub def terminated(cs : List Integer) -> List Integer =
 def rec cView(bs : List Integer) -> CView =
   match bs where
     | Nil => Interior
-    | Cons(b, rest) => {
+    | Cons b rest => {
       let zero = b == 0
       let left = count rest
       let last = left == 0
@@ -49,7 +59,7 @@ def rec cView(bs : List Integer) -> CView =
             | false => {
               let tail = cView[<] rest
               match tail where
-                | Borrowed(t) => Borrowed bs
+                | Borrowed t => Borrowed bs
                 | Interior => Interior
             }
         }
@@ -62,7 +72,7 @@ def hi() -> List Integer = terminated (Cons 104 (Cons 105 Nil) : List Integer)
 /// `hiForC` lets C borrow the stored `hi` bytes.
 @[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
 def hiForC() -> List Integer = { let bs = hi; let v = cView bs; match v {
-  | Borrowed(t) => t
+  | Borrowed t => t
   | Interior => Nil
 } };
 

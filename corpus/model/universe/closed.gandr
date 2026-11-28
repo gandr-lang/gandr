@@ -8,7 +8,19 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "thunks-and-force",
+  "universes"
+))]
 
 // The naturals.
 import "../data/data-base.gandr"
@@ -25,7 +37,7 @@ data U : Type where
 def rec el(u : U) -> -F Type =
   match u where
     | NatC => return Nat
-    | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (+U (x -> -F y)) }
+    | Arrow a b => { let x = el[<] a; let y = el[<] b; return (+U (x -> -F y)) }
 
 /// The `endo` function quotes the arrow from `a` to itself after two more
 /// parameters. The quote reads `a`, not `v`.
@@ -121,7 +133,7 @@ def packedSucc = Pack (Arrow NatC NatC) succ
 @[checks]
 def codeOf(p : Coded) -> -F U =
   match p where
-    | Pack(c, v) => return c
+    | Pack c v => return c
 
 /// The `unpacked` run reads the code of the successor back from its pack.
 @[runs("Arrow NatC NatC")]

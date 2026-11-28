@@ -1,4 +1,12 @@
-@![features(("data-parameters", "imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "structural-recursion",
+  "visibility"
+))]
 
 // This source encodes strings as UTF-8.
 //
@@ -63,7 +71,7 @@ def encode(c : Integer) -> List Integer =
 pub def rec encodeAll(cs : List Integer) -> List Integer =
   match cs where
     | Nil => Nil
-    | Cons(c, rest) => concat (encode c) (encodeAll[<] rest)
+    | Cons c rest => concat (encode c) (encodeAll[<] rest)
 
 /// This test encodes `$` as one byte.
 @[runs("Cons 36 Nil")]

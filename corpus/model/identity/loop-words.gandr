@@ -1,4 +1,13 @@
-@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// This source presents the circle loop words as a rewrite type.
 ///
@@ -49,8 +58,8 @@ def loop_not_nil : Path[.A = Words] (Loop Nil) Nil = Path.here Nil
 def tell_words(c : Words) -> Integer =
   match c where
     | Nil => 0
-    | Loop(x) => 1
-    | Unloop(x) => 2
+    | Loop x => 1
+    | Unloop x => 2
 
 /// The refused fold cannot carry the cancellation path to a path from
 /// two to one.
@@ -64,8 +73,8 @@ def two_is_one() -> Path[.A = Integer] 2 1 =
 def rec mirror(c : Words) -> Words =
   match c where
     | Nil => Nil
-    | Loop(x) => Unloop (mirror[<] x)
-    | Unloop(x) => Loop (mirror[<] x)
+    | Loop x => Unloop (mirror[<] x)
+    | Unloop x => Loop (mirror[<] x)
 
 /// The mirror of a loop is one inverse loop.
 @[runs("Unloop Nil")]

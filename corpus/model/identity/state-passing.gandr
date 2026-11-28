@@ -1,4 +1,12 @@
-@![features(("dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// This source folds state-only programs with an explicit state parameter.
 ///
@@ -23,8 +31,8 @@ pub data Stores : Type where {
 /// The `final` function returns the state from the final store.
 def rec final(p : Stores, s : Integer) -> Integer =
   match p where
-    | End(_x) => s
-    | Store(t, k) => final[<] k t
+    | End _x => s
+    | Store t k => final[<] k t
 
 /// Three stores leave the last stored value.
 @[runs("3")]
