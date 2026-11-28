@@ -1,7 +1,7 @@
-# The bootstrap census (#2896): each crate's row as `report:bootstrap-census`
-# gathers it, rendered into `$doc`, `ledger/census.md`, between its `census`
-# markers. The input is `{rows: [row]}`, one row per workspace crate with a
-# library:
+# The program renders the bootstrap census from the row of each crate. The
+# task `report:bootstrap-census` gathers the rows and prints the census. The
+# input is `{rows: [row]}`, one row for each workspace crate with a library.
+# - see: #2896
 #
 #   {crate, items, types, foreign, clauses, witnesses, specs, hotpath, deps, lines}
 #
@@ -19,9 +19,9 @@
 #   fewest boundary types per public item, then most specs per item, then by
 #   name. A crate with no public item is ranked last.
 #
-# The block is three parts: the census by crate, the ranking, and the top
+# The census is three parts: the census by crate, the ranking, and the top
 # three's types from other crates. Each table's delimiter row is as wide as
-# its header cells, the form `rumdl fmt` keeps.
+# its header cells, the form `rumdl fmt` keeps. The text ends with a newline.
 
 # A number to two decimals.
 def fixed:
@@ -92,9 +92,4 @@ def block:
     ]
   | join("\n");
 
-.rows
-| block as $block
-| $doc
-| (capture("^(?<head>(?:.|\n)*<!-- census:begin -->\n)(?:.|\n)*?(?<tail><!-- census:end -->(?:.|\n)*)$")
-   // error("ledger/census.md holds no `<!-- census:begin -->` … `<!-- census:end -->` block"))
-| .head + $block + "\n" + .tail
+.rows | block + "\n"

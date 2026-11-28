@@ -2183,12 +2183,11 @@ fi
 echo "crate lead check OK: ${#paths[@]} crates of the storage picture each open with a lead naming its layer, its wall and its paper"
 {% endraw %}'''
 
-# The bootstrap census's programs (#2896): each case in
-# `.config/census/cases.json` names its program, `surface.jq` or `census.jq`,
-# and holds its arguments, an input and the output it must give, raw where
-# that is text and compact where it is JSON, or `fails` where the program must
-# refuse. The census itself moves with the tree and is never held here:
-# `report-bootstrap-census.yml` reports it stale (`report:bootstrap-census`).
+# The check runs each case of the programs of the bootstrap census. A case
+# names its program and holds its arguments, its input and its output. The
+# output is raw text or compact JSON. A case with `fails` expects a refusal.
+# The tree holds no census, and `report:bootstrap-census` prints it.
+# - see: #2896, `.config/census/cases.json`
 ["check:census"]
 description = "The bootstrap census's programs give each recorded case its output"
 tools.jq = "1.8.1"

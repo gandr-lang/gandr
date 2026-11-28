@@ -187,11 +187,8 @@
     "fails": true
   },
   {
-    "name": "off-hotpath leaves rank first by fewest types then most specs per item, depth runs through a chain, hotpath and itemless crates last, and the block between the markers is replaced",
+    "name": "off-hotpath leaves rank first by fewest types then most specs per item, depth runs through a chain, and hotpath and itemless crates come last",
     "program": "census.jq",
-    "args": {
-      "doc": "# Head\n\nProse.\n\n<!-- census:begin -->\nan old block\n<!-- census:end -->\n\n## Tail\n"
-    },
     "input": {
       "rows": [
         {
@@ -280,17 +277,6 @@
         }
       ]
     },
-    "output": "# Head\n\nProse.\n\n<!-- census:begin -->\nThe table gives each crate's census.\n\n| Crate | Public items | Boundary types | Specs per item | Hotpath | Depth | Lines |\n| ----- | ------------ | -------------- | -------------- | ------- | ----- | ----- |\n| `alpha` | 4 | 2 | 1.50 | no | 0 | 100 |\n| `beta` | 3 | 1 | 0.33 | no | 0 | 50 |\n| `delta` | 1 | 0 | 1.00 | no | 2 | 40 |\n| `epsilon` | 20 | 10 | 0.05 | no | 1 | 900 |\n| `eta` | 0 | 0 | none | no | 0 | 7 |\n| `gamma` | 2 | 1 | 1.00 | no | 0 | 60 |\n| `zeta` | 1 | 0 | 0.00 | yes | 0 | 30 |\n\nThe table ranks the crates for the first rewrite.\n\n| Rank | Crate | Why |\n| ---- | ----- | --- |\n| 1 | `beta` | leaf; 0.33 boundary types per item; 0.33 specs per item |\n| 2 | `alpha` | leaf; 0.50 boundary types per item; 1.50 specs per item |\n| 3 | `gamma` | leaf; 0.50 boundary types per item; 1.00 specs per item |\n| 4 | `delta` | depth 2; 0.00 boundary types per item; 1.00 specs per item |\n| 5 | `epsilon` | depth 1; 0.50 boundary types per item; 0.05 specs per item |\n| 6 | `zeta` | hotpath; leaf; 0.00 boundary types per item; 0.00 specs per item |\n| 7 | `eta` | no public items |\n\nThe table gives the top three's boundary types from other crates, each by the path rustdoc records for its definition.\n\n| Crate | Boundary types | From other crates | Types from other crates |\n| ----- | -------------- | ----------------- | ----------------------- |\n| `beta` | 1 | 0 | none |\n| `alpha` | 2 | 1 | `core::option::Option` |\n| `gamma` | 1 | 0 | none |\n<!-- census:end -->\n\n## Tail"
-  },
-  {
-    "name": "a page with no census markers stops the program",
-    "program": "census.jq",
-    "args": {
-      "doc": "# Census\n"
-    },
-    "input": {
-      "rows": []
-    },
-    "fails": true
+    "output": "The table gives each crate's census.\n\n| Crate | Public items | Boundary types | Specs per item | Hotpath | Depth | Lines |\n| ----- | ------------ | -------------- | -------------- | ------- | ----- | ----- |\n| `alpha` | 4 | 2 | 1.50 | no | 0 | 100 |\n| `beta` | 3 | 1 | 0.33 | no | 0 | 50 |\n| `delta` | 1 | 0 | 1.00 | no | 2 | 40 |\n| `epsilon` | 20 | 10 | 0.05 | no | 1 | 900 |\n| `eta` | 0 | 0 | none | no | 0 | 7 |\n| `gamma` | 2 | 1 | 1.00 | no | 0 | 60 |\n| `zeta` | 1 | 0 | 0.00 | yes | 0 | 30 |\n\nThe table ranks the crates for the first rewrite.\n\n| Rank | Crate | Why |\n| ---- | ----- | --- |\n| 1 | `beta` | leaf; 0.33 boundary types per item; 0.33 specs per item |\n| 2 | `alpha` | leaf; 0.50 boundary types per item; 1.50 specs per item |\n| 3 | `gamma` | leaf; 0.50 boundary types per item; 1.00 specs per item |\n| 4 | `delta` | depth 2; 0.00 boundary types per item; 1.00 specs per item |\n| 5 | `epsilon` | depth 1; 0.50 boundary types per item; 0.05 specs per item |\n| 6 | `zeta` | hotpath; leaf; 0.00 boundary types per item; 0.00 specs per item |\n| 7 | `eta` | no public items |\n\nThe table gives the top three's boundary types from other crates, each by the path rustdoc records for its definition.\n\n| Crate | Boundary types | From other crates | Types from other crates |\n| ----- | -------------- | ----------------- | ----------------------- |\n| `beta` | 1 | 0 | none |\n| `alpha` | 2 | 1 | `core::option::Option` |\n| `gamma` | 1 | 0 | none |"
   }
 ]
