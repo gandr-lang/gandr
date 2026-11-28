@@ -15,7 +15,25 @@
 //!
 //! [Brachthauser-2020-effects_as_capabilities]: https://doi.org/10.1145/3428194 "Brachthäuser, Schuster and Ostermann, Effects as Capabilities: Effect Handlers and Lightweight Effect Polymorphism"
 
-@![features(("call-by-push-value", "capabilities", "effect-handlers", "implicit-arguments", "imports", "let-statements", "located-judgements", "modules", "named-instances", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "thunks-and-force", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "capabilities",
+  "effect-handlers",
+  "implicit-arguments",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "named-instances",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "thunks-and-force",
+  "universes",
+  "visibility"
+))]
 
 // The console's host interface.
 import std.io
@@ -166,8 +184,8 @@ def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.E
 /// `bothWritten` writes region binders and capabilities explicitly.
 /// Each row label names one binder.
 def bothWritten[r : Region, r1 : Region](
-  first : Cap { print } at r,
-  second : Cap { print } at r1
+  first : (Cap { print }) at r,
+  second : (Cap { print }) at r1
 ) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit =
   say[.out = first]
   say[.out = second]
