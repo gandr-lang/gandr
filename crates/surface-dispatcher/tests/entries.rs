@@ -189,6 +189,10 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern  ", Standing::Owed(0)),
     ("Pattern #[", Standing::Owed(0)),
     ("Pattern %(", Standing::Owed(0)),
+    (
+        "Pattern ( group",
+        Standing::Design("a parenthesised group: the pattern inside answers"),
+    ),
     ("Pattern *{", Standing::Owed(0)),
     ("Pattern +{", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
@@ -394,7 +398,8 @@ fn spine(
 
 /// The kind key of a gated node: its sort and naming label, as `def`
 /// gives them, a `(` form split into the group it is when its first child
-/// is the `(` itself and the application it is otherwise.
+/// is the `(` itself and the application it is otherwise. A pattern's `(`
+/// form is a group, `(Just x)` in `Just (Just x)`.
 ///
 /// # Specification
 /// trivial.
@@ -414,7 +419,7 @@ fn kind(
         Some(NodeLabel::Meld(_))
     );
     let (sort, label) = (def.sort, def.label);
-    if label == "(" && melded && !matches!(sort, Sort::Pattern) {
+    if label == "(" && melded {
         let shape = if first(tree, position).is_some_and(grouped) {
             "group"
         }
