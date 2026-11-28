@@ -1,4 +1,15 @@
-@![features(("call-by-push-value", "effect-handlers", "effect-rows", "implicit-arguments", "imports", "let-statements", "modules", "named-instances", "records", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "effect-rows",
+  "implicit-arguments",
+  "imports",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "records",
+  "thunks-and-force"
+))]
 
 // What `../../model/control/named-instances.gandr` proves, refused: a call
 // omitting an instance passes the one instance of its interface in scope,
@@ -27,10 +38,12 @@ def ambiguous() -> Integer =
     } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// No instance of `std.io.Console.Eff` stands where `say` is called: the row's

@@ -308,7 +308,7 @@ fn an_entry_reads_and_writes_the_three_streams_2970()
     else {
         panic!("an entry: {source}");
     };
-    let mut console = Captured::fed(alloc::vec![String::from("hello\n")]);
+    let mut console = Captured::fed(b"hello\n");
     assert_eq!(
         ran.enter(
             entry,
@@ -325,4 +325,33 @@ fn an_entry_reads_and_writes_the_three_streams_2970()
         [""],
         "the end of input is the empty string"
     );
+}
+
+/// An entry reads bytes from the input that a read of a line reads, at most
+/// the count asked in one read and none at the end of the input, and writes
+/// them to standard output with no newline: the bytes 0, 10 and 255 cross as
+/// they are.
+#[test]
+fn an_entry_reads_and_writes_bytes()
+{
+    let source = include_str!("tests/fixtures/an-entry-reads-and-writes-bytes.gandr");
+    let listed = Listed::hosted(source);
+    let mut ran = listed_program(&listed);
+    let Maybe::Present(entry) = ran.entry()
+    else {
+        panic!("an entry: {source}");
+    };
+    let mut console = Captured::fed(b"hi\n\x00\x0a\xff");
+    assert_eq!(
+        ran.enter(
+            entry,
+            &[],
+            &mut Streams::Captured(&mut console),
+            (None, None, RealsProfile::Default)
+        ),
+        Entered::Exited(ExitStatus::from(21)),
+        "two bytes, then one, then the end of the input, and three bytes written"
+    );
+    assert_eq!(console.lines(), ["hi\n"], "the line read before the bytes");
+    assert_eq!(console.written(), [0, 10, 255], "the bytes, in order");
 }

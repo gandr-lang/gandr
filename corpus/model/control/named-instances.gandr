@@ -52,6 +52,7 @@ def resolved() -> Integer =
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// Two instances handled around the call, the outer named: its clause
@@ -65,10 +66,12 @@ def namedOuter() -> Integer =
     } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// `namedInner` selects the inner console instance.
@@ -81,10 +84,12 @@ def namedInner() -> Integer =
     } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// `relayed` passes instance `o` to `say`.
@@ -102,6 +107,7 @@ def sayLineRuns() -> Integer =
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// Steps down to the ground, which a recursion takes apart one by one.
@@ -132,6 +138,7 @@ def descendRuns() -> Integer =
     | oper print(line, k) =>
       let n = k *{}
       pure (n + 1)
+    | oper write_bytes(bytes, k) => k 0
   }
 
 /// `both` holds two console instances.
@@ -151,10 +158,12 @@ def outerFirst() -> Integer =
     } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// `innerFirst` swaps the two `both` instances.
@@ -168,10 +177,12 @@ def innerFirst() -> Integer =
     } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }
 
 /// A suspended computation at the function's own instance, run by it: the
@@ -182,8 +193,8 @@ def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.E
 /// `bothWritten` writes region binders and capabilities explicitly.
 /// Each row label names one binder.
 def bothWritten[r : Region, r1 : Region](
-  first : Cap[print] at r,
-  second : Cap[print] at r1
+  first : Cap[print, write_bytes] at r,
+  second : Cap[print, write_bytes] at r1
 ) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit =
   say[.out = first]
   say[.out = second]
@@ -198,8 +209,10 @@ def bothWrittenRuns() -> Integer =
     } handle {
       | pure(x) => pure x
       | oper print(line, k) => pure 2
+      | oper write_bytes(bytes, k) => pure 2
     }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
+    | oper write_bytes(bytes, k) => pure 1
   }

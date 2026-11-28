@@ -81,4 +81,5 @@ def printed() -> Integer =
     | oper print(line, k) =>
       let rest = k *{}
       pure rest + 1
+    | oper write_bytes(bytes, k) => k 0
   }
