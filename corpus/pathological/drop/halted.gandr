@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "signatures-as-values", "temporary-access", "universes"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "signatures-as-values",
+  "temporary-access",
+  "universes"
+))]
 
 // `halted` performs an operation with no continuation inside an unwind.
 //
@@ -43,9 +52,8 @@ def abandoned() -> Integer =
     pure 0
   } handle {
     | pure(y) => pure y
-    | oper exit(code, k) => {
+    | oper exit(code, k) =>
       var n = 0
       access n as v { abort v } unwind { abandon k }
       pure 7
-    }
   }

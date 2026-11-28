@@ -10,7 +10,17 @@
 //!
 //! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
-@![features(("buffer-tokens", "call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "pattern-matching", "records", "session-types"))]
+@![features((
+  "buffer-tokens",
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "records",
+  "session-types"
+))]
 
 // The native buffer a receive places live.
 import std.buffer (Buf)
@@ -78,14 +88,13 @@ def receivedKept() -> Unit =
     r.free b
   } handle {
     | pure(x) => pure x
-    | oper alloc(n, b, k) => {
+    | oper alloc(n, b, k) =>
       let ring = fork (kernel : Buf >? end) {
         let held = recv kernel
         close kernel
       }
       send ring b
       close ring
-    }
     | oper free(b, k) => k *{}
   }
 
@@ -97,7 +106,7 @@ def receivedReturnedTwice() -> Unit =
     r.free b
   } handle {
     | pure(x) => pure x
-    | oper alloc(n, b, k) => {
+    | oper alloc(n, b, k) =>
       let ring = fork (kernel : Buf >? Buf >! Buf >! end) {
         let held = recv kernel
         send kernel held
@@ -109,7 +118,6 @@ def receivedReturnedTwice() -> Unit =
       let second = recv ring
       close ring
       k first
-    }
     | oper free(b, k) => k *{}
   }
 

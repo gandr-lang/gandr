@@ -44,20 +44,18 @@ rec {
   def rec renNe(g : Ctx, a : ObjTy, t : Ne g a, d : Ctx, r : Ren d g) -> Ne d a =
     match t where
       | NVar _h b x => NVar d b (r b x)
-      | NApp h b c f u => {
+      | NApp h b c f u =>
         let f2 = renNe[<] h (Arr b c) f d r
         let u2 = renNf[<] h b u d r
         NApp d b c f2 u2
-      }
   /// The renamer of a normal form.
   @[refuses("OutOfFragment.mutual_block.staged_after_first")]
   def rec renNf(g : Ctx, a : ObjTy, t : Nf g a, d : Ctx, r : Ren d g) -> Nf d a =
     match t where
       | NNe h n => { let n2 = renNe[<] h Base n d r; NNe d n2 }
-      | NLam h b c body => {
+      | NLam h b c body =>
         let body2 = renNf[<] (Extend h b) c (body (Extend d b)) (lift d h b r)
         NLam d b c body2
-      }
 }
 
 /// Environments as a pair type that a recursion over the context computes.

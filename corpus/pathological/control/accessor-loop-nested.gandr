@@ -1,4 +1,11 @@
-@![features(("call-by-push-value", "effect-rows", "let-statements", "loops", "native-primitives", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "effect-rows",
+  "let-statements",
+  "loops",
+  "native-primitives",
+  "temporary-access"
+))]
 
 /// A loop inside another loop's body carries no slot through its passes: the
 /// outer body's ends continue what follows the outer loop, so the inner loop
@@ -11,10 +18,9 @@
 def nested() -> [Partial] Integer =
   var n = 0
   var i = 3
-  while i > 0 {
+  while i > 0 do
     while n < 3 {
       access n as v { resume v (v + 1) }
     }
     access i as u { resume u (u - 1) }
-  }
   pure n

@@ -1,4 +1,17 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "effect-rows", "identity-types", "let-statements", "loops", "native-primitives", "pattern-matching", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "effect-rows",
+  "identity-types",
+  "let-statements",
+  "loops",
+  "native-primitives",
+  "pattern-matching",
+  "thunks-and-force",
+  "universes"
+))]
 
 // What divergence as a row entry refuses: a loop at a row without
 // `Partial`, a call of a diverging function from one, a handler of
@@ -13,22 +26,20 @@
 /// is refused, its type named with `Partial` in the row.
 @[refuses("TypeMismatch")]
 def spinPure(x : Bool) -> Bool =
-  let y = loop {
+  let y = loop do
     let below = 1 < 0
     match below where
       | true => break(x)
       | false => continue
-  }
   y
 
 /// The loop at the row it needs.
 def spin(x : Bool) -> [Partial] Bool =
-  let y = loop {
+  let y = loop do
     let below = 1 < 0
     match below where
       | true => break(x)
       | false => continue
-  }
   y
 
 /// A caller at the empty row of a function whose row holds `Partial`: the call

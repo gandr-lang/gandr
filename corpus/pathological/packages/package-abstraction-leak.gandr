@@ -43,8 +43,7 @@ def mixed() -> Integer =
 /// Binds a block whose type is the opened sort.
 @[refuses("DependentBind")]
 def escaped() -> Integer =
-  let y = {
+  let y =
     module m = ints
     m.seed
-  }
   7

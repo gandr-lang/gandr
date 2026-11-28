@@ -52,8 +52,7 @@ rec {
   def rec elSigRun(u : USigRun) -> Type =
     match u where
       | NatR => return Nat
-      | SigR a b => {
+      | SigR a b =>
         let t = elSigRun[<] a
         return (Sig t (thunk { fun (x) { elSigRun[<] (b x) } }))
-      }
 }

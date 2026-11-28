@@ -1,4 +1,15 @@
-@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "modules", "native-primitives", "records", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "native-primitives",
+  "records",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 // What a thunk captures that stays, and the three axes of its image, each
 // refused by its capture rule.
@@ -31,20 +42,18 @@ def pending() -> Seat.Dispatch =
 @[refuses("Immobile.Capture")]
 @[entry(*{operator, seat})]
 def dispatched() -> () -> Seat.Dispatch =
-  migrate [seat] {
+  migrate [seat] do
     let task = Seat.task
     pure thunk { pure task }
-  }
 
 /// A thunk over a handle to the dispatch is refused at the capture: the
 /// handle is not open.
 @[refuses("NotOpen.Capture")]
 @[entry(*{operator, seat})]
 def pointing() -> () -> (Seat.Dispatch at seat) =
-  migrate [seat] {
+  migrate [seat] do
     var held : Seat.Dispatch at seat = Seat.task
     pure thunk { pure held }
-  }
 
 /// A thunk calling the seat's own work is refused: forced at the operator, it
 /// would run that work away from its home.
@@ -64,31 +73,28 @@ def heldHomed() -> -F ((() -> Seat.Dispatch) at seat) =
 @[refuses("Immobile")]
 @[entry(*{operator, seat})]
 def through() -> () -> Integer =
-  migrate [seat] {
+  migrate [seat] do
     let later : () -> Integer = thunk { pure 3 }
     pure later
-  }
 
 /// Region: a thunk over a view kept in a hold's region is refused where it
 /// would leave the region.
 @[refuses("KeptEscaped")]
 @[entry(*{operator, seat})]
 def regioned() -> () -> Integer =
-  migrate [seat] {
+  migrate [seat] do
     var s = 3
     let k : (() -> Integer) at s = access shared s as w { pure pure w }
     pure thunk { force k }
-  }
 
 /// Grade: a thunk over a value held at grade one is refused where it
 /// captures it.
 @[refuses("HeldCaptured")]
 @[entry(*{operator, seat})]
 def graded() -> () -> Integer =
-  migrate [seat] {
+  migrate [seat] do
     var[1] c = 0
     pure thunk { pure c + c }
-  }
 
 /// Located: a thunk at the seat over an integer bound at the operator is
 /// refused where it reads it.
