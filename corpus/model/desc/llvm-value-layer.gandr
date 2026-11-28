@@ -1,0 +1,32 @@
+// Each total operation of the block `Llvm` of `std.llvm` has a value form, and
+// one rule takes its body form to the rest of the body at that value.
+//
+// A law on a total operation is a rule on its value form, so each total
+// operation needs its rule. A total operation has no effect and no undefined
+// behaviour. The block has 17 of them.
+//
+// The rule of `add` is `add t a b k <=> k (val_add t a b)`: its right side
+// instantiates the rest `k` with the value. `totalRules` reads the
+// presentation of `Llvm` and counts the rules whose right side instantiates a
+// variable. The count is 17.
+//
+// - see: `../../../library/std/src/llvm.gandr` — the block
+import std.llvm (Llvm)
+
+/// The count of the rules of a chain whose right side instantiates a variable
+/// of a binding port.
+def rec restAtValue(chain : Theory) -> Integer =
+  match chain where
+    | Theory.Rule name left right rest =>
+      let r = restAtValue[<] rest
+      match right where
+        | Theory.Inst variable arguments => r + 1
+        | _ => r
+    | _ => 0
+
+/// Each total operation has one rule that gives its rest at its value.
+@[runs("17")]
+def totalRules() -> Integer =
+  match Llvm where
+    | Theory.Presents sorts opers rules => restAtValue rules
+    | _ => 0
