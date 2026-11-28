@@ -1,3 +1,0 @@
-fun (a) do
-  let b = { let b = pure 1 ; pure b }
-  kept b

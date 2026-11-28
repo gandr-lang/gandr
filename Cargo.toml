@@ -153,10 +153,9 @@ version = "3.0.0"
 default-features = false
 features = ["fast", "zeroize"]
 
-# The snapshot comparison for the layout goldens of the printer and the
-# ranking golden of the inline completion. It compares a file or an inline
-# literal whole. It prints a diff on a mismatch. `UPDATE_EXPECT=1` writes the
-# file again. It has no optional feature.
+# The snapshot comparison for the ranking golden of the inline completion. It
+# compares a file or an inline literal whole. It prints a diff on a mismatch.
+# `UPDATE_EXPECT=1` writes the file again. It has no optional feature.
 [workspace.dependencies.expect-test]
 version = "1.5.1"
 default-features = false

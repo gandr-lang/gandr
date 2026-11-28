@@ -1,2 +1,0 @@
-(Integer, Integer * String * Unit) ->
-  String + Unit
