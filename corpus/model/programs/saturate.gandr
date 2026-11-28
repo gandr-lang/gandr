@@ -6,7 +6,7 @@
 //! A program whose entry is `saturated` exits 255.
 
 /// The checked sum of two words.
-def checked_sum(a : u8, b : u8) -> u8 + Unit = u8.checked_add a b;
+def checked_sum(a : u8, b : u8) -> u8 + Unit = u8.checked_add a b
 
 /// The sum, or 255 when it does not fit.
 def clamp(sum : u8 + Unit) -> u8 = match sum {
@@ -16,11 +16,11 @@ def clamp(sum : u8 + Unit) -> u8 = match sum {
 
 /// 254 and 1 fit.
 @[runs("+{.0 = 255u8}")]
-def fitting() -> u8 + Unit = checked_sum 254u8 1u8;
+def fitting() -> u8 + Unit = checked_sum 254u8 1u8
 
 /// 255 and 1 do not fit.
 @[runs("+{.1 = *{}}")]
-def overflowing() -> u8 + Unit = checked_sum 255u8 1u8;
+def overflowing() -> u8 + Unit = checked_sum 255u8 1u8
 
 /// A small sum keeps its value.
 @[runs("7u8")]

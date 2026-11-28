@@ -8,15 +8,15 @@ def pick(flag : Bool) -> u8 = if flag { 3u8 } else { 5u8 };
 
 /// `true` is the left injection of the unit.
 @[runs("+{.0 = *{}}")]
-def held() -> Bool = true;
+def held() -> Bool = true
 
 /// A true flag takes the first branch.
 @[runs("3u8")]
-def taken() -> u8 = pick true;
+def taken() -> u8 = pick true
 
 /// A false flag takes the second branch.
 @[runs("5u8")]
-def skipped() -> u8 = pick false;
+def skipped() -> u8 = pick false
 
 /// `picked` gives the choice for the held flag: the exit code of
 /// its compiled program.

@@ -11,14 +11,14 @@
 //! - see: width-row.gandr — the same row at `u32`
 
 /// One more than its argument. The sum wraps.
-def inc(x : u8) -> u8 = u8.wrapping_add x 1u8;
+def inc(x : u8) -> u8 = u8.wrapping_add x 1u8
 
 /// `inc` twice: the first call runs, the second is the tail call.
-def twice(x : u8) -> u8 = inc (inc x);
+def twice(x : u8) -> u8 = inc (inc x)
 
 /// `wrapped_byte` adds 3 to the greatest `u8` and wraps the sum.
 @[runs("2u8")]
-def wrapped_byte() -> u8 = u8.wrapping_add 255u8 3u8;
+def wrapped_byte() -> u8 = u8.wrapping_add 255u8 3u8
 
 /// `answer` calls `twice` on the wrapped sum.
 @[runs("4u8")]
