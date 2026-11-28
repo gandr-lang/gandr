@@ -1117,6 +1117,13 @@ fn a_declared_form_wins_over_the_option()
             "declared {declared}, asked {asked}"
         );
     }
+    let headed = "@![features((\"records\"))]\n\n@[form(explicit)]\ndef pair : *{Integer, \
+                  String};\n";
+    assert_eq!(
+        spelled(&grammar, headed, Form::Sugared, Selection::Every),
+        headed,
+        "an inner attribute block before the declaration keeps the declared form"
+    );
 }
 
 /// #791: a declaration whose sum pattern reads its parameter's stated

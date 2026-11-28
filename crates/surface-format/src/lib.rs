@@ -2901,17 +2901,18 @@ fn material_leaves<'leaves, 'source>(
 
 /// The form the source's head declares: `form(explicit)` or `form(sugared)`
 /// as an entry of an attribute block written before the source's first
-/// declaration, after its imports — the one place a block before a
-/// declaration stands, since a block before an import refuses the module.
-/// A source that opens with a `rec { … }` group declares it on the group's
-/// first declaration, since a block before `rec` refuses the module too.
+/// declaration, after its imports and its inner attribute blocks `@![ … ]` —
+/// the one place a block before a declaration stands, since a block before
+/// an import refuses the module. A source that opens with a `rec { … }` group
+/// declares it on the group's first declaration, since a block before `rec`
+/// refuses the module too.
 ///
 /// # Specification
 /// - requires: `leaves` are a source's, in offset order.
 /// - ensures: the form named by the first `form` entry of the attribute blocks
-///   before the first token, outside an import, that no block holds, where the
-///   `rec {` that opens a leading group holds none; none when there is none, or
-///   it names neither form.
+///   before the first token, outside an import and an inner attribute block,
+///   that no block holds, where the `rec {` that opens a leading group holds
+///   none; none when there is none, or it names neither form.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the declaration is read from the leaves' text, which a
@@ -2919,9 +2920,9 @@ fn material_leaves<'leaves, 'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source declaring the explicit form keeps it under
-///   either option, after an import as at its first line and on a leading `rec`
-///   group's first declaration; a source declaring either form is written in it
-///   whatever the option asks.
+///   either option, after an import or an inner attribute block as at its first
+///   line and on a leading `rec` group's first declaration; a source declaring
+///   either form is written in it whatever the option asks.
 /// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
 /// - witness: `tests::rewrite::a_declared_form_wins_over_the_option`
 fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
@@ -2936,6 +2937,9 @@ fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
     // the attribute block or the `rec` of the form after it.
     let mut importing = None;
     let mut grouped = None;
+    // Whether the block being read is an inner block `@![ … ]`, whose entries
+    // declare no form.
+    let mut inner = false;
     for (at, &(token, owner)) in tokens.iter().enumerate() {
         if importing.is_some_and(|form| form != owner) || matches!(token, "@[" | "rec") {
             importing = None;
@@ -2956,10 +2960,17 @@ fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
             },
             "{" if depth == 0 && grouped == Some(at) => {},
             "@[" => depth = depth.saturating_add(1),
+            "@![" if depth == 0 => {
+                depth = 1;
+                inner = true;
+            },
             "[" if depth > 0 => depth = depth.saturating_add(1),
-            "]" if depth > 0 => depth = depth.saturating_sub(1),
+            "]" if depth > 0 => {
+                depth = depth.saturating_sub(1);
+                inner = inner && depth > 0;
+            },
             _ if depth == 0 => return None,
-            "form" if depth == 1 => {
+            "form" if depth == 1 && !inner => {
                 if let (Some(&("(", _)), Some(&(word, _)), Some(&(")", _))) = (
                     tokens.get(at.saturating_add(1)),
                     tokens.get(at.saturating_add(2)),
