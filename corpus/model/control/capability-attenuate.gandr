@@ -5,13 +5,13 @@
 //!
 //! The checker rejects an operation outside the stated authority.
 //! The host grants the authority that a capability carries.
-//! The discipline follows Dennis and Van Horn
-//! [Dennis-1966-programming_semantics_for_multiprogrammed_computations] and the
-//! 2006 thesis of Miller.
+//! The discipline follows [Pham-2026-classifying_capabilities]. A projection
+//! keeps a part of the authority of a capability. The checker refuses a use
+//! outside the capture set of a type.
 //!
-//! - cites: [Dennis-1966-programming_semantics_for_multiprogrammed_computations]
+//! - cites: [Pham-2026-classifying_capabilities]
 //!
-//! [Dennis-1966-programming_semantics_for_multiprogrammed_computations]: https://doi.org/10.1145/365230.365252 "Dennis and Van Horn, Programming Semantics for Multiprogrammed Computations"
+//! [Pham-2026-classifying_capabilities]: https://doi.org/10.1145/3839474 "Pham, Bračevac, Xu, Zhao and Odersky, Classifying Capabilities"
 
 @![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
 
