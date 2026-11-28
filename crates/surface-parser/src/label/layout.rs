@@ -96,8 +96,11 @@
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
 //! next item's head ends. An item already ends at a `;`, a `,` or an opening
 //! brace. A declaration also ends at an explicit `}` and at the virtual close
-//! of a body, as a braced declaration ends at its brace. A statement ends at
-//! no `}`: its line end writes its separator, as after any other token. The
+//! of a body, as a braced declaration ends at its brace. The `}` of a brace
+//! that a sigil leads, as of the product `*{a, b}`, ends no item: its line end
+//! writes its separator, so `type P = *{a, b}` is a member of a body as
+//! `type P = a * b` is. A statement ends at no `}`: its line end writes its
+//! separator, as after any other token. The
 //! virtual close of
 //! an arm list ends no declaration, since a `match` is an expression: `def f
 //! (x : A) = match x where …` takes its `;` after its arms. An arm list takes
@@ -296,7 +299,8 @@ enum Ending
     #[default]
     Ends,
     /// It continues the item, as the `}` of a block expression after `=`
-    /// does, and the close of a block after a `do`.
+    /// does, the `}` of a brace that a sigil leads, and the close of a block
+    /// after a `do`.
     Continues,
 }
 
@@ -1086,7 +1090,12 @@ pub(super) fn lay_out(
                 }
             }
             else {
-                Frame::new(Kind::Plain, Sep::Semi)
+                // The `}` of a brace that a sigil leads closes a value or a
+                // type, as a `)` does, and ends no item.
+                Frame {
+                    ending: Ending::Continues,
+                    ..Frame::new(Kind::Plain, Sep::Semi)
+                }
             });
             if let Pending::Arms { depth, .. } = pending
                 && frames.len() == depth.saturating_add(1)
@@ -1992,6 +2001,26 @@ mod tests
         assert_eq!(
             marked("def f() -> A = {\n  loop { break }\n  return 1\n};\n"),
             "def f() -> A = {\n  loop { break }⟪;⟫\n  return 1\n};\n"
+        );
+    }
+
+    #[test]
+    fn a_line_that_ends_in_a_sigil_brace_ends_its_member()
+    {
+        // The `}` of a product ends no member of a declaration body, so the
+        // line end writes its separator, in a layout body and in braces. The
+        // `}` of a nested body still ends its member.
+        assert_eq!(
+            marked("module M where\n  type P = *{a, b}\n  type Q = +{a, b}\n"),
+            "module M where⟪{⟫\n  type P = *{a, b}⟪;⟫\n  type Q = +{a, b}⟪;⟫⟪}⟫\n"
+        );
+        assert_eq!(
+            marked("module M where {\n  type P = *{a, b}\n  type Q = A\n}\n"),
+            "module M where {\n  type P = *{a, b}⟪;⟫\n  type Q = A⟪;⟫\n}\n"
+        );
+        assert_eq!(
+            marked("module M where\n  module N where {\n    type P = A\n  }\n  type Q = A\n"),
+            "module M where⟪{⟫\n  module N where {\n    type P = A⟪;⟫\n  }\n  type Q = A⟪;⟫⟪}⟫\n"
         );
     }
 
