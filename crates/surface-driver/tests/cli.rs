@@ -2339,8 +2339,10 @@ fn features_prints_the_declaration_of_each_source()
 /// `gandr features` counts the builtin row that a name of a source reaches:
 /// a float primitive of the builtin namespace, the float type and a float
 /// literal each give the feature of the float row, and a primitive of the
-/// first twin gives none. `gandr check` judges a declaration by the same
-/// rows. Each source is a file of `tests/cli/fixtures`.
+/// first twin gives none. A capability gives the feature of the row `cap`,
+/// and its brackets, a grade and its labels, give no feature of a sized type.
+/// `gandr check` judges a declaration by the same rows. Each source is a file
+/// of `tests/cli/fixtures`.
 #[test]
 fn features_counts_a_builtin_row_that_a_name_reaches()
 {
@@ -2362,6 +2364,17 @@ fn features_counts_a_builtin_row_that_a_name_reaches()
             typed.display(),
             literal.display(),
             twin.display()
+        )
+    );
+
+    let capability = fixtures.join("a-capability-is-named.gandr");
+    let read = ran(gandr(&[features, &capability]));
+    assert_eq!(code(&read), Code(0_i32), "{}", stderr(&read));
+    assert_eq!(
+        stdout(&read),
+        format!(
+            "{}: @![features((\"capabilities\", \"imports\"))]\n",
+            capability.display()
         )
     );
 
