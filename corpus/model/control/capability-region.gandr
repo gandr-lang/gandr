@@ -10,7 +10,7 @@
 //!
 //! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
-@![features(("capabilities", "data-parameters", "effect-handlers", "explicit-exits", "imports", "let-statements", "located-judgements", "modules", "records"))]
+@![features(("capabilities", "effect-handlers", "explicit-exits", "imports", "let-statements", "located-judgements", "modules", "records", "sized-types"))]
 
 // Early exit's host interface.
 import std.process
@@ -18,7 +18,7 @@ import std.process
 /// `named` gives the scope capability its region type.
 def named() -> Unit =
   effect c : std.process.Exit.Eff {
-    let d : (Cap { exit }) at c = c
+    let d : Cap[exit] at c = c
     return *{}
   } handle {
     | pure(x) => x
@@ -30,7 +30,7 @@ def named() -> Unit =
 @[refuses("CapabilityEscaped")]
 def held() -> Unit =
   effect c : std.process.Exit.Eff {
-    let d : Cap { exit } = c
+    let d : Cap[exit] = c
     return *{}
   } handle {
     | pure(x) => x
@@ -41,7 +41,7 @@ def held() -> Unit =
 def outer() -> Unit =
   effect c : std.process.Exit.Eff {
     effect e : std.process.Exit.Eff {
-      let d : (Cap { exit }) at c = c
+      let d : Cap[exit] at c = c
       return *{}
     } handle {
       | pure(x) => x
@@ -58,8 +58,8 @@ def outer() -> Unit =
 def swapped() -> Unit =
   effect c : std.process.Exit.Eff {
     effect e : std.process.Exit.Eff {
-      let d : (Cap { exit }) at e = c
-      let f : (Cap { exit }) at c = e
+      let d : Cap[exit] at e = c
+      let f : Cap[exit] at c = e
       return *{}
     } handle {
       | pure(x) => x
@@ -74,7 +74,7 @@ def swapped() -> Unit =
 @[refuses("UnresolvedName")]
 def unbound(c : Integer) -> Unit =
   effect e : std.process.Exit.Eff {
-    let d : (Cap { exit }) at c = e
+    let d : Cap[exit] at c = e
     return *{}
   } handle {
     | pure(x) => return x
