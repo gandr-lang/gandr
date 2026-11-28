@@ -29,7 +29,8 @@ const PAST_THE_BOUND: u32 = 33;
 
 /// A case: its scratch directory's name, the message of the tip's commit, and
 /// the allocation count of the `gandr` series' first row on each side; absent
-/// for a side with no kept report.
+/// for a side with no kept report. A tip with no kept report runs the fake
+/// `cargo` of `tests/fakes`, which writes the base's count.
 struct Case
 {
     /// The scratch directory's name.
@@ -39,7 +40,7 @@ struct Case
     /// The base's count.
     base: Option<u32>,
     /// The tip's count.
-    head: u32,
+    head: Option<u32>,
 }
 
 /// What a case's run left: the process's output and the scratch repository.
@@ -122,7 +123,7 @@ fn gate(case: &Case) -> Ran
     let base = git(&root, &["rev-parse", "HEAD~1"]);
     let head = git(&root, &["rev-parse", "HEAD"]);
     let store = root.join("target/hotpath/kept");
-    for (commit, count) in [(&base, case.base), (&head, Some(case.head))] {
+    for (commit, count) in [(&base, case.base), (&head, case.head)] {
         let Some(count) = count
         else {
             continue;
@@ -137,10 +138,14 @@ fn gate(case: &Case) -> Ran
             .unwrap();
         }
     }
+    let mut paths = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes")];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
     let output = Command::new(env!("CARGO_BIN_EXE_hotpath-gate"))
         .current_dir(&root)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("PATH", std::env::join_paths(paths).unwrap())
+        .env("GATE_REPORT", report(case.base.unwrap_or(6000)))
         .args(["--repository", "gandr-lang/gandr", "--base", "main~1"])
         .output()
         .unwrap();
@@ -154,7 +159,7 @@ fn equal_counts_pass()
         name: "equal",
         message: "head",
         base: Some(6000),
-        head: 6000,
+        head: Some(6000),
     });
     let stdout = String::from_utf8_lossy(&ran.output.stdout);
     assert_eq!(ran.output.status.code(), PASSED, "{:?}", ran.output);
@@ -168,7 +173,7 @@ fn a_regressed_series_refuses_the_tip()
         name: "regressed",
         message: "head",
         base: Some(6000),
-        head: 6300,
+        head: Some(6300),
     });
     let stdout = String::from_utf8_lossy(&ran.output.stdout);
     let stderr = String::from_utf8_lossy(&ran.output.stderr);
@@ -189,7 +194,7 @@ fn a_change_under_the_margin_passes()
         name: "margin",
         message: "head",
         base: Some(6000),
-        head: 6100,
+        head: Some(6100),
     });
     assert_eq!(ran.output.status.code(), PASSED, "{:?}", ran.output);
 }
@@ -201,7 +206,7 @@ fn a_trailer_accepts_its_series()
         name: "accepted",
         message: "head\n\nChanges-hotpath: store, gandr",
         base: Some(6000),
-        head: 6300,
+        head: Some(6300),
     });
     let stdout = String::from_utf8_lossy(&ran.output.stdout);
     assert_eq!(ran.output.status.code(), PASSED, "{:?}", ran.output);
@@ -218,7 +223,7 @@ fn a_trailer_of_another_series_accepts_nothing()
         name: "other",
         message: "head\n\nChanges-hotpath: store",
         base: Some(6000),
-        head: 6300,
+        head: Some(6300),
     });
     assert_eq!(ran.output.status.code(), REGRESSED, "{:?}", ran.output);
 }
@@ -230,7 +235,7 @@ fn a_base_with_no_report_judges_nothing()
         name: "unjudged",
         message: "head",
         base: None,
-        head: 9000,
+        head: Some(9000),
     });
     let stdout = String::from_utf8_lossy(&ran.output.stdout);
     assert_eq!(ran.output.status.code(), PASSED, "{:?}", ran.output);
@@ -252,7 +257,7 @@ fn a_base_that_names_no_commit_is_refused()
         name: "unnamed",
         message: "head",
         base: Some(6000),
-        head: 6000,
+        head: Some(6000),
     });
     let output = Command::new(env!("CARGO_BIN_EXE_hotpath-gate"))
         .current_dir(&ran.root)
@@ -276,7 +281,7 @@ fn the_store_keeps_its_newest_commits_and_the_base()
         name: "pruned",
         message: "head",
         base: Some(6000),
-        head: 6000,
+        head: Some(6000),
     });
     let store = ran.root.join("target/hotpath/kept");
     let fillers: Vec<PathBuf> = (0 .. PAST_THE_BOUND)
@@ -297,4 +302,29 @@ fn the_store_keeps_its_newest_commits_and_the_base()
     assert!(!fillers[0].exists(), "the oldest commit stays");
     assert!(fillers[1 ..].iter().all(|filler| filler.exists()));
     assert!(store.join(&ran.base).exists(), "the base is removed");
+}
+
+#[test]
+fn a_bench_in_the_directory_of_its_package_keeps_its_report()
+{
+    let ran = gate(&Case {
+        name: "measured",
+        message: "head",
+        base: Some(6000),
+        head: None,
+    });
+    let stdout = String::from_utf8_lossy(&ran.output.stdout);
+    let head = git(&ran.root, &["rev-parse", "HEAD"]);
+    assert_eq!(ran.output.status.code(), PASSED, "{:?}", ran.output);
+    assert_eq!(stdout.matches("no regression").count(), 3, "{stdout}");
+    for series in SERIES {
+        assert!(
+            ran.root
+                .join("target/hotpath/kept")
+                .join(&head)
+                .join(format!("{series}.json"))
+                .exists(),
+            "{series}"
+        );
+    }
 }

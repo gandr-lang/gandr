@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# The `cargo` of the tests of `hotpath-gate`. A bench runs in the directory of
+# its package, as `cargo test --bench` runs it. It writes the report of
+# `GATE_REPORT` to `HOTPATH_OUTPUT_PATH`, as the profiler writes its report.
+set -euo pipefail
+mkdir -p crates/bench
+cd crates/bench
+printf '%s' "${GATE_REPORT:?}" > "${HOTPATH_OUTPUT_PATH:?}"

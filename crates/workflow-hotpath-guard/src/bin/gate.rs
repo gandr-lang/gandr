@@ -153,16 +153,17 @@ fn main() -> ExitCode
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the store holds a report of each series for `HEAD`; standard
-///   output receives the summary of each series whose base has a report, or a
-///   line that names the base it lacks; the result names each series whose
-///   verdict is a failure and that no trailer accepts, in the order of
-///   [`SERIES`]; the store keeps the newest [`KEPT`] commits, and always the
-///   head and the base.
+/// - ensures: the store, an absolute path, holds a report of each series for
+///   `HEAD`; standard output receives the summary of each series whose base has
+///   a report, or a line that names the base it lacks; the result names each
+///   series whose verdict is a failure and that no trailer accepts, in the
+///   order of [`SERIES`]; the store keeps the newest [`KEPT`] commits, and
+///   always the head and the base.
 /// - provides: the whole command.
 /// - fails: every refusal of [`commit`], [`accepted`], [`measure`], [`read`],
 ///   [`judge::Run::read`], [`judge::Policy::read`] and [`prune`];
-///   [`GuardError::Output`] when standard output cannot be written.
+///   [`GuardError::Output`] when standard output cannot be written;
+///   [`GuardError::Input`] naming the store when it has no absolute path.
 /// - panics: none.
 /// - executable: none — the outcome is the files and the bytes written.
 ///
@@ -173,21 +174,26 @@ fn main() -> ExitCode
 /// - hypothesis: L3 — as [`main`].
 /// - witness: `tests::gate::a_regressed_series_refuses_the_tip`
 /// - witness: `tests::gate::a_base_with_no_report_judges_nothing`
+/// - witness: `tests::gate::a_bench_in_the_directory_of_its_package_keeps_its_report`
 ///
 /// # Cost
 /// - allocation: the read reports, each verdict and its summary, diagnostic
 fn run(cli: &Cli) -> Result<Vec<&'static str>, GuardError>
 {
+    let store = std::path::absolute(&cli.store).map_err(|error| GuardError::Input {
+        path: cli.store.display().to_string(),
+        message: error.to_string(),
+    })?;
     let head = commit("HEAD")?;
     let base = commit(&cli.base)?;
     let accepted = accepted(&base, &head)?;
     let mut regressed = Vec::new();
     for series in SERIES {
-        let report = kept(&cli.store, &head, series);
+        let report = kept(&store, &head, series);
         if !report.exists() {
             measure(series, &report)?;
         }
-        let before = kept(&cli.store, &base, series);
+        let before = kept(&store, &base, series);
         if !before.exists() {
             say(&format!(
                 "{}: the store keeps no report of the base {base}; nothing is judged\n",
@@ -224,7 +230,7 @@ fn run(cli: &Cli) -> Result<Vec<&'static str>, GuardError>
             }
         }
     }
-    prune(&cli.store, [&head, &base])?;
+    prune(&store, [&head, &base])?;
     Ok(regressed)
 }
 
@@ -378,9 +384,10 @@ fn kept(
 /// As `fails` lists.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the landing runs it on each tip; a report at the wrong
-///   path judges nothing.
-/// - witness: none — a test cannot afford a run of a bench.
+/// - hypothesis: L3 — a fake `cargo` writes the report from the directory of a
+///   package, as a bench runs; a relative path puts the report there, and the
+///   gate refuses.
+/// - witness: `tests::gate::a_bench_in_the_directory_of_its_package_keeps_its_report`
 fn measure(
     series: Series,
     report: &Path,
