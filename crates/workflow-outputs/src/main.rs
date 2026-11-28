@@ -15,7 +15,8 @@
 //! - `recovery`, the recovery record of a source;
 //! - `refusals`, the refusals that `gandr check` prints for a refusing source;
 //! - `rendered`, a diagnostic that the terminal renderer writes;
-//! - `roles`, the roles that the highlight gives a source.
+//! - `roles`, the roles that the highlight gives a source;
+//! - `uncommented`, the items of a corpus source that carry no comment.
 //!
 //! `<kinds>` is one kind, two or more kinds with a comma between them, or
 //! `all`. One run answers each kind that it names, and reads each tree one
@@ -25,8 +26,8 @@
 //! files of a checkout. The run walks its own work tree. The binary of a
 //! commit walks any other tree, in the checkout below the target directory.
 //! The tests of a package give the values of `captures`, `formatted`,
-//! `hovers`, `printed` and `rendered`. The run starts them in its own work
-//! tree, and the binary of a commit starts them in its checkout.
+//! `hovers`, `printed`, `rendered` and `uncommented`. The run starts them in
+//! its own work tree, and the binary of a commit starts them in its checkout.
 //!
 //! With no revision, the tree is the work tree with its changes. The store is
 //! the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs`.
@@ -48,6 +49,11 @@
 //! between the base and the head names that kind in a trailer
 //! `Changes-output: <kind>`. It prints one refusal for each such kind. With no
 //! `--head`, the commits end at `HEAD`.
+//!
+//! `uncommented` is a ratchet: each line of a value is a member, and the name
+//! of its source is not a part of it. For a ratchet, `difference` prints the
+//! members that the head adds, and it exits with 1 only when the head adds a
+//! member and no commit names the kind. The head can drop a member.
 //!
 //! `--cost` adds each part of the run with its count and its time.
 //!
@@ -84,7 +90,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is captures, formatted, hovers, printed, recovery, refusals, rendered or roles;\n       <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
+const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is captures, formatted, hovers, printed, recovery, refusals, rendered, roles or uncommented;\n       <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
 
 /// How many changes `difference` prints when the command line names no
 /// count.
@@ -503,6 +509,29 @@ fn differ(
         "{name}: the head computed {head_computed} values, the base {base_computed}, in {}",
         run.store.root().display()
     );
+    if compute::RATCHETS.contains(&kind) {
+        let added = difference::added(&base_values, &head_values);
+        let _written = writeln!(
+            out,
+            "{name}: the head adds {} members that {base} does not have",
+            added.len()
+        );
+        for member in added.iter().take(lines) {
+            let _written = writeln!(out, "  + {member}");
+        }
+        if added.len() > lines {
+            let _written = writeln!(out, "  … {} more", added.len().saturating_sub(lines));
+        }
+        let refusal = (!added.is_empty() && !word::named(&run.root, base, head, kind)?).then(|| {
+            format!(
+                "{name}: the head adds {} members, and no commit of {base}..{} has the trailer `{}: {name}`",
+                added.len(),
+                head.unwrap_or("HEAD"),
+                word::TRAILER
+            )
+        });
+        return Ok((base_computed, refusal));
+    }
     let refusal = (!changes.is_empty() && !word::named(&run.root, base, head, kind)?).then(|| {
         format!(
             "{name}: {} of {} sources differ, and no commit of {base}..{} has the trailer `{}: {name}`",

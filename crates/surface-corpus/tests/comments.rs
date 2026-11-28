@@ -15,9 +15,12 @@ mod ledger;
 mod scan;
 mod shape;
 
+use alloc::collections::BTreeMap;
 use std::path::PathBuf;
 
 use gandr_surface_grammar::Pbg;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::given;
 
 use crate::comments::error::CommentError;
 use crate::comments::judge::Finding;
@@ -60,11 +63,36 @@ fn collect_fixture(pbg: &Pbg) -> Result<Vec<Finding>, CommentError>
         .collect())
 }
 
+/// Gives the findings `found` to the store of outputs as values of the kind
+/// `uncommented`, when the environment names a run: one value for each
+/// source, named by its path below the fixture root, with one line for each
+/// finding. A line is the ledger line with no path, so an item that moves to
+/// another source keeps its line.
+///
+/// # Specification
+/// trivial.
+fn given_findings(found: &[Finding])
+{
+    let mut values: BTreeMap<&str, String> = BTreeMap::new();
+    for finding in found {
+        let line = finding.line().0;
+        let (path, member) = line.split_once(':').unwrap_or((line, ""));
+        let value = values.entry(path).or_default();
+        value.push_str(member);
+        value.push('\n');
+    }
+    for (path, value) in values {
+        let _given = given::give(Kind("uncommented"), path, value.as_bytes())
+            .unwrap_or_else(|error| panic!("the findings of `{path}` go to the store: {error}"));
+    }
+}
+
 #[cfg(test)]
 mod gate
 {
     use super::collect_fixture;
     use super::discrepancies;
+    use super::given_findings;
     use super::grammar;
     use super::ledger;
     use super::ledger_text;
@@ -75,6 +103,7 @@ mod gate
     {
         let pbg = grammar().expect("the built-in grammar builds");
         let found = collect_fixture(&pbg).expect("the fixture walks");
+        given_findings(&found);
         let path = ledger();
         if std::env::var_os("CORPUS_COMMENTS_WRITE_LEDGER").is_some() {
             let text = ledger_text(&found);

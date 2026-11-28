@@ -1,5 +1,7 @@
 //! The difference of the values of one kind between two trees.
 
+use alloc::collections::BTreeMap;
+
 use anodized::spec;
 
 use crate::tree::Source;
@@ -200,10 +202,70 @@ pub fn changes(
     changes
 }
 
+/// The members of the values `head` that the values `base` do not have, each
+/// as `<name>: <member>`, in name order.
+///
+/// A member is one line of a value. The name of its source is not a part of
+/// it, so a member that moves to another source is no change. Two equal
+/// members are two members: the head adds one when it has more of them than
+/// the base has.
+///
+/// # Specification
+/// - ensures: a member of each line is counted against the members of all the
+///   values of the base; a member that the base has as often is not in the
+///   result.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a moved member, a removed member, a member that the head
+///   has twice and the base once, and a new member give two added members.
+/// - witness: `difference::tests::a_ratchet_refuses_only_the_members_that_the_head_adds`
+#[spec(ensures: |ret| ret.len() <= head.iter().map(|value| value.1.split(|&byte| byte == b'\n').count()).sum())]
+#[inline]
+#[must_use]
+pub fn added(
+    base: &[(Source, Vec<u8>)],
+    head: &[(Source, Vec<u8>)],
+) -> Vec<String>
+{
+    let mut held: BTreeMap<&[u8], usize> = BTreeMap::new();
+    for &(_, ref value) in base {
+        for member in members(value) {
+            let count = held.entry(member).or_default();
+            *count = count.saturating_add(1);
+        }
+    }
+    let mut added = Vec::new();
+    for &(ref source, ref value) in head {
+        for member in members(value) {
+            match held.get_mut(member) {
+                Some(count) if *count > 0 => *count = count.saturating_sub(1),
+                _ => added.push(format!(
+                    "{}: {}",
+                    source.name,
+                    String::from_utf8_lossy(member)
+                )),
+            }
+        }
+    }
+    added
+}
+
+/// The members of `value`: its lines that hold a byte, with no line break.
+///
+/// # Specification
+/// trivial.
+fn members(value: &[u8]) -> impl Iterator<Item = &[u8]>
+{
+    value
+        .split(|&byte| byte == b'\n')
+        .filter(|line| !line.is_empty())
+}
+
 #[cfg(test)]
 mod tests
 {
     use super::Change;
+    use super::added;
     use super::changes;
     use crate::tree::Source;
 
@@ -266,6 +328,39 @@ mod tests
             "fixture/a.gandr: line 2: 1..2 Other \";\" → 1..2 Keyword \";\"",
             "fixture/b.gandr: added: 2 lines, the first: 0..1 Other \"b\"",
             "fixture/c.gandr: line 2: 1..2 Other \";\" → no line",
+        ]);
+    }
+
+    /// A ratchet refuses only the members that the head adds: a member that
+    /// moves to another source, and a member that the head removes, are not
+    /// refused; a member that the head has twice and the base once is.
+    #[test]
+    fn a_ratchet_refuses_only_the_members_that_the_head_adds()
+    {
+        let base = [
+            value(
+                "fixture/a.gandr",
+                "moved:1 uncommented\nkept:2 uncommented\n",
+            ),
+            value(
+                "fixture/b.gandr",
+                "gone:3 uncommented\ntwice:4 uncommented\n",
+            ),
+        ];
+        let head = [
+            value("fixture/a.gandr", "kept:2 uncommented\n"),
+            value(
+                "fixture/b.gandr",
+                "twice:4 uncommented\ntwice:4 uncommented\n",
+            ),
+            value(
+                "fixture/c.gandr",
+                "moved:1 uncommented\nnew:5 uncommented\n",
+            ),
+        ];
+        assert_eq!(added(&base, &head), [
+            "fixture/b.gandr: twice:4 uncommented",
+            "fixture/c.gandr: new:5 uncommented",
         ]);
     }
 }

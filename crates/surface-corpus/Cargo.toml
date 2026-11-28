@@ -54,7 +54,8 @@ gandr-theory-probability.workspace = true
 quenchant-shape.workspace = true
 
 # The kernel export tests build the kernel's names, rows and evidence in the
-# containers of the data crate.
+# containers of the data crate. The comment gate gives its findings to the
+# store of the outputs.
 [dev-dependencies]
 blake3.workspace = true
 gandr-core-incremental.workspace = true
@@ -68,6 +69,7 @@ gandr-surface-parser.workspace = true
 gandr-theory-computads.workspace = true
 gandr-theory-levitation.workspace = true
 gandr-workflow-debt-ledger.workspace = true
+gandr-workflow-output-store.workspace = true
 gandr-workflow-sweep.workspace = true
 
 [lints]

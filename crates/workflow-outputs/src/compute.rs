@@ -62,10 +62,27 @@ pub const RENDERED: Kind = Kind("rendered");
 /// The kind of the roles that the highlight gives a source.
 pub const ROLES: Kind = Kind("roles");
 
+/// The kind of the items of a corpus source that carry no comment, which the
+/// comment gate of the corpus gives. It is a ratchet.
+pub const UNCOMMENTED: Kind = Kind("uncommented");
+
 /// Each kind, in the order of the names.
-pub const KINDS: [Kind; 8] = [
-    CAPTURES, FORMATTED, HOVERS, PRINTED, RECOVERY, REFUSALS, RENDERED, ROLES,
+pub const KINDS: [Kind; 9] = [
+    CAPTURES,
+    FORMATTED,
+    HOVERS,
+    PRINTED,
+    RECOVERY,
+    REFUSALS,
+    RENDERED,
+    ROLES,
+    UNCOMMENTED,
 ];
+
+/// Each kind that is a ratchet: a line of a value is a member, and the gate
+/// refuses a member that the head has and the base does not have. The head
+/// can drop a member.
+pub const RATCHETS: [Kind; 1] = [UNCOMMENTED];
 
 /// A kind whose values only a test can compute: the tests of its package give
 /// each value to the store.
@@ -83,7 +100,7 @@ pub struct Tested
 }
 
 /// Each kind whose values only a test can compute, in the order of the names.
-pub const TESTED: [Tested; 5] = [
+pub const TESTED: [Tested; 6] = [
     Tested {
         kind: CAPTURES,
         package: "gandr-surface-tui",
@@ -113,6 +130,12 @@ pub const TESTED: [Tested; 5] = [
         package: "gandr-surface-render-terminal",
         filter: "test(/^render::/)",
         inputs: &crate::tree::REFUSAL_INPUTS,
+    },
+    Tested {
+        kind: UNCOMMENTED,
+        package: "gandr-surface-corpus",
+        filter: "test(=comments::gate::the_fixture_matches_the_ledger)",
+        inputs: &["corpus"],
     },
 ];
 
