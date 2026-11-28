@@ -63,14 +63,6 @@
     "record": "none: the file has 0 bytes, and no program of the tree writes it"
   },
   {
-    "name": "the prose ledger",
-    "kind": "ratchet",
-    "pending": "debt-ledgers-by-the-base",
-    "paths": ["corpus/prose.ledger"],
-    "inputs": ["./"],
-    "record": "mise run check:prose --write"
-  },
-  {
     "name": "the locks of cargo",
     "kind": "first input",
     "paths": [

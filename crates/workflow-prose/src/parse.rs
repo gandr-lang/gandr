@@ -253,7 +253,7 @@ struct Shard<'slice, 'text>
 ///   once, and a damaged entry parses again; a passage's sentences
 ///   misattributed, a lost message, a short reply accepted, a second run that
 ///   parses or a damaged entry read as a parse changes the result.
-/// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
+/// - witness: `tests::cli::a_run_of_the_outputs_gives_each_finding_and_refuses_none`
 /// - witness: `tests::cli::a_failing_parse_is_reported_with_its_message`
 /// - witness: `tests::cli::a_second_run_reads_every_parse_from_the_cache`
 #[inline]
@@ -518,7 +518,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`parse`].
-/// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
+/// - witness: `tests::cli::a_run_of_the_outputs_gives_each_finding_and_refuses_none`
 fn sentences(printing: Printing) -> Vec<Sentence>
 {
     printing

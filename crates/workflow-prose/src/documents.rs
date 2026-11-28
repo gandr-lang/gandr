@@ -6,8 +6,9 @@
 //! reads each file that the change touched, at the head and at the base. A
 //! head paragraph whose digest the base holds is one that the change did not
 //! write, and the check leaves it alone. Each other paragraph parses and meets
-//! every sentence rule, and a finding refuses. No ledger holds a file's debt:
-//! a paragraph that no change writes keeps its debt until a change writes it.
+//! every sentence rule, and a finding refuses. No kind of the outputs holds a
+//! file's debt: a paragraph that no change writes keeps its debt until a
+//! change writes it.
 //!
 //! The documents are the markdown files that the tree tracks, with three kinds
 //! set aside. The issue templates and the pull request template are bodies, and

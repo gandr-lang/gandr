@@ -101,7 +101,7 @@ const EXTENSIONS: [&str; 12] = [
 /// A rule a sentence or a diagnostic is held to.
 ///
 /// # Specification
-/// - provides: the rule a finding names and the ledger keys.
+/// - provides: the rule a finding names and its key holds.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Rule
 {
@@ -169,7 +169,7 @@ const RULES: [Rule; 17] = [
 
 impl fmt::Display for Rule
 {
-    /// Writes the rule's name as the ledger spells it.
+    /// Writes the rule's name as a key spells it.
     ///
     /// # Specification
     /// trivial.
@@ -209,7 +209,7 @@ impl fmt::Display for Rule
 /// Why a word is not a rule's name.
 ///
 /// # Specification
-/// - provides: the one way a ledger's rule is refused.
+/// - provides: the one way a rule's name is refused.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NotARule
 {
@@ -307,7 +307,7 @@ impl fmt::Display for Fix
 /// One sentence or diagnostic that breaks a rule.
 ///
 /// # Specification
-/// - provides: what the check prints and the ledger keys.
+/// - provides: what the check prints and its key holds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Finding
 {
@@ -395,7 +395,7 @@ fn read(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a finding prints its sentence alone; another span changes
-///   the printed sentence and the ledger's digest.
+///   the printed sentence and the digest of the key.
 /// - witness: `rules::tests::each_rule_fires_on_its_sentence_and_not_on_its_twin`
 fn spoken(
     passage: &Passage,

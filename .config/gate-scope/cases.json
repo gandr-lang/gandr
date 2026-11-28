@@ -782,23 +782,23 @@
     "output": "landing: it names check:lands, which is no check task"
   },
   {
-    "name": "#5014: #5007's diff, one test file and its transcript in one package, scopes the Rust checks to that package",
+    "name": "#5014: one test file and its transcript in one package scope the Rust checks to that package",
     "program": "packages.jq",
     "input": {
       "changed": [
         "crates/workflow-prose/tests/cli.rs",
-        "crates/workflow-prose/tests/debug-traces/cli.a_stale_line_is_refused_and_written_away_5007.txt"
+        "crates/workflow-prose/tests/debug-traces/check-prose-7750.txt"
       ],
       "packages": [
         {
-          "name": "gandr-workflow-debt-ledger",
-          "dir": "crates/workflow-debt-ledger",
+          "name": "gandr-workflow-output-store",
+          "dir": "crates/workflow-output-store",
           "deps": []
         },
         {
           "name": "gandr-workflow-prose",
           "dir": "crates/workflow-prose",
-          "deps": ["gandr-workflow-debt-ledger"]
+          "deps": ["gandr-workflow-output-store"]
         },
         {
           "name": "gandr-core-term",

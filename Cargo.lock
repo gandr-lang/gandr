@@ -2681,10 +2681,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gandr-workflow-debt-ledger"
-version = "0.0.0"
-
-[[package]]
 name = "gandr-workflow-gate"
 version = "0.0.0"
 dependencies = [
@@ -2813,7 +2809,6 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "clap",
- "gandr-workflow-debt-ledger",
  "gandr-workflow-output-store",
  "gandr-workflow-outputs",
  "quenchant-shape",

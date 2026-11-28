@@ -71,13 +71,14 @@ pub enum Rules
 /// Where the debt of a source's passages stands.
 ///
 /// # Specification
-/// - provides: which passages a run judges against the ledger, and which
-///   against the merge base.
+/// - provides: which passages the ratchet kind `prose` of the outputs holds,
+///   and which a run judges against the merge base.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Debt
 {
-    /// The committed ledger names it: a gandr comment's and a diagnostic's.
-    Ledger,
+    /// The ratchet kind `prose` of the outputs holds it: a gandr comment's and
+    /// a diagnostic's.
+    Ratchet,
     /// The merge base's paragraphs hold it: a passage that the base holds word
     /// for word is no finding.
     Base,
@@ -116,15 +117,15 @@ impl Source
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a changed task file's new paragraph is written and
-    ///   judged with no ledger; a `#` comment read as a ledgered source prints
-    ///   no finding of a written paragraph.
+    ///   judged with no debt; a `#` comment read as a source of the ratchet
+    ///   prints no finding of a written paragraph.
     /// - witness: `tests::cli::a_hash_comment_answers_for_the_paragraphs_its_change_wrote`
     #[inline]
     #[must_use]
     pub const fn debt(self) -> Debt
     {
         match self {
-            Self::Comment | Self::Diagnostic => Debt::Ledger,
+            Self::Comment | Self::Diagnostic => Debt::Ratchet,
             Self::Document | Self::Hash => Debt::Base,
             Self::Body => Debt::Absent,
         }
@@ -1333,7 +1334,7 @@ const RENDER_TESTS: &str = "crates/surface-render-terminal/tests/render.rs";
 ///   path order; the goldens of each text of the kind `rendered`, in name order
 ///   ([`rendered`]); then the refusals of the corpus ([`refusals`]). A markdown
 ///   document is not read here: the documents reader reads it under the base.
-/// - provides: the check's input under the ledger.
+/// - provides: the input of the ratchet kind `prose` of the outputs.
 /// - fails: [`ProseError::Io`] naming the directory or file that could not be
 ///   read, the root whose tracked files git could not list, or the root whose
 ///   refusing sources the walk could not read.

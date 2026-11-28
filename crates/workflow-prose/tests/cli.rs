@@ -1,7 +1,7 @@
-//! The findings, the ledger and the exit codes, observed by spawning the
-//! binary over a scratch root with the fake interpreter of `tests/fakes`,
-//! which prints the parse each case writes to `FAKE_PYTHON_OUTPUT`: one line
-//! per passage, as the parse script prints it.
+//! The findings, the values given to a run of `outputs` and the exit codes,
+//! observed by spawning the binary over a scratch root with the fake
+//! interpreter of `tests/fakes`, which prints the parse each case writes to
+//! `FAKE_PYTHON_OUTPUT`: one line per passage, as the parse script prints it.
 
 use std::process::Command;
 
@@ -16,10 +16,10 @@ const PAST: &str = r#"[[["The","the","DET","DT","det",1,0],["kernel","kernel","N
 const PRESENT: &str = r#"[[["The","the","DET","DT","det",1,0],["kernel","kernel","NOUN","NN","nsubj",2,4],["reduces","reduce","VERB","VBZ","ROOT",2,11],["the","the","DET","DT","det",4,19],["term","term","NOUN","NN","dobj",2,23],[".",".","PUNCT",".","punct",2,27]]]"#;
 
 /// A scratch root for the case `$name`, a git work tree tracking one corpus
-/// source of the sentence `$sentence`, an empty glossary, the ledger
-/// `$ledger`, and the parse `$parse` for the fake to print.
+/// source of the sentence `$sentence`, an empty glossary, and the parse
+/// `$parse` for the fake to print.
 macro_rules! scratch {
-    ($name:literal, $sentence:literal, $ledger:expr, $parse:expr) => {{
+    ($name:literal, $sentence:literal, $parse:expr) => {{
         let root =
             std::env::temp_dir().join(format!("workflow-prose-{}-{}", std::process::id(), $name));
         if root.exists() {
@@ -32,7 +32,6 @@ macro_rules! scratch {
         )
         .unwrap();
         std::fs::write(root.join("corpus/glossary.toml"), "[words]\n").unwrap();
-        std::fs::write(root.join("corpus/prose.ledger"), $ledger).unwrap();
         std::fs::write(root.join("parse.json"), $parse).unwrap();
         for arguments in [&["init", "--quiet"][..], &["add", "corpus/a.gandr"][..]] {
             let status = Command::new("git")
@@ -48,9 +47,9 @@ macro_rules! scratch {
 }
 
 /// Runs the binary over `$root` with `$args`, the fake in `$mode`; the fake
-/// saves the passages it is fed to `input.json`. The run takes no cache and
-/// no model from the environment, so a parse of the fake enters no cache of
-/// the host.
+/// saves the passages it is fed to `input.json`. The run takes no cache, no
+/// model and no run of `outputs` from the environment, so a parse of the fake
+/// enters no cache of the host.
 macro_rules! run {
     ($root:expr, $args:expr, $mode:expr) => {{
         let root: &std::path::Path = &$root;
@@ -62,6 +61,8 @@ macro_rules! run {
             .args($args)
             .env_remove("PROSE_CACHE")
             .env_remove("PROSE_MODEL")
+            .env_remove(gandr_workflow_output_store::given::STORE)
+            .env_remove(gandr_workflow_output_store::given::RUN)
             .env("FAKE_PYTHON_OUTPUT", root.join("parse.json"))
             .env("FAKE_PYTHON_INPUT", root.join("input.json"))
             .env("FAKE_PYTHON_MODE", $mode)
@@ -112,19 +113,56 @@ macro_rules! joined {
 }
 
 #[test]
-fn a_new_finding_is_refused_with_its_fix()
+fn a_run_of_the_outputs_gives_each_finding_and_refuses_none()
 {
-    let root = scratch!("new", "The kernel reduced the term.", "", PAST);
+    let root = scratch!("outputs", "The kernel reduced the term.", PAST);
     let output = run!(root, NO_ARGS, "");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    assert_eq!(output.status.code(), Some(1_i32));
+    assert_eq!(output.status.code(), Some(0_i32));
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "corpus/a.gandr:1: STE-3.2: \"The kernel reduced the term.\" — state it in the present \
-         tense\ncorpus/a.gandr:1: STE-6.4: \"the head is not four paragraphs\" — open the source on \
-         four paragraphs: what, why, how and references, with a `Limits:` paragraph after the how \
-         paragraph when the source has limits\nprose: parsed 1 passage(s) of 5 word(s) afresh, of \
-         1 read; 0 parse(s) not kept in the cache\n"
+        "prose: parsed 1 passage(s) of 5 word(s) afresh, of 1 read; 0 parse(s) not kept in the \
+         cache\nprose: 2 findings in the tree, which the outputs kind `prose` holds\n"
+    );
+    let store = root.join("store");
+    let directory = root.join("run");
+    let given = Command::new(env!("CARGO_BIN_EXE_prose"))
+        .arg("--python")
+        .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes/python"))
+        .arg("--root")
+        .arg(&root)
+        .env_remove("PROSE_CACHE")
+        .env_remove("PROSE_MODEL")
+        .env(gandr_workflow_output_store::given::STORE, &store)
+        .env(gandr_workflow_output_store::given::RUN, &directory)
+        .env("FAKE_PYTHON_OUTPUT", root.join("parse.json"))
+        .env("FAKE_PYTHON_INPUT", root.join("input.json"))
+        .env("FAKE_PYTHON_MODE", "")
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&given.stderr), "");
+    assert_eq!(given.status.code(), Some(0_i32));
+    assert_eq!(String::from_utf8_lossy(&given.stdout), "");
+    let kind = gandr_workflow_output_store::Kind("prose");
+    let entries = gandr_workflow_output_store::given::entries(&directory, kind).unwrap();
+    let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+    assert_eq!(names, ["corpus/a.gandr"]);
+    let value = gandr_workflow_output_store::Store::at(store)
+        .get(kind, &entries[0].key)
+        .unwrap()
+        .unwrap();
+    let sentence = blake3::hash(b"The kernel reduced the term.").to_hex();
+    let value = String::from_utf8_lossy(&value);
+    let lines: Vec<&str> = value.lines().collect();
+    assert_eq!(lines.len(), 2, "{value}");
+    let past = format!("STE-3.2 {}", sentence.as_str().get(.. 16).unwrap());
+    assert!(
+        lines.contains(&past.as_str()),
+        "a line is the rule and the digest of the sentence, with no path: {value}"
+    );
+    assert!(
+        lines.iter().any(|line| line.starts_with("STE-6.4 ")),
+        "{value}"
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -132,7 +170,7 @@ fn a_new_finding_is_refused_with_its_fix()
 #[test]
 fn a_body_is_refused_on_its_findings()
 {
-    let root = scratch!("body", "The kernel reduced the term.", "", PAST);
+    let root = scratch!("body", "The kernel reduced the term.", PAST);
     let body = root.join("body.md");
     std::fs::write(
         &body,
@@ -159,85 +197,12 @@ fn a_body_is_refused_on_its_findings()
     assert_eq!(
         output.status.code(),
         Some(0_i32),
-        "the corpus ledger is not read: {}",
+        "a run over bodies judges no corpus: {}",
         String::from_utf8_lossy(&output.stdout)
     );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "prose: 1 file(s), no body rule broken\n"
-    );
-    let output = run!(
-        root,
-        [std::ffi::OsStr::new("--write"), args[0], args[1]],
-        ""
-    );
-    assert_eq!(output.status.code(), Some(2_i32), "a body keeps no ledger");
-    std::fs::remove_dir_all(&root).unwrap();
-}
-
-#[test]
-fn a_stale_line_is_refused_and_written_away_5007()
-{
-    let root = scratch!(
-        "stale",
-        "The kernel reduces the term.",
-        "# header\ncorpus/a.gandr STE-3.2 0123456789abcdef\n",
-        PRESENT
-    );
-    let output = run!(root, NO_ARGS, "");
-    assert_eq!(output.status.code(), Some(1_i32));
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "corpus/a.gandr:1: STE-6.4: \"the head is not four paragraphs\" — open the source on four \
-         paragraphs: what, why, how and references, with a `Limits:` paragraph after the how \
-         paragraph when the source has limits\ncorpus/prose.ledger: stale line \
-         `corpus/a.gandr STE-3.2 0123456789abcdef`: no finding matches it; run `mise run \
-         check:prose --write`\nprose: parsed 1 passage(s) of 5 word(s) afresh, of 1 read; 0 \
-         parse(s) not kept in the cache\n"
-    );
-    let written = run!(root, ["--write"], "");
-    assert!(written.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&written.stdout),
-        "prose: wrote 1 ledger lines\n"
-    );
-    let ledger = std::fs::read_to_string(root.join("corpus/prose.ledger")).unwrap();
-    let lines: Vec<_> = ledger
-        .lines()
-        .filter(|line| !line.starts_with('#'))
-        .collect();
-    assert_eq!(lines.len(), 1, "{ledger}");
-    assert!(lines[0].starts_with("corpus/a.gandr STE-6.4 "), "{ledger}");
-    let again = run!(root, NO_ARGS, "");
-    assert!(again.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&again.stdout),
-        "prose: parsed 1 passage(s) of 5 word(s) afresh, of 1 read; 0 parse(s) not kept in the \
-         cache\nprose: 1 findings, every one in the ledger\n"
-    );
-    std::fs::remove_dir_all(&root).unwrap();
-}
-
-#[test]
-fn a_written_finding_passes_until_its_sentence_is_fixed()
-{
-    let root = scratch!("written", "The kernel reduced the term.", "", PAST);
-    assert!(run!(root, ["--write"], "").status.success());
-    let ledger = std::fs::read_to_string(root.join("corpus/prose.ledger")).unwrap();
-    assert_eq!(
-        ledger.lines().filter(|line| !line.starts_with('#')).count(),
-        2,
-        "{ledger}"
-    );
-    assert!(run!(root, NO_ARGS, "").status.success());
-    std::fs::write(root.join("parse.json"), PRESENT).unwrap();
-    let fixed = run!(root, NO_ARGS, "");
-    assert_eq!(fixed.status.code(), Some(1_i32));
-    assert!(
-        String::from_utf8_lossy(&fixed.stdout)
-            .starts_with("corpus/prose.ledger: stale line `corpus/a.gandr STE-3.2 "),
-        "{}",
-        String::from_utf8_lossy(&fixed.stdout)
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -245,7 +210,7 @@ fn a_written_finding_passes_until_its_sentence_is_fixed()
 #[test]
 fn a_failing_parse_is_reported_with_its_message()
 {
-    let root = scratch!("fail", "The kernel reduces the term.", "", PRESENT);
+    let root = scratch!("fail", "The kernel reduces the term.", PRESENT);
     let output = run!(root, NO_ARGS, "fail");
     assert_eq!(output.status.code(), Some(2_i32));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -260,7 +225,7 @@ fn a_failing_parse_is_reported_with_its_message()
 #[test]
 fn a_second_run_reads_every_parse_from_the_cache()
 {
-    let root = scratch!("cache", "The kernel reduces the term.", "", PRESENT);
+    let root = scratch!("cache", "The kernel reduces the term.", PRESENT);
     put!(
         root,
         "corpus/b.gandr",
@@ -279,11 +244,7 @@ fn a_second_run_reads_every_parse_from_the_cache()
         flags.extend(extra.iter().map(std::ffi::OsString::from));
         flags
     };
-    assert!(
-        run!(root, flags("fake 1", &["--write"]), "")
-            .status
-            .success()
-    );
+    assert!(run!(root, flags("fake 1", &[]), "").status.success());
     assert_eq!(
         std::fs::read_to_string(root.join("input.json")).unwrap(),
         r#"["The kernel reduces the term."]"#,
@@ -296,7 +257,7 @@ fn a_second_run_reads_every_parse_from_the_cache()
     assert_eq!(
         String::from_utf8_lossy(&cached.stdout),
         "prose: parsed 0 passage(s) of 0 word(s) afresh, of 2 read; 0 parse(s) not kept in the \
-         cache\nprose: 2 findings, every one in the ledger\n"
+         cache\nprose: 2 findings in the tree, which the outputs kind `prose` holds\n"
     );
     assert!(
         !root.join("input.json").exists(),
@@ -328,9 +289,8 @@ fn a_second_run_reads_every_parse_from_the_cache()
 #[test]
 fn a_prune_keeps_the_head_s_parses_and_removes_the_rest()
 {
-    let root = scratch!("prune", "The kernel reduces the term.", "", PRESENT);
+    let root = scratch!("prune", "The kernel reduces the term.", PRESENT);
     put!(root, "crates/workflow-prose/parse.py", "the parse script");
-    assert!(run!(root, ["--write"], "").status.success());
     git!(root, ["add", "."]);
     git!(root, ["commit", "--quiet", "-m", "base"]);
     put!(root, "docs/kept.md", "The kept page reads the term.\n");
@@ -405,8 +365,7 @@ fn a_prune_keeps_the_head_s_parses_and_removes_the_rest()
 #[test]
 fn a_cold_parse_across_interpreters_judges_in_order()
 {
-    let root = scratch!("fan-out", "The kernel reduces the term.", "", PRESENT);
-    assert!(run!(root, ["--write"], "").status.success());
+    let root = scratch!("fan-out", "The kernel reduces the term.", PRESENT);
     git!(root, ["commit", "--quiet", "-m", "base"]);
     let past = [3_usize, 1000, 2099];
     let readme: Vec<String> = (0 .. 2100_usize)
@@ -464,8 +423,7 @@ fn a_cold_parse_across_interpreters_judges_in_order()
 #[test]
 fn a_document_answers_for_the_paragraphs_its_change_wrote()
 {
-    let root = scratch!("documents", "The kernel reduces the term.", "", PRESENT);
-    assert!(run!(root, ["--write"], "").status.success());
+    let root = scratch!("documents", "The kernel reduces the term.", PRESENT);
     put!(
         root,
         "crates/x/README.md",
@@ -518,8 +476,8 @@ fn a_document_answers_for_the_paragraphs_its_change_wrote()
     assert!(
         String::from_utf8_lossy(&fixed.stdout).ends_with(
             "prose: 2 file(s) touched since HEAD: 1 paragraph(s) kept from the base, 2 written \
-             and judged; 0 line(s) of commented-out code left out\nprose: 1 findings, every one \
-             in the ledger\n"
+             and judged; 0 line(s) of commented-out code left out\nprose: 1 findings in the \
+             tree, which the outputs kind `prose` holds\n"
         ),
         "{}",
         String::from_utf8_lossy(&fixed.stdout)
@@ -530,8 +488,7 @@ fn a_document_answers_for_the_paragraphs_its_change_wrote()
 #[test]
 fn a_hash_comment_answers_for_the_paragraphs_its_change_wrote()
 {
-    let root = scratch!("hash", "The kernel reduces the term.", "", PRESENT);
-    assert!(run!(root, ["--write"], "").status.success());
+    let root = scratch!("hash", "The kernel reduces the term.", PRESENT);
     put!(
         root,
         ".config/mise/tasks/t.toml",
@@ -589,8 +546,7 @@ fn a_hash_comment_answers_for_the_paragraphs_its_change_wrote()
 #[test]
 fn an_override_admits_its_substitution_and_counts_it()
 {
-    let root = scratch!("override", "The kernel reduces the term.", "", PRESENT);
-    assert!(run!(root, ["--write"], "").status.success());
+    let root = scratch!("override", "The kernel reduces the term.", PRESENT);
     put!(
         root,
         "crates/x/README.md",

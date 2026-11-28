@@ -407,10 +407,6 @@
     { "path": ".github/", "groups": [] },
     { "path": "crates/workflow-prose/", "groups": ["rust", "doc", "corpus", "extension", "prose"] },
     {
-      "path": "crates/workflow-debt-ledger/",
-      "groups": ["rust", "doc", "corpus", "extension", "prose"]
-    },
-    {
       "path": "crates/surface-render-terminal/",
       "groups": ["rust", "doc", "corpus", "extension", "prose"]
     },
@@ -425,7 +421,6 @@
     { "path": "clippy.toml", "groups": ["rust", "doc"] },
     { "path": "rustfmt.toml", "groups": ["rust", "doc"] },
     { "path": "corpus/glossary.toml", "groups": ["corpus", "prose"] },
-    { "path": "corpus/prose.ledger", "groups": ["corpus", "prose"] },
     { "path": "corpus/**.gandr", "groups": ["corpus", "corpus-tests", "prose"] },
     { "path": "**.gandr", "groups": ["corpus", "prose"] },
     { "path": "corpus/**.md", "groups": ["corpus", "corpus-tests", "prose"] },

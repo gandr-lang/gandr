@@ -65,7 +65,7 @@ The crate's tests run with `cargo nextest run -p gandr-surface-diagnostics`; the
 
 A refusal reads as a procedure, in the form of ASD-STE100's procedures. The message states what is wrong in one sentence. The primary label names the place in one phrase. The help tells the reader what to do in one imperative sentence. A refusal that an issue tracks ends with that issue instead. The technical vocabulary is free.
 
-`message.rs` writes the message, `locus.rs` writes the label and `advice.rs` writes the help, each with one arm per refusal name. `mise run check:prose` reads each rendered golden for the three parts and records a golden that lacks one in `corpus/prose.ledger`. The names get their help most-seen first, ten at a time (#2920).
+`message.rs` writes the message, `locus.rs` writes the label and `advice.rs` writes the help, each with one arm per refusal name. The prose check reads each rendered golden for the three parts, and the ratchet kind `prose` of the outputs holds a golden that lacks one. The names get their help most-seen first, ten at a time (#2920).
 
 Without a help, an unresolved name tells the reader what is wrong and where, but not what to do:
 

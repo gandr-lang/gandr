@@ -1,38 +1,34 @@
 //! `prose`: the sentence rules over the corpus comments and the rendered
-//! diagnostics against the committed debt, over the paragraphs a change wrote
-//! in the markdown documents and the `#` comments, and over a pull request's
-//! or an issue's body.
+//! diagnostics, over the paragraphs a change wrote in the markdown documents
+//! and the `#` comments, and over a pull request's or an issue's body.
 //!
-//! `prose --python PATH [--root DIR] [--write]` gathers the text under the
-//! root, parses it by running `crates/workflow-prose/parse.py` under the given
-//! interpreter, judges every sentence and diagnostic, and compares the
-//! findings with `corpus/prose.ledger`. With `--write` it writes the ledger
-//! instead. With `--base REV` it also reads each markdown document and each
-//! file of `#` comments that the change touched since `REV`, and each
-//! paragraph whose digest `REV` does not hold meets every sentence rule with
-//! no ledger. `--override FILE` reads the `prose-override:` lines of a pull
-//! request body, which admit the paragraphs of a mechanical change. `--cache
-//! DIR --model NAME` keeps each parse by its passage's digest, so a passage
-//! parses once. `prose --python PATH --body FILE` judges the one body in
-//! `FILE` under the body rules, with no ledger. The variables `PROSE_PYTHON`,
-//! `PROSE_CACHE` and `PROSE_MODEL` give `--python`, `--cache` and `--model`
-//! when the command line does not. When the environment names a run of
-//! `outputs` (`GANDR_OUTPUT_STORE` and `GANDR_OUTPUT_RUN`), `prose` gives the
-//! findings as the values of the kind `prose`, one value for each file and one
-//! line `RULE DIGEST` for each finding, and judges nothing.
+//! `prose --python PATH [--root DIR]` gathers the text under the root, parses
+//! it by running `crates/workflow-prose/parse.py` under the given interpreter,
+//! judges every sentence and diagnostic, and prints the count of the
+//! findings. The ratchet kind `prose` of the outputs holds those findings.
+//! When the environment names a run of `outputs` (`GANDR_OUTPUT_STORE` and
+//! `GANDR_OUTPUT_RUN`), `prose` gives the findings as the values of that kind,
+//! one value for each file and one line `RULE DIGEST` for each finding, and
+//! judges nothing. With `--base REV` it also reads each markdown document and
+//! each file of `#` comments that the change touched since `REV`, and each
+//! paragraph whose digest `REV` does not hold meets every sentence rule.
+//! `--override FILE` reads the `prose-override:` lines of a pull request body,
+//! which admit the paragraphs of a mechanical change. `--cache DIR --model
+//! NAME` keeps each parse by its passage's digest, so a passage parses once.
+//! `prose --python PATH --body FILE` judges the one body in `FILE` under the
+//! body rules. The variables `PROSE_PYTHON`, `PROSE_CACHE` and `PROSE_MODEL`
+//! give `--python`, `--cache` and `--model` when the command line does not.
 //!
 //! # Exit codes
 //!
-//! - `0`: every finding is in the ledger, every ledger line is a finding, no
-//!   written paragraph breaks a rule and each override admits the count it
-//!   claims; or the ledger was written; or the body breaks no rule; also
-//!   `--help` and `--version`.
-//! - `1`: a finding the ledger lacks, a ledger line no finding matches, a
-//!   finding in a written paragraph, an override whose count differs, or a
-//!   finding in the body.
-//! - `2`: a refusal — an unreadable file, a malformed glossary, ledger or
-//!   override, a failed parse or git read, or standard output closed; also a
-//!   malformed invocation.
+//! - `0`: no written paragraph breaks a rule and each override admits the count
+//!   it claims; or the findings went to the run of `outputs`; or the body
+//!   breaks no rule; also `--help` and `--version`.
+//! - `1`: a finding in a written paragraph, an override whose count differs, or
+//!   a finding in the body.
+//! - `2`: a refusal — an unreadable file, a malformed glossary or override, a
+//!   failed parse or git read, or standard output closed; also a malformed
+//!   invocation.
 
 use core::num::NonZeroUsize;
 use std::collections::HashSet;
@@ -41,9 +37,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use gandr_workflow_debt_ledger::Ledger;
-use gandr_workflow_debt_ledger::LedgerError;
-use gandr_workflow_debt_ledger::Standing;
 use gandr_workflow_output_store::Kind;
 use gandr_workflow_output_store::given;
 use gandr_workflow_prose::Finding;
@@ -57,7 +50,6 @@ use gandr_workflow_prose::cache::Script;
 use gandr_workflow_prose::digest::Digest;
 use gandr_workflow_prose::documents;
 use gandr_workflow_prose::documents::Base;
-use gandr_workflow_prose::ledger;
 use gandr_workflow_prose::mechanical;
 use gandr_workflow_prose::mechanical::Override;
 use gandr_workflow_prose::mechanical::Unread;
@@ -72,13 +64,13 @@ use gandr_workflow_prose::passage::Text;
 use gandr_workflow_prose::rules;
 use gandr_workflow_prose::rules::Fix;
 
-/// The exit code of findings the ledger does not match.
+/// The exit code of a finding that the run refuses.
 const FOUND: u8 = 1;
 
 /// The exit code of a refusal or a malformed invocation.
 const REFUSED: u8 = 2;
 
-/// The sentence rules against the committed prose debt.
+/// The sentence rules over the text of the tree, a change and a body.
 #[derive(Debug, clap::Parser)]
 #[command(name = "prose", version, about)]
 struct Cli
@@ -89,16 +81,12 @@ struct Cli
     /// The repository root.
     #[arg(long, default_value = ".")]
     root: PathBuf,
-    /// Write the ledger instead of comparing.
-    #[arg(long, conflicts_with = "body")]
-    write: bool,
-    /// Judge the pull request or issue bodies in these files instead, with no
-    /// ledger.
+    /// Judge the pull request or issue bodies in these files instead.
     #[arg(long, num_args = 1..)]
     body: Vec<PathBuf>,
     /// The merge base: each paragraph a change wrote since it in a markdown
     /// document or a `#` comment meets every sentence rule.
-    #[arg(long, conflicts_with_all = ["body", "write"])]
+    #[arg(long, conflicts_with = "body")]
     base: Option<String>,
     /// The pull request bodies whose `prose-override:` lines admit the
     /// paragraphs of a mechanical change.
@@ -148,9 +136,9 @@ struct Written
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Outcome
 {
-    /// The findings and the ledger agree, or the ledger was written.
+    /// No finding refuses, or the findings went to the run of `outputs`.
     Agreed,
-    /// A finding or a ledger line has no partner.
+    /// A finding or an override refuses.
     Disagreed,
 }
 
@@ -158,22 +146,20 @@ enum Outcome
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: exits `0` when the findings and the ledger agree, the ledger was
-///   written or the body breaks no rule, `1` when they disagree or the body
-///   breaks a rule, `2` after printing a refusal or a usage message to standard
-///   error.
+/// - ensures: exits `0` when no finding refuses, `1` when a written paragraph,
+///   an override or the body refuses, `2` after printing a refusal or a usage
+///   message to standard error.
 /// - provides: the process boundary.
 /// - fails: never; every refusal is an exit code.
 /// - panics: none.
 /// - executable: none — the outcome is the process's exit code.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a run in agreement, one with a new finding, one with a
-///   stale line and one whose parse fails; a swapped exit code changes the
-///   observed process result.
-/// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
+/// - hypothesis: L3 — a run in agreement, one with a written finding, one with
+///   a finding in a body and one whose parse fails; a swapped exit code changes
+///   the observed process result.
+/// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
 /// - witness: `tests::cli::a_body_is_refused_on_its_findings`
-/// - witness: `tests::cli::a_stale_line_is_refused_and_written_away_5007`
 /// - witness: `tests::cli::a_failing_parse_is_reported_with_its_message`
 fn main() -> ExitCode
 {
@@ -213,7 +199,7 @@ fn main() -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — the check and the body mode print each finding's file,
 ///   line, rule, sentence and fix; a lost part changes the printed line.
-/// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
+/// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
 /// - witness: `tests::cli::a_body_is_refused_on_its_findings`
 ///
 /// # Cost
@@ -428,7 +414,7 @@ fn head(
 ///   [`documents::held`] shares, less those [`mechanical::admit`] admits; each
 ///   override with its admitted count; the lines of commented-out code that the
 ///   head's `#` comments hold.
-/// - provides: the paragraphs [`run`] parses and judges with no ledger.
+/// - provides: the paragraphs [`run`] parses and judges with no debt.
 /// - fails: every refusal of [`documents::touched`], [`documents::at_head`] and
 ///   [`documents::held`]; [`ProseError::Io`] for a body that cannot be read;
 ///   [`ProseError::Override`] for a body's line [`mechanical::read`] refuses.
@@ -499,33 +485,30 @@ fn written(
     })
 }
 
-/// Gathers, parses, judges and compares with the ledger, or writes it; with
-/// a base, judges the paragraphs a change wrote in the markdown documents and
-/// the `#` comments.
+/// Gathers, parses and judges the text of the tree, and gives the findings to
+/// a run of `outputs`; with a base, judges the paragraphs a change wrote in
+/// the markdown documents and the `#` comments.
 ///
 /// # Specification
 /// - requires: `cli.python` can import spaCy and `en_core_web_sm` when a
 ///   passage misses the cache.
-/// - ensures: with `--write`, the ledger holds one line per distinct finding
-///   and the outcome is agreed. Otherwise each finding the ledger lacks is
-///   printed with its line, rule, sentence and fix, and each ledger line no
-///   finding matches is printed as stale. With `--base`, each finding of a
-///   written paragraph is printed as its parse arrives, before the ledger's
-///   verdict, and each override is printed with the count it admits beside the
-///   count it claims. The run prints the passages and words it parsed afresh,
-///   and the outcome is agreed exactly when no finding, stale line or differing
-///   count was printed. The written paragraphs, the ledger's passages and the
-///   diagnostics' advice parse in one [`parse::parse`], in that order. With
-///   `--prune`, the cache keeps only the parses of [`head`] after the parse,
-///   and the run prints what the prune kept and removed.
+/// - ensures: in a run of `outputs`, the run gives [`give`] the findings of the
+///   tree and the outcome is agreed. Otherwise, with `--base`, each finding of
+///   a written paragraph is printed as its parse arrives, and each override is
+///   printed with the count it admits beside the count it claims. The run
+///   prints the passages and words it parsed afresh and the count of the
+///   findings of the tree. The outcome is agreed exactly when no finding or
+///   differing count was printed. The written paragraphs, the passages of the
+///   tree and the diagnostics' advice parse in one [`parse::parse`], in that
+///   order. With `--prune`, the cache keeps only the parses of [`head`] after
+///   the parse, and the run prints what the prune kept and removed.
 /// - provides: the whole command.
 /// - fails: every refusal of [`passage::gather`], [`Glossary::read`],
-///   [`written`], [`parse::parse`] and [`head`]; [`ProseError::Ledger`] for a
-///   ledger line [`Ledger::read`] refuses; [`ProseError::Io`] when the ledger,
-///   the glossary, the parse script or standard output cannot be read or
+///   [`written`], [`parse::parse`], [`head`] and [`give`]; [`ProseError::Io`]
+///   when the glossary, the parse script or standard output cannot be read or
 ///   written.
 /// - panics: none.
-/// - executable: none — the outcome is the bytes printed and the ledger file.
+/// - executable: none — the outcome is the bytes printed and the values given.
 ///
 /// # Errors
 /// As `fails` lists.
@@ -536,8 +519,7 @@ fn written(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`main`].
-/// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
-/// - witness: `tests::cli::a_stale_line_is_refused_and_written_away_5007`
+/// - witness: `tests::cli::a_run_of_the_outputs_gives_each_finding_and_refuses_none`
 /// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
 /// - witness: `tests::cli::a_prune_keeps_the_head_s_parses_and_removes_the_rest`
 fn run(cli: &Cli) -> Result<Outcome, ProseError>
@@ -629,33 +611,6 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         give(&findings)?;
         return Ok(Outcome::Agreed);
     }
-    let ledger_path = cli.root.join("corpus/prose.ledger");
-    if cli.write {
-        let text = gandr_workflow_debt_ledger::write(ledger::HEADER, findings.iter().map(Key::of));
-        let lines = text.lines().filter(|line| !line.starts_with('#')).count();
-        std::fs::write(&ledger_path, text).map_err(io(ledger_path))?;
-        writeln!(out, "prose: wrote {lines} ledger lines").map_err(output)?;
-        return Ok(Outcome::Agreed);
-    }
-    let committed = Ledger::<Key>::read(gandr_workflow_debt_ledger::Text(
-        &std::fs::read_to_string(&ledger_path).map_err(io(ledger_path))?,
-    ))
-    .map_err(|LedgerError::Unread { line }| ProseError::Ledger { line })?;
-    let verdict = committed.check(&findings, Key::of);
-    for finding in &verdict.new {
-        print(&mut out, finding)?;
-    }
-    for stale in &verdict.stale {
-        writeln!(
-            out,
-            "corpus/prose.ledger: stale line `{stale}`: no finding matches it; run `mise run \
-             check:prose --write`"
-        )
-        .map_err(output)?;
-    }
-    if verdict.standing() == Standing::Disagreed {
-        refused = true;
-    }
     if let Some(ref written) = written {
         for stated in &written.overrides {
             writeln!(
@@ -698,7 +653,7 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
     }
     writeln!(
         out,
-        "prose: {} findings, every one in the ledger",
+        "prose: {} findings in the tree, which the outputs kind `prose` holds",
         findings.len()
     )
     .map_err(output)?;

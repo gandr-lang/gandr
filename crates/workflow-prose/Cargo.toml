@@ -22,16 +22,17 @@ path = "src/main.rs"
 name = "tests"
 path = "tests/lib.rs"
 
-# blake3 names a finding's sentence in the ledger, and a passage in the parse
+# blake3 names a finding's sentence in its key, and a passage in the parse
 # cache and the base. clap reads the invocation. serde reads the parse
 # script's JSON and the glossary's TOML. The shape crate supplies the `Maybe`
-# that a sentence without a root has. The outputs crate gives the refusals of
-# the corpus from the store of the outputs, and the procedural rule reads
-# them.
+# that a sentence without a root has.
+#
+# The outputs crate gives the refusals of the corpus from the store of the
+# outputs, and the procedural rule reads them. The store crate takes the
+# findings in a run of `outputs`.
 [dependencies]
 blake3.workspace = true
 clap.workspace = true
-gandr-workflow-debt-ledger.workspace = true
 gandr-workflow-output-store.workspace = true
 gandr-workflow-outputs.workspace = true
 quenchant-shape.workspace = true

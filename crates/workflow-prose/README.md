@@ -1,6 +1,6 @@
 # gandr-workflow-prose
 
-The sentence rules that need a parse, held over the comments of every tracked gandr source and the rendered diagnostics against a committed ledger of debt, and over each paragraph that a change writes in the markdown documents and the `#` comments.
+The sentence rules that need a parse, held over the comments of every tracked gandr source and the rendered diagnostics as the ratchet kind `prose` of the outputs, and over each paragraph that a change writes in the markdown documents and the `#` comments.
 
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
@@ -12,22 +12,22 @@ The sentence rules that need a parse, held over the comments of every tracked ga
 
 ## Synopsis
 
-**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `//!`, `///` and `//` paragraph of each `.gandr` source `git ls-files` tracks, every rendered diagnostic that the tests of the renderer give as values of the kind `rendered`, and the refusals that each refusing source of the corpus prints, each text's diagnostics one by one. The writer of `gandr-workflow-outputs` gives the refusals, and a diagnostic of the corpus has the path of its source. A comment's list items, its `- see:`, `- owes:` and `- cites:` lines among them, the indented lines continuing them, and its footer lines `[label]: <URL> "<authors>, <title>"` stay unread. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. It compares the findings with `corpus/prose.ledger` and refuses a finding the ledger lacks or a ledger line no finding matches. The markdown documents keep no ledger. A change answers for each paragraph that it writes in a document since its merge base, and a finding there refuses. The body mode reads a pull request's or an issue's body under the body rules, with no ledger: `mise run body:prose` runs it, and so do `pr:open`, `issue:file` and the nightly `report:prose`.
+**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `//!`, `///` and `//` paragraph of each `.gandr` source `git ls-files` tracks, every rendered diagnostic that the tests of the renderer give as values of the kind `rendered`, and the refusals that each refusing source of the corpus prints, each text's diagnostics one by one. The writer of `gandr-workflow-outputs` gives the refusals, and a diagnostic of the corpus has the path of its source. A comment's list items, its `- see:`, `- owes:` and `- cites:` lines among them, the indented lines continuing them, and its footer lines `[label]: <URL> "<authors>, <title>"` stay unread. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. In a run of `outputs` it gives the findings as the values of the ratchet kind `prose`. The markdown documents keep no debt. A change answers for each paragraph that it writes in a document since its merge base, and a finding there refuses. The body mode reads a pull request's or an issue's body under the body rules, with no debt: `mise run body:prose` runs it, and so do `pr:open`, `issue:file` and the nightly `report:prose`.
 
-**Why.** The style the corpus follows is ASD-STE100's: short sentences, the active voice, the present tense, no noun stacks. A reviewer misses a passive or a past tense in a dense paragraph; a parser does not. The rules need a part-of-speech tag and a dependency parse, which a pattern over the text cannot give. The ledger names the existing debt, so the check refuses new debt at once while a sweep pays the old debt down.
+**Why.** The style the corpus follows is ASD-STE100's: short sentences, the active voice, the present tense, no noun stacks. A reviewer misses a passive or a past tense in a dense paragraph; a parser does not. The rules need a part-of-speech tag and a dependency parse, which a pattern over the text cannot give. The kind `prose` of the outputs holds the existing debt, and its difference refuses a head that adds a finding, so a sweep pays the old debt down and no change adds new debt.
 
-**How.** The binary writes the passages as JSON to `parse.py`, which runs under the interpreter of the spaCy venv that the `check:prose` task pins. The script loads `en_core_web_sm` and prints each token's text, lemma, coarse and fine tags, dependency, head and character offset. Every rule is Rust over those tokens, so a rule is tested on a sentence written by hand. Text inside backticks is code, and no rule reads it. Text inside double quotes is a quotation, and the tense rule leaves it alone. A finding's key is its file, its rule and its sentence's digest ([`ledger::Key`](src/ledger.rs)).
+**How.** The binary writes the passages as JSON to `parse.py`, which runs under the interpreter of the spaCy venv that the `check:prose` task pins. The script loads `en_core_web_sm` and prints each token's text, lemma, coarse and fine tags, dependency, head and character offset. Every rule is Rust over those tokens, so a rule is tested on a sentence written by hand. Text inside backticks is code, and no rule reads it. Text inside double quotes is a quotation, and the tense rule leaves it alone. A finding's key is its file, its rule and its sentence's digest ([`key::Key`](src/key.rs)).
 
 ## Provided features
 
-- `prose --python PATH` compares the findings under the current directory with `corpus/prose.ledger`; `--root DIR` names another repository root.
-- `--write` writes the ledger from the findings instead.
-- `--base REV` judges each paragraph that the change wrote since `REV` in a markdown document or a `#` comment, with no ledger. [`documents`](src/documents.rs) names the files it reads and those it leaves out. [`passage::hash`](src/passage/hash.rs) names the syntaxes of the `#` comments, and the lines of a comment that stay unread.
+- `prose --python PATH` judges the comments and the diagnostics under the current directory, and prints the count of the findings; `--root DIR` names another repository root.
+- In a run of `outputs`, with `GANDR_OUTPUT_STORE` and `GANDR_OUTPUT_RUN` set, `prose` gives the findings as the values of the kind `prose`: one value for each file, one line `RULE DIGEST` for each finding. `outputs difference prose` refuses a head that adds a line.
+- `--base REV` judges each paragraph that the change wrote since `REV` in a markdown document or a `#` comment, with no debt. [`documents`](src/documents.rs) names the files it reads and those it leaves out. [`passage::hash`](src/passage/hash.rs) names the syntaxes of the `#` comments, and the lines of a comment that stay unread.
 - `--override FILE...` reads the `prose-override:` lines of pull request bodies, and [`mechanical`](src/mechanical.rs) states their form and their check. `check:prose` reads the architect's sign-off of each override.
 - `--cache DIR --model NAME` keeps each parse by its passage's digest, so a run parses only the texts that the cache misses. `--prune` removes each parse that the head does not hold, and `--width N` bounds the interpreters of a cold parse.
 - The variables `PROSE_PYTHON`, `PROSE_CACHE` and `PROSE_MODEL` give `--python`, `--cache` and `--model` when the command line does not. A shell that holds the interpreter sets them, and `prose --base REV` is then the whole check of a change.
 - `prose --python PATH --body FILE...` judges the bodies in the files in one parse. [`passage::body`](src/passage.rs) states a body's passages and the lines it leaves unread.
-- Exit `0` when the run agrees, the ledger is written or no body breaks a rule. Exit `1` on a finding the ledger lacks, a stale line, a written paragraph's finding, an override's count that differs or a body's finding. Exit `2` on a refusal: an unreadable file, a malformed glossary, ledger or override line, a failed git read or a failed parse.
+- Exit `0` when no written paragraph or body breaks a rule, or the findings went to a run of `outputs`. Exit `1` on a written paragraph's finding, an override's count that differs or a body's finding. Exit `2` on a refusal: an unreadable file, a malformed glossary or override line, a failed git read or a failed parse.
 
 ### Rules
 
@@ -123,7 +123,7 @@ The gate is ASD-STE100 with unrestricted technical vocabulary. A finding names t
 | GR-7 | review: no inclusive-language list in the tree |
 | GR-8 | review: a possessive needs a reader |
 
-The small English model misreads some technical sentences. A misreading is debt like any other finding: reword the sentence so the parse reads it, or leave the line in the ledger.
+The small English model misreads some technical sentences. A misreading is debt like any other finding: reword the sentence so the parse reads it, or leave the finding to the kind `prose`.
 
 ### Glossary
 
@@ -137,13 +137,12 @@ A Python interpreter that imports spaCy and `en_core_web_sm`. The `check:prose` 
 
 ```sh
 mise run check:prose
-mise run check:prose --write
 cargo nextest run -p gandr-workflow-prose
 ```
 
 ## Where the detail lives
 
-The crate docs in `src/lib.rs` state the boundaries and the part that each module plays. `gandr-workflow-debt-ledger` reads the ledger, compares the findings with it and writes it. `blake3` digests a sentence and a passage; `serde_json` and `toml` read the parse and the glossary.
+The crate docs in `src/lib.rs` state the boundaries and the part that each module plays. `gandr-workflow-output-store` takes the values of the kind `prose`. `blake3` digests a sentence and a passage; `serde_json` and `toml` read the parse and the glossary.
 
 ## References
 

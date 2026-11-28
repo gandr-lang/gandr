@@ -1,8 +1,8 @@
 //! **Prose**: the sentence rules that need a parse. They hold over the corpus
-//! comments and the rendered diagnostics with the committed debt in a ledger,
-//! over the paragraphs a change writes in the markdown documents and the `#`
-//! comments with no debt, and over a pull request's or an issue's body with
-//! none.
+//! comments and the rendered diagnostics as the ratchet kind `prose` of the
+//! outputs, over the paragraphs a change writes in the markdown documents and
+//! the `#` comments with no debt, and over a pull request's or an issue's body
+//! with none.
 //!
 //! - [`passage`] reads the text: a corpus source's `///` paragraphs, a
 //!   document's prose paragraphs, the `#` comments of a task, a script, a
@@ -20,7 +20,7 @@
 //! - [`rules`] judges each sentence and each diagnostic by the rules the crate
 //!   README lists.
 //! - [`glossary`] reads `corpus/glossary.toml`.
-//! - [`ledger`] keys each finding by file, rule and sentence digest.
+//! - [`key`] keys each finding by file, rule and sentence digest.
 //!
 //! # Boundaries
 //!
@@ -33,15 +33,16 @@
 //! A rule reads prose alone: text inside backticks is code, and text inside
 //! double quotes is a quotation the tense rule leaves alone. A rule fires at
 //! most once per sentence. The small English model mislabels some technical
-//! words; a misreading is debt the ledger names, and the glossary pins a word
-//! the model reads both ways.
+//! words; a misreading is a finding like any other, and the glossary pins a
+//! word the model reads both ways.
 //!
-//! The ledger keys a finding by its sentence's digest, never its line, so
-//! moving a sentence keeps its key and rewording it retires the key. A new
-//! finding refuses, and a ledger line no finding matches is stale and refuses
-//! too, so the debt only shrinks.
+//! A finding is keyed by its sentence's digest, never its line, so moving a
+//! sentence keeps its key and rewording it retires the key. In a run of
+//! `outputs` the binary gives the keys of the corpus and of the diagnostics as
+//! the values of the kind `prose`. The kind is a ratchet: its difference
+//! refuses a head that adds a key, so the debt only shrinks.
 //!
-//! A markdown document and a `#` comment keep no ledger. A passage's digest is
+//! A markdown document and a `#` comment keep no debt. A passage's digest is
 //! the BLAKE3 digest of its lines joined by single spaces, and [`documents`]
 //! reads the touched files at the merge base with one `git cat-file --batch`. A
 //! paragraph whose digest the base holds is a paragraph that the change keeps,
@@ -69,7 +70,7 @@ pub mod digest;
 pub mod documents;
 pub mod error;
 pub mod glossary;
-pub mod ledger;
+pub mod key;
 pub mod mechanical;
 pub mod parse;
 pub mod passage;
@@ -77,6 +78,6 @@ pub mod rules;
 
 pub use crate::error::ProseError;
 pub use crate::glossary::Glossary;
-pub use crate::ledger::Key;
+pub use crate::key::Key;
 pub use crate::rules::Finding;
 pub use crate::rules::Rule;

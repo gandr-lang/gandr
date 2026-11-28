@@ -26,12 +26,6 @@ pub enum ProseError
         /// What the reader found.
         message: String,
     },
-    /// A ledger line is not a path, a rule and a digest.
-    Ledger
-    {
-        /// The line.
-        line: String,
-    },
     /// The parse script could not run, exited unsuccessfully, or printed what
     /// this crate does not read.
     Parse
@@ -81,10 +75,6 @@ impl fmt::Display for ProseError
                 ref message,
             } => write!(f, "{}: {message}", path.display()),
             Self::Glossary { ref message } => write!(f, "corpus/glossary.toml: {message}"),
-            Self::Ledger { ref line } => write!(
-                f,
-                "corpus/prose.ledger: `{line}` is not a path, a rule and a digest"
-            ),
             Self::Parse {
                 ref command,
                 ref message,
@@ -117,23 +107,16 @@ mod tests
         let cases = [
             (
                 ProseError::Io {
-                    path: PathBuf::from("corpus/prose.ledger"),
+                    path: PathBuf::from("corpus/glossary.toml"),
                     message: "permission denied".into(),
                 },
-                "corpus/prose.ledger: permission denied",
+                "corpus/glossary.toml: permission denied",
             ),
             (
                 ProseError::Glossary {
                     message: "`refuse` is `verbal`, not a part of speech".into(),
                 },
                 "corpus/glossary.toml: `refuse` is `verbal`, not a part of speech",
-            ),
-            (
-                ProseError::Ledger {
-                    line: "corpus/a.gandr Passive".into(),
-                },
-                "corpus/prose.ledger: `corpus/a.gandr Passive` is not a path, a rule and a \
-                 digest",
             ),
             (
                 ProseError::Parse {

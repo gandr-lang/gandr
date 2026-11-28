@@ -13,14 +13,12 @@ INSERT INTO purpose VALUES('workflow-prose','documents::at_head','function','The
 INSERT INTO purpose VALUES('workflow-prose','documents::every','function','Every file of the head whose prose the check reads, tracked or untracked: the markdown documents and the files of `#` comments, the bodies, the generated pages and a tool''s words set aside.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','documents::held','function','The paragraphs each touched file holds at the base, read by its kind''s reader through one batch of git.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','documents::touched','function','The files whose prose the check reads that a change adds or alters since its base, and the untracked ones, the bodies, the generated pages and a tool''s words set aside.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','error::ProseError','enum','Why the prose check could not run: a file unread, a malformed glossary or ledger line, or a parse that failed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','error::ProseError','enum','Why the prose check could not run: a file unread, a malformed glossary or override line, or a parse that failed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','glossary::Agrees','enum','Whether a token''s coarse tag is the part of speech the glossary gives its word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','glossary::Glossary','struct','The glossary''s words, each with the one part of speech it carries.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','glossary::Pos','enum','The part of speech a glossary word carries.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','glossary::Tag','struct','A coarse tag as spaCy prints it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','ledger::HEADER','constant','The header the prose ledger is written under.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','ledger::Key','struct','One ledger line: a finding''s file, rule and sentence digest.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','ledger::Unkeyed','struct','Why a line is no key: not a path, a rule and sixteen hexadecimal digits.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','key::Key','struct','The key of a finding: its file, its rule and the digest of its sentence.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','mechanical::Override','struct','One named override of a body: its substitution, the paragraphs it claims and admits, and its line.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','mechanical::Unread','struct','Why an override line does not read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','mechanical::admit','function','The written paragraphs that each override''s substitution reproduces from a changed base paragraph.',NULL,'fits','sound',NULL);
@@ -34,7 +32,7 @@ INSERT INTO purpose VALUES('workflow-prose','parse::Width','struct','The most in
 INSERT INTO purpose VALUES('workflow-prose','parse::parse','function','Each passage''s sentences, read from the cache or parsed once for each distinct text by the parse script across the run''s interpreters, each handed to the judge as soon as it is known.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Advice','enum','What a rendered diagnostic tells its reader to do: a `help:` line, an issue that tracks it, or nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::CommentShape','struct','The head and the item comments of one corpus source.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','passage::Debt','enum','Where the debt of a source''s passages stands: the ledger, the merge base, or nowhere.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::Debt','enum','Where the debt of a source''s passages stands: the ratchet kind of the outputs, the merge base, or nowhere.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Gathered','struct','Everything the check reads under a root: the comment passages and the rendered diagnostics.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Golden','struct','One rendered diagnostic: its headline, whether a label places it, and its advice.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Head','struct','The opening comment run of a corpus source.',NULL,'fits','sound',NULL);
