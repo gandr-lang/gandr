@@ -39,7 +39,6 @@ definition Constructor theory_declaration
 definition FunctionCall circuit_declaration
 definition FunctionCall theory_declaration
 definition Member attributed_module_member
-definition Member capability_type
 definition Member codata_declaration
 definition Member constructor_pattern
 definition Member data_declaration
@@ -76,7 +75,6 @@ definition Type type_identifier
 definition Type type_path
 definition Type world_declaration
 definition TypeBuiltin bridge_type
-definition TypeBuiltin capability_type
 definition TypeBuiltin flow_type
 definition TypeBuiltin path_type
 definition TypeBuiltin primitive_type
@@ -107,7 +105,6 @@ hover FunctionCall circuit_declaration
 hover FunctionCall theory_declaration
 hover FunctionDef handle_expression
 hover Member attributed_module_member
-hover Member capability_type
 hover Member codata_declaration
 hover Member glob_expression
 hover Member lazy_record_expression
@@ -121,7 +118,6 @@ hover Type manifest_sort
 hover Type theory_declaration
 hover Type type_identifier
 hover Type type_path
-hover TypeBuiltin capability_type
 hover TypeBuiltin path_type
 hover TypeBuiltin primitive_type
 hover TypeBuiltin universe_type
@@ -143,4 +139,5 @@ hover VariableParam codata_declaration
 hover VariableParam data_declaration
 hover VariableParam fork_expression
 hover VariableParam handle_expression
+hover VariableParam staged_type
 hover VariableParam theory_declaration
