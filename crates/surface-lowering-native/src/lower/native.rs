@@ -6240,9 +6240,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
             let shape = self
                 .shared()
                 .constructor_pattern(here, head, found, &fields, patterns, work)?;
+            // A qualified name answers as one name, `Theory.Port`, as the
+            // head of a pattern that applies its fields by juxtaposition.
+            let named = family.map_or(head.span, |family| family.span.join(head.span));
             patterns
                 .spelled
-                .push((queued.slot, head.span, PatternReading::Constructor));
+                .push((queued.slot, named, PatternReading::Constructor));
             return Ok(shape);
         }
         if name == FormName::PROJECTION
