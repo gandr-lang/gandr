@@ -1,4 +1,11 @@
-@![features(("data-parameters", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 data Empty : Type where {}
 
@@ -32,12 +39,12 @@ data ProdHom(a : PairOb Integer String, b : PairOb Integer String) : Type where
 
 def prod_id(x : PairOb Integer String) -> ProdHom x x =
   match x where
-    | Pair(l, r) => PairHom 0 0
+    | Pair l r => PairHom 0 0
 
 def coprod_id(x : SumOb Integer String) -> HomPlus Integer String x x =
   match x where
-    | Inl(a) => return HomInl a a 0
-    | Inr(b) => return HomInr b b 0
+    | Inl a => return HomInl a a 0
+    | Inr b => return HomInr b b 0
 
 def mixed_elim(
   a : Integer,
