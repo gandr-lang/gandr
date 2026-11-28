@@ -100,14 +100,16 @@ use crate::failure::Failure;
 /// (#5330), then by the port's dotted binder leaving the grammar (#7869),
 /// then by the static telescope of a type member's head, `type View[m :
 /// Mode](a : Type) : Type;`, then by a capability's labels in the static
-/// bracket, `Cap[read, write]`, with its head a name of the prelude.
-const BUILT_IN_FINGERPRINT: u64 = 0x3559_2ba5_cb47_a118;
+/// bracket, `Cap[read, write]`, with its head a name of the prelude, then by
+/// a qualified and a staged type head applying by juxtaposition alone, `M.F
+/// a` and `View[m] a` (#5200).
+const BUILT_IN_FINGERPRINT: u64 = 0xa42c_631a_c8c7_cd14;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2941);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2925);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
@@ -124,8 +126,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 1),
     ("&&", 1),
     ("&{", 2),
-    ("(", 120),
-    (")", 124),
+    ("(", 116),
+    (")", 120),
     ("*", 2),
     ("*=", 11),
     ("*{", 9),
@@ -134,7 +136,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 11),
     ("+U", 1),
     ("+{", 3),
-    (",", 279),
+    (",", 271),
     ("-", 6),
     ("-->", 31),
     ("-=", 11),

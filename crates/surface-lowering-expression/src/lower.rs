@@ -11328,16 +11328,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   declares under the member, as a static application of it. A path whose
     ///   qualifier an import of a `std` module binds reads the former that
     ///   module homes under the member, as [`Self::applied_path`] reads it. A
-    ///   path that writes an argument list after its type name, `M.F(Integer)`,
-    ///   applies the member to it: a type family expands over the arguments and
-    ///   a data family stands at them (#3051). A path that ends at a function a
-    ///   module exports and writes an argument list calls that function, as
-    ///   [`Self::applied_path`] reads it. Where a value is read, the path is
-    ///   that call (#5213, #5383). Where a value is read, an unapplied path
-    ///   that ends at a component that is no data family, a theory among them,
-    ///   is the component's constant, as a projection reads it (#6174). A path
-    ///   that names an operation of a theory or a constructor under its family
-    ///   is that constructor, as [`Self::applied_path`] reads it (#8364).
+    ///   path applied by juxtaposition, `M.F Integer`, which its spine reads as
+    ///   the list `(Integer)` after the type name, applies the member to it: a
+    ///   type family expands over the arguments and a data family stands at
+    ///   them (#3051). A path that ends at a function a module exports and is
+    ///   applied calls that function, as [`Self::applied_path`] reads it. Where
+    ///   a value is read, the path is that call (#5213, #5383). Where a value
+    ///   is read, an unapplied path that ends at a component that is no data
+    ///   family, a theory among them, is the component's constant, as a
+    ///   projection reads it (#6174). A path that names an operation of a
+    ///   theory or a constructor under its family is that constructor, as
+    ///   [`Self::applied_path`] reads it (#8364).
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -11405,9 +11406,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     }
 
     /// Classify the qualified type reference `M.T` at `site`, applied to the
-    /// arguments `applied` holds in the operand store when it writes them,
-    /// `M.F(A)`, and to those `again` holds when it applies the result once
-    /// more, `M.f(a)(b)`.
+    /// arguments `applied` holds in the operand store when its spine reads
+    /// them, `M.F A`, and to those `again` holds when a second list applies
+    /// the result once more.
     ///
     /// # Specification
     /// - requires: `site` is a type path; `pieces` is its reading; `applied` is
@@ -11419,9 +11420,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   at a data family a module exports, or at the type an import's alias
     ///   names, stands applied to them. A path whose qualifier an import of a
     ///   `std` module binds and whose member that module homes as a former,
-    ///   `l.List(A)`, stands as that former applied to its one argument, as
+    ///   `l.List A`, stands as that former applied to its one argument, as
     ///   [`Self::qualified_former`] reads it. A path ending at a value name a
-    ///   module or an import's alias exports, `Standard.ext(a, b)`, is the call
+    ///   module or an import's alias exports, `Standard.ext a b`, is the call
     ///   [`Self::call_resolved`] reads (#5213). A path that names an operation
     ///   of a theory or a constructor under its family, `Two.word`, stands as
     ///   that constructor applied to its list, as
@@ -11438,13 +11439,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// The path's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::type_path`]; `M.F(Integer)` expands to the
-    ///   family's type, `M.Box(Integer)` stands as the data family, and
-    ///   `M.T(Integer)` over an unparameterised member is refused by its arity;
-    ///   `std.list.List(Integer)` and `l.List(Integer)` stand as the native
-    ///   list; `M.f(a)`, `M.f()` and `M.f(a)(b)` stand as the calls; `Two.word`
-    ///   and `Size.Word` stand as their constructors, and `Two.nope` is refused
-    ///   as the member the theory lacks.
+    /// - hypothesis: L3 — as [`Self::type_path`]; `M.F Integer` expands to the
+    ///   family's type, `M.Box Integer` stands as the data family, and `M.T
+    ///   Integer` over an unparameterised member is refused by its arity;
+    ///   `std.list.List Integer` and `l.List Integer` stand as the native list;
+    ///   `M.same Integer`, `M.empty` and `(M.after Integer) n` stand as the
+    ///   calls; `Two.word` and `Size.Word` stand as their constructors, and
+    ///   `Two.nope` is refused as the member the theory lacks.
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_is_applied_through_its_name_3051`
     /// - witness: `gandr-surface-lowering::lower::tests::a_homed_former_reads_through_its_import_s_qualifier_4862`
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_function_is_called_in_a_type_5213`
@@ -11705,7 +11706,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `M.Box` in a declared type and in a parameter's type
-    ///   lowers to the family a top-level `Box` lowers to, and `M.Box(Integer)`
+    ///   lowers to the family a top-level `Box` lowers to, and `M.Box Integer`
     ///   to the family at `Integer`.
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_member_family_is_named_through_the_module_4298`
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_is_applied_through_its_name_3051`
@@ -11836,8 +11837,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// The component's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `M.f(a)`, `M.f()` and `M.f(a)(b)` in a declared type
-    ///   lower to the decode of the call the bare `f` gives.
+    /// - hypothesis: L3 — `M.same Integer`, `M.empty` and `(M.after Integer) n`
+    ///   in a declared type lower to the decode of the call the bare `f` gives.
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_function_is_called_in_a_type_5213`
     fn module_call(
         &mut self,
@@ -11890,8 +11891,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   on the way adds its links, the innermost last.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance; the unadmitted projection refusal for a chain ending at
-    ///   another form, for a link that writes an argument list, and for an
-    ///   application of a functor once
+    ///   another form, and for an application of a functor once
     ///   [`Self::refuse_applied`](crate::lower::ExpressionsRef::refuse_applied)
     ///   reads it; a malformed link's refusal.
     /// - panics: none.
@@ -11932,16 +11932,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut chain)?;
                     if let Maybe::Present(repaired) = chain.repair {
                         return Err(repaired.refusal(site.name));
-                    }
-                    // A link applied to arguments, `M.F(A).G`, selects out of
-                    // an application, which no module is.
-                    if chain.pieces.iter().any(|piece| {
-                        matches!(*piece, Piece::Tile {
-                            label: TileName::PAREN_OPEN,
-                            ..
-                        })
-                    }) {
-                        return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                     }
                     let (inner, nested, selected) =
                         Context::type_link(site, &chain.pieces, target.span)?;
@@ -22375,10 +22365,10 @@ const STATEMENT_KEYWORDS: [TileName; 4_usize] = [
     TileName::MODULE,
 ];
 
-/// The argument lists a qualified type writes after its member, `(Integer)` in
-/// `M.F(Integer)`, read into `written`, when it writes them (#3051): the first,
-/// and the second that applies the first call's result once more,
-/// `(x)` in `Standard.subTy(a, s)(x)` (#5213).
+/// The argument lists a qualified type's spine reads after its member,
+/// `(Integer)` of `M.F Integer`, read into `written`, when it reads them
+/// (#3051): the first, and a second that applies the first call's result once
+/// more (#5213).
 ///
 /// # Specification
 /// - requires: `pieces` is the reading of a type path covering `span`.
@@ -22395,8 +22385,7 @@ const STATEMENT_KEYWORDS: [TileName; 4_usize] = [
 /// The list's refusal.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `M.F(Integer)` reads one argument, `M.T` none, and
-///   `M.f(a)(b)` one in each list.
+/// - hypothesis: L3 — `M.F Integer` reads one argument and `M.T` none.
 /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_is_applied_through_its_name_3051`
 /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_function_is_called_in_a_type_5213`
 fn path_arguments<'source>(
@@ -22440,7 +22429,7 @@ fn path_arguments<'source>(
 /// [`LoweringRefusal::OutOfFragment`] with the arity boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `M.T(Integer)` over an unparameterised member is refused
+/// - hypothesis: L3 — `M.T Integer` over an unparameterised member is refused
 ///   by its count.
 /// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_is_applied_through_its_name_3051`
 #[spec(ensures: |ret| ret.is_ok() == applied.is_none())]

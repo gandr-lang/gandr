@@ -546,16 +546,11 @@ fn add_type_rules(
     // text would read two ways. The lowering refuses an operand that is not a
     // module name or a path.
     //
-    // An argument list after the type name applies the member, a module's
-    // family reached through its name, `M.F(Integer)`, as a bare family's
-    // `F(Integer)` is applied (#3051). A link may also end at a value name,
-    // with no list for the run of a definition of no input, `Standard.unit`,
-    // as a bare `unit` runs (#8307), or with the list that applies a module's
-    // function that computes a type, `Standard.ext(a, b)`, as a bare
-    // function's call `ext(a, b)` is read (#5213). The list ends the link, so
-    // it applies the last name alone; a second list applies the call's result
-    // once more, `Standard.subTy(a, s)(x)`, and a later `.` selects from an
-    // application, which the lowering refuses.
+    // A link applies as any head does, by juxtaposition: a module's family
+    // reached through its name, `M.F Integer` (#3051), or a module's function
+    // that computes a type, `Standard.ext a b` (#5213). A link may end at a
+    // value name, and its bare name runs a definition of no input,
+    // `Standard.unit`, as a bare `unit` runs (#8307).
     //
     // The left side is a name, as `M` in `M.T` is one: a source declares
     // it. A whole form over other tiles, as a lone `Path`, is no left side,
@@ -574,28 +569,9 @@ fn add_type_rules(
                     tile(TileLabel(".")),
                 ])),
                 Regex::alt([
-                    Regex::seq([
-                        tile(TileLabel("type_identifier")),
-                        Regex::optional(Regex::seq([
-                            tile(TileLabel("(")),
-                            comma1(Regex::sort(ty)),
-                            tile(TileLabel(")")),
-                        ])),
-                    ]),
-                    Regex::seq([
-                        tile(TileLabel("type_variable")),
-                        Regex::optional(Regex::seq([
-                            tile(TileLabel("(")),
-                            Regex::optional(comma1(Regex::sort(ty))),
-                            tile(TileLabel(")")),
-                        ])),
-                    ]),
+                    tile(TileLabel("type_identifier")),
+                    tile(TileLabel("type_variable")),
                 ]),
-                Regex::optional(Regex::seq([
-                    tile(TileLabel("(")),
-                    comma1(Regex::sort(ty)),
-                    tile(TileLabel(")")),
-                ])),
             ]),
         )
         .with_left(LeftOperand::Name),
@@ -603,8 +579,8 @@ fn add_type_rules(
     // A type at a stage, `Nat[i]`, or below one, `Nat[< i]`: the stage a
     // declaration's implicit `[i : Size]` binds. Postfix in the path band,
     // so `Nat[< i] -> Nat` and `-F Nat[i]` need no parentheses. The same
-    // bracket names a method's deduced mode where a view's type reads its
-    // element after it, `View[m](a)`, the label set of a capability, `Cap[read,
+    // bracket names a method's deduced mode where a view's type applies to
+    // its element, `View[m] a`, the labels of a capability, `Cap[read,
     // write]`, a list of names, and its grade, `Cap[1][write]` or
     // `Cap[ω][read]`; a name there is a grade variable.
     //
@@ -633,11 +609,6 @@ fn add_type_rules(
                     Regex::optional(tile(TileLabel("<"))),
                     comma1(tile(TileLabel("identifier"))),
                     tile(TileLabel("]")),
-                    Regex::optional(Regex::seq([
-                        tile(TileLabel("(")),
-                        comma1(Regex::sort(ty)),
-                        tile(TileLabel(")")),
-                    ])),
                 ]),
                 Regex::seq([
                     comma1(Regex::seq([

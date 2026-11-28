@@ -2674,16 +2674,15 @@ pub fn own_pieces<'source>(
 }
 
 /// The mode word and the element of a view type at `view`: `View[m] a`,
-/// which applies the staged head `View[m]` to its element, and `View[m](a)`,
-/// which writes both in one form.
+/// which applies the staged head `View[m]` to its element.
 ///
 /// # Specification
 /// - requires: `view` is a form of `tree`; `pbg` interprets its molds.
-/// - ensures: for a staged type or a type's application whose head names the
-///   declaration of the row `view`, as `views` answers, with one name in its
-///   bracket and whose one argument is its element, that name's tile and the
-///   element; nothing for any other form. `read` holds pieces of the form after
-///   the call.
+/// - ensures: for a type's application whose head is a staged type whose head
+///   names the declaration of the row `view`, as `views` answers, with one name
+///   in its bracket, that name's tile and the application's one argument;
+///   nothing for any other form. `read` holds pieces of the form after the
+///   call.
 /// - fails: [`LoweringRefusal::UnknownMold`] on a mold lookup absent from
 ///   `pbg`.
 /// - panics: none.
@@ -2696,8 +2695,8 @@ pub fn own_pieces<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a method answering a view of its receiver, its result
-///   written juxtaposed and glued, and a receiver at a deduced mode written as
-///   a view.
+///   written with its returner and without, and a receiver at a deduced mode
+///   written as a view.
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
 #[inline]
@@ -2724,13 +2723,12 @@ where
         )
     };
     let unviewed = Ok(Maybe::Absent(view_type::Absent::Unviewed));
-    if !matches!(
-        former(view)?,
-        Some(Former::StagedType | Former::TypeApplication)
-    ) {
+    if !matches!(former(view)?, Some(Former::TypeApplication)) {
         return unviewed;
     }
     read_pieces(pbg, tree, view.node, read)?;
+    // A juxtaposed application reads as its head, then its one argument
+    // between the zero-width `(` and `)` that the melder writes.
     let element = match *read.pieces.as_slice() {
         [
             Piece::Operand(staged),
@@ -2747,14 +2745,6 @@ where
             read_pieces(pbg, tree, staged.node, read)?;
             element
         },
-        [
-            ..,
-            Piece::Operand(element),
-            Piece::Tile {
-                label: TileName::PAREN_CLOSE,
-                ..
-            },
-        ] => element,
         _ => return unviewed,
     };
     let &[
@@ -2771,28 +2761,11 @@ where
             label: TileName::BRACKET_CLOSE,
             ..
         },
-        ref rest @ ..,
     ] = read.pieces.as_slice()
     else {
         return unviewed;
     };
-    let listed = matches!(
-        *rest,
-        [
-            Piece::Tile {
-                label: TileName::PAREN_OPEN,
-                ..
-            },
-            Piece::Operand(listed),
-            Piece::Tile {
-                label: TileName::PAREN_CLOSE,
-                ..
-            },
-        ] if listed == element
-    );
-    let viewed = (listed || rest.is_empty())
-        && matches!(former(head)?, Some(Former::TypeHead))
-        && views(head);
+    let viewed = matches!(former(head)?, Some(Former::TypeHead)) && views(head);
 
     Ok(if viewed {
         Maybe::Present(ViewType { mode, element })

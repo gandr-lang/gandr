@@ -62,7 +62,6 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_core_term::builtin::TypeAtom;
 use gandr_core_term::effect::capability::RegionBinder;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageBinder;
@@ -551,23 +550,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(())
     }
 
-    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, the view type
-    /// `View[m](a)` a method answering a place declares its result at, or a
-    /// capability, `Cap[read]`.
+    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, or a capability,
+    /// `Cap[read]`.
     ///
     /// # Specification
     /// - requires: `site` is a staged type.
     /// - ensures: the type stands as its operand at the stage its function's
     ///   telescope marked it with, the operand read where the staged type
-    ///   stands; a view type its function recorded stands as its place's index,
-    ///   the atom `Integer`, its element read by the function; a patched type
-    ///   is read as [`Self::patched_fields`] and [`Self::patched_faces`] read
-    ///   it; a capability is read as [`Capability::capability_type`] reads it.
+    ///   stands; a capability is read as [`Capability::capability_type`] reads
+    ///   it.
     /// - fails: the wrong-sort refusal where no value type is read; a fault
-    ///   naming the form for a tile out of place; the out-of-fragment refusal
-    ///   for a staged type no quantified function's signature marked;
-    ///   [`LoweringRefusal::ViewNotPlace`] for a view type no method answering
-    ///   a place declares its result at; a patched type's own refusals.
+    ///   naming the form for a tile out of place, a patched type's bracket
+    ///   among them; the out-of-fragment refusal for a staged type no
+    ///   quantified function's signature marked.
     /// - panics: none.
     ///
     /// # Errors
@@ -575,17 +570,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a marked staged type plans its stage, and one in a
-    ///   body is refused; a view type at a method's result plans the index, and
-    ///   one at a parameter is refused.
+    ///   body is refused.
     /// - witness: `gandr-surface-lowering::lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
     /// - witness: `gandr-surface-lowering::lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
-    /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
-    /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answering_no_place_is_refused`
     ///
     /// # Cost
     /// - allocation: the bracket's entries, the stage marks and the plan,
     ///   durable by the staged type's plan
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched { .. } | Plan::Atom(TypeAtom::Integer) | Plan::Capability(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Capability(..)))))]
     #[inline]
     pub fn staged_type(
         &mut self,
@@ -616,13 +608,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
-        if let Maybe::Present(_) = cursor.at(TileName::PAREN_OPEN) {
-            if !self.cx().view_types.contains(&site.at.node) {
-                return Err(LoweringRefusal::ViewNotPlace { span: site.at.span });
-            }
-            self.plan(site, Plan::Atom(TypeAtom::Integer));
-            return Ok(());
-        }
         exhausted(site, &cursor)?;
         let Some(&stage) = self.cx().stage_marks.get(&site.at.node)
         else {

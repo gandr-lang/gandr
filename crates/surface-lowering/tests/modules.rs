@@ -4108,32 +4108,13 @@ fn a_module_member_family_is_named_through_the_module_4298()
     );
 }
 
-/// A module's family applied through the module's name reads as it does
-/// applied inside the module: `M.F(Integer)` is the type family's type at
-/// `Integer`, and `M.Box(Integer)` the data family at `Integer`. An argument
-/// list of another count, or after a member that takes none, is refused by
-/// the count it writes (#3051).
+/// A module's family applied through the module's name takes the count of
+/// arguments it declares: `M.F Integer Integer` applies a family of one
+/// parameter twice, and `M.T Integer` applies a member that takes none. Each
+/// is refused by the count it writes (#3051).
 #[test]
 fn a_module_s_family_is_applied_through_its_name_3051()
 {
-    let source =
-        include_str!("modules/fixtures/a-module-s-family-is-applied-through-its-name-3051.gandr");
-    let mut lowered = lower(source);
-    let judged: Vec<Judgement> = verdicts(&mut lowered)
-        .into_iter()
-        .map(|(_, judgement)| judgement)
-        .filter(|&judgement| judgement != Judgement::Declared)
-        .collect();
-    assert_eq!(
-        judged,
-        [
-            Judgement::Checked,
-            Judgement::Checked,
-            Judgement::Mismatched
-        ],
-        "`M.F(Integer)` is `Maybe(Integer)` and `M.Box(Integer)` the box at `Integer`, so \
-         each body checks, and `Maybe(String)` is another type"
-    );
     let counted = |path: &'static str, written: &'static str, count: usize| {
         let source = format!(
             include_str!(
@@ -4150,7 +4131,7 @@ fn a_module_s_family_is_applied_through_its_name_3051()
                 Role::Declared,
                 Amounts::Refused(LoweringRefusal::OutOfFragment {
                     span: span_of(&source, written, 0_usize),
-                    form: FormName::from(NamedKind("type_path")),
+                    form: FormName::from(NamedKind("type_application")),
                     sort: FragmentSort::ValueType,
                     boundary: FragmentBoundary::Arity(OperandCount::from(count)),
                 })
@@ -4158,8 +4139,8 @@ fn a_module_s_family_is_applied_through_its_name_3051()
             "`{written}` is refused by the {count} arguments it writes"
         );
     };
-    counted("twice", "M.F(Integer, Integer)", 2_usize);
-    counted("flat", "M.T(Integer)", 1_usize);
+    counted("twice", "M.F Integer Integer", 2_usize);
+    counted("flat", "M.T Integer", 1_usize);
 }
 
 /// A module's family applied by juxtaposition through the module's name reads
@@ -4189,10 +4170,9 @@ fn a_module_s_family_applies_by_juxtaposition_5753()
 }
 
 /// A module's function called where a type is read through the module's
-/// name reads as the call the bare name gives: `M.same(Integer)` is the type
-/// its code decodes to, `M.empty()` calls a function of no arguments, and
-/// `M.after(Integer)(n)` applies the call's result once more. A second list
-/// after a type member is refused by the count it writes (#5213).
+/// name reads as the call the bare name gives: `M.same Integer` is the type
+/// its code decodes to, `M.empty` calls a function of no arguments, and
+/// `(M.after Integer) n` applies the call's result once more (#5213).
 #[test]
 fn a_module_s_function_is_called_in_a_type_5213()
 {
@@ -4217,25 +4197,6 @@ fn a_module_s_function_is_called_in_a_type_5213()
         ],
         "each call is the type its code decodes to, `Integer`, so each body checks, and \
          `String` is another type"
-    );
-    let written = "M.F(Integer)(Integer)";
-    let source = format!(
-        include_str!("modules/unformatted/a-module-s-function-is-called-in-a-type-5213-2.gandr"),
-        written = written
-    );
-    assert_eq!(
-        rows(&lower(source.as_str())),
-        [row(
-            "again",
-            Role::Declared,
-            Amounts::Refused(LoweringRefusal::OutOfFragment {
-                span: span_of(&source, written, 0_usize),
-                form: FormName::from(NamedKind("type_path")),
-                sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Arity(OperandCount::from(1_usize)),
-            })
-        )],
-        "a family's type is applied by no second list"
     );
 }
 

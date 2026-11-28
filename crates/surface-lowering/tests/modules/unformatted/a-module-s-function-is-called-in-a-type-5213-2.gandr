@@ -1,2 +1,0 @@
-module M where {{ type F(a : Type) = a ; }}
-def again : {written} ;
