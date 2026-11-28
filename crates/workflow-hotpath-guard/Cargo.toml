@@ -20,6 +20,10 @@ path = "src/main.rs"
 name = "hotpath-judge"
 path = "src/bin/judge.rs"
 
+[[bin]]
+name = "hotpath-gate"
+path = "src/bin/gate.rs"
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]

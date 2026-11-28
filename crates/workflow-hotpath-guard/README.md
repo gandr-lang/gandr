@@ -33,6 +33,7 @@ The issue closes when no row is open and reopens on the next open row. The table
 - `GuardError` names the argument or the `gh` invocation behind every refusal; a refusal exits 2.
 - `hotpath-judge` judges a commit's runs of one benchmark against its base's, several a side, under the benchmark's policy, and writes a `hotpath / <benchmark>` check run's body in hotpath Cloud's summary shape, which the guard files like the Cloud's own. hotpath Cloud never judges a function under the policy's `min_percent_total` share of the run. The judge does, down to 0.1 %. It flags such a row only when its median moved past the threshold and every run of the commit lies past every run of the base. The judge reads every row. CI does that on each push to `landing` against the commit `landing` stood at before it. hotpath Cloud does not judge that push (`mise run ci:hotpath-judge`). The [module docs](src/judge.rs) record the decision.
 - One set of runs fails no row (#7319). The judge writes a first set's finding as a `neutral` check that names the row as a suspect, and the guard files no such check. A second job runs the suspect series again and judges its runs with `--confirm`, the first set's check. A row that both sets find is a regression. A report blocks nothing, so its check is `neutral` too, with the external id `hotpath:regressed`, and the guard files it as it files a failed check (#7772).
+- `hotpath-gate --repository OWNER/NAME --base REV` is a gate of the landing. In the checkout of the tip, it runs the bench of each series, `gandr`, `store` and `conversion`, with `HOTPATH_ALLOC_METRIC=count`. It keeps each report as `target/hotpath/kept/<commit>/<series>.json`, and a second run at one commit measures nothing again. It judges each series against the report of the base under `hotpath/<series>-policy.toml`. The counts of a fixed workload repeat to within 0.1 %, so one run a side decides. A base with no kept report judges nothing, and the gate says so. A commit between the base and the tip accepts a regressed series with the trailer `Changes-hotpath: <series>`. The gate exits 1 when a series regressed and no commit accepts it, and 2 for a refusal. The store keeps the reports of the newest 32 commits, and always the head and the base.
 
 ## Expected features
 
@@ -45,6 +46,7 @@ mise run ci:hotpath-guard --repository gandr-lang/gandr --sha 914a768fb32501be92
 cargo run -p gandr-workflow-hotpath-guard --bin hotpath-judge -- --repository gandr-lang/gandr \
   --head 17756fc17 --base 8d13f30c8 --benchmark store-timing-band --policy hotpath/store-timing-policy.toml \
   --base-run base-1.json --head-run head-1.json --output check.json
+cargo run -p gandr-workflow-hotpath-guard --bin hotpath-gate -- --repository gandr-lang/gandr --base main
 cargo nextest run -p gandr-workflow-hotpath-guard
 ```
 

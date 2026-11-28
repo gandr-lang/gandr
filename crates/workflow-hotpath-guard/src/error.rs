@@ -43,6 +43,14 @@ pub enum GuardError
         /// Why it could not be read, or what it holds.
         message: String,
     },
+    /// A `git` or `cargo` invocation could not run, or exited unsuccessfully.
+    Command
+    {
+        /// The command line.
+        command: String,
+        /// Why it failed.
+        message: String,
+    },
 }
 
 impl fmt::Display for GuardError
@@ -80,6 +88,10 @@ impl fmt::Display for GuardError
                 ref path,
                 ref message,
             } => write!(f, "`{path}`: {message}"),
+            Self::Command {
+                ref command,
+                ref message,
+            } => write!(f, "`{command}`: {message}"),
         }
     }
 }
@@ -135,6 +147,13 @@ mod tests
                     message: "the timing section is missing".into(),
                 },
                 "`target/hotpath/runs/store-1.json`: the timing section is missing",
+            ),
+            (
+                GuardError::Command {
+                    command: "git rev-parse --verify main^{commit}".into(),
+                    message: "fatal: needed a single revision".into(),
+                },
+                "`git rev-parse --verify main^{commit}`: fatal: needed a single revision",
             ),
         ];
         for (error, expected) in cases {

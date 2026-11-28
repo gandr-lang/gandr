@@ -3,4 +3,5 @@
 #![cfg(test)]
 
 mod cli;
+mod gate;
 mod judge;
