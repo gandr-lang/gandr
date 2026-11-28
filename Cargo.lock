@@ -2785,6 +2785,7 @@ dependencies = [
  "gandr-surface-render-remote",
  "gandr-surface-render-terminal",
  "gandr-surface-syntax",
+ "gandr-theory-graphs",
  "gandr-workflow-output-store",
  "quenchant-anodized",
  "serde_json",

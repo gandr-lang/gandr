@@ -17,7 +17,8 @@
 //! - `rendered`, a diagnostic that the terminal renderer writes;
 //! - `roles`, the roles that the highlight gives a source;
 //! - `unanswered`, the kinds of name that the editor answers nothing at;
-//! - `uncommented`, the items of a corpus source that carry no comment.
+//! - `uncommented`, the items of a corpus source that carry no comment;
+//! - `unexercised`, the molds of the grammar that no source exercises.
 //!
 //! `<kinds>` is one kind, two or more kinds with a comma between them, or
 //! `all`. One run answers each kind that it names, and reads each tree one
@@ -52,11 +53,11 @@
 //! `Changes-output: <kind>`. It prints one refusal for each such kind. With no
 //! `--head`, the commits end at `HEAD`.
 //!
-//! `unanswered` and `uncommented` are ratchets: each line of a value is a
-//! member, and the name of its source is not a part of it. For a ratchet,
-//! `difference` prints the members that the head adds, and it exits with 1
-//! only when the head adds a member and no commit names the kind. The head
-//! can drop a member.
+//! `unanswered`, `uncommented` and `unexercised` are ratchets: each line of a
+//! value is a member, and the name of its source is not a part of it. For a
+//! ratchet, `difference` prints the members that the head adds, and it exits
+//! with 1 only when the head adds a member and no commit names the kind. The
+//! head can drop a member.
 //!
 //! `--cost` adds each part of the run with its count and its time.
 //!
@@ -81,6 +82,7 @@ use gandr_workflow_outputs::compute::Part;
 use gandr_workflow_outputs::compute::Valued;
 use gandr_workflow_outputs::compute::Writer;
 use gandr_workflow_outputs::difference;
+use gandr_workflow_outputs::exercised::Exercised;
 use gandr_workflow_outputs::gauge;
 use gandr_workflow_outputs::gauge::Gauge;
 use gandr_workflow_outputs::recovery::Recorder;
@@ -93,7 +95,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is captures, formatted, hovers, printed, recovery, refusals, rendered, roles, unanswered or uncommented;\n       <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
+const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is captures, formatted, hovers, printed, recovery, refusals, rendered, roles, unanswered, uncommented or unexercised;\n       <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
 
 /// How many changes `difference` prints when the command line names no
 /// count.
@@ -399,6 +401,12 @@ impl Run
             .pbg
             .as_ref()
             .ok_or_else(|| String::from("the grammar is not built"))?;
+        if kind == compute::UNEXERCISED {
+            let values = compute::unexercised(&self.store, tree, tool, Exercised::new(pbg))
+                .map_err(|error| error.to_string())?;
+            self.parts.extend(values.parts.iter().copied());
+            return Ok(Some(values));
+        }
         let writer = if kind == compute::ROLES {
             Writer::Roles(Roles::new(pbg).map_err(|error| error.to_string())?)
         }

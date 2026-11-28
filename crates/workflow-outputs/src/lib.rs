@@ -3,6 +3,8 @@
 //! value by the digest of its tool and its input, so a run computes each
 //! value one time.
 //!
+//! - [`exercised`] writes the molds that a corpus source exercises, and the
+//!   molds of the grammar that no source of a tree exercises.
 //! - [`recovery`] writes the recovery record of a corpus source.
 //! - [`refusals`] writes the refusals that `gandr check` prints for each
 //!   refusing source of a checkout.
@@ -29,6 +31,7 @@ extern crate alloc;
 pub mod checkout;
 pub mod compute;
 pub mod difference;
+pub mod exercised;
 pub mod gauge;
 pub mod recovery;
 pub mod refusals;

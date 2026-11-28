@@ -1,11 +1,13 @@
 //! The values of one kind of output for a tree: each read from the store, or
 //! computed by the writer of the kind and written to the store.
 //!
-//! The writer of the records and the writer of the roles compute one value
-//! from one source. The refusals of a source read the library and the other
-//! sources, so one walk computes them for each source of a tree. The values
-//! of a kind in [`TESTED`] come from a run of the tests of its package, which
-//! give each value to the store.
+//! The writer of the records, the writer of the roles and the writer of the
+//! exercised molds compute one value from one source. The unexercised molds
+//! of a tree are the molds of the grammar that no exercised value names. The
+//! refusals of a source read the library and the other sources, so one walk
+//! computes them for each source of a tree. The values of a kind in
+//! [`TESTED`] come from a run of the tests of its package, which give each
+//! value to the store.
 
 use core::fmt;
 use core::num::NonZeroUsize;
@@ -22,6 +24,8 @@ use gandr_workflow_output_store::Listed;
 use gandr_workflow_output_store::Store;
 use gandr_workflow_output_store::given;
 
+use crate::exercised::Exercised;
+use crate::exercised::ExercisedError;
 use crate::recovery::RecordError;
 use crate::recovery::Recorder;
 use crate::refusals;
@@ -59,6 +63,11 @@ pub const REFUSALS: Kind = Kind("refusals");
 /// tests of the renderer give.
 pub const RENDERED: Kind = Kind("rendered");
 
+/// The kind of the numbers of the molds that the tree of a source exercises.
+/// It holds the part of [`UNEXERCISED`] that one source gives, and no
+/// difference reads it.
+pub const EXERCISED: Kind = Kind("exercised");
+
 /// The kind of the roles that the highlight gives a source.
 pub const ROLES: Kind = Kind("roles");
 
@@ -70,8 +79,15 @@ pub const UNCOMMENTED: Kind = Kind("uncommented");
 /// the coverage sweep of the language server gives. It is a ratchet.
 pub const UNANSWERED: Kind = Kind("unanswered");
 
+/// The kind of the molds of the grammar that no source of a tree exercises:
+/// one value `grammar`. It is a ratchet.
+pub const UNEXERCISED: Kind = Kind("unexercised");
+
+/// The name of the one value of [`UNEXERCISED`].
+pub const GRAMMAR: &str = "grammar";
+
 /// Each kind, in the order of the names.
-pub const KINDS: [Kind; 10] = [
+pub const KINDS: [Kind; 11] = [
     CAPTURES,
     FORMATTED,
     HOVERS,
@@ -82,12 +98,13 @@ pub const KINDS: [Kind; 10] = [
     ROLES,
     UNANSWERED,
     UNCOMMENTED,
+    UNEXERCISED,
 ];
 
 /// Each kind that is a ratchet: a line of a value is a member, and the gate
 /// refuses a member that the head has and the base does not have. The head
 /// can drop a member.
-pub const RATCHETS: [Kind; 2] = [UNANSWERED, UNCOMMENTED];
+pub const RATCHETS: [Kind; 3] = [UNANSWERED, UNCOMMENTED, UNEXERCISED];
 
 /// A kind whose values only a test can compute: the tests of its package give
 /// each value to the store.
@@ -188,7 +205,7 @@ pub fn packages(kind: Kind) -> &'static [&'static str]
     if let Some(tested) = tested(kind) {
         return core::slice::from_ref(&tested.package);
     }
-    if kind == RECOVERY {
+    if kind == RECOVERY || kind == UNEXERCISED {
         &[
             "gandr-surface-grammar",
             "gandr-surface-parser",
@@ -254,6 +271,8 @@ pub enum Writer<'grammar>
     Recovery(Recorder<'grammar>),
     /// The writer of the roles.
     Roles(Roles<'grammar>),
+    /// The writer of the exercised molds.
+    Exercised(Exercised<'grammar>),
 }
 
 impl Writer<'_>
@@ -269,6 +288,7 @@ impl Writer<'_>
         match *self {
             Self::Recovery(_) => RECOVERY,
             Self::Roles(_) => ROLES,
+            Self::Exercised(_) => EXERCISED,
         }
     }
 
@@ -278,8 +298,8 @@ impl Writer<'_>
     /// trivial.
     ///
     /// # Errors
-    /// [`ComputeError::Record`] or [`ComputeError::Roles`] when the source
-    /// gives no value.
+    /// [`ComputeError::Record`], [`ComputeError::Roles`] or
+    /// [`ComputeError::Exercised`] when the source gives no value.
     #[inline]
     pub fn value(
         &self,
@@ -298,6 +318,14 @@ impl Writer<'_>
                 name: name.to_owned(),
                 error,
             }),
+            Self::Exercised(ref exercised) => {
+                exercised
+                    .value(text)
+                    .map_err(|error| ComputeError::Exercised {
+                        name: name.to_owned(),
+                        error,
+                    })
+            },
         }
     }
 }
@@ -326,6 +354,15 @@ pub enum ComputeError
         name: String,
         /// The refusal of the writer.
         error: RolesError,
+    },
+    /// A source gives no exercised molds, or the grammar names no mold of a
+    /// value.
+    Exercised
+    {
+        /// The name of the source, or of the tree.
+        name: String,
+        /// The refusal of the writer.
+        error: ExercisedError,
     },
     /// The walk of the refusing sources could not read a path.
     Refusals(RefusalsError),
@@ -362,6 +399,10 @@ impl fmt::Display for ComputeError
                 ref error,
             } => write!(f, "{name}: {error}"),
             Self::Roles {
+                ref name,
+                ref error,
+            } => write!(f, "{name}: {error}"),
+            Self::Exercised {
                 ref name,
                 ref error,
             } => write!(f, "{name}: {error}"),
@@ -646,6 +687,72 @@ fn values_together(
         records.extend(answer?);
     }
     Ok(records)
+}
+
+/// The molds of the grammar that no source of `tree` exercises, under the
+/// tool `tool`: one value [`GRAMMAR`].
+///
+/// The exercised molds of each source come from `store`, or `exercised`
+/// computes them and writes them to `store`, as [`values`] does. The store
+/// holds the value at the digest of its bytes, and lists it for the tree.
+///
+/// # Specification
+/// - ensures: one value, named [`GRAMMAR`].
+///
+/// # Errors
+/// [`ComputeError`] when the tree, a source, the grammar or the store
+/// refuses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tree of one definition leaves each mold of the grammar
+///   but the molds of the definition, and a second run computes no source.
+/// - witness: `compute::tests::the_unexercised_molds_of_a_tree_are_one_value`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |values| values.values.len() == 1))]
+#[inline]
+pub fn unexercised(
+    store: &Store,
+    tree: &Tree,
+    tool: &Digest,
+    exercised: Exercised<'_>,
+) -> Result<Values, ComputeError>
+{
+    let Values {
+        values: each,
+        computed,
+        mut parts,
+    } = values(store, tree, tool, &Writer::Exercised(exercised))?;
+    let started = Instant::now();
+    let text = exercised
+        .unexercised(each.iter().map(|&(_, ref value)| value.as_slice()))
+        .map_err(|error| ComputeError::Exercised {
+            name: tree.id().to_owned(),
+            error,
+        })?;
+    let key = Digest::of_parts([b"text".as_slice(), text.as_bytes()]);
+    store
+        .put(UNEXERCISED, &key, text.as_bytes())
+        .map_err(ComputeError::Store)?;
+    let source = Source {
+        name: GRAMMAR.to_owned(),
+        object: tree.id().to_owned(),
+    };
+    store
+        .list(UNEXERCISED, tree.id(), &[Listed {
+            key,
+            object: source.object.clone(),
+            name: source.name.clone(),
+        }])
+        .map_err(ComputeError::Store)?;
+    parts.push(Part {
+        name: "join the exercised molds",
+        count: each.len(),
+        time: started.elapsed(),
+    });
+    Ok(Values {
+        values: vec![(source, text.into_bytes())],
+        computed,
+        parts,
+    })
 }
 
 /// The values of the kind `kind` that `store` lists for `tree`, in name
@@ -1033,14 +1140,18 @@ mod tests
     use gandr_workflow_output_store::Digest;
     use gandr_workflow_output_store::Store;
 
+    use super::GRAMMAR;
     use super::RECOVERY;
     use super::REFUSALS;
     use super::ROLES;
+    use super::UNEXERCISED;
     use super::Writer;
     use super::held;
     use super::listed;
     use super::refusals;
+    use super::unexercised;
     use super::values;
+    use crate::exercised::Exercised;
     use crate::recovery::Recorder;
     use crate::roles::Roles;
     use crate::tree::Tree;
@@ -1141,6 +1252,50 @@ mod tests
                 .missing(),
             0,
             "the roles leave each record in its place"
+        );
+        std::fs::remove_dir_all(root).expect("the repository is removed");
+    }
+
+    /// The unexercised molds of a tree of one definition are one value: each
+    /// mold of the grammar but the molds of the definition. A second run reads
+    /// the exercised molds of the source from the store, and the tree lists
+    /// the value.
+    #[test]
+    fn the_unexercised_molds_of_a_tree_are_one_value()
+    {
+        let root = scratch_repository("unexercised", &[(
+            "crates/surface-corpus/strict/values.gandr",
+            WHOLE,
+        )]);
+        let store = Store::at(root.join("store"));
+        let tree = Tree::of_revision(&root, "HEAD").expect("the commit has a tree");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let exercised = Exercised::new(&pbg);
+        let tool = Digest::of_parts([b"tool".as_slice()]);
+        let first = unexercised(&store, &tree, &tool, exercised).expect("the molds are given");
+        assert_eq!(first.computed, 1);
+        let molds = exercised
+            .value(WHOLE)
+            .expect("the source gives a tree")
+            .lines()
+            .count();
+        let [(ref source, ref value)] = *first.values.as_slice()
+        else {
+            panic!("one value: {:?}", first.values);
+        };
+        assert_eq!(source.name, GRAMMAR);
+        assert_eq!(
+            String::from_utf8_lossy(value).lines().count(),
+            exercised.molds() - molds,
+            "each mold but the molds of the definition"
+        );
+        let second = unexercised(&store, &tree, &tool, exercised).expect("the molds are given");
+        assert_eq!(second.computed, 0);
+        assert_eq!(second.values, first.values);
+        assert_eq!(
+            listed(&store, &tree, UNEXERCISED).expect("the store reads"),
+            Some(first.values),
+            "the tree lists its value"
         );
         std::fs::remove_dir_all(root).expect("the repository is removed");
     }

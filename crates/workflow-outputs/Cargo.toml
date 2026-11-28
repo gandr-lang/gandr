@@ -15,10 +15,11 @@ publish.workspace = true
 # the fingerprint of a tree and the key of a value. The store of the outputs
 # holds each value. serde_json reads `cargo metadata`.
 #
-# The surface grammar and the parser make the tree of a source. The render
-# seam names each role of the highlight. The dispatcher walks the refusing
-# sources with the engine of the run stage. The terminal renderer writes each
-# diagnostic at a verbosity of the diagnostics crate.
+# The surface grammar and the parser make the tree of a source. The graph
+# crate names the side of a context of a mold. The render seam names each
+# role of the highlight. The dispatcher walks the refusing sources with the
+# engine of the run stage. The terminal renderer writes each diagnostic at a
+# verbosity of the diagnostics crate.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -30,6 +31,7 @@ gandr-surface-parser.workspace = true
 gandr-surface-render-remote.workspace = true
 gandr-surface-render-terminal.workspace = true
 gandr-surface-syntax.workspace = true
+gandr-theory-graphs.workspace = true
 gandr-workflow-output-store.workspace = true
 serde_json.workspace = true
 
