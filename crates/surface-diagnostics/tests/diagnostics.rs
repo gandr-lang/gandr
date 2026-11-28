@@ -3422,6 +3422,8 @@ fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
 /// malformed form reporting its parse error alone.
 mod sweeps
 {
+    use gandr_surface_corpus::DeclarationReport;
+    use gandr_surface_lowering::FragmentBoundary;
     use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Sample;
@@ -3535,6 +3537,29 @@ mod sweeps
                             .iter()
                             .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
                     };
+                    // `entries` prints the declarations refused for their form
+                    // first, where their refusals start, and then the rest in
+                    // admission order: the place of a declaration's entry is
+                    // the count of the declarations whose key is less.
+                    let printed = |index: usize, declaration: &DeclarationReport<'_>| {
+                        let led = match declaration.produced().refusal() {
+                            Maybe::Present(Refusal::Lowering(
+                                refusal @ (LoweringRefusal::MalformedForm { .. }
+                                | LoweringRefusal::OutOfFragment {
+                                    boundary:
+                                        FragmentBoundary::WrongSort
+                                        | FragmentBoundary::TopLevel
+                                        | FragmentBoundary::Misplaced,
+                                    ..
+                                }),
+                            )) => match refusal.span() {
+                                Maybe::Present(span) => Some(span.start()),
+                                Maybe::Absent(_) => None,
+                            },
+                            Maybe::Present(_) | Maybe::Absent(_) => None,
+                        };
+                        (led.is_none(), led, index)
+                    };
                     severities.clear();
                     severities.extend(
                         entries::<Evaluator>(&step, Verb::Check(Goals::Gated))
@@ -3561,11 +3586,16 @@ mod sweeps
                         repaired = repaired.saturating_add(1_usize);
                         let mut errors = 0_usize;
                         let mut unsupported = false;
-                        for (declaration, &severity) in unsettled()
-                            .zip(&severities)
-                            .filter(|&(declaration, _)| declaration.span() == malformed.span())
+                        for (index, declaration) in unsettled()
+                            .enumerate()
+                            .filter(|&(_, declaration)| declaration.span() == malformed.span())
                         {
-                            if severity == Severity::Error {
+                            let key = printed(index, declaration);
+                            let place = unsettled()
+                                .enumerate()
+                                .filter(|&(other, declared)| printed(other, declared) < key)
+                                .count();
+                            if severities.get(place) == Some(&Severity::Error) {
                                 errors = errors.saturating_add(1_usize);
                             }
                             unsupported |= matches!(
