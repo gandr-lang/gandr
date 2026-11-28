@@ -10,7 +10,15 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-@![features(("data-parameters", "identity-types", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 /// An optional `a`: none, or some value.
 pub data Maybe(a : Type) : Type where
@@ -21,14 +29,14 @@ pub data Maybe(a : Type) : Type where
 def unwrap_or_zero() -> Integer =
   match (Some 3 : Maybe Integer) where
     | None => 0
-    | Some(x) => x
+    | Some x => x
 
 /// `kept` matches an optional integer to a path.
 /// Each arm returns its scrutinee.
 def kept(m : Maybe Integer) -> Path m m =
   match m where
     | None => Path.here m
-    | Some(x) => Path.here m
+    | Some x => Path.here m
 
 /// One integer, its constructor named for its type.
 data Tally : Type where

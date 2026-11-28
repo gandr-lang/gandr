@@ -12,7 +12,17 @@
 //!
 //! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 // The naturals that select the arm.
 import "./data-base.gandr"
@@ -26,20 +36,20 @@ pub data Heap : Type where
 pub def emp(h : Heap) -> Type =
   match h where
     | Emp => return Unit
-    | Cell(_l, _r) => return Void
+    | Cell _l _r => return Void
 
 /// At zero, the heap is empty.
 /// At a successor, the type has no inhabitant.
 pub def viaZero(w : Nat, h : Heap) -> Type =
   match w where
     | Zero => emp h
-    | Succ(_n) => return Void
+    | Succ _n => return Void
 
 /// One arm more: at zero, `viaZero` at the same natural.
 pub def viaZeroAgain(w : Nat, h : Heap) -> Type =
   match w where
     | Zero => viaZero w h
-    | Succ(_n) => return Void
+    | Succ _n => return Void
 
 /// `atZero` returns `emp(h)` from `viaZero(Zero, h)`.
 def atZero(h : Heap) -> (viaZero Zero h) -> emp h =

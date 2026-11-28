@@ -15,7 +15,14 @@
 //!
 //! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
 
-@![features(("data-parameters", "imports", "let-statements", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // The naturals the lengths count in.
 import "./data-base.gandr"
@@ -27,21 +34,21 @@ import "./vectors.gandr"
 def vlength(n : Nat, v : Vec Integer n) -> Nat =
   match v where
     | VNil => Zero
-    | VCons(m, h, t) => Succ m
+    | VCons m h t => Succ m
 
 /// `oneLength` reads a vector at length one.
 /// It writes a `VNil` arm although only zero selects it.
 def oneLength(v : Vec Integer (Succ Zero)) -> Nat =
   match v where
     | VNil => Zero
-    | VCons(m, h, t) => Succ m
+    | VCons m h t => Succ m
 
 /// The length counted by structural recursion on the tail, which stands at
 /// the length its `VCons` states, one below the vector's.
 def rec vcount(n : Nat, v : Vec Integer n) -> Nat =
   match v where
     | VNil => Zero
-    | VCons(m, h, t) => Succ (vcount[<] m t)
+    | VCons m h t => Succ (vcount[<] m t)
 
 /// `pairRead` returns the length from the vector index.
 @[runs("Succ (Succ Zero)")]
@@ -56,7 +63,7 @@ def pairCount() -> Nat = vcount (Succ (Succ Zero)) pair
 def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec a n, ys : Vec a m) -> Vec a (plus m n) =
   match xs where
     | VNil => ys
-    | VCons(k, x, xt) => VCons (plus m k) x (vappend[<] a k m xt ys)
+    | VCons k x xt => VCons (plus m k) x (vappend[<] a k m xt ys)
 
 /// `pairsRead` returns the length of a vector appended to itself.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]

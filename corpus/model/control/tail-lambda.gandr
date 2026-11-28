@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 // A body whose result is a function value may end in a bare lambda.
 //
@@ -31,7 +40,7 @@ data Peano : Type where
 def natOr(n : Peano) -> Type =
   match n where
     | Zero => return Two
-    | Succ(_m) => return Two
+    | Succ _m => return Two
 
 /// The identity at `g`, which returns its lambda with a written `return`.
 @[explicit_exits]
@@ -54,12 +63,11 @@ def after_let() -> Two -> Two =
   }
 
 /// The lambda ends a block.
-def block_tail() -> Two -> Two =
-  {
-    fun (u) {
-      u
-    }
+def block_tail() -> Two -> Two = {
+  fun (u) {
+    u
   }
+}
 
 /// The first arm ends in a bare lambda, and the second returns its lambda.
 @[explicit_exits]
@@ -90,6 +98,6 @@ def refined_arm(n : Peano, _x : natOr n) -> Peano -> Peano =
     | Zero => fun (u) {
       return u
     }
-    | Succ(_n) => return fun (u) {
+    | Succ _n => return fun (u) {
       return u
     }

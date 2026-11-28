@@ -11,7 +11,17 @@
 //!
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
-@![features(("data-parameters", "explicit-exits", "let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// The `Monoid` block stores its sort and two operations in a `Theory` value.
 pub theory Monoid where
@@ -22,13 +32,13 @@ pub theory Monoid where
 /// This recursion counts `Oper` links in a presentation.
 def rec operations(chain : Theory) -> Integer =
   match chain where
-    | Oper(name, inputs, outputs, rest) => { let r = operations[<] rest; r + 1 }
+    | Oper name inputs outputs rest => { let r = operations[<] rest; r + 1 }
     | _ => 0
 
 /// This function gets an operation count from a `Presents` value.
 pub def arity(presented : Theory) -> Integer =
   match presented where
-    | Presents(sorts, opers, rules) => operations opers
+    | Presents sorts opers rules => operations opers
     | _ => 0
 
 /// This generic program counts `mul` and `one` in `Monoid`.
@@ -43,7 +53,7 @@ def sign() -> Integer = arity Monoid
 /// has no `case`, so a term match chooses the type.
 def counted_at(presented : Theory) -> Type =
   match presented where
-    | Presents(sorts, opers, rules) => return Integer
+    | Presents sorts opers rules => return Integer
     | _ => return Unit
 
 /// `counted_at(Monoid)` reduces to `Integer`, which holds the operation count.

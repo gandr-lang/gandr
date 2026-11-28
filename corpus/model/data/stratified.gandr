@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // Stratified families admit lower-stage function fields.
 //
@@ -21,7 +30,7 @@ data Chain : Type where
   | Link : (prev : Chain, test : Chain -> Two) --> Chain
 
 /// `linked` returns `R` for a link and `L` for the start.
-def linked(c : Chain) -> Two = match c -> -F Two { | Start => L | Link(p, t) => R };
+def linked(c : Chain) -> Two = match c -> -F Two { | Start => L | Link p t => R };
 
 /// Two links over the start, each holding `linked`.
 def twice : Chain = Link (Link Start linked) linked
@@ -31,13 +40,13 @@ def twice : Chain = Link (Link Start linked) linked
 def judge(c : Chain) -> Two =
   match c where
     | Start => L
-    | Link(prev, test) => test prev
+    | Link prev test => test prev
 
 /// The links of a chain, by recursion one stage below each link.
 def rec chainLength(c : Chain) -> Nat =
   match c where
     | Start => Zero
-    | Link(prev, test) => Succ (chainLength[<] prev)
+    | Link prev test => Succ (chainLength[<] prev)
 
 /// The outer link's test of the inner link.
 @[runs("R")]

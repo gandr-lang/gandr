@@ -1,4 +1,11 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 /// This source converts two cases over cases of one stuck recursive call.
 ///
@@ -20,34 +27,34 @@ import "./data-maybe.gandr"
 def first(m : Maybe Nat) -> Maybe Nat =
   match m where
     | None => None
-    | Some(_x) => Some Zero
+    | Some _x => Some Zero
 
 /// This function is `first`, written again.
 def second(m : Maybe Nat) -> Maybe Nat =
   match m where
     | None => None
-    | Some(_x) => Some Zero
+    | Some _x => Some Zero
 
 /// This function gives the successor of a present natural.
 def outer(n : Maybe Nat) -> Maybe Nat =
   match n where
     | None => None
-    | Some(y) => Some (Succ y)
+    | Some y => Some (Succ y)
 
 /// This function is `outer`, written again.
 def outerTwin(n : Maybe Nat) -> Maybe Nat =
   match n where
     | None => None
-    | Some(y) => Some (Succ y)
+    | Some y => Some (Succ y)
 
 /// This function looks the natural `k` places below `n`, stuck until
 /// both are constructors.
 def rec look(n : Nat, k : Nat) -> Maybe Nat =
   match n where
     | Zero => None
-    | Succ(p) => match k where
+    | Succ p => match k where
       | Zero => Some p
-      | Succ(q) => look[<] p q
+      | Succ q => look[<] p q
 
 /// The outer case over `first` meets the outer case over `second`.
 def wrappedRec(

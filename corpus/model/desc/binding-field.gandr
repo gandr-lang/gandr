@@ -12,7 +12,16 @@
 //!
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
-@![features(("dependent-functions", "let-statements", "native-primitives", "pattern-matching", "second-order-rules", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "second-order-rules",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// No process outside the restriction can use the channel `c` of `listen`, so
 /// the restricted receive never fires. The checker orients the law, and the
@@ -38,13 +47,13 @@ theory Vacuous where
 /// This recursion counts `Bind` nodes in a rule term. It ignores `Abs` nodes.
 def rec fieldsOf(term : Theory) -> Integer =
   match term where
-    | Bind(var, body) => {
+    | Bind var body => {
       let r = fieldsOf[<] body
       r + 1
     }
-    | Abs(atom, body) => fieldsOf[<] body
-    | App(name, args) => fieldsOf[<] args
-    | Arg(head, rest) => {
+    | Abs atom body => fieldsOf[<] body
+    | App name args => fieldsOf[<] args
+    | Arg head rest => {
       let here = fieldsOf[<] head
       let r = fieldsOf[<] rest
       here + r
@@ -54,13 +63,13 @@ def rec fieldsOf(term : Theory) -> Integer =
 /// This recursion counts `Abs` nodes in a rule term. It ignores `Bind` nodes.
 def rec abstractionsOf(term : Theory) -> Integer =
   match term where
-    | Abs(atom, body) => {
+    | Abs atom body => {
       let r = abstractionsOf[<] body
       r + 1
     }
-    | Bind(var, body) => abstractionsOf[<] body
-    | App(name, args) => abstractionsOf[<] args
-    | Arg(head, rest) => {
+    | Bind var body => abstractionsOf[<] body
+    | App name args => abstractionsOf[<] args
+    | Arg head rest => {
       let here = abstractionsOf[<] head
       let r = abstractionsOf[<] rest
       here + r
@@ -70,8 +79,8 @@ def rec abstractionsOf(term : Theory) -> Integer =
 /// `deaf` uses `bind x` at the `listen` port.
 @[runs("1")]
 def deafFields() -> Integer = match Deaf {
-  | Presents(sorts, opers, rules) => match rules where
-    | Rule(name, lhs, rhs, rest) => fieldsOf lhs
+  | Presents sorts opers rules => match rules where
+    | Rule name lhs rhs rest => fieldsOf lhs
     | _ => 0
   | _ => 0
 };
@@ -79,8 +88,8 @@ def deafFields() -> Integer = match Deaf {
 /// `deaf` uses `bind c` at the `nu` port.
 @[runs("1")]
 def deafAbstractions() -> Integer = match Deaf {
-  | Presents(sorts, opers, rules) => match rules where
-    | Rule(name, lhs, rhs, rest) => abstractionsOf lhs
+  | Presents sorts opers rules => match rules where
+    | Rule name lhs rhs rest => abstractionsOf lhs
     | _ => 0
   | _ => 0
 };

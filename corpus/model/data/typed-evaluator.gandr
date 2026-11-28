@@ -1,4 +1,15 @@
-@![features(("conditionals", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "conditionals",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // A typed evaluator indexes each expression by the object type of its value.
 //
@@ -43,18 +54,18 @@ data Expr : Ty -> Type where
 /// solves its path from `TInt` to `t`, so its integer meets `meaning(TInt)`.
 def rec eval(t : Ty, e : Expr t) -> meaning t =
   match e where
-    | Lit(i) => i
-    | BoolLit(b) => b
-    | Add(l, r) => eval[<] TInt l + eval[<] TInt r
-    | If(u, c, y, n) => if eval[<] TBool c { eval[<] u y } else { eval[<] u n }
+    | Lit i => i
+    | BoolLit b => b
+    | Add l r => eval[<] TInt l + eval[<] TInt r
+    | If u c y n => if eval[<] TBool c { eval[<] u y } else { eval[<] u n }
 
 /// The evaluator at integers alone. Its `If` branch `y` keeps its stage below
 /// `e` across the path from `u` to `TInt`.
 def rec evalInt(e : Expr TInt) -> Integer =
   match e where
-    | Lit(i) => i
-    | Add(l, r) => evalInt[<] l + evalInt[<] r
-    | If(u, _, y, _) => evalInt[<] y
+    | Lit i => i
+    | Add l r => evalInt[<] l + evalInt[<] r
+    | If u _ y _ => evalInt[<] y
 
 /// The integer evaluator at a choice between a sum and a literal. It runs the
 /// sum.

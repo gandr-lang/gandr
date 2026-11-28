@@ -1,4 +1,14 @@
-@![features(("dependent-functions", "implicit-arguments", "imports", "let-statements", "pattern-matching", "sized-types", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "dependent-functions",
+  "implicit-arguments",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "sized-types",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // Higher-order calls preserve recursive stages.
 //
@@ -35,7 +45,7 @@ pub def apply(a : Type, b : Type, f : a -> b, x : a) -> b =
 def rec count(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (apply Nat Nat count[<] p)
+    | Succ p => Succ (apply Nat Nat count[<] p)
 
 /// This function applies a function at a stage inferred from its arguments.
 pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat =
@@ -46,7 +56,7 @@ pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat =
 def rec helped(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (applyAt helped[<] p)
+    | Succ p => Succ (applyAt helped[<] p)
 
 /// `helpedTwo` evaluates two through `applyAt`.
 @[runs("Succ (Succ Zero)")]
@@ -58,7 +68,7 @@ def helpedTwo : () -> Nat = helped (Succ (Succ Zero))
 pub def predAt[i : Size](n : Nat[i]) -> Nat[i] =
   match n where
     | Zero => Zero
-    | Succ(p) => p
+    | Succ p => p
 
 /// `halvedAt` computes a ceiling half through `predAt` at
 /// the predecessor's stage.
@@ -66,7 +76,7 @@ pub def predAt[i : Size](n : Nat[i]) -> Nat[i] =
 def rec halvedAt(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => { let q = predAt p; Succ (halvedAt[<] q) }
+    | Succ p => { let q = predAt p; Succ (halvedAt[<] q) }
 
 /// Half of four: two.
 @[runs("Succ (Succ Zero)")]
@@ -82,7 +92,7 @@ pub def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> Nat[< j]
 def rec boundedHelped(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => { let q = boundedAt n p; Succ (boundedHelped[<] q) }
+    | Succ p => { let q = boundedAt n p; Succ (boundedHelped[<] q) }
 
 /// `boundedTwo` evaluates two through `boundedAt`.
 @[runs("Succ (Succ Zero)")]
@@ -97,7 +107,7 @@ pub def sameAt[i : Size](f : Nat[i] -> Nat, x : Nat[i]) -> Nat =
 def rec agreed(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (sameAt agreed[<] p)
+    | Succ p => Succ (sameAt agreed[<] p)
 
 /// `agreedTwo` evaluates two through `sameAt`.
 @[runs("Succ (Succ Zero)")]

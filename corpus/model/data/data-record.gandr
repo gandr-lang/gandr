@@ -9,7 +9,13 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 /// A colour as its three channels.
 data Color3 : Type where
@@ -18,7 +24,7 @@ data Color3 : Type where
 /// `green_channel` binds the green field by constructor position.
 def green_channel() -> Integer =
   match (RGB 10 20 30 : Color3) where
-    | RGB(r, g, b) => g
+    | RGB r g b => g
 
 /// `blue_channel` reads the blue field by name.
 def blue_channel(color : Color3) -> Integer =

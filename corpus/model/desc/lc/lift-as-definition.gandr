@@ -1,4 +1,11 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // This source defines `Lift` as a function.
 //
@@ -22,9 +29,9 @@ def liftOf(s : Env) -> Env =
 /// `substLifting` uses `liftOf` below abstractions.
 def rec substLifting(t : Term, s : Env) -> Term =
   match t where
-    | Ix(n) => look n s Z
-    | Lam(b) => Lam (substLifting[<] b (liftOf s))
-    | Ap(f, a) => Ap (substLifting[<] f s) (substLifting[<] a s)
+    | Ix n => look n s Z
+    | Lam b => Lam (substLifting[<] b (liftOf s))
+    | Ap f a => Ap (substLifting[<] f s) (substLifting[<] a s)
 
 /// Two substitutions below an abstraction unfold once.
 def substLiftingTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path (

@@ -13,7 +13,16 @@
 //! - see: #5290
 //! - see: #5255 — `std.ir` over the native dependent pair
 
-@![features(("data-parameters", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "type-codes",
+  "universes"
+))]
 
 /// The spools: bare, or wound once more.
 data Spool : Type where
@@ -26,7 +35,7 @@ data Spool : Type where
 def turns(n : Spool) -> Type =
   match n where
     | Bare => return Unit
-    | Wound(m) => return Spool
+    | Wound m => return Spool
 
 /// A spool beside a value of its turns.
 def spoolPair(k : Spool) -> Type = return type(*{n : Spool, t : turns n})

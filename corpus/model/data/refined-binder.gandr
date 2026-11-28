@@ -1,4 +1,14 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 /// `refinedPred` and `occupied` case on a lambda's binder whose type an
 /// enclosing case refined to a data type.
@@ -28,13 +38,13 @@ import "../universe/decoded-descent.gandr"
 pub def natOr(n : Nat) -> Type =
   match n where
     | Zero => return Nat
-    | Succ(_m) => return Unit
+    | Succ _m => return Unit
 
 /// The predecessor under the arm `Zero`, where the binder is a natural.
 pub def refinedPred(n : Nat) -> (natOr n) -> Nat =
   match n where
-    | Zero => fun (v) { match v -> -F Nat { | Zero => Zero | Succ(m) => m } }
-    | Succ(_m) => fun (_u) { Zero }
+    | Zero => fun (v) { match v -> -F Nat { | Zero => Zero | Succ m => m } }
+    | Succ _m => fun (_u) { Zero }
 
 /// Two's predecessor at zero's family runs to one.
 @[runs("Succ Zero")]
@@ -48,12 +58,12 @@ def predTwo() -> Nat =
 pub def occupied(c : UL) -> (elL c) -> Nat =
   match c where
     | NatL => fun (v) { v }
-    | ListL(_a) => fun (v) {
+    | ListL _a => fun (v) {
       match v -> -F Nat where
         | Nil => Zero
-        | Cons(_h, _t) => Succ Zero
+        | Cons _h _t => Succ Zero
     }
-    | PiL(_a, _b) => fun (_f) { Zero }
+    | PiL _a _b => fun (_f) { Zero }
 
 /// The list that holds two.
 def twoAlone : List Nat = Cons two Nil

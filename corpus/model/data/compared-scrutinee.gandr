@@ -30,4 +30,4 @@ def sized(n : Integer) -> Integer =
 def summed() -> Integer =
   match plus two (Succ Zero) where
     | Zero => 0
-    | Succ(p) => 1
+    | Succ p => 1

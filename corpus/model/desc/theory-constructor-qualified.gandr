@@ -1,4 +1,10 @@
-@![features(("let-statements", "nominal-data", "pattern-matching", "signatures-as-values", "universes"))]
+@![features((
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "signatures-as-values",
+  "universes"
+))]
 
 // A qualified constructor has the form `Family.Constructor`.
 //
@@ -24,7 +30,7 @@ theory Pointed where
 /// This match selects the `Theory.App` link.
 def isApplication(link : Theory) -> Integer =
   match link where
-    | Theory.App(head, arguments) => 1
+    | Theory.App head arguments => 1
     | _ => 0
 
 /// This value tests a qualified theory application.

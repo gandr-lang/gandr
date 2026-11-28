@@ -1,4 +1,13 @@
-@![features(("data-parameters", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "universes"
+))]
 
 // A case on a value of a family with a parameter. The goal of the case reads
 // the value.
@@ -53,13 +62,13 @@ data Seq(a : Type) : Type where
 def rec units(a : Type, s : Seq a) -> Type =
   match s where
     | Nil => return Unit
-    | Cons(h, t) => units[<] a t
+    | Cons h t => units[<] a t
 
 /// A walk down a sequence. Its goal reads the sequence.
 def rec trek(a : Type, s : Seq a) -> units a s =
   match s where
     | Nil => *{}
-    | Cons(h, t) => trek[<] a t
+    | Cons h t => trek[<] a t
 
 /// The sequences over a type, as a definition computes them.
 def seqOf(a : Type) -> Type = return Seq (a)
@@ -69,4 +78,4 @@ def seqOf(a : Type) -> Type = return Seq (a)
 def rec walkOf(a : Type, s : seqOf a) -> units a s =
   match s where
     | Nil => *{}
-    | Cons(h, t) => walkOf[<] a t
+    | Cons h t => walkOf[<] a t

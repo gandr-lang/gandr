@@ -14,7 +14,17 @@
 //! - see: #5373
 //! - see: #6113
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "universes"
+))]
 
 /// The counts.
 data Count : Type where
@@ -71,7 +81,7 @@ data Spine : Type where
 /// One string for each step of a spine.
 def rec spineType(spine : Spine) -> Type =
   match spine where
-    | More(rest) => return (Layer String (spineType[<] rest))
+    | More rest => return (Layer String (spineType[<] rest))
     | Done => return Unit
 
 /// A value two steps deep.

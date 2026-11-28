@@ -4,7 +4,8 @@
 //! `T`.
 //!
 //! A swap renames the atom. The atom can escape its binding port.
-//! A restricted port binds a variable for substitution. Each `Theory` value stores
+//! A restricted port binds a variable for substitution. Each
+//! `Theory` value stores
 //! an abstracting port as an `Abstracted` link. A program reads the link by
 //! `case`.
 //!
@@ -14,7 +15,16 @@
 //! [Pitts-2013-nominal_sets_names_symmetry_computer_science]: https://doi.org/10.1017/CBO9781139084673 "Pitts, Nominal Sets: Names and Symmetry in Computer Science"
 //! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
 
-@![features(("dependent-functions", "let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// `nu` restricts a channel name over a process. The port abstracts that name.
 pub theory Restriction where
@@ -36,29 +46,29 @@ theory Receive where
 /// and `Bound` links.
 def rec abstracted(chain : Theory) -> Integer =
   match chain where
-    | Abstracted(name, sort, indices, atoms, binders, rest) => {
+    | Abstracted name sort indices atoms binders rest => {
       let r = abstracted[<] rest
       r + 1
     }
-    | Port(name, sort, indices, rest) => abstracted[<] rest
-    | Bound(name, sort, indices, binders, rest) => abstracted[<] rest
+    | Port name sort indices rest => abstracted[<] rest
+    | Bound name sort indices binders rest => abstracted[<] rest
     | _ => 0
 
 /// This recursion counts abstracting input ports of each operation. A
 /// constant has no input port, so it adds nothing.
 def rec abstracting(chain : Theory) -> Integer =
   match chain where
-    | Oper(name, inputs, outputs, rest) => {
+    | Oper name inputs outputs rest => {
       let here = abstracted inputs
       let r = abstracting[<] rest
       here + r
     }
-    | Const(name, inputs, outputs, rest) => abstracting[<] rest
+    | Const name inputs outputs rest => abstracting[<] rest
     | _ => 0
 
 /// Only `nu` abstracts in the restriction signature.
 @[runs("1")]
 def abstractions() -> Integer = match Restriction {
-  | Presents(sorts, opers, rules) => abstracting opers
+  | Presents sorts opers rules => abstracting opers
   | _ => 0
 };

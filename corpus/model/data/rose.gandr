@@ -20,7 +20,17 @@
 //!
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
-@![features(("data-parameters", "dependent-functions", "imports", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // The naturals the measures count in, their addition, and the lists the
 // direct form nests through.
@@ -44,19 +54,19 @@ def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List Bush) : List Bush)
 def rec sum(xs : List Nat) -> Nat =
   match xs where
     | Nil => Zero
-    | Cons(x, rest) => plus x (sum[<] rest)
+    | Cons x rest => plus x (sum[<] rest)
 
 /// `nodes` measures each `Bush` node.
 /// It maps itself over the children at a lower stage.
 def rec nodes(t : Bush) -> Nat =
   match t where
-    | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
+    | Sprout kids => Succ (sum (map Bush Nat nodes[<] kids))
 
 /// `grow` adds a childless node to each node.
 /// It maps itself over the children at their stage.
 def rec grow(t : Bush) -> Bush =
   match t where
-    | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List Bush)
+    | Sprout kids => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List Bush)
 
 /// The check expects three nodes in `shrub`.
 @[runs("Succ (Succ (Succ Zero))")]
@@ -87,14 +97,14 @@ rec {
   @[checks]
   def rec treeSize(t : Rose) -> Nat =
     match t where
-      | Node(kids) => { let s = forestSize[<] kids; Succ s }
+      | Node kids => { let s = forestSize[<] kids; Succ s }
 
   /// The nodes of a forest: each tree's, summed.
   @[checks]
   def rec forestSize(ts : Forest) -> Nat =
     match ts where
       | Empty => Zero
-      | More(t, rest) => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
+      | More t rest => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
 }
 
 /// A node without children.
@@ -118,14 +128,14 @@ rec {
   @[checks]
   def rec treeWeight(t : Rose, k : Nat) -> Nat =
     match t where
-      | Node(kids) => plus k (forestWeight[<] kids k)
+      | Node kids => plus k (forestWeight[<] kids k)
 
   /// The nodes of a forest, each weighing `k`.
   @[checks]
   def rec forestWeight(ts : Forest, k : Nat) -> Nat =
     match ts where
       | Empty => Zero
-      | More(t, rest) => plus (treeWeight[<] t k) (forestWeight[<] rest k)
+      | More t rest => plus (treeWeight[<] t k) (forestWeight[<] rest k)
 }
 
 /// The check weighs the three sapling nodes by two.
@@ -142,14 +152,14 @@ rec {
   @[checks]
   def rec bumpTree(t : Rose) -> Rose =
     match t where
-      | Node(kids) => Node (bumpForest[<] kids)
+      | Node kids => Node (bumpForest[<] kids)
 
   /// A copy of the forest, one tree at a time.
   @[checks]
   def rec bumpForest(ts : Forest) -> Forest =
     match ts where
       | Empty => Empty
-      | More(t, rest) => More (bumpTree[<] t) (bumpForest[<] rest)
+      | More t rest => More (bumpTree[<] t) (bumpForest[<] rest)
 }
 
 /// The sapling's copy keeps its three nodes.

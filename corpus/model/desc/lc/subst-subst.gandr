@@ -9,7 +9,17 @@
 //!
 //! - see: #640
 
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "type-codes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "type-codes",
+  "visibility"
+))]
 
 // This source imports syntax and lemmas for lifted substitutions.
 import "../model-in-source.gandr"
@@ -64,7 +74,7 @@ def substSquareLift(
 ) -> Path[.A = Term] (subst (look n (Lift s1) Z) (Lift s2)) (subst (look n (Lift u1) Z) (Lift u2)) =
   match n where
     | Z => Path.here (Ix Z)
-    | S(m) => compose[5, 7] (chain 3) (
+    | S m => compose[5, 7] (chain 3) (
       substLookWeakenLift s1 s2 m,
       weakenedComposites s1 s2 u1 u2 h m,
       Path.back (substLookWeakenLift u1 u2 m)
@@ -80,13 +90,13 @@ pub def rec substSquare(
   h : (n : N) -> Path[.A = Term] (subst (look n s1 Z) s2) (subst (look n u1 Z) u2)
 ) -> Path[.A = Term] (subst (subst t s1) s2) (subst (subst t u1) u2) =
   match t where
-    | Ix(n) => h n
-    | Lam(b) => Path.ap
+    | Ix n => h n
+    | Lam b => Path.ap
       lamOf
       (substSquare[<] b (Lift s1) (Lift s2) (Lift u1) (Lift u2) (fun (n) {
         substSquareLift s1 s2 u1 u2 h n
       }))
-    | Ap(f, x) => Path.walk
+    | Ap f x => Path.walk
       (fun (z) {
         type(Path[.A = Term] (Ap (subst (subst f s1) s2) (subst (subst x s1) s2)) (Ap
           z

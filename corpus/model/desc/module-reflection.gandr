@@ -1,4 +1,18 @@
-@![features(("data-parameters", "equivalence-record", "identity-types", "imports", "inert-fields", "let-statements", "modules", "native-primitives", "pattern-matching", "records", "signatures-as-values", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "equivalence-record",
+  "identity-types",
+  "imports",
+  "inert-fields",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "pattern-matching",
+  "records",
+  "signatures-as-values",
+  "structural-recursion",
+  "visibility"
+))]
 
 // A function reads a module's signature as a value, and a model as its
 // entries at a type that the signature's value computes.
@@ -44,18 +58,18 @@ import std.string (concat)
 /// The sort of the first port in a port chain, or `-` for an empty chain.
 def sortOf(ports : Theory) -> String =
   match ports where
-    | Theory.Port(name, sort, indices, rest) => sort
+    | Theory.Port name sort indices rest => sort
     | _ => "-"
 
 /// One line `name : sort` for each constant of a member chain, and one line
 /// `name -> sort` for each operation. A member of another kind gives `?`.
 def rec memberLines(chain : Theory) -> String =
   match chain where
-    | Theory.Const(name, inputs, outputs, rest) => {
+    | Theory.Const name inputs outputs rest => {
       let r = memberLines[<] rest
       concat (concat (concat name " : ") (concat (sortOf outputs) "\n")) r
     }
-    | Theory.Oper(name, inputs, outputs, rest) => {
+    | Theory.Oper name inputs outputs rest => {
       let r = memberLines[<] rest
       concat (concat (concat name " -> ") (concat (sortOf outputs) "\n")) r
     }
@@ -65,7 +79,7 @@ def rec memberLines(chain : Theory) -> String =
 /// The members of a presentation, one line each.
 def declared(presented : Theory) -> String =
   match presented where
-    | Theory.Presents(sorts, opers, rules) => memberLines opers
+    | Theory.Presents sorts opers rules => memberLines opers
     | _ => ""
 
 /// The members of `Gandr.Package` as its presentation gives them: eleven
@@ -118,17 +132,17 @@ def packageLines() -> String = render Package
 @[inert]
 def packageOf(e : modelType packagePresentation) -> Model Gandr.Package =
   match e where
-    | Entry(version, e1) => match e1 where
-      | Entry(gandr, e2) => match e2 where
-        | Entry(features, e3) => match e3 where
-          | Entry(systems, e4) => match e4 where
-            | Entry(spelling, e5) => match e5 where
-              | Entry(name, e6) => match e6 where
-                | Entry(authors, e7) => match e7 where
-                  | Entry(licence, e8) => match e8 where
-                    | Entry(documentation, e9) => match e9 where
-                      | Entry(endpoint, e10) => match e10 where
-                        | Entry(sources, e11) => *{
+    | Entry version e1 => match e1 where
+      | Entry gandr e2 => match e2 where
+        | Entry features e3 => match e3 where
+          | Entry systems e4 => match e4 where
+            | Entry spelling e5 => match e5 where
+              | Entry name e6 => match e6 where
+                | Entry authors e7 => match e7 where
+                  | Entry licence e8 => match e8 where
+                    | Entry documentation e9 => match e9 where
+                      | Entry endpoint e10 => match e10 where
+                        | Entry sources e11 => *{
                           .version = version,
                           .gandr = gandr,
                           .features = features,
@@ -151,21 +165,23 @@ def packageBack(m : Model Gandr.Package) -> Path[.A = Model Gandr.Package] (
 
 /// Entries come back from their package model.
 @[inert]
-def packageEntriesBack(e : modelType packagePresentation) -> Path[.A = modelType packagePresentation] (
+def packageEntriesBack(e : modelType packagePresentation) -> Path[
+  .A = modelType packagePresentation
+] (
   packageEntries (packageOf e)
 ) e =
   match e where
-    | Entry(version, e1) => match e1 where
-      | Entry(gandr, e2) => match e2 where
-        | Entry(features, e3) => match e3 where
-          | Entry(systems, e4) => match e4 where
-            | Entry(spelling, e5) => match e5 where
-              | Entry(name, e6) => match e6 where
-                | Entry(authors, e7) => match e7 where
-                  | Entry(licence, e8) => match e8 where
-                    | Entry(documentation, e9) => match e9 where
-                      | Entry(endpoint, e10) => match e10 where
-                        | Entry(sources, e11) => match e11 where
+    | Entry version e1 => match e1 where
+      | Entry gandr e2 => match e2 where
+        | Entry features e3 => match e3 where
+          | Entry systems e4 => match e4 where
+            | Entry spelling e5 => match e5 where
+              | Entry name e6 => match e6 where
+                | Entry authors e7 => match e7 where
+                  | Entry licence e8 => match e8 where
+                    | Entry documentation e9 => match e9 where
+                      | Entry endpoint e10 => match e10 where
+                        | Entry sources e11 => match e11 where
                           | Ended => Path.here
                             (Entry version (Entry
                               gandr
@@ -211,8 +227,8 @@ def flaggedEntries(m : Model Flagged) -> modelType Flagged = Entry m.label (Entr
 /// The model of `Flagged` whose entries are `e`.
 def flaggedOf(e : modelType Flagged) -> Model Flagged =
   match e where
-    | Entry(label, r) => match r where
-      | Entry(shown, t) => *{.label = label, .shown = shown}
+    | Entry label r => match r where
+      | Entry shown t => *{.label = label, .shown = shown}
 
 /// A model comes back from its entries.
 def flaggedBack(m : Model Flagged) -> Path[.A = Model Flagged] (flaggedOf
@@ -223,8 +239,8 @@ def flaggedEntriesBack(e : modelType Flagged) -> Path[.A = modelType Flagged] (
   flaggedEntries (flaggedOf e)
 ) e =
   match e where
-    | Entry(label, r) => match r where
-      | Entry(shown, t) => match t where
+    | Entry label r => match r where
+      | Entry shown t => match t where
         | Ended => Path.here (Entry label (Entry shown Ended) : modelType Flagged)
 
 /// A model of `Flagged` and its entries are equivalent.

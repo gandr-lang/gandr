@@ -1,4 +1,14 @@
-@![features(("data-parameters", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "records", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "type-codes",
+  "universes"
+))]
 
 /// This source checks a pair against a definition that returns a
 /// dependent record type.
@@ -25,9 +35,9 @@ data T : Type where
 /// and nothing else.
 def p(r : T, h : Heap) -> Type =
   match r where
-    | Tg(t) => match t where
+    | Tg t => match t where
       | Zero => emp h
-      | Succ(_s) => return Void
+      | Succ _s => return Void
 
 /// The tags paired with what each owes of `h`, a dependent record named
 /// by a definition.
@@ -41,9 +51,9 @@ def zeroTagged(e : p (Tg Zero) Emp) -> repr Emp =
 /// What a tag owes of the empty heap, the arm's call closed: `emp(Emp)`.
 def owedClosed(r : T) -> Type =
   match r where
-    | Tg(t) => match t where
+    | Tg t => match t where
       | Zero => emp Emp
-      | Succ(_s) => return Void
+      | Succ _s => return Void
 
 /// The tags paired with what each owes of the empty heap.
 def reprClosed(_h : Heap) -> Type =

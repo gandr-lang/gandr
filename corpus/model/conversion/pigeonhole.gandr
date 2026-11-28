@@ -15,7 +15,17 @@
 //!
 //! [Boespflug-2011-full_reduction_at_full_throttle]: https://doi.org/10.1007/978-3-642-25379-9_26 "Boespflug, Dénès and Grégoire, Full Reduction at Full Throttle"
 
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // The free naturals and the numerals two and three.
 import "../data/data-base.gandr"
@@ -45,21 +55,21 @@ data Assignment : Type where
 def rec lookup(i : Nat, a : Assignment) -> Bool =
   match a where
     | Unset => false
-    | Set(value, rest) => match i where
+    | Set value rest => match i where
       | Zero => value
-      | Succ(j) => lookup[<] j rest
+      | Succ j => lookup[<] j rest
 
 /// Whether a formula holds under an assignment of its variables.
 def rec holds(f : Formula, a : Assignment) -> Bool =
   match f where
-    | Atom(i) => lookup i a
-    | Not(g) => match holds[<] g a where
+    | Atom i => lookup i a
+    | Not g => match holds[<] g a where
       | true => false
       | false => true
-    | And(l, r) => match holds[<] l a where
+    | And l r => match holds[<] l a where
       | true => holds[<] r a
       | false => false
-    | Or(l, r) => match holds[<] l a where
+    | Or l r => match holds[<] l a where
       | true => true
       | false => holds[<] r a
 
@@ -67,7 +77,7 @@ def rec holds(f : Formula, a : Assignment) -> Bool =
 def rec tautology(k : Nat, f : Formula, a : Assignment) -> Bool =
   match k where
     | Zero => holds f a
-    | Succ(j) => match tautology[<] j f (Set true a) where
+    | Succ j => match tautology[<] j f (Set true a) where
       | true => tautology[<] j f (Set false a)
       | false => false
 

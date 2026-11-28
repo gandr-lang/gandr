@@ -10,7 +10,17 @@
 //!
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
-@![features(("data-parameters", "dependent-functions", "let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.
@@ -43,30 +53,30 @@ theory IdentityReturn where
 /// for an ordinary `Sort`.
 def rec representable(chain : Theory) -> Integer =
   match chain where
-    | Representable(name, indices, rest) => { let r = representable[<] rest; r + 1 }
-    | Sort(name, indices, rest) => representable[<] rest
+    | Representable name indices rest => { let r = representable[<] rest; r + 1 }
+    | Sort name indices rest => representable[<] rest
     | _ => 0
 
 /// Structural recursion over a port chain: one per `Bound` port, none for a
 /// plain `Port`.
 def rec bound(chain : Theory) -> Integer =
   match chain where
-    | Bound(name, sort, indices, binders, rest) => { let r = bound[<] rest; r + 1 }
-    | Port(name, sort, indices, rest) => bound[<] rest
+    | Bound name sort indices binders rest => { let r = bound[<] rest; r + 1 }
+    | Port name sort indices rest => bound[<] rest
     | _ => 0
 
 /// The identity-return signature declares one representable sort, `VTm`.
 @[runs("1")]
 def representableSorts() -> Integer = match IdentityReturn {
-  | Presents(sorts, opers, rules) => representable sorts
+  | Presents sorts opers rules => representable sorts
   | _ => 0
 };
 
 /// The λ-calculus's first operation, `lam`, binds over its one input.
 @[runs("1")]
 def boundInputs() -> Integer = match Lambda {
-  | Presents(sorts, opers, rules) => match opers where
-    | Oper(name, inputs, outputs, rest) => bound inputs
+  | Presents sorts opers rules => match opers where
+    | Oper name inputs outputs rest => bound inputs
     | _ => 0
   | _ => 0
 };

@@ -1,4 +1,14 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// This source calls recursions staged past their first parameter
 /// at named values.
@@ -21,9 +31,9 @@ def oneByName : Nat = Succ Zero
 def rec le(a : Nat, b : Nat) -> Bool =
   match a where
     | Zero => true
-    | Succ(p) => match b where
+    | Succ p => match b where
       | Zero => false
-      | Succ(q) => le[<] p q
+      | Succ q => le[<] p q
 
 /// Zero is at most one, the second argument through the name.
 def zeroAtMostOne : Path (le Zero oneByName) true = Path.here true
@@ -45,11 +55,11 @@ def threeAboveOne : Path (le three oneByName) false = Path.here false
 def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool =
   match a where
     | Zero => true
-    | Succ(p) => match b where
+    | Succ p => match b where
       | Zero => false
-      | Succ(q) => match c where
+      | Succ q => match c where
         | Zero => false
-        | Succ(r) => leBoth[<] p q r
+        | Succ r => leBoth[<] p q r
 
 /// Zero comes first, and the third reaches its gate through a name.
 def zeroFirst : Path (leBoth Zero oneByName three) true = Path.here true
@@ -80,16 +90,16 @@ def rec cmpPos(a : Pos, b : Pos, k : Cmp) -> Cmp =
   match a where
     | H => match b where
       | H => k
-      | O(q) => Lt
-      | I(q) => Lt
-    | O(p) => match b where
+      | O q => Lt
+      | I q => Lt
+    | O p => match b where
       | H => Gt
-      | O(q) => cmpPos[<] p q k
-      | I(q) => cmpPos[<] p q Lt
-    | I(p) => match b where
+      | O q => cmpPos[<] p q k
+      | I q => cmpPos[<] p q Lt
+    | I p => match b where
       | H => Gt
-      | O(q) => cmpPos[<] p q Gt
-      | I(q) => cmpPos[<] p q k
+      | O q => cmpPos[<] p q Gt
+      | I q => cmpPos[<] p q k
 
 /// One is below two, the second positive through the name.
 def oneBelowTwo : Path (cmpPos H twoPos Eq) Lt = Path.here Lt;

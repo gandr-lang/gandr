@@ -7,7 +7,17 @@
 //!
 //! - see: #640
 
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "type-codes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "type-codes",
+  "visibility"
+))]
 
 // This source imports naturals, syntax, congruences and lookup lemmas.
 import "../model-in-source.gandr"
@@ -24,7 +34,7 @@ def substIdLift(
 ) -> Path[.A = Term] (look n (Lift s) Z) (Ix n) =
   match n where
     | Z => Path.here (Ix Z)
-    | S(m) => compose[5, 7] (chain 3) (
+    | S m => compose[5, 7] (chain 3) (
       lookWeakens m s Z,
       wkCong (look m s Z) (Ix m) (h m),
       ixShiftAdds m (S Z)
@@ -37,9 +47,9 @@ pub def rec substId(
   h : (n : N) -> Path[.A = Term] (look n s Z) (Ix n)
 ) -> Path[.A = Term] (subst t s) t =
   match t where
-    | Ix(n) => h n
-    | Lam(b) => Path.ap lamOf (substId[<] b (Lift s) (fun (n) { substIdLift s h n }))
-    | Ap(f, x) => Path.walk
+    | Ix n => h n
+    | Lam b => Path.ap lamOf (substId[<] b (Lift s) (fun (n) { substIdLift s h n }))
+    | Ap f x => Path.walk
       (fun (z) { type(Path[.A = Term] (Ap (subst f s) (subst x s)) (Ap z x)) })
       (substId[<] f s h)
       (Path.walk (fun (z) {
@@ -50,4 +60,4 @@ pub def rec substId(
 pub def shiftZeroIsId(n : N) -> Path[.A = Term] (look n (Shift Z) Z) (Ix n) =
   match n where
     | Z => Path.here (Ix Z)
-    | S(j) => Path.here (Ix (S j))
+    | S j => Path.here (Ix (S j))

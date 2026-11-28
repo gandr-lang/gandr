@@ -68,16 +68,16 @@ def rec shorter(right : Length, left : Length) -> Bool =
   match left where
     | Zero => match right where
       | Zero => false
-      | Next(rest) => true
-    | Next(left_rest) => match right where
+      | Next rest => true
+    | Next left_rest => match right where
       | Zero => false
-      | Next(right_rest) => shorter[<] right_rest left_rest
+      | Next right_rest => shorter[<] right_rest left_rest
 
 /// The address `count` bytes after `address`, for a count of one step a byte.
 def rec after(address : u64, count : Length) -> u64 =
   match count where
     | Zero => address
-    | Next(rest) => after[<] (u64.wrapping_add address 1u64) rest
+    | Next rest => after[<] (u64.wrapping_add address 1u64) rest
 
 /// Copy `left` bytes from `from` on to `to` on, the first byte first.
 def rec forward(to : u64, from : u64, left : Length) -> [
@@ -85,7 +85,7 @@ def rec forward(to : u64, from : u64, left : Length) -> [
 ] Unit =
   match left where
     | Zero => pure *{}
-    | Next(rest) => {
+    | Next rest => {
       let byte = p.load8 from
       p.store8 to byte
       forward[<] (u64.wrapping_add to 1u64) (u64.wrapping_add from 1u64) rest
@@ -98,7 +98,7 @@ def rec backward(to_end : u64, from_end : u64, left : Length) -> [
 ] Unit =
   match left where
     | Zero => pure *{}
-    | Next(rest) => {
+    | Next rest => {
       let to = u64.wrapping_sub to_end 1u64
       let from = u64.wrapping_sub from_end 1u64
       let byte = p.load8 from
@@ -112,7 +112,7 @@ def rec spread(to : u64, byte : u8, left : Length) -> [
 ] Unit =
   match left where
     | Zero => pure *{}
-    | Next(rest) => {
+    | Next rest => {
       p.store8 to byte
       spread[<] (u64.wrapping_add to 1u64) byte rest
     }
@@ -125,10 +125,10 @@ def rec ordered(left : u64, right : u64, right_length : Length, left_length : Le
   match left_length where
     | Zero => match right_length where
       | Zero => pure Equal
-      | Next(right_rest) => pure Less
-    | Next(left_rest) => match right_length where
+      | Next right_rest => pure Less
+    | Next left_rest => match right_length where
       | Zero => pure Greater
-      | Next(right_rest) => {
+      | Next right_rest => {
         let one = p.load8 left
         let two = p.load8 right
         if u8.to_integer one < u8.to_integer two {
@@ -153,8 +153,8 @@ pub def copy(to : Range, from : Range) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
 ] Written =
   match to where
-    | Range(place, room) => match from where
-      | Range(source, length) => if shorter length room {
+    | Range place room => match from where
+      | Range source length => if shorter length room {
         pure Short
       } else {
         forward place source length
@@ -169,8 +169,8 @@ pub def move_bytes(to : Range, from : Range) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
 ] Written =
   match to where
-    | Range(place, room) => match from where
-      | Range(source, length) => if shorter length room {
+    | Range place room => match from where
+      | Range source length => if shorter length room {
         pure Short
       } else {
         if u64.to_integer source < u64.to_integer place {
@@ -187,7 +187,7 @@ pub def fill(to : Range, byte : u8) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
 ] Unit =
   match to where
-    | Range(place, length) => spread place byte length
+    | Range place length => spread place byte length
 
 /// The order of `left` and `right` as sequences of bytes: the order of the
 /// first byte where they differ, as unsigned numbers, or of their lengths when
@@ -196,8 +196,8 @@ pub def compare(left : Range, right : Range) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
 ] Order =
   match left where
-    | Range(first, left_length) => match right where
-      | Range(second, right_length) => ordered first second right_length left_length
+    | Range first left_length => match right where
+      | Range second right_length => ordered first second right_length left_length
 
 /// The answer of a run under `Extent`.
 data Shown : Type where
@@ -227,36 +227,36 @@ def order_word(order : Order) -> u64 =
 /// The bytes of `memory`.
 def bytes_of(memory : Memory) -> List u8 =
   match memory where
-    | Memory(base, bytes) => bytes
+    | Memory base bytes => bytes
 
 /// The outcome of a copy or a move that ends with `ended`.
 def wrote(ended : Ended) -> Shown =
   match ended where
-    | Gave(word, memory) => if u64.to_integer word == 0 {
+    | Gave word memory => if u64.to_integer word == 0 {
       pure Wrote Done (bytes_of memory)
     } else {
       pure Wrote Short (bytes_of memory)
     }
-    | Kept(memory) => pure Filled (bytes_of memory)
-    | Outside(member, address) => pure Faulted member address
+    | Kept memory => pure Filled (bytes_of memory)
+    | Outside member address => pure Faulted member address
 
 /// The outcome of a fill that ends with `ended`.
 def filled(ended : Ended) -> Shown =
   match ended where
-    | Gave(word, memory) => pure Filled (bytes_of memory)
-    | Kept(memory) => pure Filled (bytes_of memory)
-    | Outside(member, address) => pure Faulted member address
+    | Gave word memory => pure Filled (bytes_of memory)
+    | Kept memory => pure Filled (bytes_of memory)
+    | Outside member address => pure Faulted member address
 
 /// The outcome of a comparison that ends with `ended`.
 def ordered_by(ended : Ended) -> Shown =
   match ended where
-    | Gave(word, memory) => if u64.to_integer word == 0 {
+    | Gave word memory => if u64.to_integer word == 0 {
       pure Ordered Less
     } else {
       if u64.to_integer word == 1 { pure Ordered Equal } else { pure Ordered Greater }
     }
-    | Kept(memory) => pure Filled (bytes_of memory)
-    | Outside(member, address) => pure Faulted member address
+    | Kept memory => pure Filled (bytes_of memory)
+    | Outside member address => pure Faulted member address
 
 /// The range of `count` bytes from the position `start` of the extent.
 def within(start : Integer, count : List u8) -> Range = Range

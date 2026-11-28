@@ -1,4 +1,10 @@
-@![features(("dependent-functions", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // A result can follow its argument.
 //
@@ -21,30 +27,30 @@ import "./data-base.gandr"
 def rec minus(n : Nat, k : Nat) -> Nat =
   match k where
     | Zero => n
-    | Succ(j) => match n where
+    | Succ j => match n where
       | Zero => Zero
-      | Succ(p) => minus[<] p j
+      | Succ p => minus[<] p j
 
 /// `divided` computes the ceiling quotient of `n` by `d + 1`.
 /// `minus` provides a value below `n`.
 def rec divided(n : Nat, d : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => { let r = minus p d; Succ (divided[<] r d) }
+    | Succ p => { let r = minus p d; Succ (divided[<] r d) }
 
 /// `halvedUp` computes the ceiling half of `n`.
 /// Its predecessor is below `n`.
 def rec halvedUp(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => { let q = minus p (Succ Zero); Succ (halvedUp[<] q) }
+    | Succ p => { let q = minus p (Succ Zero); Succ (halvedUp[<] q) }
 
 /// The number of binary digits of `n`, a logarithm: half of the field `p`
 /// stands where `p` does, below `n`, since `halvedUp` follows its argument.
 def rec digits(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => { let h = halvedUp p; Succ (digits[<] h) }
+    | Succ p => { let h = halvedUp p; Succ (digits[<] h) }
 
 /// Three less one: two.
 @[runs("Succ (Succ Zero)")]

@@ -54,7 +54,7 @@ def rec seek(here : u64, byte : u8, position : u64, left : Length) -> [
 ] Found =
   match left where
     | Zero => pure Absent
-    | Next(rest) => {
+    | Next rest => {
       let each = p.load8 here
       if same each byte {
         pure At position
@@ -70,7 +70,7 @@ def rec matches(here : u64, needle : u64, left : Length) -> [
 ] Bool =
   match left where
     | Zero => pure true
-    | Next(rest) => {
+    | Next rest => {
       let one = p.load8 here
       let two = p.load8 needle
       if same one two {
@@ -88,8 +88,8 @@ def rec scan(here : u64, needle : Range, position : u64, tries : Length) -> [
 ] Found =
   match tries where
     | Zero => pure Absent
-    | Next(rest) => match needle where
-      | Range(start, length) => {
+    | Next rest => match needle where
+      | Range start length => {
         let hit = matches here start length
         if hit {
           pure At position
@@ -104,9 +104,9 @@ def rec scan(here : u64, needle : Range, position : u64, tries : Length) -> [
 def rec tries(needle : Length, range : Length) -> Length =
   match needle where
     | Zero => Next range
-    | Next(shorter) => match range where
+    | Next shorter => match range where
       | Zero => Zero
-      | Next(rest) => tries[<] shorter rest
+      | Next rest => tries[<] shorter rest
 
 /// The first position of `byte` in `range`: `At` the least position whose
 /// byte is `byte`, and `Absent` when no byte of the range is `byte`, an empty
@@ -115,7 +115,7 @@ pub def find_byte(range : Range, byte : u8) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
 ] Found =
   match range where
-    | Range(start, length) => seek start byte 0u64 length
+    | Range start length => seek start byte 0u64 length
 
 /// The first position of `needle` in `range`: `At` the least position where
 /// the bytes of the range start with the bytes of the needle, `At 0u64` for
@@ -125,10 +125,10 @@ pub def find_range(range : Range, needle : Range) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
 ] Found =
   match range where
-    | Range(start, length) => match needle where
-      | Range(first, width) => match width where
+    | Range start length => match needle where
+      | Range first width => match width where
         | Zero => pure At 0u64
-        | Next(rest) => scan start needle 0u64 (tries width length)
+        | Next rest => scan start needle 0u64 (tries width length)
 
 /// The answer of a run under `Extent`.
 data Outcome : Type where
@@ -143,19 +143,19 @@ data Outcome : Type where
 /// bit set for `Absent`.
 def word(found : Found) -> u64 =
   match found where
-    | At(position) => position
+    | At position => position
     | Absent => u64.not 0u64
 
 /// The outcome of a run that ends with `ended`.
 def outcome(ended : Ended) -> Outcome =
   match ended where
-    | Gave(word, memory) => if u64.to_integer word == u64.to_integer (u64.not 0u64) {
+    | Gave word memory => if u64.to_integer word == u64.to_integer (u64.not 0u64) {
       pure Answered Absent
     } else {
       pure Answered (At word)
     }
-    | Kept(memory) => pure Silent
-    | Outside(member, address) => pure Faulted member address
+    | Kept memory => pure Silent
+    | Outside member address => pure Faulted member address
 
 /// The answer of `find_byte` for `byte` in `bytes`, under `Extent`. The
 /// extent holds the bytes alone, from the address 4096.

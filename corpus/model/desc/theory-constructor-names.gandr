@@ -1,4 +1,12 @@
-@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 // A source constructor can have the name of a `Theory` constructor.
 //
@@ -29,14 +37,14 @@ data Kind : Type where
 /// This recursion counts `Oper` links.
 def rec opsOf(chain : Theory) -> Integer =
   match chain where
-    | Oper(name, inputs, outputs, rest) => { let r = opsOf[<] rest; r + 1 }
+    | Oper name inputs outputs rest => { let r = opsOf[<] rest; r + 1 }
     | _ => 0
 
 /// `Presents` reads the two operations of `Mon`.
 @[runs("2")]
 def presentedOps() -> Integer =
   match Mon where
-    | Presents(sorts, opers, rules) => opsOf opers
+    | Presents sorts opers rules => opsOf opers
     | _ => 0
 
 /// `App` builds a `Bruijn`.

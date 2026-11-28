@@ -1,4 +1,13 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // A complete binary tree built two ways agrees at depth twelve.
 //
@@ -36,13 +45,13 @@ def twice(t : Tree) -> Tree =
 def rec held(n : Nat) -> Tree =
   match n where
     | Zero => Leaf
-    | Succ(m) => twice (held[<] m)
+    | Succ m => twice (held[<] m)
 
 /// Builds the complete tree of depth `n` and shares no level.
 def rec built(n : Nat) -> Tree =
   match n where
     | Zero => Leaf
-    | Succ(m) => Node (Wrap (built[<] m)) (Wrap (built[<] m))
+    | Succ m => Node (Wrap (built[<] m)) (Wrap (built[<] m))
 
 /// The two trees agree at depth twelve.
 def treesAgree() -> Path (held twelve) (built twelve) =

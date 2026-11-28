@@ -12,8 +12,8 @@
 @[refuses("UnresolvedName")]
 def pick() -> Integer =
   match (Inl 42 : Integer + String) where
-    | Inl(x) => return (x + 1)
-    | Inr(s) => return 0
+    | Inl x => return (x + 1)
+    | Inr s => return 0
 
 /// `picked` calls the refused `pick` declaration.
 /// Its result type is unknown.

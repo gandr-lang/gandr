@@ -1,4 +1,12 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "universes"
+))]
 
 /// This source converts a call through another call result.
 ///
@@ -18,14 +26,14 @@ import "./stuck-arm-call.gandr"
 def tailOf(h : Heap) -> Heap =
   match h where
     | Emp => Emp
-    | Cell(_l, rest) => rest
+    | Cell _l rest => rest
 
 /// At zero, the heap after its first cell is empty.
 /// At a successor, the type has no inhabitant.
 def viaTail(w : Nat, h : Heap) -> Type =
   match w where
     | Zero => emp (tailOf h)
-    | Succ(_n) => return Void
+    | Succ _n => return Void
 
 /// `tailEmpty` says the heap after its first cell is empty.
 def tailEmpty(h : Heap) -> Type =

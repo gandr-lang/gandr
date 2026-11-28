@@ -13,7 +13,15 @@
 //!
 //! [Gregoire-2002-a_compiled_implementation_of_strong_reduction]: https://doi.org/10.1145/581478.581501 "Grégoire and Leroy, A compiled implementation of strong reduction"
 
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-primitives", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // The free naturals.
 import "../data/data-base.gandr"
@@ -25,19 +33,19 @@ import "./conversion-base.gandr"
 def rec fact(n : Nat) -> Nat =
   match n where
     | Zero => Succ Zero
-    | Succ(m) => times (Succ m) (fact[<] m)
+    | Succ m => times (Succ m) (fact[<] m)
 
 /// Factorial by iteration, the product carried in an accumulator.
 def rec factFrom(n : Nat, acc : Nat) -> Nat =
   match n where
     | Zero => acc
-    | Succ(m) => factFrom[<] m (times acc (Succ m))
+    | Succ m => factFrom[<] m (times acc (Succ m))
 
 /// Whether a natural is even.
 def rec even(n : Nat) -> Bool =
   match n where
     | Zero => true
-    | Succ(m) => match even[<] m where
+    | Succ m => match even[<] m where
       | true => false
       | false => true
 

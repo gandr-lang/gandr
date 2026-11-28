@@ -14,7 +14,14 @@
 //! [Pitts-2013-nominal_sets_names_symmetry_computer_science]: https://doi.org/10.1017/CBO9781139084673 "Pitts, Nominal Sets: Names and Symmetry in Computer Science"
 //! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
 
-@![features(("let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// This theory declares one atom sort.
 theory AtomOnly where
@@ -32,13 +39,13 @@ theory Renaming where
 /// `Sort` links.
 def rec atoms(chain : Theory) -> Integer =
   match chain where
-    | Atom(name, indices, rest) => { let r = atoms[<] rest; r + 1 }
-    | Sort(name, indices, rest) => atoms[<] rest
+    | Atom name indices rest => { let r = atoms[<] rest; r + 1 }
+    | Sort name indices rest => atoms[<] rest
     | _ => 0
 
 /// The `Renaming` signature declares the atom sort `Name`.
 @[runs("1")]
 def atomSorts() -> Integer = match Renaming {
-  | Presents(sorts, opers, rules) => atoms sorts
+  | Presents sorts opers rules => atoms sorts
   | _ => 0
 };

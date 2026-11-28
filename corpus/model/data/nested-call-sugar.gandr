@@ -10,7 +10,13 @@
 //!
 //! [Altenkirch-2018-quotient_inductive_inductive_types]: https://doi.org/10.1007/978-3-319-89366-2_16 "Altenkirch et al., Quotient inductive-inductive types"
 
-@![features(("dependent-functions", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // The presented integers.
 import "./data-base.gandr"
@@ -19,15 +25,15 @@ import "./data-base.gandr"
 def rec dbl(n : Int) -> Int =
   match n where
     | Z => Z
-    | S(x) => S (S (dbl[<] x))
-    | P(x) => P (P (dbl[<] x))
+    | S x => S (S (dbl[<] x))
+    | P x => P (P (dbl[<] x))
 
 /// Negation exchanges successors and predecessors.
 def rec neg(n : Int) -> Int =
   match n where
     | Z => Z
-    | S(x) => P (neg[<] x)
-    | P(x) => S (neg[<] x)
+    | S x => P (neg[<] x)
+    | P x => S (neg[<] x)
 
 /// This example evaluates double two.
 @[runs("S (S (S (S Z)))")]

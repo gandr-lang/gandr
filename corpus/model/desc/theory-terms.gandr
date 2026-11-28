@@ -1,4 +1,16 @@
-@![features(("data-parameters", "identity-types", "let-statements", "modules", "nominal-data", "pattern-matching", "records", "rule-respect", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "rule-respect",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 // `Terms(S)` is the type of closed terms of theory `S`.
 //
@@ -53,7 +65,7 @@ data Ticks : Type where
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
   match m where
     | NoTick => n
-    | Tick(k) => Tick (joinLeft[<] k n)
+    | Tick k => Tick (joinLeft[<] k n)
 
 /// One more tick.
 def tick(n : Ticks) -> Ticks = Tick n
@@ -62,7 +74,7 @@ def tick(n : Ticks) -> Ticks = Tick n
 def rec noTickRight(n : Ticks) -> Path (joinLeft n NoTick) n =
   match n where
     | NoTick => Path.here NoTick
-    | Tick(k) => Path.ap tick (noTickRight[<] k)
+    | Tick k => Path.ap tick (noTickRight[<] k)
 
 /// The counts as a model: the left unit by conversion, the right by induction.
 module Counts : Model(Mag) where
@@ -82,7 +94,7 @@ module Counts : Model(Mag) where
 def rec intoCounts(t : Terms Mag) -> Ticks =
   match t where
     | Mag.one => Counts.one
-    | Mag.mul(x, y) => Counts.mul (intoCounts[<] x) (intoCounts[<] y)
+    | Mag.mul x y => Counts.mul (intoCounts[<] x) (intoCounts[<] y)
 
 /// A closed term folded into the counts.
 @[runs("NoTick")]

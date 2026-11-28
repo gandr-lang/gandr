@@ -1,4 +1,10 @@
-@![features(("imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+@![features((
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "visibility"
+))]
 
 // The conversion subject's shared declarations: products, truncated
 // subtraction and numerals over the data subject's free naturals.
@@ -20,15 +26,15 @@ import "../data/data-base.gandr"
 pub def rec times(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => Zero
-    | Succ(p) => plus (times[<] n p) n
+    | Succ p => plus (times[<] n p) n
 
 /// Truncated subtraction: zero where `m` exceeds `n`.
 pub def rec monus(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
-    | Succ(p) => match monus[<] n p where
+    | Succ p => match monus[<] n p where
       | Zero => Zero
-      | Succ(q) => q
+      | Succ q => q
 
 /// Four.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]

@@ -1,4 +1,11 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "visibility"
+))]
 
 // A shift renaming adds its amount to an index.
 //
@@ -18,7 +25,7 @@ import "./congruence.gandr"
 pub def shiftAdds(n : N, k : N) -> Path (rlook n (RShift k)) (plus n k) =
   match n where
     | Z => Path.here (plus Z k)
-    | S(m) => Path.here (plus (S m) k)
+    | S m => Path.here (plus (S m) k)
 
 /// The same under a variable.
 pub def ixShiftAdds(x : N, k : N) -> Path (Ix (rlook x (RShift k))) (Ix (plus x k)) =
@@ -39,4 +46,4 @@ pub def shiftsCompose(
 ) -> Path (rlook (rlook n (RShift (S i))) (RShift (S Z))) (rlook n (RShift (S (S i)))) =
   match n where
     | Z => Path.here (S (S (plus Z i)))
-    | S(m) => Path.here (S (S (plus (S m) i)))
+    | S m => Path.here (S (S (plus (S m) i)))

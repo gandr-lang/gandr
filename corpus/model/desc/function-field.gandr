@@ -13,7 +13,15 @@
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 //! [Plotkin-2002-notions_computation_determine_monads]: https://doi.org/10.1007/3-540-45931-6_24 "Plotkin and Power, Notions of computation determine monads"
 
-@![features(("dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// A read gives the state to its continuation. A later store replaces an
 /// earlier store.
@@ -29,9 +37,9 @@ pub data Program : Type where {
 /// through its continuation, one stage below the read.
 def rec final(p : Program, s : Integer) -> Integer =
   match p where
-    | Done(x) => x
-    | Get(k) => final[<] (k s) s
-    | Put(t, k) => final[<] k t
+    | Done x => x
+    | Get k => final[<] (k s) s
+    | Put t k => final[<] k t
 
 /// Answers the state it reads.
 def answered(x : Integer) -> Program = Done x

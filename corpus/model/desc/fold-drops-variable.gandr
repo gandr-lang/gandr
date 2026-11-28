@@ -14,7 +14,15 @@
 //!   rule refuses
 //! - see: `model/desc/family-with-rules.gandr` — the fragment and its rules
 
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "visibility"
+))]
 
 // `Width` and `Fragment`.
 import "./family-with-rules.gandr"
@@ -26,11 +34,11 @@ pub def rec copy(w : Width, t : Fragment w) -> Fragment w =
   match t where
     | Low => Low
     | High => High
-    | And(a, b) => And (copy[<] Bit a) (copy[<] Bit b)
+    | And a b => And (copy[<] Bit a) (copy[<] Bit b)
     | Zero => Zero
     | One => One
-    | Zext(b) => Zext (copy[<] Bit b)
-    | Choose(c, x, y) => Choose (copy[<] Bit c) (copy[<] Word x) (copy[<] Word y)
+    | Zext b => Zext (copy[<] Bit b)
+    | Choose c x y => Choose (copy[<] Bit c) (copy[<] Word x) (copy[<] Word y)
 
 /// A choice under the high bit.
 def chosenWord() -> Fragment Word = Choose High One Zero

@@ -1,4 +1,11 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion"
+))]
 
 // Fibonacci's doubly recursive definition and its iteration agree at fourteen.
 //
@@ -22,15 +29,15 @@ import "./conversion-base.gandr"
 def rec fib(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(m) => match m where
+    | Succ m => match m where
       | Zero => Succ Zero
-      | Succ(k) => plus (fib[<] m) (fib[<] k)
+      | Succ k => plus (fib[<] m) (fib[<] k)
 
 /// Fibonacci by iteration over a pair of accumulators.
 def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
   match n where
     | Zero => a
-    | Succ(m) => fibFrom[<] m b (plus a b)
+    | Succ m => fibFrom[<] m b (plus a b)
 
 /// The two definitions agree at fourteen.
 def fibAgrees() -> Path (fib (Succ (Succ twelve))) (fibFrom (Succ (Succ twelve)) Zero (Succ Zero)) =

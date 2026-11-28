@@ -16,7 +16,7 @@ data Parcel(a : Type) : Type where
 /// The value a parcel holds, at the type given first.
 def unwrap(a : Type, p : Parcel a) -> a =
   match p where
-    | Enclosed(x) => x
+    | Enclosed x => x
 
 /// This source opens an integer parcel at a bare type.
 @[runs("1")]

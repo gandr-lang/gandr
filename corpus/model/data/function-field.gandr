@@ -11,7 +11,16 @@
 //! - see: #5374
 //! - see: #5353 — a lambda argument that a later type reads stands as its thunk
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "universes"
+))]
 
 /// The naturals.
 data Unary : Type where
@@ -41,7 +50,7 @@ def zeroAt(u : Unit) -> Unary = Z
 def callsAtZero(f : Unit -> Unary) -> Type =
   match f *{} where
     | Z => return Unit
-    | S(m) => return Unary
+    | S m => return Unary
 
 /// A holder at a function type.
 def heldLambda : Holder (Unit -> Unary) = MkHolder (fun (u) { Z })

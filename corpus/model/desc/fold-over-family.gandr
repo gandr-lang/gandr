@@ -16,7 +16,18 @@
 //! - see: `model/desc/fold-drops-variable.gandr` — a fold over a rule that
 //!   drops a variable
 
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // `Width`.
 import "./family-with-rules.gandr"
@@ -47,8 +58,8 @@ def rec same(w : Width, t : Gate w) -> Gate w =
     | Dark => Dark
     | Lit => Lit
     | Nil => Nil
-    | Swap(x) => Swap (same[<] Word x)
-    | Hold(c, x) => Hold (same[<] Bit c) (same[<] Word x)
+    | Swap x => Swap (same[<] Word x)
+    | Hold c x => Hold (same[<] Bit c) (same[<] Word x)
 
 /// The fold of the bits into themselves. No rule has its root at a bit.
 ///
@@ -62,8 +73,8 @@ def rec bits(t : Gate Bit) -> Gate Bit =
 def rec words(t : Gate Word) -> Gate Word =
   match t where
     | Nil => Nil
-    | Swap(x) => Swap (words[<] x)
-    | Hold(c, x) => Hold c (words[<] x)
+    | Swap x => Swap (words[<] x)
+    | Hold c x => Hold c (words[<] x)
 
 /// A word behind the lit bit.
 def held() -> Gate Word = Hold Lit (Swap (Swap Nil))

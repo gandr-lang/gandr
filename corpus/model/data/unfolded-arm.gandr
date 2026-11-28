@@ -13,7 +13,16 @@
 //!
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "visibility"
+))]
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr"
@@ -26,7 +35,7 @@ pub def plusTwo(n : Nat) -> Nat =
 pub def rec double(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(m) => plusTwo (double[<] m)
+    | Succ m => plusTwo (double[<] m)
 
 /// Two doubled.
 @[runs("Succ (Succ (Succ (Succ Zero)))")]

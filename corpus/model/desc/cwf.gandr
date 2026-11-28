@@ -24,7 +24,21 @@
 //!
 //! [Huang-2026-fat_cell_structures_generalized_algebraic_theories]: https://doi.org/10.4230/LIPIcs.LICS.2026.58 "Huang and Angiuli, Fat Cell Structures and Generalized Algebraic Theories"
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "modules", "native-primitives", "pattern-matching", "records", "signatures-as-values", "structural-recursion", "type-codes", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "pattern-matching",
+  "records",
+  "signatures-as-values",
+  "structural-recursion",
+  "type-codes",
+  "universes",
+  "visibility"
+))]
 
 /// The CwF signature: four sorts, each over the sorts before it, and the
 /// operations of a category with families.
@@ -147,22 +161,22 @@ def weakened() -> Integer =
 /// The links of a sort chain or an index chain.
 def rec links(chain : Theory) -> Integer =
   match chain where
-    | Sort(_name, _indices, rest) => { let r = links[<] rest; r + 1 }
-    | Port(_name, _sort, _indices, rest) => { let r = links[<] rest; r + 1 }
+    | Sort _name _indices rest => { let r = links[<] rest; r + 1 }
+    | Port _name _sort _indices rest => { let r = links[<] rest; r + 1 }
     | _ => 0
 
 /// The index ports of the last sort of a sort chain.
 def rec lastIndices(chain : Theory) -> Integer =
   match chain where
-    | Sort(_name, indices, rest) => match rest where
-      | Sort(_n, _i, _r) => lastIndices[<] rest
+    | Sort _name indices rest => match rest where
+      | Sort _n _i _r => lastIndices[<] rest
       | _ => links indices
     | _ => 0
 
 /// The CwF declares four sorts.
 @[runs("4")]
-def sorts() -> Integer = match CwF { | Presents(s, _o, _r) => links s | _ => 0 };
+def sorts() -> Integer = match CwF { | Presents s _o _r => links s | _ => 0 };
 
 /// `Tm` has two index ports: a context and a type in it.
 @[runs("2")]
-def termIndices() -> Integer = match CwF { | Presents(s, _o, _r) => lastIndices s | _ => 0 };
+def termIndices() -> Integer = match CwF { | Presents s _o _r => lastIndices s | _ => 0 };

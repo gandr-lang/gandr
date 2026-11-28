@@ -98,7 +98,7 @@ data Steps : Type where
 def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit =
   match s where
     | Ground => pure *{}
-    | Step(rest) => {
+    | Step rest => {
       out.print "step"
       descend[<] rest
     }

@@ -1,4 +1,16 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "type-codes",
+  "universes"
+))]
 
 /// This source checks a pair against a fold at a constant.
 ///
@@ -31,10 +43,10 @@ data Out : Type where
 def rec wp(e : E, k : Out -> Type) -> Type =
   match e where
     | Get => return type(*{w : Nat, post : k (Ends w)})
-    | Br(a, m) => wp[<] a (fun (o) { match o {
-      | Ends(v) => match v where
+    | Br a m => wp[<] a (fun (o) { match o {
+      | Ends v => match v where
         | Zero => return Void
-        | Succ(_x) => wp[<] m k
+        | Succ _x => wp[<] m k
     } })
     | Stop => k (Ends Zero)
 

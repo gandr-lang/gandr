@@ -1,4 +1,12 @@
-@![features(("data-parameters", "imports", "let-statements", "nominal-data", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 // A case at a family of two indices omits an arm that is apart at one index.
 //
@@ -28,15 +36,15 @@ pub data Grid : (r : Nat, c : Nat) --> Type where
 /// the case omits its arm at the first index.
 def rowCell(n : Nat, m : Nat, g : Grid (Succ n) m) -> Integer =
   match g where
-    | GRow(r, c, cell, rest) => cell
-    | GCol(r, c, cell, rest) => cell
+    | GRow r c cell rest => cell
+    | GCol r c cell rest => cell
 
 /// The last cell of a grid of at least one column. `GNil` stands at no
 /// column, and the case omits its arm at the second index.
 def colCell(n : Nat, m : Nat, g : Grid m (Succ n)) -> Integer =
   match g where
-    | GRow(r, c, cell, rest) => cell
-    | GCol(r, c, cell, rest) => cell
+    | GRow r c cell rest => cell
+    | GCol r c cell rest => cell
 
 /// A grid of one row and one column.
 def corner() -> Grid (Succ Zero) (Succ Zero) =

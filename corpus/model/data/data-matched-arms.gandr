@@ -40,8 +40,8 @@ data Outer : Type where
 /// `Yes` inside `Some`.
 def depth(m : Outer) -> Integer =
   match m where
-    | Some(Yes(n)) => n
-    | Some(No) => 0
+    | Some (Yes n) => n
+    | Some No => 0
     | None => 0
 
 /// An inner value, annotated with its type.

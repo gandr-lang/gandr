@@ -10,7 +10,14 @@
 //!
 //! [Nuyts-2026-facett_generalization_intensional_type_systems_glue]: https://types2026.cse.chalmers.se/files/book-of-abstracts.pdf "Schönlank, Nuyts and Devriese, Towards FaceTT: A Generalization of Intensional Type Systems with Glue"
 
-@![features(("let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `Cells` declares a square, its six faces and a cell sort.
 theory Cells where
@@ -27,14 +34,14 @@ theory Cells where
 /// Structural recursion over a face chain: one per `Face`.
 def rec faces(chain : Theory) -> Integer =
   match chain where
-    | Face(name, points, rest) => { let r = faces[<] rest; r + 1 }
+    | Face name points rest => { let r = faces[<] rest; r + 1 }
     | _ => 0
 
 /// The square heads the sort chain of `Cells`, with its six faces.
 @[runs("6")]
 def squareFaces() -> Integer = match Cells {
-  | Presents(sorts, opers, rules) => match sorts where
-    | Shape(name, size, chain, rest) => faces chain
+  | Presents sorts opers rules => match sorts where
+    | Shape name size chain rest => faces chain
     | _ => 0
   | _ => 0
 };

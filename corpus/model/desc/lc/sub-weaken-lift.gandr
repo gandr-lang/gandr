@@ -8,7 +8,15 @@
 //!
 //! - see: #640
 
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "visibility"
+))]
 
 // This source imports syntax and weakening lemmas.
 import "../model-in-source.gandr"
@@ -34,7 +42,7 @@ def weakenLiftAgree(
 ) -> Path (subst (look n (Shift (S Z)) Z) (Lift s)) (subst (look n s Z) (Shift (S Z))) =
   match n where
     | Z => lookShiftedOnce s Z
-    | S(j) => lookShiftedOnce s (S j)
+    | S j => lookShiftedOnce s (S j)
 
 /// The lift of a substitution after `wk` equals `wk` after the substitution.
 pub def subWeakenLift(

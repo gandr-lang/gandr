@@ -97,7 +97,7 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
 ] Utf8 =
   match left where
     | Zero => pure Valid
-    | Next(one) => {
+    | Next one => {
       let here = beyond base index
       let byte = p.load8 here
       let lead = u8.to_integer byte
@@ -110,7 +110,7 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
           if lead < 224 {
             match one where
               | Zero => pure Fault index
-              | Next(two) => {
+              | Next two => {
                 let second = p.load8 (beyond here 1u64)
                 if inside second 128 191 {
                   utf8[<] base (beyond index 2u64) two
@@ -122,9 +122,9 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
             if lead < 240 {
               match one where
                 | Zero => pure Fault index
-                | Next(two) => match two where
+                | Next two => match two where
                   | Zero => pure Fault index
-                  | Next(three) => {
+                  | Next three => {
                     let second = p.load8 (beyond here 1u64)
                     if inside second (low_of_three lead) (high_of_three lead) {
                       let third = p.load8 (beyond here 2u64)
@@ -141,11 +141,11 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
               if lead < 245 {
                 match one where
                   | Zero => pure Fault index
-                  | Next(two) => match two where
+                  | Next two => match two where
                     | Zero => pure Fault index
-                    | Next(three) => match three where
+                    | Next three => match three where
                       | Zero => pure Fault index
-                      | Next(four) => {
+                      | Next four => {
                         let second = p.load8 (beyond here 1u64)
                         if inside second (low_of_four lead) (high_of_four lead) {
                           let third = p.load8 (beyond here 2u64)
@@ -179,7 +179,7 @@ pub def check_utf8(range : Range) -> [
   p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64
 ] Utf8 =
   match range where
-    | Range(start, length) => utf8 start 0u64 length
+    | Range start length => utf8 start 0u64 length
 
 /// The first zero byte of `range`: `At` the least position whose byte is
 /// zero, and `Absent` when no byte of the range is zero, an empty range
@@ -208,32 +208,32 @@ def is_each_bit(word : u64) -> Bool = u64.to_integer word == u64.to_integer each
 def utf8_word(utf8 : Utf8) -> u64 =
   match utf8 where
     | Valid => each_bit
-    | Fault(position) => position
+    | Fault position => position
 
 /// The word that a run gives for `found`: its position, or the word with each
 /// bit set for `Absent`.
 def found_word(found : Found) -> u64 =
   match found where
-    | At(position) => position
+    | At position => position
     | Absent => each_bit
 
 /// The outcome of a check of UTF-8 that ends with `ended`.
 def judged(ended : Ended) -> Checked =
   match ended where
-    | Gave(word, memory) => if is_each_bit word { pure Judged Valid } else {
+    | Gave word memory => if is_each_bit word { pure Judged Valid } else {
       pure Judged (Fault word)
     }
-    | Kept(memory) => pure Judged Valid
-    | Outside(member, address) => pure Stopped member address
+    | Kept memory => pure Judged Valid
+    | Outside member address => pure Stopped member address
 
 /// The outcome of a search of a zero byte that ends with `ended`.
 def located(ended : Ended) -> Checked =
   match ended where
-    | Gave(word, memory) => if is_each_bit word { pure Located Absent } else {
+    | Gave word memory => if is_each_bit word { pure Located Absent } else {
       pure Located (At word)
     }
-    | Kept(memory) => pure Located Absent
-    | Outside(member, address) => pure Stopped member address
+    | Kept memory => pure Located Absent
+    | Outside member address => pure Stopped member address
 
 /// The answer of `check_utf8` for `bytes`, under `Extent`. The extent holds
 /// the bytes alone, from the address 4096.

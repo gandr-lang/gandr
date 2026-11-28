@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "structural-recursion",
+  "visibility"
+))]
 
 // A recursive call can use another stuck recursive call as
 // its descent argument.
@@ -22,7 +31,7 @@ pub def succ(n : Nat) -> Nat =
 pub def rec walk(t : Nat, c : Nat) -> Nat =
   match t where
     | Zero => c
-    | Succ(m) => Succ (walk[<] m (succ c))
+    | Succ m => Succ (walk[<] m (succ c))
 
 /// `walkedTwo` evaluates two steps from zero.
 /// It applies `succ` to its accumulator at each step.

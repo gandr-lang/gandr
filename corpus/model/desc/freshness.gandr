@@ -14,7 +14,15 @@
 //! [Fernandez-2007-nominal_rewriting]: https://doi.org/10.1016/j.ic.2006.12.002 "Fernández and Gabbay, Nominal rewriting"
 //! [Pitts-2013-nominal_sets_names_symmetry_computer_science]: https://doi.org/10.1017/CBO9781139084673 "Pitts, Nominal Sets: Names and Symmetry in Computer Science"
 
-@![features(("let-statements", "native-primitives", "pattern-matching", "second-order-rules", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "second-order-rules",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// This law extrudes a fresh parallel component below an abstracted
 /// restriction, a part of the structural congruence of the π-calculus. The
@@ -30,9 +38,9 @@ theory Pi where
 /// This recursion counts `Fresh` links in a rule chain.
 def rec conditions(chain : Theory) -> Integer =
   match chain where
-    | Rule(name, lhs, rhs, rest) => conditions[<] rest
-    | Turned(name, lhs, rhs, rest) => conditions[<] rest
-    | Fresh(atom, term, rest) => {
+    | Rule name lhs rhs rest => conditions[<] rest
+    | Turned name lhs rhs rest => conditions[<] rest
+    | Fresh atom term rest => {
       let r = conditions[<] rest
       r + 1
     }
@@ -41,6 +49,6 @@ def rec conditions(chain : Theory) -> Integer =
 /// `Pi` states one condition.
 @[runs("1")]
 def stated() -> Integer = match Pi {
-  | Presents(sorts, opers, rules) => conditions rules
+  | Presents sorts opers rules => conditions rules
   | _ => 0
 };

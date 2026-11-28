@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "pattern-matching", "records", "structural-recursion", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "type-codes",
+  "universes"
+))]
 
 /// This source checks pairs against dependent record definitions.
 ///
@@ -24,7 +35,7 @@ def evidenced(h : Heap) -> Type =
 def owe(h : Heap, x : Nat) -> Type =
   match x where
     | Zero => return Unit
-    | Succ(_s) => evidenced h
+    | Succ _s => evidenced h
 
 /// `wpR` is a dependent record over each natural and its obligation.
 def wpR(h : Heap) -> Type =
@@ -42,7 +53,7 @@ def write(h : Heap, k : Nat -> Type) -> Type =
 def matchRead(h : Heap, rest : Type, w : Nat) -> Type =
   match w where
     | Zero => rest
-    | Succ(_s) => write h (fun (_v) { return Unit })
+    | Succ _s => write h (fun (_v) { return Unit })
 
 /// `read` records a natural and its obligation.
 def read(h : Heap, rest : Type) -> Type =
@@ -52,7 +63,7 @@ def read(h : Heap, rest : Type) -> Type =
 def rec fold(n : Nat, h : Heap) -> Type =
   match n where
     | Zero => return Unit
-    | Succ(m) => read h (fold[<] m h)
+    | Succ m => read h (fold[<] m h)
 
 /// `twoReads` checks two explicit reads.
 def twoReads(u : Unit) -> read Emp (read Emp Unit) =

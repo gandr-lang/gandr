@@ -1,4 +1,14 @@
-@![features(("data-parameters", "explicit-exits", "imports", "let-statements", "pattern-matching", "products-and-sums", "tarski-universes", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "products-and-sums",
+  "tarski-universes",
+  "type-codes",
+  "universes"
+))]
 
 // A quoted product whose components are values: a variable, a call or a
 // recursive call.
@@ -21,7 +31,7 @@ def prodOf(a : Type, b : Type) -> Type = return type(a * b)
 def rec tower(n : Nat) -> Type =
   match n where
     | Zero => return Unit
-    | Succ(m) => return type(Integer * (tower [<] m))
+    | Succ m => return type(Integer * (tower [<] m))
 
 /// The tower of `n` beside the product of `a` with itself.
 def towered(n : Nat, a : Type) -> Type = return type((tower n) * (prodOf a a));
