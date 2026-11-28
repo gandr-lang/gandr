@@ -279,33 +279,33 @@
 //! block's members are items, and a `data`, `codata` or `theory` block's
 //! members are commented immediately before them. A body on the line after
 //! its commented signature of the same name inherits that comment: one
-//! comment per run of a name. The `comments` test refuses a source that does
-//! not, naming the file and the item, and ratchets against
-//! `fixture/uncommented.ledger`.
+//! comment per run of a name. The `comments` test finds each source that does
+//! not, naming the file and the item. It gives those findings as the values
+//! of the kind `uncommented` of the outputs.
 //!
-//! **A ledger ratchet, not a one-shot comment pass.** The fixture already
-//! holds sources whose items have no comment. Writing every comment in the
-//! change that adds the gate would mix the rule with a prose pass, and a
-//! later uncommented item would land with nothing to refuse it. The test's
-//! `CORPUS_COMMENTS_WRITE_LEDGER=1` records the debt once, untriaged. The
-//! gate then refuses a finding the ledger does not hold, and refuses a
-//! ledger line naming no uncommented item, so debt is paid
-//! down and never added. The alternative was that one-shot pass with no
-//! ledger: every source green on the day, and no gate afterwards.
+//! **A ratchet, not a one-shot comment pass.** The fixture already holds
+//! sources whose items have no comment. Writing every comment in the change
+//! that adds the gate would mix the rule with a prose pass, and a later
+//! uncommented item would land with nothing to refuse it. The kind
+//! `uncommented` is a ratchet of the outputs: its difference refuses a head
+//! that adds a finding the base does not have, and accepts a head that drops
+//! one. So debt is paid down and never added. The alternative was that
+//! one-shot pass with no ratchet: every source green on the day, and no gate
+//! afterwards.
 //!
-//! **Content keys, not positions.** A ledger line is `path:name:digest`, or
+//! **Content keys, not positions.** A finding is `path:name:digest`, or
 //! `path:block.member:digest` for a block's member, the digest the first
 //! sixteen hex digits of BLAKE3 over the item's text with whitespace
-//! collapsed and comments and the attribute block left out; the ledger's
-//! first line states that shape. A key survives edits elsewhere
-//! in the file and a reordering of its items, and two items of one name are
-//! told apart by their text. Editing an item moves its key, so its line goes
-//! stale and the edit owes the item its comment. The alternative was a byte
-//! offset or an ordinal per repeated name, which every unrelated edit above
-//! the item invalidates.
+//! collapsed and comments and the attribute block left out. The ratchet
+//! drops the path, so an item that moves to another source is no change. A
+//! key survives edits elsewhere in the file and a reordering of its items,
+//! and two items of one name are told apart by their text. Editing an item
+//! moves its key, so the edit owes the item its comment. The alternative was
+//! a byte offset or an ordinal per repeated name, which every unrelated edit
+//! above the item invalidates.
 //!
-//! **Reversal:** the ledger reaching zero. Delete the ledger and the
-//! ratchet; the gate then refuses every uncommented item outright.
+//! **Reversal:** the kind reaching no value. Then the gate can refuse every
+//! uncommented item outright, with no ratchet.
 //!
 //! # References
 //!

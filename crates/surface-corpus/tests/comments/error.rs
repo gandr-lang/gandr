@@ -12,8 +12,8 @@ pub enum CommentError
 {
     /// The built-in grammar did not build.
     Grammar(String),
-    /// A fixture path is not valid Unicode, or its key would make a ledger
-    /// line ambiguous.
+    /// A fixture path is not valid Unicode, or its key would make a finding
+    /// ambiguous.
     File
     {
         /// The path.
@@ -43,14 +43,6 @@ pub enum CommentError
         /// The ledger key of the source.
         file: String,
         /// The grammar's refusal.
-        detail: String,
-    },
-    /// The ledger could not be read or written.
-    Ledger
-    {
-        /// The path.
-        path: PathBuf,
-        /// The operating-system detail.
         detail: String,
     },
     /// Standard error or standard output could not be written.
@@ -99,14 +91,6 @@ impl core::fmt::Display for CommentError
                 ref file,
                 ref detail,
             } => write!(f, "{file}: a mold did not resolve: {detail}"),
-            Self::Ledger {
-                ref path,
-                ref detail,
-            } => write!(
-                f,
-                "{}: the ledger did not read or write: {detail}",
-                path.display()
-            ),
             Self::Output(ref detail) => write!(f, "the report did not write: {detail}"),
         }
     }
@@ -126,7 +110,7 @@ mod tests
     #[test]
     fn every_refusal_names_its_input()
     {
-        let path = Path::new("corpus/uncommented.ledger");
+        let path = Path::new("corpus/model/x.gandr");
         let rendered = [
             CommentError::Grammar("missing".to_owned()).to_string(),
             CommentError::File {
@@ -149,11 +133,6 @@ mod tests
                 detail: "unknown".to_owned(),
             }
             .to_string(),
-            CommentError::Ledger {
-                path: path.to_owned(),
-                detail: "denied".to_owned(),
-            }
-            .to_string(),
             CommentError::Output("closed".to_owned()).to_string(),
         ];
         assert!(
@@ -161,7 +140,7 @@ mod tests
             "a grammar refusal names its detail"
         );
         assert!(
-            rendered[1].contains("uncommented.ledger") && rendered[1].contains("a colon"),
+            rendered[1].contains("corpus/model/x.gandr") && rendered[1].contains("a colon"),
             "a file refusal names its path"
         );
         assert!(
@@ -177,11 +156,7 @@ mod tests
             "a mold refusal names the grammar detail"
         );
         assert!(
-            rendered[5].contains("uncommented.ledger"),
-            "a ledger refusal names its path"
-        );
-        assert!(
-            rendered[6].contains("closed"),
+            rendered[5].contains("closed"),
             "an output refusal names its detail"
         );
     }

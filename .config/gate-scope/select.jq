@@ -12,26 +12,30 @@
 # one. A path no row maps selects every group. A check no group names is light
 # and always runs.
 #
-# Six lanes ran the full suite on their hosts before each pull request opened,
-# and the hosts could not carry that load (#5458). The integration cycle runs
-# every check (#5438), so the landing's gate (`mise run check`) keeps only the
-# heavy checks that the table's `landing` list names. These are Clippy and the
-# compiler policy (`check:landing`), and the item comments of the corpus
-# (`check:corpus-comments`). A parser change can move the comment ledger. The
-# queue on `landing` does not run the comment check, so the gate runs it
-# (#6365). The queue runs no rustdoc and no witness check either, so a broken
-# link or a renamed witness reached `landing` (#6433). Nor does it run the
-# dispatcher's test of the ledger's exemplars, so a ledger exemplar that no
-# longer verifies reached `landing` (#6430). The gate runs `check:doc`,
-# `check:witnesses` and `check:syntax-exemplars` too, the last of which runs
-# the same verification as that test. A corpus change reached `landing` with
-# a stale golden, a refusing source with no golden, or a source out of the
-# sugared form (#6489). So the gate runs `check:corpus`, `check:corpus-format`
-# and `check:corpus-goldens` for a change under `corpus/` or `crates/`. The
-# queue runs no test lane either, so #6563 broke two tests of the checker and
-# reached `landing` (#6595). So the gate runs `check:tests-enforcing` over the
-# packages the change touches, and not over their dependents. The light checks
-# stay, since each takes seconds.
+# The integration cycle runs every check. So the gate of the landing
+# (`mise run check`) keeps only the heavy checks that the `landing` list of
+# the table names. The hosts of the lanes cannot carry the full suite before
+# each pull request.
+# - see: #5458, #5438
+#
+# The queue on `landing` runs only a part of the checks. So the gate runs
+# Clippy and the compiler policy (`check:landing`). It runs the item comments
+# of the corpus (`check:corpus-comments`). A parser change can move the
+# uncommented items.
+# - see: #6365
+#
+# The gate runs `check:doc` and `check:witnesses`, for a broken link or a
+# renamed witness. It runs `check:syntax-exemplars`, the same verification as
+# the test of the dispatcher over the ledger exemplars.
+# - see: #6433, #6430
+#
+# For a change of the corpus or of a crate, the gate runs `check:corpus`,
+# `check:corpus-format` and `check:corpus-goldens`. They refuse a stale
+# golden, a source with a refusal and no golden, and a source out of the
+# sugared form. The gate runs `check:tests-enforcing` over the packages that
+# the change touches, and not over their dependents. Each light check takes
+# seconds, so it stays.
+# - see: #6489, #6595
 #
 # A row's path is a file, a directory that ends in `/`, or a glob
 # (`rows.jq`). The globs

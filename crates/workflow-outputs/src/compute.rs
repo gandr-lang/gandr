@@ -134,7 +134,7 @@ pub const TESTED: [Tested; 6] = [
     Tested {
         kind: UNCOMMENTED,
         package: "gandr-surface-corpus",
-        filter: "test(=comments::gate::the_fixture_matches_the_ledger)",
+        filter: "test(=comments::gate::the_fixture_gives_its_uncommented_items)",
         inputs: &["corpus"],
     },
 ];

@@ -1,17 +1,12 @@
 //! The fixture comment gate. Every source opens with a comment. Every item
 //! and every member of a block carries one immediately before it. An item
 //! carries the comment before its attribute block. `check:prose` reads the
-//! shape of a doc comment. The committed ledger is the existing debt. A
-//! finding the ledger does not hold is new debt. A ledger line the corpus no
-//! longer owes is stale.
-//!
-//! Set `CORPUS_COMMENTS_WRITE_LEDGER=1` to replace the ledger with the
-//! current findings. That is how the ledger is rewritten. The check does not
-//! write.
+//! shape of a doc comment. The gate gives the uncommented items of each
+//! source as values of the kind `uncommented` of the outputs. The difference
+//! of that kind refuses a head that adds an uncommented item.
 
 mod error;
 mod judge;
-mod ledger;
 mod scan;
 mod shape;
 
@@ -25,10 +20,7 @@ use gandr_workflow_output_store::given;
 use crate::comments::error::CommentError;
 use crate::comments::judge::Finding;
 use crate::comments::judge::grammar;
-use crate::comments::ledger::discrepancies;
-use crate::comments::ledger::ledger_text;
 use crate::comments::scan::collect;
-use crate::comments::scan::replace;
 
 /// The fixture root beside this package.
 ///
@@ -39,18 +31,9 @@ fn fixture() -> PathBuf
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus")
 }
 
-/// The committed ledger.
-///
-/// # Specification
-/// trivial.
-fn ledger() -> PathBuf
-{
-    fixture().join("uncommented.ledger")
-}
-
-/// Every uncommented item under the fixture root, ledger keys relative to it,
-/// the ledger's exemplar subtree excluded: the exemplars are a separate root
-/// with their own comment discipline, not in the fixture's uncommented ledger.
+/// Every uncommented item under the fixture root, keys relative to it, the
+/// exemplar subtree `ledger/` excluded: the exemplars are a separate root
+/// with their own comment discipline.
 ///
 /// # Specification
 /// trivial.
@@ -66,7 +49,7 @@ fn collect_fixture(pbg: &Pbg) -> Result<Vec<Finding>, CommentError>
 /// Gives the findings `found` to the store of outputs as values of the kind
 /// `uncommented`, when the environment names a run: one value for each
 /// source, named by its path below the fixture root, with one line for each
-/// finding. A line is the ledger line with no path, so an item that moves to
+/// finding. A line is the finding with no path, so an item that moves to
 /// another source keeps its line.
 ///
 /// # Specification
@@ -91,50 +74,15 @@ fn given_findings(found: &[Finding])
 mod gate
 {
     use super::collect_fixture;
-    use super::discrepancies;
     use super::given_findings;
     use super::grammar;
-    use super::ledger;
-    use super::ledger_text;
-    use super::replace;
 
     #[test]
-    fn the_fixture_matches_the_ledger()
+    fn the_fixture_gives_its_uncommented_items()
     {
         let pbg = grammar().expect("the built-in grammar builds");
         let found = collect_fixture(&pbg).expect("the fixture walks");
         given_findings(&found);
-        let path = ledger();
-        if std::env::var_os("CORPUS_COMMENTS_WRITE_LEDGER").is_some() {
-            let text = ledger_text(&found);
-            let lines = text.lines().count();
-            replace(&path, crate::comments::shape::Text(&text)).expect("the ledger writes");
-            eprintln!("corpus comments wrote {} ({lines} lines)", path.display());
-            return;
-        }
-        let held = std::fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("{}: the ledger did not read: {error}", path.display());
-        });
-        let rows =
-            discrepancies(&found, crate::comments::shape::Text(&held)).unwrap_or_else(|error| {
-                panic!("{}: {error}", path.display());
-            });
-        let rendered = rows
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(
-            rows.is_empty(),
-            "corpus comments FAILED ({count} disagreements):\n{rendered}",
-            count = rows.len()
-        );
-        eprintln!(
-            "corpus comments OK: {} ledger lines",
-            held.lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty() && !line.starts_with('#'))
-                .count()
-        );
+        eprintln!("corpus comments: {} uncommented items", found.len());
     }
 }

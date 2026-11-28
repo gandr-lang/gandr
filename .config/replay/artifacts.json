@@ -8,21 +8,6 @@
     "record": "mise run ledger:syntax"
   },
   {
-    "name": "the comment ledger",
-    "kind": "ratchet",
-    "pending": "debt-ledgers-by-the-base",
-    "paths": ["corpus/uncommented.ledger"],
-    "inputs": [
-      "corpus/",
-      "crates/surface-corpus/tests/comments/",
-      "crates/surface-parser/",
-      "crates/surface-grammar/",
-      "crates/surface-syntax/"
-    ],
-    "check": "mise run check:corpus-comments",
-    "record": "CORPUS_COMMENTS_WRITE_LEDGER=1 mise run check:corpus-comments"
-  },
-  {
     "each": "crate",
     "name": "the goldens and captures of {crate}",
     "kind": "output",

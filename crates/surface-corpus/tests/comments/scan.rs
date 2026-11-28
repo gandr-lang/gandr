@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::Path;
-use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
@@ -11,18 +10,18 @@ use crate::comments::error::CommentError;
 use crate::comments::judge::Finding;
 use crate::comments::judge::findings_of;
 
-/// Every uncommented item under `fixture`, ledger keys relative to it.
+/// Every uncommented item under `fixture`, keys relative to it.
 ///
 /// Symbolic links are not followed. Only files whose name ends in `.gandr`
-/// are judged. The keys use `/` separators, so a ledger written on one host
-/// matches a ledger read on another. The shape of a doc comment is
+/// are judged. The keys use `/` separators, so a key found on one host
+/// matches a key found on another. The shape of a doc comment is
 /// `check:prose`'s.
 ///
 /// # Specification
 /// - requires: `fixture` is a directory.
 /// - ensures: the uncommented findings of every `.gandr` file under `fixture`,
 ///   each keyed by its path relative to `fixture`.
-/// - provides: the debt the gate compares with the ledger.
+/// - provides: the findings that the gate gives as the kind `uncommented`.
 /// - fails: a directory entry cannot be read, a source cannot be read, a path
 ///   is not Unicode, or a source does not commit a tree.
 /// - panics: none.
@@ -108,7 +107,7 @@ fn is_gandr(path: &Path) -> crate::comments::shape::Yes
 /// - requires: `path` is under `fixture`.
 /// - ensures: the relative path with `/` separators, or a refusal naming `path`
 ///   when it is not under `fixture`, not Unicode, or contains a colon.
-/// - provides: the file half of a ledger line.
+/// - provides: the file half of a finding.
 /// - fails: as ensures.
 /// - panics: none.
 /// - executable: none — the key is a path the predicate would rebuild, and a
@@ -120,7 +119,7 @@ fn is_gandr(path: &Path) -> crate::comments::shape::Yes
 /// - witness: `tests::comments::scan::tests::a_walk_names_the_uncommented_source_and_skips_a_link`
 ///
 /// # Errors
-/// [`CommentError::File`] when the relative path cannot be a ledger key.
+/// [`CommentError::File`] when the relative path cannot be a key.
 fn file_key(
     fixture: &Path,
     path: &Path,
@@ -149,66 +148,10 @@ fn file_key(
     if key.contains(':') {
         return Err(CommentError::File {
             path: path.to_owned(),
-            detail: "a ledger file key cannot contain ':'".to_owned(),
+            detail: "a file key cannot contain ':'".to_owned(),
         });
     }
     Ok(key)
-}
-
-/// Write `text` to `path` by replacing it, so a failed write leaves the
-/// previous bytes in place.
-///
-/// # Specification
-/// - requires: the parent of `path` exists.
-/// - ensures: `path` holds `text`, or the previous bytes remain and the error
-///   names `path`.
-/// - provides: the ledger write.
-/// - fails: the temporary file cannot be written or renamed.
-/// - panics: none.
-/// - executable: none — the write is the observation; a predicate would race
-///   the file it is checking.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the gate's write leaves the ledger readable as the text
-///   it was given.
-/// - witness: `tests::comments::gate::the_fixture_matches_the_ledger`
-///
-/// # Errors
-/// [`CommentError::Ledger`] when the write or the rename fails.
-#[inline]
-pub fn replace(
-    path: &Path,
-    text: crate::comments::shape::Text<'_>,
-) -> Result<(), CommentError>
-{
-    let temporary = temporary_path(path);
-    fs::write(&temporary, text.0).map_err(|error| CommentError::Ledger {
-        path: path.to_owned(),
-        detail: error.to_string(),
-    })?;
-    if let Err(error) = fs::rename(&temporary, path) {
-        let _removed = fs::remove_file(&temporary);
-        return Err(CommentError::Ledger {
-            path: path.to_owned(),
-            detail: error.to_string(),
-        });
-    }
-    Ok(())
-}
-
-/// The sibling path a ledger is written to before it is renamed into place.
-///
-/// # Specification
-/// trivial.
-fn temporary_path(path: &Path) -> PathBuf
-{
-    let mut temporary = path.to_owned();
-    let name = path.file_name().map_or_else(
-        || "ledger.tmp".to_owned(),
-        |name| format!("{}.tmp", name.to_string_lossy()),
-    );
-    temporary.set_file_name(name);
-    temporary
 }
 
 #[cfg(test)]

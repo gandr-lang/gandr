@@ -87,7 +87,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The closed refusal vocabulary, native universe-path refusals | [`refusal`](src/refusal.rs) |
 | Membership, the corpus directories, the control subjects, one walk, the pending set, the sketch set | [`root`](src/root.rs) |
 | The kernel export suite | [`kernel_export`](src/kernel_export.rs) |
-| A comment on every fixture item, the ledger ratchet | [`src/lib.rs`](src/lib.rs), [`comments`](tests/comments.rs) |
+| A comment on every fixture item, the ratchet of the outputs | [`src/lib.rs`](src/lib.rs), [`comments`](tests/comments.rs) |
 
 ## References
 

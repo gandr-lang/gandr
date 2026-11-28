@@ -1731,7 +1731,6 @@ dependencies = [
  "gandr-theory-computads",
  "gandr-theory-levitation",
  "gandr-theory-probability",
- "gandr-workflow-debt-ledger",
  "gandr-workflow-output-store",
  "gandr-workflow-sweep",
  "quenchant-anodized",

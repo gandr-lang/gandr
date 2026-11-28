@@ -3,10 +3,11 @@
 
 [files]
 # treefmt.toml: formatter names and glob fragments read as typos to the checker.
-# Runtime/build output, resolver-owned lockfiles, the corpus comment and
-# prose ledgers (hex digests) and the debugger's transcripts (verbatim output
-# naming hashed binaries) are not authored prose.
-extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "corpus/uncommented.ledger", "corpus/prose.ledger", "crates/*/tests/debug-traces/"]
+# The checker skips the output of a run or a build and the lockfiles of a
+# resolver. It skips the prose ledger of the corpus, with its hex digests. It
+# skips the transcripts of the debugger, with the names of hashed binaries. No
+# person writes this text.
+extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "corpus/prose.ledger", "crates/*/tests/debug-traces/"]
 
 [default]
 # The attribute registry's near-miss witness misspells `identity` on purpose,

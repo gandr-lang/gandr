@@ -37,26 +37,23 @@ const TILE_BLOCKS: [&str; 3] = ["data", "codata", "theory"];
 /// One finding, as the ledger and the gate name it: an uncommented item.
 ///
 /// # Specification
-/// - provides: the ledger line `key kind`, the key `file:name:digest` (or
-///   `file:<file>`), the kind `uncommented`, and the sentence that names the
-///   file and the item.
+/// - provides: the line `key kind`, the key `file:name:digest` (or
+///   `file:<file>`) and the kind `uncommented`.
 /// - executable: none — the line is the field the witnesses compare.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the comment verdicts name the item the ledger holds.
-/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - hypothesis: L3 — the comment verdicts name the item that they find.
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_named_with_its_digest`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Finding
 {
-    /// `key kind`, the ledger line.
+    /// `key kind`, the line of the finding.
     line: String,
-    /// The sentence the gate prints, naming the file and the item.
-    detail: String,
 }
 
 impl Finding
 {
-    /// The ledger key.
+    /// The line of the finding.
     ///
     /// # Specification
     /// trivial.
@@ -65,17 +62,6 @@ impl Finding
     pub fn line(&self) -> Line<'_>
     {
         Line(&self.line)
-    }
-
-    /// The sentence naming the file and the item.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn detail(&self) -> Line<'_>
-    {
-        Line(&self.detail)
     }
 }
 
@@ -95,7 +81,7 @@ impl Finding
 /// # Adequacy
 /// - hypothesis: L3 — a built grammar resolves a `def`; a swapped error variant
 ///   would name something other than the grammar.
-/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_named_with_its_digest`
 #[spec(ensures: |ret| ret.is_ok())]
 #[inline]
 pub fn grammar() -> Result<Pbg, CommentError>
@@ -175,15 +161,14 @@ pub fn digest(text: Text<'_>) -> String
 /// resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an uncommented name, a ledgered name, a stale line and a
-///   file with no leading comment are distinct observations. A comment after an
-///   attribute block is not a comment before it. A body inherits only from the
-///   line before it and only under the same name. The key moves with the item's
-///   text and with nothing else. A commented block leaves its members owing
-///   their own comments, and a member is named under its block.
-/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
-/// - witness: `tests::comments::judge::tests::a_ledgered_item_passes`
-/// - witness: `tests::comments::judge::tests::a_stale_ledger_line_is_refused`
+/// - hypothesis: L3 — an uncommented name, a commented item and a file with no
+///   leading comment are distinct observations. A comment after an attribute
+///   block is not a comment before it. A body inherits only from the line
+///   before it and only under the same name. The key moves with the item's text
+///   and with nothing else. A commented block leaves its members owing their
+///   own comments, and a member is named under its block.
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_named_with_its_digest`
+/// - witness: `tests::comments::judge::tests::a_commented_item_owes_nothing`
 /// - witness: `tests::comments::judge::tests::a_file_without_a_leading_comment_is_refused`
 /// - witness: `tests::comments::judge::tests::a_comment_after_the_attribute_block_does_not_count`
 /// - witness: `tests::comments::judge::tests::a_body_inherits_its_signatures_comment`
@@ -204,7 +189,7 @@ pub fn findings_of(
     if file.0.contains(':') {
         return Err(CommentError::File {
             path: std::path::PathBuf::from(file.0),
-            detail: "a ledger file key cannot contain ':'".to_owned(),
+            detail: "a file key cannot contain ':'".to_owned(),
         });
     }
     let judged = without_head_block(source.0);
@@ -231,7 +216,6 @@ pub fn findings_of(
     if !opens(source.0) {
         found.push(Finding {
             line: format!("{file}:{FILE_ITEM} {UNCOMMENTED}", file = file.0),
-            detail: format!("{file}: no leading comment", file = file.0),
         });
     }
     // Every space and doc comment in the tree, by start: an item's text is
@@ -637,10 +621,6 @@ impl Walk<'_, '_>
                         "{file}:{prefix}{own}:{key} {UNCOMMENTED}",
                         file = self.file.0
                     ),
-                    detail: format!(
-                        "{file}: {prefix}{own} ({key}) has no comment before its attribute block",
-                        file = self.file.0
-                    ),
                 });
             }
             if let Some((children, tiles)) = self.block(child)? {
@@ -852,11 +832,6 @@ impl Walk<'_, '_>
                 file = self.file.0,
                 block = block.0
             ),
-            detail: format!(
-                "{file}: {block}.{own} ({key}) has no comment before it",
-                file = self.file.0,
-                block = block.0
-            ),
         });
         Ok(())
     }
@@ -957,7 +932,7 @@ fn blank(
 /// - hypothesis: L3 — an uncommented `def` is named by its identifier, a body
 ///   is matched to its signature by that name, and a module member is named by
 ///   its identifier, not by its attribute's.
-/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_named_with_its_digest`
 /// - witness: `tests::comments::judge::tests::a_body_inherits_its_signatures_comment`
 /// - witness: `tests::comments::judge::tests::every_item_member_owes_its_own_comment`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |name| name.as_ref().is_none_or(|text| !text.is_empty())))]
@@ -1099,7 +1074,6 @@ mod tests
     use super::digest;
     use super::findings_of;
     use super::grammar;
-    use crate::comments::ledger::discrepancies;
     use crate::comments::shape::Text;
 
     /// # Specification
@@ -1128,7 +1102,7 @@ mod tests
     }
 
     #[test]
-    fn an_uncommented_item_is_refused_by_name()
+    fn an_uncommented_item_is_named_with_its_digest()
     {
         let bare = key(Text("bare"), Text("def bare = 1;"));
         let owed = lines(Text(include_str!(
@@ -1139,47 +1113,10 @@ mod tests
             [bare.as_str()],
             "the blank line leaves `bare` uncommented, and the gate names it with its digest"
         );
-        let pbg = grammar().expect("the built-in grammar builds");
-        let found = findings_of(
-            &pbg,
-            Text("sample.gandr"),
-            Text(include_str!(
-                "unformatted/blank-line-after-file-comment.gandr"
-            )),
-        )
-        .expect("the source commits a tree");
-        let refused = discrepancies(&found, Text("")).expect("the ledger reads");
-        assert!(
-            refused.iter().any(|row| row.line().0 == bare),
-            "an empty ledger refuses `bare` by name"
-        );
     }
 
     #[test]
-    fn a_ledgered_item_passes()
-    {
-        let pbg = grammar().expect("the built-in grammar builds");
-        let found = findings_of(
-            &pbg,
-            Text("sample.gandr"),
-            Text(include_str!(
-                "unformatted/blank-line-after-file-comment.gandr"
-            )),
-        )
-        .expect("the source commits a tree");
-        let ledger = format!(
-            "# key shape\n{}\n",
-            key(Text("bare"), Text("def bare = 1;"))
-        );
-        let refused = discrepancies(&found, Text(&ledger)).expect("the ledger reads");
-        assert!(
-            refused.is_empty(),
-            "a ledger line for `bare` is not a refusal, and the header is not a line"
-        );
-    }
-
-    #[test]
-    fn a_stale_ledger_line_is_refused()
+    fn a_commented_item_owes_nothing()
     {
         let pbg = grammar().expect("the built-in grammar builds");
         let found = findings_of(
@@ -1189,14 +1126,6 @@ mod tests
         )
         .expect("the source commits a tree");
         assert!(found.is_empty(), "a commented item owes nothing");
-        let gone = key(Text("gone"), Text("def gone = 1;"));
-        let refused = discrepancies(&found, Text(&format!("{gone}\n"))).expect("the ledger reads");
-        assert!(
-            refused
-                .iter()
-                .any(|row| row.is_stale().0 && row.line().0 == gone),
-            "a ledger line the source no longer owes is refused"
-        );
     }
 
     #[test]
@@ -1212,17 +1141,6 @@ mod tests
             ],
             "a source that opens on an item has no leading comment, and the later item's own \
              comment is not the file's"
-        );
-        let pbg = grammar().expect("the built-in grammar builds");
-        let found =
-            findings_of(&pbg, Text("sample.gandr"), source).expect("the source commits a tree");
-        let ledger = format!("{}\n", key(Text("first"), Text("def first = 1;")));
-        let refused = discrepancies(&found, Text(&ledger)).expect("the ledger reads");
-        assert!(
-            refused
-                .iter()
-                .any(|row| row.line().0 == "sample.gandr:<file> uncommented" && !row.is_stale().0),
-            "the file finding is refused by name when the ledger omits it"
         );
     }
 

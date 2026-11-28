@@ -12,17 +12,20 @@ categories = ["compilers", "no-std"]
 publish.workspace = true
 autotests = false
 
-# The suite builds its synthetic modules from source text, through the same
-# parse, lower and check a driver runs; the library never names the parser.
-# The kernel export suite commits each corpus source's kernel artifact as
-# records and reads it back through the record plane, and replays a tampered
-# artifact through the kernel to name its refusal. A source that imports a
-# sibling is exported over its import closure as the dispatcher lays it out,
-# a dev-dependency cycle as `gandr-surface-diagnostics`'s.
+# The suite builds its synthetic modules from source text. A driver runs the
+# same parse, lowering and check. The library never names the parser.
+#
+# The export suite commits the artifact of the kernel for each corpus source
+# as records. It reads those records through the record plane. It replays a
+# tampered artifact through the kernel to name its refusal. The suite exports
+# a source that imports a sibling over its import closure, in the layout of
+# the dispatcher. The dev-dependency cycle has the form of the one of
+# `gandr-surface-diagnostics`.
+#
 # The comment gate is the `comments` area of the one integration target, not
-# a library dependency: the library never names the parser.
-# `CORPUS_COMMENTS_WRITE_LEDGER=1` rewrites the ledger. Each area file is its
-# own `cfg(test)` module, so a witness path reads `tests::<area>::<name>`.
+# a library dependency. The gate gives its findings as the outputs kind
+# `uncommented`. Each area file is its own `cfg(test)` module, so a witness
+# path reads `tests::<area>::<name>`.
 [[test]]
 name = "tests"
 path = "tests/lib.rs"
@@ -68,7 +71,6 @@ gandr-surface-dispatcher.workspace = true
 gandr-surface-parser.workspace = true
 gandr-theory-computads.workspace = true
 gandr-theory-levitation.workspace = true
-gandr-workflow-debt-ledger.workspace = true
 gandr-workflow-output-store.workspace = true
 gandr-workflow-sweep.workspace = true
 

@@ -31,17 +31,17 @@
     "due": ["the goldens and captures of surface-grammar"]
   },
   {
-    "name": "#6144: the base moves a corpus source under a rewritten comment ledger, so the ledger is due",
+    "name": "#6144: the base moves a corpus source under a rewritten references ledger, so the ledger is due",
     "moved": ["corpus/model/basics/annotations.gandr"],
-    "own": ["corpus/uncommented.ledger"],
+    "own": ["ledger/references.sql"],
     "crates": [],
-    "due": ["the comment ledger"]
+    "due": ["the references ledger"]
   },
   {
-    "name": "#6365: the base moves the parser under a rewritten comment ledger, so the ledger is due",
+    "name": "#6365: the base moves the parser under a rewritten references ledger, so the ledger is due and the parser's traces are not",
     "moved": ["crates/surface-parser/src/meld.rs"],
-    "own": ["corpus/uncommented.ledger"],
+    "own": ["ledger/references.sql"],
     "crates": ["surface-parser"],
-    "due": ["the comment ledger"]
+    "due": ["the references ledger"]
   }
 ]

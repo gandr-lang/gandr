@@ -4495,15 +4495,16 @@ replay 1581 .config/mise/tasks/mise-tasks-check.toml eb6f7620 3465e3d6a
 (( failed == 0 ))
 '''
 
-# A fixture source is read by people as often as by the checker (#355).
-# Every item, and every member of a theory, module, data or codata block,
-# carries a comment immediately before it (an item before its attribute
-# block), and the file opens with one. Existing debt is the committed
-# ledger; a finding the ledger does not hold is new debt, and a ledger
-# line the corpus no longer owes is stale. `CORPUS_COMMENTS_WRITE_LEDGER=1`
-# rewrites the ledger and is not this gate.
+# A person reads a fixture source as often as the checker does. Each item has
+# a comment just before it, and before its attribute block. Each member of a
+# theory, module, data or codata block has one too. The file opens with a
+# comment.
+# - see: #355
+#
+# The gate gives the uncommented items as the kind `uncommented` of the
+# outputs. The difference of that kind refuses a head that adds one.
 ["check:corpus-comments"]
-description = "A comment on every fixture item, ratcheted against the ledger"
+description = "A comment on every fixture item, given as the outputs kind uncommented"
 run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --test tests comments:: -- --nocapture"
 
 # The sentence rules that need a parse, over the comments of every tracked
