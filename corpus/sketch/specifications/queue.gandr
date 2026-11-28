@@ -12,9 +12,9 @@
 /// - see: corpus/model/specification/state-wp.gandr — the state theory's weakest preconditions
 
 // The specification theory, its state observation and `old`.
-import std.spec (Spec, old);
+import std.spec (Spec, old)
 // The heap the queue lives in.
-import std.mem (Heap, Ref);
+import std.mem (Heap, Ref)
 
 /// A queue of `a` in a ring buffer of fixed capacity.
 pub data Queue(a : Type) : Type where
@@ -74,4 +74,4 @@ pub def rec drain[a : Type](q : Queue a) -> [State(Heap)] Nat #spec{
 } =
   match pop q where
     | None => 0
-    | Some(_) => drain q + 1
+    | Some _ => drain q + 1

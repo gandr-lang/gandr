@@ -22,23 +22,23 @@ pub data SnocList(a : Type) : Type where
 def rec cons[a : Type](x : a, xs : SnocList a) -> SnocList a =
   match xs where
     | Lin => Snoc Lin x
-    | Snoc(front, y) => Snoc (cons[<] x front) y
+    | Snoc front y => Snoc (cons[<] x front) y
 
 /// A list built again from its end.
 def rec toSnoc[a : Type](xs : List a) -> SnocList a =
   match xs where
     | Nil => Lin
-    | Cons(x, rest) => cons x (toSnoc[<] rest)
+    | Cons x rest => cons x (toSnoc[<] rest)
 
 /// A snoc list as a list from its front.
 def rec fromSnoc[a : Type](xs : SnocList a) -> List a =
   match xs where
     | Lin => Nil
-    | Snoc(front, y) => append (fromSnoc[<] front) (Cons y Nil)
+    | Snoc front y => append (fromSnoc[<] front) (Cons y Nil)
 
 /// The two lists are one type, read from either end. `equiv` decides the
 /// round trips.
-def snocList[a : Type]() -> List a ≃ SnocList a = equiv toSnoc fromSnoc;
+def snocList[a : Type]() -> List a ≃ SnocList a = equiv toSnoc fromSnoc
 
 /// A list from its end, through its equivalence with the snoc list.
 view
@@ -71,5 +71,5 @@ def rec lastN[a : Type](n : Nat, xs : List a) -> List a =
     | lin => Nil
     | snoc(front, y => match n {
       | Zero => Nil
-      | Succ(k) => append (lastN[<] k front) (Cons y Nil)
+      | Succ k => append (lastN[<] k front) (Cons y Nil)
     }

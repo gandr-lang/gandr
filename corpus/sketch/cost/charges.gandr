@@ -14,7 +14,7 @@
 /// - see: corpus/ledger/features/cost-effect.gandr — the same steps as they are written today
 
 // The cost theory, its counting model and the count of a run.
-import std.cost (Cost, Counting, countOf);
+import std.cost (Cost, Counting, countOf)
 
 /// Three steps: a charge of one, a charge of two, then seven.
 def threeSteps() -> [Cost] Integer =
@@ -29,7 +29,7 @@ def lookup(cache : Ref (Map String String), load : String -> String, key : Strin
   State (Heap)
 ] String =
   match (cache.get ()).#[key] where
-    | Some(v) => {
+    | Some v => {
       charge 1
       v
     }

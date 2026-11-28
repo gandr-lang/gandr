@@ -18,7 +18,7 @@ import std.tactic (Tactic, Goal, exact, fail);
 def assumption(hyps : Model *{ .. }) -> [Tactic] Unit =
   let goal = Goal.current ()
   match find hyps (fun (h) { h.type == goal.type }) where
-    | Some(h) => exact h.term
+    | Some h => exact h.term
     | None => fail "no hypothesis matches the goal"
 
 /// A lemma that `assumption` closes, given only its hypotheses.

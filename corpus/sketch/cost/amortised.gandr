@@ -13,7 +13,7 @@
 /// - see: corpus/sketch/specifications/measures.gandr — sketch 6's potential over a banker's queue
 
 // The cost theory and its credits.
-import std.cost (Cost, Credit, save, spend);
+import std.cost (Cost, Credit, save, spend)
 
 /// A queue as two lists: pushes go on the back, and pops read the front.
 pub data Batched(a : Type) : Type where
@@ -40,14 +40,14 @@ pub def pop[a : Type](q : Batched a) -> [Cost] Maybe *{a, Batched a} #spec{
   }
 } = {
   match q.front where
-    | Cons(x, rest) =>
+    | Cons x rest =>
       charge 1;
       some x (Lists rest q.back)
     | Nil => {
       charge (length q.back);
       match reverse q.back where
         | Nil => none
-        | Cons(x, rest) =>
+        | Cons x rest =>
           charge 1;
           some x (Lists rest Nil)
     }
@@ -71,12 +71,12 @@ pub def popBanked[a : Type](q : Banked a) -> [Cost] Maybe *{a, Banked a} #spec{
   measure { cost 1 }
 } = {
   match q.front where
-    | Cons(x, rest) =>
+    | Cons x rest =>
       charge 1;
       some x (Lists rest q.back q.paid)
     | Nil => match spend q.paid (fun () { reverse q.back }) where
       | Nil => none
-      | Cons(x, rest) =>
+      | Cons x rest =>
         charge 1;
         some x (Lists rest Nil Credit.none)
 };

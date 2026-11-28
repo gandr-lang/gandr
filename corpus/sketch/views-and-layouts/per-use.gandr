@@ -12,17 +12,17 @@
 /// - see: corpus/sketch/views-and-layouts/layouts.gandr — the layouts this file uses
 
 // The layout type, its `#ribbit` reader and the moves along a layout.
-import std.mem (Layout);
+import std.mem (Layout)
 // The list and its tagged and packed layouts.
-import "./layouts.gandr";
+import "./layouts.gandr"
 
 /// A wire format's checksum, over a list in the packed layout whatever the
 /// list's default: two elements per step, as the frame holds them.
 def rec checksum(frame : Repr Ints packed) -> i64 =
   match frame with packed where
     | Empty => 0i64
-    | One(x) => widen x
-    | Many(x, y, rest) => widen x * 31i64 + widen y + checksum[<] rest
+    | One x => widen x
+    | Many x y rest => widen x * 31i64 + widen y + checksum[<] rest
 
 /// A list's checksum in the wire's layout. The list moves to the packed
 /// representation along the layout's equivalence.
@@ -35,11 +35,11 @@ def framed(xs : Ints) -> i64 =
 def rec scan(xs : Repr Ints tagged, acc : i64) -> i64 =
   match xs with tagged where
     | TagNil => acc
-    | TagCons(x, rest) => scan[<] rest (acc + widen x)
+    | TagCons x rest => scan[<] rest (acc + widen x)
 
 /// The tagged loop over a list of the default layout, by transport there and
 /// back.
-def sumTagged(xs : Ints) -> i64 = scan (Layout.into tagged xs) 0i64;
+def sumTagged(xs : Ints) -> i64 = scan (Layout.into tagged xs) 0i64
 
 /// One, two and three, in the packed layout after the tagged one, along the
 /// composite of the two equivalences.

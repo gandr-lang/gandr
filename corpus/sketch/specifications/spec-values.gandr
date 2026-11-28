@@ -12,9 +12,9 @@
 /// - see: corpus/sketch/specifications/queue.gandr — the same clauses in a definition's head
 
 // The specification theory, its state observation and `old`.
-import std.spec (Spec, old);
+import std.spec (Spec, old)
 // The heap a store lives in.
-import std.mem (Heap);
+import std.mem (Heap)
 
 /// What a key-value store's lookup must do: leave the store as it found it
 /// and answer the bound value.
@@ -42,7 +42,7 @@ pub def tableLookup[k : Type, v : Type](t : Table k v, key : k) -> lookupSpec t.
   let slot = probe t (hash key)
   match slot where
     | Empty => none
-    | Full(stored, value) => if stored == key { some value } else { tableLookupFrom t key slot }
+    | Full stored value => if stored == key { some value } else { tableLookupFrom t key slot }
 
 /// A lookup in an association list, which meets the same specification.
 pub def listLookup[k : Type, v : Type](l : Assoc k v, key : k) -> lookupSpec l.store key =

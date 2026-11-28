@@ -14,7 +14,7 @@
 /// - see: `../loops/notations.gandr` — `while` beside the `loop` it reads to
 
 // The notation type and its reader.
-import std.notation (Notation, Precedence);
+import std.notation (Notation, Precedence)
 
 /// `for x in xs body` as the `loop` over an iterator it reads to. The fragment
 /// binds `it`, which no `$` names, so `it` never captures the author's name.
@@ -23,7 +23,7 @@ pub def forLoop : Notation = #notation{
       var it = iter $e;
       loop {
         match it.next () where
-          | Some($x) => $body
+          | Some $x => $body
           | None => break
       }
     }

@@ -16,9 +16,9 @@
 /// - see: `../../model/effects/cost-clock.gandr` — the bound at each clock
 
 // The cost theory.
-import std.cost (Cost);
+import std.cost (Cost)
 // The two-list queue and its amortised operations.
-import "./amortised.gandr";
+import "./amortised.gandr"
 
 /// A seat's reports until it retires: a report or a retirement, then the
 /// recursion point again.
@@ -60,7 +60,7 @@ def rec explore(next : Node -> List Node, goal : Node -> Bool, frontier : Batche
 } =
   match pop frontier where
     | None => none
-    | Some(*{n, rest}) => if goal n {
+    | Some *{n, rest} => if goal n {
       some n
     } else {
       explore next goal (fold (next n) rest push)

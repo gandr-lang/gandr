@@ -14,7 +14,7 @@
 /// - see: corpus/sketch/views-and-layouts/layouts-ascii.gandr — the same layouts in ASCII
 
 // The layout type and its `#ribbit` reader.
-import std.mem (Layout);
+import std.mem (Layout)
 
 /// The list of Ribbit's Example 3.1 in the packed layout.
 @[layout(packed)]
@@ -43,18 +43,18 @@ pub def packed : Layout Ints = #ribbit{
 def head(xs : Ints) -> Maybe i32 =
   match xs with packed where
     | Empty => none
-    | One(x) => some x
-    | Many(x, _, _) => some x
+    | One x => some x
+    | Many x _ _ => some x
 
 /// The length, written once over the list, whichever layout the list has.
 def rec length(xs : Ints) -> Integer =
   match xs where
     | Nil => 0
-    | Cons(_, rest) => length[<] rest + 1
+    | Cons _ rest => length[<] rest + 1
 
 /// The sum of a packed list, two elements per step.
 def rec sum(xs : Ints) -> i64 =
   match xs with packed where
     | Empty => 0i64
-    | One(x) => widen x
-    | Many(x, y, rest) => widen x + widen y + sum[<] rest
+    | One x => widen x
+    | Many x y rest => widen x + widen y + sum[<] rest

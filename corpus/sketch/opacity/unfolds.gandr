@@ -15,7 +15,7 @@
 def _+_(m : Nat, n : Nat) -> Nat =
   match m where
     | Zero => n
-    | Succ(k) => Succ (k + n)
+    | Succ k => Succ (k + n)
 
 /// `_++_` appends two vectors. The result's length `m + n` converts with each
 /// branch's only through addition's body, so the head unfolds `_+_`.
@@ -23,7 +23,7 @@ def _+_(m : Nat, n : Nat) -> Nat =
 def _++_[A : Type, m n : Nat](u : Vec A m, v : Vec A n) -> Vec A (m + n) =
   match u where
     | VNil => v
-    | VCons(x, rest) => VCons x (rest ++ v)
+    | VCons x rest => VCons x (rest ++ v)
 
 /// A client of append. It unfolds `_++_`, and through it `_+_`, so its
 /// type converts.

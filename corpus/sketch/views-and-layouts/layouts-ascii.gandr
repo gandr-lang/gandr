@@ -11,7 +11,7 @@
 /// - see: corpus/sketch/views-and-layouts/layouts.gandr — the list layouts in Ribbit's notation
 
 // The layout type and its `#ribbit` reader.
-import std.mem (Layout);
+import std.mem (Layout)
 
 /// A list of `i32` in the tagged layout.
 @[layout(tagged)]
@@ -54,4 +54,4 @@ pub def compact : Layout Tree = #ribbit{
 def rec total(t : Tree) -> i64 =
   match t where
     | Leaf => 0i64
-    | Node(left, v, right) => total[<] left + widen v + total[<] right
+    | Node left v right => total[<] left + widen v + total[<] right

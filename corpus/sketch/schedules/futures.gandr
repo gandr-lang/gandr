@@ -12,7 +12,7 @@
 /// - see: futures-are-cuts.md — item 2, linear and shared futures by grade
 
 // The await effect, readiness and completion.
-import std.async (Await, Poll, Ready, Pending, await);
+import std.async (Await, Poll, Ready, Pending, await)
 
 /// A socket read as readiness: nothing runs until an executor polls it.
 def readiness(socket : Socket, buffer : Bytes) -> Poll Nat =
@@ -28,7 +28,7 @@ def completion(ring : Ring, file : File, buffer : Bytes) -> [Await] Nat =
 def runToCompletion[A : Type](task : Poll A) -> [Partial] A =
   loop {
     match task.poll where
-      | Ready(x) => break x
+      | Ready x => break x
       | Pending => continue
   }
 

@@ -12,7 +12,7 @@
 /// - see: `../../model/basics/arithmetic.gandr` — the built-in precedence today
 
 // The precedence groups and the ordering between them.
-import std.notation (Precedence);
+import std.notation (Precedence)
 
 /// The group of multiplication, above addition.
 pub def Multiplicative : Precedence = Precedence.above Additive;
@@ -43,7 +43,7 @@ pub def _≤_(a : Nat, b : Nat) -> Bool =
 pub def _!(n : Nat) -> Nat =
   match n where
     | Zero => 1
-    | Succ(m) => n * m !
+    | Succ m => n * m !
 
 /// A polynomial in the precedence the groups give: `2 * x + 1 ≤ y`.
 pub def underLine(x : Nat, y : Nat) -> Bool =

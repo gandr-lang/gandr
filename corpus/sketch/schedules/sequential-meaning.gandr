@@ -22,8 +22,8 @@ data Tree : Type where
 /// run the two apart, and the answer stays the sequential one.
 def sum(t : Tree) -> Integer =
   match t where
-    | Leaf(n) => n
-    | Node(l, r) => {
+    | Leaf n => n
+    | Node l r => {
       let a = sum l
       let b = sum r
       a + b
