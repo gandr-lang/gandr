@@ -22,8 +22,6 @@ workflow  repository tooling and gates
 
 ## Map
 
-An arrow is one category's dependencies on another, labelled with the count of `[dependencies]` edges between their crates. The count omits dev and build dependencies. Every arrow points down the layering: `check:crate-map` refuses an edge to a category listed after its own and names its two crates. `mise run ledger:crate-map` writes the block between the markers. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
-
 <!-- crate-map:begin -->
 ```mermaid
 flowchart BT

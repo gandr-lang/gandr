@@ -9,11 +9,11 @@
 extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "crates/*/tests/debug-traces/"]
 
 [default]
-# The attribute registry's near-miss witness misspells `identity` on purpose,
-# one edit away, to assert that the misspelling suggests the attribute; the
-# lowering's misspelt-keyword witness misspells `return` three ways, and the
-# parser's misspelt-keyword witness misspells `where` and `match` one way each.
-extend-ignore-re = ['"identiy"', '"retur"', '"retrun"', '"returnn"', "`retur( x)?`", '"wher"', '"matc"', "`matc`", 'matc n \{']
+# Some witnesses misspell a word on purpose. The near-miss witness of the
+# attribute registry misspells `identity` and `features` by one edit. The
+# misspelt-keyword witness of the lowering misspells `return` in three ways.
+# The misspelt-keyword witness of the parser misspells `where` and `match`.
+extend-ignore-re = ['"identiy"', '"featurs"', '"retur"', '"retrun"', '"returnn"', "`retur( x)?`", '"wher"', '"matc"', "`matc`", 'matc n \{']
 
 # Standing rule: an unwanted rewrite is fixed by growing this allowlist, never
 # by rewording the prose. Grown from this repo's own vocabulary.
@@ -48,3 +48,7 @@ fing = "fing"
 # Quantum vocabulary: Dirac's bra-ket notation, `Ket` in `std.quantum`, the
 # state vector of a qubit.
 ket = "ket"
+# The tests of `theory-path-orders` write words over the letters of a system
+# that rewrites strings, such as `ba` and `tsts`.
+ba = "ba"
+tsts = "tsts"
