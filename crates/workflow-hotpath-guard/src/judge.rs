@@ -31,6 +31,7 @@ use crate::check::CommitSha;
 use crate::check::Repository;
 use crate::error::GuardError;
 
+pub mod budget;
 pub mod shift;
 
 /// The smallest share of the run a row is judged at: 0.1 %.
@@ -546,10 +547,14 @@ impl Policy
     ///   that sets `judged` and `fail_check`, with its `min_percent_change`,
     ///   `metrics` and `min_calls` or hotpath's defaults for them (timing 50,
     ///   alloc 20; avg and total; 1).
-    /// - provides: the thresholds the judgement applies.
+    /// - provides: the thresholds the judge applies.
     /// - fails: [`GuardError::Input`] naming the file for text that is not
-    ///   TOML, a key of another type, or a metric other than `avg` and `total`,
-    ///   which the judge would otherwise skip in silence.
+    ///   TOML, a key of another type, a metric other than `avg` and `total`,
+    ///   which the judge would otherwise skip in silence, or a
+    ///   `[[functions.budgets]]` rule with `alloc`: such a budget takes bytes,
+    ///   which a report of counts or of timing does not give, and goes in the
+    ///   policy of a run in bytes ([`budget`]). A budget of `timing` stays for
+    ///   hotpath Cloud.
     /// - panics: none.
     /// - executable: none — the parse is the clause.
     ///
@@ -558,9 +563,11 @@ impl Policy
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the repository's allocation and timing policies, one
-    ///   naming `p95`; a family read without `fail_check`, a lost threshold or
-    ///   an accepted unknown metric changes the policy.
+    ///   naming `p95`, and the policy in bytes; a family read without
+    ///   `fail_check`, a lost threshold, an accepted unknown metric or an
+    ///   accepted budget of `alloc` changes the policy.
     /// - witness: `judge::tests::a_policy_reads_only_the_families_that_fail_the_check`
+    /// - witness: `judge::tests::a_policy_of_counts_holds_no_budget_in_bytes`
     #[inline]
     pub fn read(input: Input<'_>) -> Result<Self, GuardError>
     {
@@ -572,6 +579,14 @@ impl Policy
             Some(&toml::Value::Table(ref functions)) => functions,
             Some(_) => return Err(input.refuse("`functions` is not a table".to_owned())),
         };
+        let budgets = functions.get("budgets").and_then(toml::Value::as_array);
+        if budgets.is_some_and(|rules| rules.iter().any(|rule| rule.get("alloc").is_some())) {
+            return Err(input.refuse(
+                "`functions.budgets`: a budget of `alloc` takes bytes; it goes in \
+                 `hotpath/<series>-bytes-policy.toml`"
+                    .to_owned(),
+            ));
+        }
         let number = |value: &toml::Value, key| {
             let text = match *value {
                 toml::Value::Integer(integer) => integer.to_string(),
@@ -688,11 +703,7 @@ impl Policy
         name: &RowName,
     ) -> Coverage
     {
-        if self
-            .ignore
-            .iter()
-            .any(|pattern| glob(pattern, name) == Coverage::Ignored)
-        {
+        if self.ignore.iter().any(|pattern| glob(pattern, name)) {
             Coverage::Ignored
         }
         else {
@@ -705,9 +716,10 @@ impl Policy
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: ignored when the literal parts appear in order, the first at the
+/// - ensures: true when the literal parts appear in order, the first at the
 ///   start and the last at the end unless a `*` surrounds them.
-/// - provides: [`Policy::covers`].
+/// - provides: [`Policy::covers`] and the rows of a budget
+///   ([`budget::Budgets::judge`]).
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the match is the clause.
@@ -715,16 +727,17 @@ impl Policy
 /// # Adequacy
 /// - hypothesis: L3 — as [`Policy::covers`].
 /// - witness: `judge::tests::an_ignored_or_rare_row_is_not_judged`
+/// - witness: `judge::budget::tests::a_rule_checks_each_row_that_it_matches`
 fn glob(
     pattern: &Pattern,
     name: &RowName,
-) -> Coverage
+) -> bool
 {
     let mut parts = pattern.0.split('*');
     let first = parts.next().unwrap_or_default();
     let Some(mut rest) = name.0.strip_prefix(first)
     else {
-        return Coverage::Judged;
+        return false;
     };
     let mut last = None;
     for part in parts {
@@ -735,17 +748,11 @@ fn glob(
                         .get(at.saturating_add(previous.len()) ..)
                         .unwrap_or_default();
                 },
-                None => return Coverage::Judged,
+                None => return false,
             }
         }
     }
-    let matched = last.map_or(rest.is_empty(), |last| rest.ends_with(last));
-    if matched {
-        Coverage::Ignored
-    }
-    else {
-        Coverage::Judged
-    }
+    last.map_or(rest.is_empty(), |last| rest.ends_with(last))
 }
 
 /// Which rows a judgement covers.
@@ -1845,6 +1852,34 @@ mod tests
             refused,
             Err("`p95.toml`: the judge reads no metric `p95`".to_owned())
         );
+    }
+
+    #[test]
+    fn a_policy_of_counts_holds_no_budget_in_bytes()
+    {
+        let bytes = include_str!("../../../hotpath/gandr-bytes-policy.toml");
+        let refused = Policy::read(Input {
+            path: "gandr-bytes-policy.toml",
+            text: bytes,
+        })
+        .map(|_| ())
+        .map_err(|error| error.to_string());
+        assert_eq!(
+            refused,
+            Err(
+                "`gandr-bytes-policy.toml`: `functions.budgets`: a budget of `alloc` takes \
+                 bytes; it goes in `hotpath/<series>-bytes-policy.toml`"
+                    .to_owned()
+            )
+        );
+        for read in [
+            include_str!("../../../hotpath/gandr-policy.toml"),
+            include_str!("../../../hotpath/store-policy.toml"),
+            include_str!("../../../hotpath/conversion-policy.toml"),
+            include_str!("../../../hotpath/gandr-timing-policy.toml"),
+        ] {
+            drop(policy!(read));
+        }
     }
 
     #[test]

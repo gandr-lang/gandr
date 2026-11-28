@@ -14,6 +14,9 @@ const POLICY: &str = "pr_check = \"fail\"\n\n[functions]\nmin_percent_total = 1\
 /// Each series that the gate judges.
 const SERIES: [&str; 3] = ["gandr", "store", "conversion"];
 
+/// The policy in bytes of the `gandr` series: one budget of the first row.
+const BUDGET: &str = "[functions.alloc]\njudged = false\n\n[[functions.budgets]]\nmatch = \"gandr_core::first\"\nalloc = { avg = \"1 KB\" }\nmessage = \"the first stays small\"\n";
+
 /// The exit code of a tip that passes.
 const PASSED: Option<i32> = Some(0_i32);
 
@@ -92,6 +95,54 @@ fn report(count: u32) -> String
     format!(
         r#"{{"functions_alloc": {{"data": [{{"name": "gandr_core::first", "calls": 1, "avg": "{count}", "total": "{count}", "percent_total": "60.00%"}}, {{"name": "gandr_core::second", "calls": 1, "avg": "4000", "total": "4000", "percent_total": "40.00%"}}]}}}}"#
     )
+}
+
+/// A report in bytes of one series: one row that allocates `avg` in one call.
+///
+/// # Specification
+/// trivial.
+fn bytes_report(avg: &str) -> String
+{
+    format!(
+        r#"{{"functions_alloc": {{"profiling_mode": "alloc-bytes", "data": [{{"name": "gandr_core::first", "calls": 1, "avg": "{avg}", "total": "{avg}", "percent_total": "100.00%"}}]}}}}"#
+    )
+}
+
+/// Runs the gate again in a case's repository, with the policy in bytes of
+/// the `gandr` series. The store keeps a run in bytes of the tip whose row
+/// allocates `avg`; with no `avg`, the fake `cargo` writes a run of 512 B.
+///
+/// # Specification
+/// trivial.
+fn budgeted(
+    ran: &Ran,
+    avg: Option<&str>,
+) -> Output
+{
+    std::fs::write(ran.root.join("hotpath/gandr-bytes-policy.toml"), BUDGET).unwrap();
+    if let Some(avg) = avg {
+        let head = git(&ran.root, &["rev-parse", "HEAD"]);
+        std::fs::write(
+            ran.root
+                .join("target/hotpath/kept")
+                .join(head)
+                .join("gandr-bytes.json"),
+            bytes_report(avg),
+        )
+        .unwrap();
+    }
+    let mut paths = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes")];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    Command::new(env!("CARGO_BIN_EXE_hotpath-gate"))
+        .current_dir(&ran.root)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("PATH", std::env::join_paths(paths).unwrap())
+        .env("GATE_REPORT", report(6000))
+        .env("GATE_REPORT_BYTES", bytes_report("512 B"))
+        .args(["--repository", "gandr-lang/gandr", "--base", "main~1"])
+        .output()
+        .unwrap()
 }
 
 /// Writes the case's repository, its two commits and its store, then runs the
@@ -327,4 +378,80 @@ fn a_bench_in_the_directory_of_its_package_keeps_its_report()
             "{series}"
         );
     }
+}
+
+#[test]
+fn a_broken_budget_refuses_the_tip()
+{
+    let ran = gate(&Case {
+        name: "budget",
+        message: "head",
+        base: Some(6000),
+        head: Some(6000),
+    });
+    let output = budgeted(&ran, Some("1.5 KB"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), REGRESSED, "{output:?}");
+    assert!(
+        stdout.contains(
+            "gandr-bytes: ⛔ gandr_core::first: alloc.avg 1.5 KB, over budget 1.0 KB: the first \
+             stays small · fails the check\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(
+        stderr.trim(),
+        "hotpath-gate: gandr-bytes regressed past its policy; a commit accepts a series with the \
+         trailer `Changes-hotpath: <series>`"
+    );
+}
+
+#[test]
+fn a_trailer_accepts_a_broken_budget()
+{
+    let ran = gate(&Case {
+        name: "budget-accepted",
+        message: "head\n\nChanges-hotpath: gandr-bytes",
+        base: Some(6000),
+        head: Some(6000),
+    });
+    let output = budgeted(&ran, Some("1.5 KB"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), PASSED, "{output:?}");
+    assert!(
+        stdout.contains(
+            "gandr-bytes: a commit accepts the regression with `Changes-hotpath: gandr-bytes`"
+        ),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn a_run_in_bytes_is_measured_and_kept()
+{
+    let ran = gate(&Case {
+        name: "budget-measured",
+        message: "head",
+        base: Some(6000),
+        head: Some(6000),
+    });
+    let output = budgeted(&ran, None);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let head = git(&ran.root, &["rev-parse", "HEAD"]);
+    assert_eq!(output.status.code(), PASSED, "{output:?}");
+    assert!(
+        stdout.contains("gandr-bytes: no budget of 1 is broken\n"),
+        "{stdout}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            ran.root
+                .join("target/hotpath/kept")
+                .join(head)
+                .join("gandr-bytes.json")
+        )
+        .unwrap(),
+        bytes_report("512 B")
+    );
 }

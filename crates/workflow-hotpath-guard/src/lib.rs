@@ -19,6 +19,8 @@
 //!   global shift each timing failure's functions are judged beside
 //!   ([`judge::shift`]). The `hotpath-judge` binary writes the first as a
 //!   check's summary in hotpath Cloud's shape, so the guard files it alike.
+//!   [`judge::budget`] judges the budgets of a series on one run in bytes, for
+//!   the landing's `hotpath-gate`.
 //!
 //! # Decisions
 //!

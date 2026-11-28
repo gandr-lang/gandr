@@ -16,11 +16,20 @@
 //! `Changes-hotpath: <series>`. The store keeps the reports of the newest
 //! [`KEPT`] commits.
 //!
+//! A series with the policy `hotpath/<series>-bytes-policy.toml` has budgets
+//! too: absolute limits on what a function allocates, in bytes
+//! ([`gandr_workflow_hotpath_guard::judge::budget`]). The gate runs the bench
+//! of such a series a second time with `HOTPATH_ALLOC_METRIC=bytes`, keeps the
+//! report as `<store>/<commit>/<series>-bytes.json`, and judges each budget on
+//! it, with no base. A broken budget fails `<series>-bytes`, and the trailer
+//! `Changes-hotpath: <series>-bytes` accepts it.
+//!
 //! # Exit codes
 //!
 //! - `0`: no series regressed, or a commit accepts each one that did; also
 //!   `--help` and `--version`.
-//! - `1`: a series regressed past its policy, and no commit accepts it.
+//! - `1`: a series regressed past its policy or broke a budget, and no commit
+//!   accepts it.
 //! - `2`: a refusal — a bench, `git` or a file that fails, an unreadable report
 //!   or policy, a malformed argument; also a malformed invocation.
 
@@ -39,6 +48,7 @@ use gandr_workflow_hotpath_guard::CommitSha;
 use gandr_workflow_hotpath_guard::GuardError;
 use gandr_workflow_hotpath_guard::Repository;
 use gandr_workflow_hotpath_guard::judge;
+use gandr_workflow_hotpath_guard::judge::budget;
 
 /// The exit code of a series that regressed and that no commit accepts.
 const REGRESSED: u8 = 1;
@@ -62,6 +72,31 @@ struct Series
     package: &'static str,
     /// The bench target.
     bench: &'static str,
+}
+
+/// What a run of a bench measures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Metric
+{
+    /// The allocation counts, judged against the base.
+    Count,
+    /// The allocated bytes, judged against the budgets.
+    Bytes,
+}
+
+impl Metric
+{
+    /// The value of `HOTPATH_ALLOC_METRIC` for a run.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn variable(self) -> &'static str
+    {
+        match self {
+            Self::Count => "count",
+            Self::Bytes => "bytes",
+        }
+    }
 }
 
 /// Each series that the gate judges.
@@ -118,6 +153,7 @@ struct Cli
 /// - witness: `tests::gate::a_regressed_series_refuses_the_tip`
 /// - witness: `tests::gate::a_trailer_accepts_its_series`
 /// - witness: `tests::gate::a_base_with_no_report_judges_nothing`
+/// - witness: `tests::gate::a_broken_budget_refuses_the_tip`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS
     || ret == ExitCode::from(REGRESSED)
     || ret == ExitCode::from(REFUSED))]
@@ -154,14 +190,16 @@ fn main() -> ExitCode
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the store, an absolute path, holds a report of each series for
-///   `HEAD`; standard output receives the summary of each series whose base has
-///   a report, or a line that names the base it lacks; the result names each
-///   series whose verdict is a failure and that no trailer accepts, in the
-///   order of [`SERIES`]; the store keeps the newest [`KEPT`] commits, and
-///   always the head and the base.
+///   `HEAD`, and a report in bytes of each series with budgets; standard output
+///   receives the summary of each series whose base has a report, or a line
+///   that names the base it lacks, and the budgets of each series that has
+///   them; the result names each series whose verdict is a failure, and
+///   `<series>-bytes` for each series whose budgets fail, that no trailer
+///   accepts, in the order of [`SERIES`]; the store keeps the newest [`KEPT`]
+///   commits, and always the head and the base.
 /// - provides: the whole command.
 /// - fails: every refusal of [`commit`], [`accepted`], [`measure`], [`read`],
-///   [`judge::Run::read`], [`judge::Policy::read`] and [`prune`];
+///   [`judge::Run::read`], [`judge::Policy::read`], [`budgets`] and [`prune`];
 ///   [`GuardError::Output`] when standard output cannot be written;
 ///   [`GuardError::Input`] naming the store when it has no absolute path.
 /// - panics: none.
@@ -175,10 +213,11 @@ fn main() -> ExitCode
 /// - witness: `tests::gate::a_regressed_series_refuses_the_tip`
 /// - witness: `tests::gate::a_base_with_no_report_judges_nothing`
 /// - witness: `tests::gate::a_bench_in_the_directory_of_its_package_keeps_its_report`
+/// - witness: `tests::gate::a_trailer_accepts_a_broken_budget`
 ///
 /// # Cost
 /// - allocation: the read reports, each verdict and its summary, diagnostic
-fn run(cli: &Cli) -> Result<Vec<&'static str>, GuardError>
+fn run(cli: &Cli) -> Result<Vec<String>, GuardError>
 {
     let store = std::path::absolute(&cli.store).map_err(|error| GuardError::Input {
         path: cli.store.display().to_string(),
@@ -187,51 +226,111 @@ fn run(cli: &Cli) -> Result<Vec<&'static str>, GuardError>
     let head = commit("HEAD")?;
     let base = commit(&cli.base)?;
     let accepted = accepted(&base, &head)?;
-    let mut regressed = Vec::new();
+    let mut failed = Vec::new();
     for series in SERIES {
-        let report = kept(&store, &head, series);
+        let report = kept(&store, &head, series, Metric::Count);
         if !report.exists() {
-            measure(series, &report)?;
+            measure(series, &report, Metric::Count)?;
         }
-        let before = kept(&store, &base, series);
-        if !before.exists() {
+        let before = kept(&store, &base, series, Metric::Count);
+        if before.exists() {
+            let policy = PathBuf::from(format!("hotpath/{}-policy.toml", series.name));
+            let verdict = judge::judge(
+                &read(&policy, judge::Policy::read)?,
+                judge::Scope::All,
+                &[read(&before, judge::Run::read)?],
+                &[read(&report, judge::Run::read)?],
+            );
+            say(&judge::Summary {
+                subject: judge::Subject {
+                    repository: &cli.repository,
+                    head: &head,
+                    base: &base,
+                    benchmark: series.name,
+                },
+                verdict: &verdict,
+            }
+            .to_string())?;
+            if verdict.conclusion() == judge::Conclusion::Failure {
+                failed.push(series.name.to_owned());
+            }
+        }
+        else {
             say(&format!(
                 "{}: the store keeps no report of the base {base}; nothing is judged\n",
                 series.name
             ))?;
-            continue;
         }
-        let policy = PathBuf::from(format!("hotpath/{}-policy.toml", series.name));
-        let verdict = judge::judge(
-            &read(&policy, judge::Policy::read)?,
-            judge::Scope::All,
-            &[read(&before, judge::Run::read)?],
-            &[read(&report, judge::Run::read)?],
-        );
-        say(&judge::Summary {
-            subject: judge::Subject {
-                repository: &cli.repository,
-                head: &head,
-                base: &base,
-                benchmark: series.name,
-            },
-            verdict: &verdict,
+        let budgeted = PathBuf::from(format!("hotpath/{}-bytes-policy.toml", series.name));
+        if budgeted.exists() && budgets(&store, &head, series, &budgeted)? {
+            failed.push(format!("{}-bytes", series.name));
         }
-        .to_string())?;
-        if verdict.conclusion() == judge::Conclusion::Failure {
-            if accepted.contains(series.name) {
-                say(&format!(
-                    "{}: a commit accepts the regression with `{TRAILER}: {}`\n",
-                    series.name, series.name
-                ))?;
-            }
-            else {
-                regressed.push(series.name);
-            }
+    }
+    let mut regressed = Vec::new();
+    for name in failed {
+        if accepted.contains(&name) {
+            say(&format!(
+                "{name}: a commit accepts the regression with `{TRAILER}: {name}`\n"
+            ))?;
+        }
+        else {
+            regressed.push(name);
         }
     }
     prune(&store, [&head, &base])?;
     Ok(regressed)
+}
+
+/// Judges the budgets of a series on its run in bytes at the tip.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the store holds the report in bytes of the series for `head`;
+///   standard output receives each rule that the run breaks, or a line that
+///   counts the rules when none breaks; the result is whether a broken rule
+///   fails the series.
+/// - provides: the budgets of each series with a policy in bytes.
+/// - fails: every refusal of [`measure`], [`read`], [`budget::Run::read`] and
+///   [`budget::Budgets::read`]; [`GuardError::Output`] when standard output
+///   cannot be written.
+/// - panics: none.
+/// - executable: none — the outcome is the files and the bytes written.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run within its budget, measured by the bench in bytes;
+///   a broken budget; a run of counts read as bytes refuses.
+/// - witness: `tests::gate::a_run_in_bytes_is_measured_and_kept`
+/// - witness: `tests::gate::a_broken_budget_refuses_the_tip`
+///
+/// # Cost
+/// - allocation: the read report and budgets, each broken rule, diagnostic
+fn budgets(
+    store: &Path,
+    head: &CommitSha,
+    series: Series,
+    policy: &Path,
+) -> Result<bool, GuardError>
+{
+    let report = kept(store, head, series, Metric::Bytes);
+    if !report.exists() {
+        measure(series, &report, Metric::Bytes)?;
+    }
+    let budgets = read(policy, budget::Budgets::read)?;
+    let broken = budgets.judge(&read(&report, budget::Run::read)?);
+    if broken.is_empty() {
+        say(&format!(
+            "{}-bytes: no budget of {} is broken\n",
+            series.name,
+            budgets.len()
+        ))?;
+    }
+    for rule in &broken {
+        say(&format!("{}-bytes: {rule}\n", series.name))?;
+    }
+    Ok(broken.iter().any(budget::Broken::fails))
 }
 
 /// Writes a text to standard output.
@@ -353,7 +452,8 @@ fn git(arguments: &[&str]) -> Result<String, GuardError>
     String::from_utf8(output.stdout).map_err(|error| refused(error.to_string()))
 }
 
-/// The path of the report that the store keeps for a commit and a series.
+/// The path of the report that the store keeps for a commit, a series and a
+/// metric: `<series>.json` of counts, `<series>-bytes.json` of bytes.
 ///
 /// # Specification
 /// trivial.
@@ -361,20 +461,24 @@ fn kept(
     store: &Path,
     commit: &CommitSha,
     series: Series,
+    metric: Metric,
 ) -> PathBuf
 {
-    store
-        .join(commit.to_string())
-        .join(format!("{}.json", series.name))
+    let name = match metric {
+        Metric::Count => format!("{}.json", series.name),
+        Metric::Bytes => format!("{}-bytes.json", series.name),
+    };
+    store.join(commit.to_string()).join(name)
 }
 
 /// Runs the bench of a series under the profiler and keeps its report.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `report` holds the allocation counts of the run; the report is
-///   written beside it and renamed, so a run that dies keeps no partial report.
-/// - provides: the tip's side of each judgement.
+/// - ensures: `report` holds the allocations of the run in `metric`; the report
+///   is written beside it and renamed, so a run that dies keeps no partial
+///   report.
+/// - provides: the tip's side of each judgement, and the run of each budget.
 /// - fails: [`GuardError::Command`] when the bench fails or writes no report;
 ///   [`GuardError::Input`] naming the path when the store cannot be written.
 /// - panics: none.
@@ -385,12 +489,15 @@ fn kept(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a fake `cargo` writes the report from the directory of a
-///   package, as a bench runs; a relative path puts the report there, and the
-///   gate refuses.
+///   package, as a bench runs, and writes a report in bytes only when the
+///   metric is `bytes`; a relative path puts the report there, and a run in
+///   bytes with the metric `count` reads as counts, so the gate refuses.
 /// - witness: `tests::gate::a_bench_in_the_directory_of_its_package_keeps_its_report`
+/// - witness: `tests::gate::a_run_in_bytes_is_measured_and_kept`
 fn measure(
     series: Series,
     report: &Path,
+    metric: Metric,
 ) -> Result<(), GuardError>
 {
     let stored = |error: std::io::Error| GuardError::Input {
@@ -419,7 +526,7 @@ fn measure(
     let partial = report.with_extension("json.partial");
     let status = Command::new("cargo")
         .args(arguments)
-        .env("HOTPATH_ALLOC_METRIC", "count")
+        .env("HOTPATH_ALLOC_METRIC", metric.variable())
         .env("HOTPATH_OUTPUT_FORMAT", "json")
         .env("HOTPATH_OUTPUT_PATH", &partial)
         .status()

@@ -1,15 +1,16 @@
-# hotpath Cloud's budgets for the allocation of the `gandr` series in bytes
+# The budgets of the allocation of the `gandr` series in bytes
 # (crates/surface-driver/benches/hotpath.rs,
-# https://hotpath.rs/performance_budgets). `mise run ci:hotpath` runs the
-# series with `HOTPATH_ALLOC_METRIC=bytes` and uploads the report as
-# `gandr-bytes`. A function budget takes its `alloc` only in bytes, and the
-# `gandr` report counts allocations (hotpath/gandr-policy.toml). Thus the
-# budgets need a report of their own.
+# https://hotpath.rs/performance_budgets). A function budget takes its
+# `alloc` only in bytes, and the `gandr` report counts allocations
+# (hotpath/gandr-policy.toml). Thus the budgets need a run of their own.
 #
-# Cloud checks each budget on each report, with no base. This policy judges
-# no comparison against the base: the `gandr` report judges the counts. A
-# broken budget fails the `hotpath / gandr-bytes` check, which is never a
-# required check.
+# The gate `hotpath-gate` of each landing runs the series with
+# `HOTPATH_ALLOC_METRIC=bytes` and judges each budget on that run alone, with
+# no base (crates/workflow-hotpath-guard/src/judge/budget.rs). A broken budget
+# fails `gandr-bytes`, and a commit accepts it with the trailer
+# `Changes-hotpath: gandr-bytes`. `mise run ci:hotpath` uploads such a run as
+# `gandr-bytes` too, and hotpath Cloud checks the same budgets, in the
+# `hotpath / gandr-bytes` check, which is never a required check.
 
 pr_check = "fail"
 pr_comment = "on_change"
