@@ -65,6 +65,7 @@ Each crate above has one place in the frame.
 | `theory-graded-posets` | the cell family's present: a finite poset with its cells as data, and its lattice of subcomplexes |
 | `theory-ordered-algebras` | the algebra family's measure: ordered semirings and their law checks |
 | `theory-probability` | the algebra family's measure: finite distributions with exact weights, and independence as the separation of supports |
+| `theory-reductions` | collapse: the reduction a collapse, a cover or a block of rules states, its sequence and its sum, and their replay |
 | `theory-shapes` | present: finite shapes and their face formulas |
 | `theory-sites` | present: the site of shapes |
 | `theory-stone-duality` | the algebra family's present: a finite space by its lattice of observations |

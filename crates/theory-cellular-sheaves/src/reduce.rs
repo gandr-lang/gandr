@@ -33,14 +33,14 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_theory_discrete_morse as morse;
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Matching;
-use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::Place;
 use gandr_theory_discrete_morse::Standing;
 use gandr_theory_graded_posets::Rank;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::MorseError;
 use gandr_theory_stone_duality::Element;
 use gandr_theory_stone_duality::Membership;
 

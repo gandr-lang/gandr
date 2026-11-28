@@ -18,41 +18,16 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::Count;
+use gandr_theory_reductions::MorseError;
 
 use crate::complex::Complex;
 use crate::complex::Incidence;
 use crate::complex::Invertibility;
 use crate::complex::Standing;
-use crate::error::MorseError;
 use crate::gradient::Place;
 use crate::gradient::cycles;
-
-wrapper! {
-    /// The most redundant cells that the walk of a gradient reaches before
-    /// the check refuses.
-    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-    pub struct Budget(usize);
-}
-
-wrapper! {
-    /// A number of cells, of pairs or of edges.
-    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-    pub struct Count(usize);
-}
-
-impl Count
-{
-    /// The count one more than this, or this count at the largest count.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub(crate) const fn one_more(self) -> Self
-    {
-        Self(self.0.saturating_add(1))
-    }
-}
 
 /// The class of a cell under a matching.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -160,7 +135,7 @@ impl<Cell> Collapse<Cell>
     #[must_use]
     pub fn visited(&self) -> Count
     {
-        Count(self.pairs.len())
+        Count::from(self.pairs.len())
     }
 
     /// The pairs that the walk reaches: each redundant cell with its partner,

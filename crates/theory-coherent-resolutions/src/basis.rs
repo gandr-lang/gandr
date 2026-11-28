@@ -54,7 +54,6 @@ use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::SequentAlphabet;
-use gandr_theory_discrete_morse::Closure;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Composites;
 use gandr_theory_discrete_morse::Definition;
@@ -63,6 +62,7 @@ use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Invertibility;
 use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::Standing;
+use gandr_theory_reductions::Closure;
 use quenchant_shape::shape::Maybe;
 
 use self::engine::forward;

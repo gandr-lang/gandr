@@ -20,7 +20,7 @@
 //! peak and its join are the instance's.
 //!
 //! A family of families reduces in two steps. The
-//! [`Sum`](gandr_theory_discrete_morse::Sum) of the reductions of each family
+//! [`Sum`](gandr_theory_reductions::Sum) of the reductions of each family
 //! comes first. [`TemplateFold`] comes second: it folds the member templates'
 //! carriers into one template of templates, and it collapses a member's row
 //! onto that row together with its template's row there. The fold of
@@ -47,14 +47,14 @@ use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_coherent_resolutions::Tracelet;
-use gandr_theory_discrete_morse::Answer;
-use gandr_theory_discrete_morse::Closure;
-use gandr_theory_discrete_morse::MorseError;
-use gandr_theory_discrete_morse::PartIndex;
-use gandr_theory_discrete_morse::Reduction;
-use gandr_theory_discrete_morse::Refusal;
-use gandr_theory_discrete_morse::SumFault;
-use gandr_theory_discrete_morse::Summand;
+use gandr_theory_reductions::Answer;
+use gandr_theory_reductions::Closure;
+use gandr_theory_reductions::MorseError;
+use gandr_theory_reductions::PartIndex;
+use gandr_theory_reductions::Reduction;
+use gandr_theory_reductions::Refusal;
+use gandr_theory_reductions::SumFault;
+use gandr_theory_reductions::Summand;
 
 use crate::boundary::MemberIndex;
 use crate::boundary::NodeCount;
@@ -587,7 +587,7 @@ where
 /// [`Reduction`] from the rows of each family's members onto those rows with
 /// their templates' rows in the template of templates.
 ///
-/// Its cells are the cells of the [`Sum`](gandr_theory_discrete_morse::Sum)
+/// Its cells are the cells of the [`Sum`](gandr_theory_reductions::Sum)
 /// of the families' template reductions, so the two compose through
 /// [`Reduction::then`]. The sum collapses each member onto its row, and the
 /// fold of templates adds the row of the member's template.

@@ -35,6 +35,7 @@ path = "benches/sheaf.rs"
 anodized.workspace = true
 gandr-theory-discrete-morse.workspace = true
 gandr-theory-graded-posets.workspace = true
+gandr-theory-reductions.workspace = true
 gandr-theory-stone-duality.workspace = true
 
 # The measurement counts each operation's allocations. The projective line's

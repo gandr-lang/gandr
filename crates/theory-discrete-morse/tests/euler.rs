@@ -15,12 +15,12 @@
 //! cone and the Möbius count is one. The Morse count is the alternating count
 //! of the cells by rank, and it parts from one where a boundary is no sphere.
 
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::collapse;
 use gandr_theory_discrete_morse::greedy;
 use gandr_theory_graded_posets::GradedPoset;
+use gandr_theory_reductions::Budget;
 use gandr_theory_stone_duality::Element;
 use gandr_theory_stone_duality::ElementSet;
 

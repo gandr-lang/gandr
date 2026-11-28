@@ -5,8 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
-
-use crate::collapse::Count;
+use gandr_theory_reductions::Count;
 
 wrapper! {
     /// A node of a gradient graph: the place of a cell in the list that a

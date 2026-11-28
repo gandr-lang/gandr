@@ -195,7 +195,7 @@ mod reduction;
 mod shift;
 mod template;
 
-pub use gandr_theory_discrete_morse::Closure;
+pub use gandr_theory_reductions::Closure;
 
 pub use crate::boundary::AdmissionCount;
 pub use crate::boundary::CacheHitCount;

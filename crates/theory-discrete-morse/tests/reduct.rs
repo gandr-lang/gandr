@@ -11,12 +11,9 @@ use alloc::collections::BTreeMap;
 use core::convert::Infallible;
 use core::fmt::Debug;
 
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Complex;
-use gandr_theory_discrete_morse::Count;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Incidence;
-use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::Place;
 use gandr_theory_discrete_morse::Reduct;
 use gandr_theory_discrete_morse::Standing;
@@ -24,6 +21,9 @@ use gandr_theory_discrete_morse::collapse;
 use gandr_theory_discrete_morse::greedy;
 use gandr_theory_discrete_morse::reduct;
 use gandr_theory_graded_posets::Rank;
+use gandr_theory_reductions::Budget;
+use gandr_theory_reductions::Count;
+use gandr_theory_reductions::MorseError;
 
 use crate::simplices::A;
 use crate::simplices::AB;

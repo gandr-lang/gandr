@@ -20,10 +20,12 @@ path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. A graded poset is a complex, and finite Stone
-# duality names its cells and holds their sets as bit rows.
+# duality names its cells and holds their sets as bit rows. An equivalence
+# on its complex is a reduction of the reductions crate.
 [dependencies]
 anodized.workspace = true
 gandr-theory-graded-posets.workspace = true
+gandr-theory-reductions.workspace = true
 gandr-theory-stone-duality.workspace = true
 
 [lints]

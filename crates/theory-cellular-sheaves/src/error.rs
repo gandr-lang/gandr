@@ -2,8 +2,8 @@
 
 use core::fmt;
 
-use gandr_theory_discrete_morse::Budget;
 use gandr_theory_graded_posets::Rank;
+use gandr_theory_reductions::Budget;
 use gandr_theory_stone_duality::DualityError;
 use gandr_theory_stone_duality::Element;
 

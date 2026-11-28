@@ -22,11 +22,11 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 
-use crate::equivalence::Closure;
-use crate::equivalence::Refusal;
 use crate::error::MorseError;
 use crate::reduction::Answer;
 use crate::reduction::Reduction;
+use crate::refusal::Closure;
+use crate::refusal::Refusal;
 
 wrapper! {
     /// The place of a part in a sum, in part order.
@@ -186,11 +186,11 @@ impl<R: Reduction> Sum<R>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sum of two collapses of the triangle with other
-    ///   pairs, whose cells coincide part by part. The cell observer rejects a
-    ///   dropped part, two parts in the other order and a cell named with the
-    ///   other part.
-    /// - witness: `tests::equivalence::a_sum_reads_each_cell_in_its_own_part`
+    /// - hypothesis: L3 — a sum of the removals of `c` from `abc` and of `y`
+    ///   from `xy`, whose target cells keep their part. The cell observer
+    ///   rejects a dropped part, two parts in the other order and a cell named
+    ///   with the other part.
+    /// - witness: `tests::words::a_sum_reads_each_cell_in_its_own_part`
     #[spec(ensures: |output| output.source.iter().map(|cell| (cell.part, &cell.value))
             .eq(output.parts.iter().enumerate().flat_map(|(index, part)|
                 part.source().iter().map(move |cell| (PartIndex::from(index), cell))))
@@ -426,12 +426,12 @@ impl<R: Reduction> Reduction for Sum<R>
     /// - each [`Refusal`] of a part, with its part.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sum of two collapses of the triangle replays, and a
-    ///   sum of two composites whose second part reads other cells is refused
-    ///   at that part's cell. The part observer rejects a refusal named with
-    ///   the first part or with no part.
-    /// - witness: `tests::equivalence::a_sum_reads_each_cell_in_its_own_part`
-    /// - witness: `tests::equivalence::a_part_that_does_not_replay_is_refused_with_its_part`
+    /// - hypothesis: L3 — a sum of two removals replays, and a sum whose second
+    ///   part defines its letter by itself is refused at that part's letter.
+    ///   The part observer rejects a refusal named with the first part or with
+    ///   no part.
+    /// - witness: `tests::words::a_sum_reads_each_cell_in_its_own_part`
+    /// - witness: `tests::words::a_part_that_does_not_replay_is_refused_with_its_part`
     #[inline]
     fn replay(&mut self) -> Answer<Self, ()>
     {

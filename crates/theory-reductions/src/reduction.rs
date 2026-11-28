@@ -2,13 +2,13 @@
 //! witnesses of the two inverse laws, and their replay, with the composite
 //! of two reductions in sequence.
 //!
-//! A Morse collapse is one instance: an [`Equivalence`](crate::Equivalence)
-//! read on its complex. The composite of two reductions collapses by the
-//! first and then the second, and includes by the second and then the first.
-//! Its witness at a cell is the first reduction's witness, then the second
-//! reduction's witness at the collapsed cell, carried back by the first
-//! inclusion. So two successive collapses compose into one reduction that
-//! replays as one.
+//! A Morse collapse is one instance: the `Bound` equivalence of
+//! `gandr-theory-discrete-morse`, read on its complex. The composite of two
+//! reductions collapses by the first and then the second, and includes by the
+//! second and then the first. Its witness at a cell is the first reduction's
+//! witness, then the second reduction's witness at the collapsed cell,
+//! carried back by the first inclusion. So two successive collapses compose
+//! into one reduction that replays as one.
 //!
 //! Each removal of an equivalence, matched alone, is one Tietze move. Its
 //! collapse is the backward move, which removes a cell that its partner
@@ -56,9 +56,9 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use crate::equivalence::Closure;
-use crate::equivalence::Refusal;
-use crate::equivalence::matched;
+use crate::refusal::Closure;
+use crate::refusal::Refusal;
+use crate::refusal::matched;
 
 /// What a step of the reduction `R` gives: its value, or a refusal at a cell
 /// of `R`, with the fault of `R`'s complex.
@@ -110,9 +110,9 @@ pub trait Reduction
     /// - [`Refusal::Morse`]: the complex cannot read the cell.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the composed collapse of the triangle reads each cell
-    ///   of the triangle.
-    /// - witness: `tests::equivalence::two_collapses_compose_in_sequence`
+    /// - hypothesis: L3 — the composed removals of `abc` read each letter of
+    ///   `abc`.
+    /// - witness: `tests::words::two_removals_compose_in_sequence`
     fn generator(
         &mut self,
         cell: &Self::Cell,
@@ -131,9 +131,9 @@ pub trait Reduction
     /// - [`Refusal::Morse`]: the complex cannot collapse the composite.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the composed collapse of the triangle sends `b` and
-    ///   `c` to `a`, and the edge `r` to the loop at `a`.
-    /// - witness: `tests::equivalence::two_collapses_compose_in_sequence`
+    /// - hypothesis: L3 — the composed removals send `cb` to `aaa`: the first
+    ///   collapse, then the second.
+    /// - witness: `tests::words::two_removals_compose_in_sequence`
     fn collapse(
         &mut self,
         composite: &Self::Composite,
@@ -152,9 +152,9 @@ pub trait Reduction
     /// - [`Refusal::Morse`]: the complex cannot include the composite.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the composed inclusion of the loop is the whole
-    ///   boundary of the triangle.
-    /// - witness: `tests::equivalence::two_collapses_compose_in_sequence`
+    /// - hypothesis: L3 — the composed replay includes each word of the target
+    ///   back into the source.
+    /// - witness: `tests::words::two_removals_compose_in_sequence`
     fn include(
         &mut self,
         composite: &Self::Composite,
@@ -175,9 +175,8 @@ pub trait Reduction
     /// - [`Refusal::Morse`]: the complex cannot whisker the witnesses.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the composed witness of `c` runs from `c` to `a` in
-    ///   the triangle.
-    /// - witness: `tests::equivalence::two_collapses_compose_in_sequence`
+    /// - hypothesis: L3 — the composed step of `c` runs from `c` to `aa`.
+    /// - witness: `tests::words::two_removals_compose_in_sequence`
     fn section(
         &mut self,
         composite: &Self::Composite,
@@ -198,9 +197,9 @@ pub trait Reduction
     /// - [`Refusal::Morse`]: the complex cannot build the witness.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a Morse collapse fixes each target cell, so the
-    ///   composed collapse of the triangle gives each target cell back.
-    /// - witness: `tests::equivalence::two_collapses_compose_in_sequence`
+    /// - hypothesis: L3 — a removal fixes each word of its target, so the
+    ///   composed removals give the target letter back.
+    /// - witness: `tests::words::two_removals_compose_in_sequence`
     fn retraction(
         &mut self,
         composite: &Self::Composite,
@@ -272,10 +271,10 @@ pub trait Reduction
     /// - each [`Refusal`]: the check that fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the composed collapse of the triangle replays, and a
-    ///   composite whose second reduction reads other cells is refused.
-    /// - witness: `tests::equivalence::two_collapses_compose_in_sequence`
-    /// - witness: `tests::equivalence::a_composite_over_other_cells_is_unmatched`
+    /// - hypothesis: L3 — the composed removals replay, and a composite whose
+    ///   second reduction reads other cells is refused.
+    /// - witness: `tests::words::two_removals_compose_in_sequence`
+    /// - witness: `tests::words::a_composite_over_other_cells_is_unmatched`
     fn replay(&mut self) -> Answer<Self, ()>;
 
     /// This reduction and then `next`, which reduces this one's target.
@@ -602,10 +601,10 @@ where
     /// - [`Refusal::Forged`]: a section does not close.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the composed collapse of the triangle replays, and a
-    ///   second reduction over other cells is refused at the seam.
-    /// - witness: `tests::equivalence::two_collapses_compose_in_sequence`
-    /// - witness: `tests::equivalence::a_composite_over_other_cells_is_unmatched`
+    /// - hypothesis: L3 — the composed removals replay, and a second removal
+    ///   over other letters is refused at the seam.
+    /// - witness: `tests::words::two_removals_compose_in_sequence`
+    /// - witness: `tests::words::a_composite_over_other_cells_is_unmatched`
     #[inline]
     fn replay(&mut self) -> Answer<Self, ()>
     {

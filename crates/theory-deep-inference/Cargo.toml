@@ -26,6 +26,7 @@ foldhash.workspace = true
 gandr-theory-cell-complexes.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
 gandr-theory-discrete-morse.workspace = true
+gandr-theory-reductions.workspace = true
 hashbrown.workspace = true
 quenchant-shape.workspace = true
 
