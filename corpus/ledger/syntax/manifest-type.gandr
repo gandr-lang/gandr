@@ -1,8 +1,16 @@
-@![features(("data-parameters", "explicit-exits", "let-statements", "signature-models", "signatures-as-values", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "let-statements",
+  "signature-models",
+  "signatures-as-values",
+  "type-codes",
+  "universes"
+))]
 
 /// `manifest_type`: a model type with its sorts fixed, one `with` per sort.
 theory Pair where
-  sort A : Type;
-  sort B : Type;
+  sort A : Type
+  sort B : Type
 def pairsOn(x : Type) -> Type =
   return type(Model Pair with sort A = x with sort B = Unit + Unit)

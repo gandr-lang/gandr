@@ -4,5 +4,5 @@
 /// kind it states.
 module Above :> *{type T : Type} where {
   @[refuses("RepresentationAboveKind")]
-  type T = Type;
+  type T = Type
 }

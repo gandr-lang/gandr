@@ -5,4 +5,4 @@
 theory Past where
   boundary Square {a, b, c, d};
   face far = {b, e};
-  sort Cell : Type;
+  sort Cell : Type

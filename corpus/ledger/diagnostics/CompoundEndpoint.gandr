@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "thunks-and-force",
+  "universes"
+))]
 
 /// `CompoundEndpoint`: a compound endpoint whose computation returns
 /// no pure value.

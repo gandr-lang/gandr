@@ -34,7 +34,6 @@
 
 /// ζ: `let` binds a term over its body, and its rule substitutes the bound
 /// term into the body.
-@[checks]
 theory Let where
   sort Tm : Type+
   oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm
@@ -42,7 +41,6 @@ theory Let where
 
 /// A body binding two terms is instantiated at two arguments, outermost
 /// binder first.
-@[checks]
 theory LetPair where
   sort Tm : Type+
   oper let2 : (u : Tm, v : Tm, t : (x : Tm) -> (y : Tm) -> Tm) --> Tm
@@ -50,7 +48,6 @@ theory LetPair where
 
 /// ζ beside first-order rules whose pair parts: completion joins `f`'s two
 /// rules as it would without ζ, which overlaps neither.
-@[checks]
 theory LetBeside where
   sort Tm : Type+
   oper zero : Tm

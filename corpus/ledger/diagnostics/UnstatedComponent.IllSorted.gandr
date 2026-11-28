@@ -5,11 +5,11 @@
 ///
 /// The theory the model derives from.
 theory T where
-  sort Nat : Type;
-  sort Bit : Type;
-  oper zero : Nat;
-  oper low : (n : Nat) --> Bit;
-  rule crossed : low zero ==> zero;
+  sort Nat : Type
+  sort Bit : Type
+  oper zero : Nat
+  oper low : (n : Nat) --> Bit
+  rule crossed : low zero ==> zero
 
 @[refuses("UnstatedComponent.IllSorted")]
 def model : Model T;

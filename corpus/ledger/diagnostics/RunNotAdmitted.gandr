@@ -1,9 +1,20 @@
-@![features(("data-parameters", "dependent-functions", "directed-paths", "imports", "lazy-records", "let-statements", "modules", "products-and-sums", "run-prefixes", "session-types"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "directed-paths",
+  "imports",
+  "lazy-records",
+  "let-statements",
+  "modules",
+  "products-and-sums",
+  "run-prefixes",
+  "session-types"
+))]
 
 /// `RunNotAdmitted`: a recorded run the protocol does not admit.
 
 // The native session formers.
-import std.session (Run);
+import std.session (Run)
 
 /// The seat's protocol and one that no longer offers `retire`, related by
 /// simulation.
@@ -14,7 +25,7 @@ module Evolution where {
   };
   type Kept = String >? rec turn => +{report : String >! &{next : turn}, handoff : String >! end};
   @[checks]
-  def keep : Flow[.A = Type](SeatEnd, Kept) = Flow.sim SeatEnd Kept;
+  def keep : Flow[.A = Type](SeatEnd, Kept) = Flow.sim SeatEnd Kept
 }
 
 def served : Run Evolution.SeatEnd = recorded
@@ -22,7 +33,7 @@ def served : Run Evolution.SeatEnd = recorded
   (selected report)
   (sent "progress")
   (offered retire)
-  closed;
+  closed
 
 @[refuses("RunNotAdmitted")]
 def retired() -> Run Evolution.Kept = Flow.ride (fun (X) { Run X }) Evolution.keep served;

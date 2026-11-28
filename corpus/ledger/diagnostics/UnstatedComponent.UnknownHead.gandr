@@ -7,9 +7,9 @@
 /// The theory the model derives from.
 @[refuses("IllFormedDescription")]
 theory T where
-  sort Nat : Type;
-  oper zero : Nat;
-  rule stray : succ zero ==> zero;
+  sort Nat : Type
+  oper zero : Nat
+  rule stray : succ zero ==> zero
 
 @[refuses("UnstatedComponent.UnknownHead")]
 def model : Model T;

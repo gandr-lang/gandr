@@ -1,11 +1,17 @@
-@![features(("call-by-push-value", "let-statements", "located-judgements", "modules", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "temporary-access"
+))]
 
 /// `hold_expression`: reading a held cell.
-world seat;
+world seat
 module Seat :> *{mobile type Report, progress : Report} where {
-  type Report = String;
+  type Report = String
   @[checks]
-  def progress = "progress";
+  def progress = "progress"
 }
 @[entry(seat)]
 def progress() -> -F (Seat.Report at seat) =

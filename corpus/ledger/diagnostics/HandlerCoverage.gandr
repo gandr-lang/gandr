@@ -3,7 +3,7 @@
 /// `HandlerCoverage`: handler clauses do not cover their interface exactly.
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// A handler of early exit with no clause for `exit`.
 @[refuses("HandlerCoverage")]

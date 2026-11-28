@@ -1,4 +1,11 @@
-@![features(("data-parameters", "identity-types", "lazy-records", "modules", "products-and-sums", "session-types"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "lazy-records",
+  "modules",
+  "products-and-sums",
+  "session-types"
+))]
 
 /// `SessionNotEquivalent`: a `Path.bisim` relating two protocols that
 /// are not bisimilar.
@@ -13,5 +20,5 @@ module Evolution where {
     pause : String >! turn
   };
   @[refuses("SessionNotEquivalent")]
-  def same : Path[.A = Type] SeatEnd SeatEnd′ = Path.bisim SeatEnd SeatEnd′;
+  def same : Path[.A = Type] SeatEnd SeatEnd′ = Path.bisim SeatEnd SeatEnd′
 }

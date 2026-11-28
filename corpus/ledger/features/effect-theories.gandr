@@ -1,4 +1,16 @@
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "let-statements", "modules", "named-instances", "native-primitives", "second-order-rules", "signature-models", "signatures-as-values", "universes"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "native-primitives",
+  "second-order-rules",
+  "signature-models",
+  "signatures-as-values",
+  "universes"
+))]
 
 /// `effect-theories`: effects as theories with laws, handled by capability
 /// scopes and named in rows.
@@ -32,68 +44,68 @@
 /// The operations alone, reading and storing a state of sort `S`, with no law.
 theory State.Eff where
   /// The sort of the stored state, a value type.
-  sort S : Type+;
+  sort S : Type+
   /// The carrier, the type each operation answers in.
-  sort C : Type;
+  sort C : Type
   /// Reading passes the current state to what runs after.
-  oper get : (k : (s : S) -> C) --> C;
+  oper get : (k : (s : S) -> C) --> C
   /// Storing replaces the state before what runs after.
-  oper put : (s : S, k : C) --> C;
+  oper put : (s : S, k : C) --> C
 
 /// State with the put-get law alone.
 theory StatePutGet where
   /// The sort of the stored state, a value type.
-  sort S : Type+;
+  sort S : Type+
   /// The carrier, the type each operation answers in.
-  sort C : Type;
+  sort C : Type
   /// Reading passes the current state to what runs after.
-  oper get : (k : (s : S) -> C) --> C;
+  oper get : (k : (s : S) -> C) --> C
   /// Storing replaces the state before what runs after.
-  oper put : (s : S, k : C) --> C;
+  oper put : (s : S, k : C) --> C
   /// Storing then reading continues at the stored value, a branch selection
   /// because no operation returns `S`.
-  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
 
 /// State with the put-put law alone.
 theory StatePutPut where
   /// The sort of the stored state, a value type.
-  sort S : Type+;
+  sort S : Type+
   /// The carrier, the type each operation answers in.
-  sort C : Type;
+  sort C : Type
   /// Reading passes the current state to what runs after.
-  oper get : (k : (s : S) -> C) --> C;
+  oper get : (k : (s : S) -> C) --> C
   /// Storing replaces the state before what runs after.
-  oper put : (s : S, k : C) --> C;
+  oper put : (s : S, k : C) --> C
   /// Storing twice keeps the second value.
-  rule putPut : put s (put u k) <=> put u k;
+  rule putPut : put s (put u k) <=> put u k
 
 /// State with put-get and put-put, whose overlap joins because both reducts
 /// store the second value and continue at it.
 theory StatePutLaws where
   /// The sort of the stored state, a value type.
-  sort S : Type+;
+  sort S : Type+
   /// The carrier, the type each operation answers in.
-  sort C : Type;
+  sort C : Type
   /// Reading passes the current state to what runs after.
-  oper get : (k : (s : S) -> C) --> C;
+  oper get : (k : (s : S) -> C) --> C
   /// Storing replaces the state before what runs after.
-  oper put : (s : S, k : C) --> C;
+  oper put : (s : S, k : C) --> C
   /// Storing then reading continues at the stored value.
-  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s)
   /// Storing twice keeps the second value.
-  rule putPut : put s (put u k) <=> put u k;
+  rule putPut : put s (put u k) <=> put u k
 
 /// State with the get-get law, which overlaps itself through its
 /// pattern and joins.
 theory StateGetGet where
   /// The sort of the stored state, a value type.
-  sort S : Type+;
+  sort S : Type+
   /// The carrier, the type each operation answers in.
-  sort C : Type;
+  sort C : Type
   /// Reading passes the current state to what runs after.
-  oper get : (k : (s : S) -> C) --> C;
+  oper get : (k : (s : S) -> C) --> C
   /// Reading twice reads once and continues at that state for both reads.
-  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s))
 
 /// A scope over get-get reads once, because its subject normalises to one read
 /// before it runs.

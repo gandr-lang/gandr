@@ -8,8 +8,8 @@
 @[refuses("UndescribedMember.SpiderBudget")]
 theory Fan where
   @[frobenius]
-  sort Q : Type;
-  oper f : (a : Q) --> (b : Q);
+  sort Q : Type
+  oper f : (a : Q) --> (b : Q)
 
   rule fan : (data x : Q) <=> (
     o1 : Q,

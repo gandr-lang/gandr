@@ -1,10 +1,18 @@
-@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "records", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "let-statements",
+  "located-judgements",
+  "records",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 /// `NotOpen.Homed`: a handle crossing to another world over a thunk that calls
 /// a declaration homed where it is formed.
-world operator;
+world operator
 
-world seat;
+world seat
 
 /// The seat's own work, homed at the seat.
 @[entry(seat)]

@@ -4,8 +4,8 @@
 /// under the theory outside its block and proved for every model; here an
 /// involution applied four times.
 theory Involution where
-  sort G : Type;
-  oper inv : (x : G) --> G;
-  rule invInv : inv (inv x) <=> x;
+  sort G : Type
+  oper inv : (x : G) --> G
+  rule invInv : inv (inv x) <=> x
 
 rule Involution.four : inv (inv (inv (inv x))) <=> x;

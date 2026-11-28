@@ -4,7 +4,7 @@
 /// member naming it.
 module Bad where {
   @[refuses("ForwardMemberReference")]
-  def first = second + 1;
+  def first = second + 1
   @[runs("2")]
-  def second = 2;
+  def second = 2
 }

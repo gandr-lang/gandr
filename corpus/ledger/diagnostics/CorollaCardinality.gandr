@@ -1,15 +1,22 @@
-@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+@![features((
+  "let-statements",
+  "pattern-matching",
+  "products-and-sums",
+  "records",
+  "signatures-as-values",
+  "universes"
+))]
 
 /// `CorollaCardinality`: two species with different numbers of elements
 /// at a corolla.
 theory Rig where
-  sort R : Type;
-  oper plus : (x : R, y : R) --> (z : R);
-  oper times : (x : R, y : R) --> (z : R);
+  sort R : Type
+  oper plus : (x : R, y : R) --> (z : R)
+  oper times : (x : R, y : R) --> (z : R)
 
 theory Semi where
-  sort S : Type;
-  oper mul : (x : S, y : S) --> (z : S);
+  sort S : Type
+  oper mul : (x : S, y : S) --> (z : S)
 
 def widen(b : Bool) -> Unit + Unit + Unit + Unit =
   match b where

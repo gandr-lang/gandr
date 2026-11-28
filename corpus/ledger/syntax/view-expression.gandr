@@ -1,15 +1,26 @@
-@![features(("call-by-push-value", "data-parameters", "deduced-receivers", "imports", "let-statements", "modules", "native-lists", "places", "sized-types", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "deduced-receivers",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-lists",
+  "places",
+  "sized-types",
+  "temporary-access"
+))]
 
 /// `view_expression`: a call's place lent to a block, at the mode it asks.
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// Two integers in a list.
-def pair : List Integer = cons 1 (cons 2 nil);
+def pair : List Integer = cons 1 (cons 2 nil)
 module Places where {
   @[checks]
-  def first[m : Mode](self : View[m] (List Integer)) -> View[m] Integer = self.#[0];
+  def first[m : Mode](self : View[m] (List Integer)) -> View[m] Integer = self.#[0]
 }
 def raised() -> List Integer =
   var xs = pair

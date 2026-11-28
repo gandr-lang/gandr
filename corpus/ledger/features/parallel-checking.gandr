@@ -1,4 +1,13 @@
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-lists", "products-and-sums", "records", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "native-lists",
+  "products-and-sums",
+  "records",
+  "universes"
+))]
 
 /// `parallel-checking`: the checker runs the checks of a readmission on its
 /// pool. It forks the obligations of a long drain and the goals of a frame.
@@ -36,10 +45,10 @@
 /// - owes: #7020 — the collision edges of the schedule
 
 // `cylinderComposite2`.
-import std.math.cylinder (cylinderComposite2);
+import std.math.cylinder (cylinderComposite2)
 
 // `List`.
-import std.list (List);
+import std.list (List)
 
 /// Two squares of paths side by side, at identity verticals. The check of
 /// this source readmits `std.math.cylinder`. On more than one thread, its

@@ -2,9 +2,9 @@
 
 /// `u_type`: a thunk type at the unrestricted grade, written with its glyph
 /// and in ASCII.
-@[checks]
+@[checks, form(explicit)]
 def later(k : +U[ω] (-F Integer)) -> -F Unit =
   pure *{}
-@[checks]
+@[checks, form(explicit)]
 def laterAscii(k : +U[inf] (-F Integer)) -> -F Unit =
   pure *{}

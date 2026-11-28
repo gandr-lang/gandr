@@ -1,4 +1,10 @@
-@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "products-and-sums"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "pattern-matching",
+  "products-and-sums"
+))]
 
 /// `RoundTripDistinct`: a universe equivalence whose round trip does not
 /// return its input.

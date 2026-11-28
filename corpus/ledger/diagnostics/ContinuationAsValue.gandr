@@ -1,10 +1,19 @@
-@![features(("call-by-push-value", "data-parameters", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 /// `ContinuationAsValue`: a continuation holding an obligation read as a value,
 /// other than as what a resumption or an abandonment ends.
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// A task's join protocol and the path it reads.
 module Cancel :> *{
@@ -13,7 +22,7 @@ module Cancel :> *{
 } where {
   /// The path a task reads.
   @[checks]
-  def notes = "notes";
+  def notes = "notes"
 }
 
 def resume_stack(j : Stack (-F Unit) (-F Unit)) -> Unit =

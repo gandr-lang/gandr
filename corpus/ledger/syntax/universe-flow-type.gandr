@@ -1,14 +1,21 @@
-@![features(("directed-paths", "let-statements", "modules", "pattern-matching", "products-and-sums", "records"))]
+@![features((
+  "directed-paths",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "products-and-sums",
+  "records"
+))]
 
 /// `universe_flow_type`: a flow between universe codes, written with its glyph
 /// and in ASCII.
 module Schema where {
-  type Old = String * Integer;
-  type New = Integer * String;
+  type Old = String * Integer
+  type New = Integer * String
   @[checks]
   def toNew(old : Old) -> New =
     match old where
       | *{name, age} => *{age, name}
 }
-def shift : Schema.Old ⇝ Schema.New = Flow.into Schema.toNew;
+def shift : Schema.Old ⇝ Schema.New = Flow.into Schema.toNew
 def shiftAscii : Schema.Old ~~> Schema.New = Flow.into Schema.toNew;

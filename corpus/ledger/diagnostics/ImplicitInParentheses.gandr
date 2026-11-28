@@ -4,7 +4,7 @@
 /// among its parentheses.
 ///
 /// The identity at a type supplied by name.
-def same[a : Type](x : a) -> a = x;
+def same[a : Type](x : a) -> a = x
 
 @[refuses("ImplicitInParentheses")]
 def inParentheses() -> Integer = same Integer 3;

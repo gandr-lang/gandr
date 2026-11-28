@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "modules", "records", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "records",
+  "thunks-and-force"
+))]
 
 /// `NotOpen.Capture`: a thunk crossing to another world over a handle whose
 /// held value is not open.
@@ -6,15 +14,15 @@ module Seat :> *{
   type Dispatch,
   task : Dispatch
 } where {
-  type Dispatch = String;
+  type Dispatch = String
   /// The dispatch a seat receives.
   @[checks]
-  def task = "task";
+  def task = "task"
 }
 
-world operator;
+world operator
 
-world seat;
+world seat
 
 @[refuses("NotOpen.Capture")]
 @[entry(*{operator, seat})]

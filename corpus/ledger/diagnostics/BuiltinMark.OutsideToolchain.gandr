@@ -5,4 +5,4 @@
 /// table.
 @[refuses("BuiltinMark.OutsideToolchain")]
 @[builtin("string.append")]
-def append : (a : String, b : String) -> String;
+def append : (String, String) -> String;

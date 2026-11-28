@@ -7,7 +7,7 @@ module Seat :> *{
   progress : Report
 } where {
   @[refuses("MarkUnfounded")]
-  type Report = Integer -> Integer;
+  type Report = Integer -> Integer
   @[refuses("NotAnAbstractType")]
   def progress = thunk { fun (x) { x } };
 }

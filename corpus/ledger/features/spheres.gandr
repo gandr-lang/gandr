@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "identity-types", "imports", "let-statements", "native-lists", "pattern-matching", "records", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "native-lists",
+  "pattern-matching",
+  "records",
+  "universes"
+))]
 
 /// `spheres`: The 2-sphere and the 3-sphere as presentations.
 /// Implemented: a data declaration declares a cell at the reflexivity of a
@@ -20,20 +31,20 @@
 ///
 /// - owes: #6773
 // The spheres, their cells at their path types, and the cancellations.
-import "../../model/identity/sphere.gandr";
+import "../../model/identity/sphere.gandr"
 // A sort with a loop and a 2-cell, and its maps out of the 2-sphere.
-import "../../model/identity/sphere-whiskers.gandr";
+import "../../model/identity/sphere-whiskers.gandr"
 // The circle, `selfloop` and `ua`.
-import "../../model/identity/circle-base.gandr";
-import "../../model/identity/univalence.gandr";
+import "../../model/identity/circle-base.gandr"
+import "../../model/identity/univalence.gandr"
 // The identity of the 3-sphere by cases, and the winding at its 3-cell.
-import "../../model/identity/sphere-maps.gandr";
-import "../../model/identity/degree.gandr";
+import "../../model/identity/sphere-maps.gandr"
+import "../../model/identity/degree.gandr"
 
 /// The 2-cell and its inverse reduce to the empty word, by conversion.
 def surfUnwound : Path[.A = Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here
   Base2)] (back surf ∷ surf ∷ Path.here (Path.here Base2)) (Path.here (Path.here Base2)) = Path.here
-  (Path.here (Path.here Base2));
+  (Path.here (Path.here Base2))
 
 /// The identity by cases takes an arm at the 2-cell.
 def surfKept(x : S2) -> S2 =
@@ -43,7 +54,7 @@ def surfKept(x : S2) -> S2 =
 
 /// `Path.ap` of the case on the 2-cell reduces to its arm, by conversion.
 def surfMapped : Path[.A = Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here
-  Base2)] (Path.ap surfKept surf) surf = Path.here surf;
+  Base2)] (Path.ap surfKept surf) surf = Path.here surf
 
 /// A loop at the point moves to itself past two empty images of the 2-cell.
 def loopKept(x : S2) -> Path[.A = LoopCell] (toPt x) (toPt x) =
@@ -66,10 +77,10 @@ def walkAlong(
 /// The transport of `Base` along the 2-cell in the Hopf family is the loop.
 def hopfWalked : Path[.A = Path[.A = Circle] Base Base] (walkAlong
   Base
-  (Path.ap hopfFamily surf)) loop = Path.here loop;
+  (Path.ap hopfFamily surf)) loop = Path.here loop
 
 /// The degree of the identity of the 3-sphere is one, by conversion.
-def degreeOne : Path[.A = Int] (wind3 (Path.ap sphereId3 surf3)) (S Z) = Path.here (S Z);
+def degreeOne : Path[.A = Int] (wind3 (Path.ap sphereId3 surf3)) (S Z) = Path.here (S Z)
 
 /// The degree of the identity, pointed by reflexivity, is one, by conversion.
 def degreePointed : Path[.A = Int] (xi *{sphereId3, Path.here Base3}) (S Z) = Path.here (S Z);

@@ -4,5 +4,5 @@
 /// glyph `<->`, reserved for reversible maps.
 @[refuses("UndescribedMember.Reversible")]
 theory Reserved where
-  sort Bit : Type;
-  oper negate : (b : Bit) <-> (c : Bit);
+  sort Bit : Type
+  oper negate : (b : Bit) <-> (c : Bit)

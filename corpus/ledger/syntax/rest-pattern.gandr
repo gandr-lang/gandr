@@ -1,10 +1,18 @@
-@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "pattern-matching", "typed-holes"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "list-case",
+  "native-lists",
+  "pattern-matching",
+  "typed-holes"
+))]
 
 /// `rest_pattern`: a rest pattern, matching the remainder of a list; here a
 /// hole, which leaves the arm that runs undecided.
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// A list's first element, its rest a hole.
 @[refuses("UndecidedCoverage")]

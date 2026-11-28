@@ -4,7 +4,7 @@
 /// its implicits unsupplied.
 ///
 /// The identity at a type supplied by name.
-def same[a : Type](x : a) -> a = x;
+def same[a : Type](x : a) -> a = x
 
 @[refuses("ImplicitUnsupplied")]
 def unsupplied : Integer -> Integer = same;

@@ -1,4 +1,11 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "universes"
+))]
 
 /// `math-path`: `std.math.path` states composition and a function's action with
 /// endpoints, and proves composition's groupoid laws.
@@ -17,7 +24,7 @@
 /// - see: #3786 — a family that `Path.walk` takes by name, which `apd` writes as a lambda until then
 
 // `join`, `ap`, `apd`, `apComp`, `assoc`, `leftUnit`, `natural`, `rightUnit`.
-import std.math.path (join, ap, apd, apComp, assoc, leftUnit, natural, rightUnit);
+import std.math.path (join, ap, apd, apComp, assoc, leftUnit, natural, rightUnit)
 
 /// The left unitor at a reflexivity is the reflexivity of that reflexivity.
 def leftUnitAtHere(A : Type, x : A) -> Path[

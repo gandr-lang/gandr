@@ -1,4 +1,14 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "modules", "native-primitives", "signatures-as-values", "thunks-and-force", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "signatures-as-values",
+  "thunks-and-force",
+  "universes"
+))]
 
 /// `theory-include`: Theory inclusion.
 /// Implemented: a theory including another with the morphism kept, imported
@@ -19,35 +29,35 @@
 
 /// A semigroup: one carrier and an associative multiplication.
 theory Semigroup where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> M;
-  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+  sort M : Type
+  oper mul : (x : M, y : M) --> M
+  rule assoc : mul (mul x y) z ==> mul x (mul y z)
 
 /// A monoid: the semigroup with a two-sided unit. Its rules are the
 /// semigroup's associativity, then the unit laws, and they join.
 theory Monoid where
-  include Semigroup;
-  oper one : M;
-  rule unitL : mul one x ==> x;
-  rule unitR : mul x one ==> x;
+  include Semigroup
+  oper one : M
+  rule unitL : mul one x ==> x
+  rule unitR : mul x one ==> x
 
 /// The semigroup with a zero that absorbs on the left.
 theory LeftZero where
-  include Semigroup;
-  oper zero : M;
-  rule absorb : mul zero x ==> zero;
+  include Semigroup
+  oper zero : M
+  rule absorb : mul zero x ==> zero
 
 /// Both extensions at once: one carrier, one multiplication, its unit and
 /// its zero.
 theory UnitAndZero where
-  include Monoid;
-  include LeftZero;
+  include Monoid
+  include LeftZero
 
 /// The functions on the integers under composition: every law holds by
 /// conversion, and the members it gives for the included semigroup are its
 /// multiplication and associativity.
 module Endo : Model(Monoid) where {
-  type M = Integer -> Integer;
+  type M = Integer -> Integer
 
   /// `f` then `g`, applied.
   def andThen(
@@ -58,7 +68,7 @@ module Endo : Model(Monoid) where {
     g (f x)
 
   /// The identity function.
-  def ident(x : Integer) -> Integer = x;
+  def ident(x : Integer) -> Integer = x
 
   def mul(
     f : Integer -> Integer,
@@ -66,7 +76,7 @@ module Endo : Model(Monoid) where {
   ) -> Integer -> Integer =
     thunk { andThen f g }
 
-  def one : Integer -> Integer = ident;
+  def one : Integer -> Integer = ident
 
   /// Associativity, the included law.
   @[checks]

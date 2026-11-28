@@ -1,4 +1,14 @@
-@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "let-statements", "records", "universes", "wildcards"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "equivalence-record",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "records",
+  "universes",
+  "wildcards"
+))]
 
 /// `univalence-axiom`: Univalence on a record's laws (ua).
 /// Implemented: `ua(e)` making a bi-invertible record a path between any two
@@ -27,9 +37,9 @@
 // inverses to be determined by its map.
 
 // The circle, the presented integers, the winding number and spinning.
-import "../../model/identity/circle-base.gandr";
+import "../../model/identity/circle-base.gandr"
 // The equivalence of the loops at the point with the integers, `winding`.
-import "../../model/identity/circle.gandr";
+import "../../model/identity/circle.gandr"
 
 /// Transport forward along a path between types, the map `idtoequiv` packages.
 def fwdAlong(a : Type, b : Type, p : Path[.A = Type] a b, x : a) -> b =
@@ -118,12 +128,12 @@ def uaLiteral(
 
 /// The loops at the point are the integers, as types: `winding`'s laws admit
 /// the path between a path type and a presented type.
-def loopsAreIntegers : Path[.A = Type] (Path[.A = Circle] Base Base) Int = ua winding;
+def loopsAreIntegers : Path[.A = Type] (Path[.A = Circle] Base Base) Int = ua winding
 
 /// The same path ascribed a type whose right end is left as a wildcard:
 /// `ua(winding)` forces that end to the integers, so the elaborator reads the
 /// equivalence's codomain off the path it makes.
-def loopsAreTheirWinding : Path[.A = Type] (Path[.A = Circle] Base Base) Int = (ua winding : Path[.A = Type] (Path[.A = Circle] Base Base) _);
+def loopsAreTheirWinding : Path[.A = Type] (Path[.A = Circle] Base Base) Int = (ua winding : Path[.A = Type] (Path[.A = Circle] Base Base) _)
 
 /// Transport along `ua` applies the record's map, by conversion: cubical's
 /// `uaβ`, at two variables, the record written out and checked against the
@@ -143,7 +153,7 @@ def uaBeta(
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
 @[runs("S Z")]
-def uaBetaRun() -> Int = Path.walk (fun (X) { X }) (ua winding) (loop);
+def uaBetaRun() -> Int = Path.walk (fun (X) { X }) (ua winding) (loop)
 
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.

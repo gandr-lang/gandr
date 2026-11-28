@@ -6,8 +6,8 @@
 
 @[refuses("FeatureUndeclared")]
 @[deprecated]
-def one() -> Integer = 1;
+def one() -> Integer = 1
 
 module Inner where {
-  def two() -> Integer = 2;
+  def two() -> Integer = 2
 }

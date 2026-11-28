@@ -1,12 +1,20 @@
-@![features(("atom-identity", "data-parameters", "explicit-exits", "identity-types", "modules", "records", "universes"))]
+@![features((
+  "atom-identity",
+  "data-parameters",
+  "explicit-exits",
+  "identity-types",
+  "modules",
+  "records",
+  "universes"
+))]
 
 /// `AtomTransport`: a sealed type states a relation and its reflexivity but no
 /// transport law, so the relation's evidence is no path between its points.
-def related(a : Unit, b : Unit) -> Type = return Unit;
+def related(a : Unit, b : Unit) -> Type = return Unit
 def reflexive(a : Unit) -> related a a = *{};
 module Point :> *{type T, origin : T, other : T} where {
   @[identity(*{related, reflexive})]
-  type T = Unit;
+  type T = Unit
   def origin = *{};
   def other = *{};
 }

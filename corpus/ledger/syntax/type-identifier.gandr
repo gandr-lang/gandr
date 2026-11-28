@@ -2,7 +2,7 @@
 
 /// `type_identifier`: a named type.
 module Counts where {
-  type Count = Integer;
+  type Count = Integer
   @[checks]
-  def zero : Count = 0;
+  def zero : Count = 0
 }

@@ -17,7 +17,7 @@
 // - see: `../../model/probability/draws.gandr`
 
 // The host interface of randomness.
-import std.rand;
+import std.rand
 
 /// One draw of one bit: 0 and 1, each with weight one half.
 @[distributes(("1/2 0", "1/2 1"))]

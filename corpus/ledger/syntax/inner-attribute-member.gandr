@@ -4,5 +4,5 @@
 /// attributes decorating the module.
 module Counter where {
   @![checks]
-  def zero = 0;
+  def zero = 0
 }

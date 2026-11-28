@@ -12,10 +12,10 @@
 // Counted bytes ordered in the prelude's binary naturals, and a count of uses
 // covering a need once counting collapses to usage.
 
-import std.grade (Once, Count, usage, count, collapse, covers);
+import std.grade (Once, Count, usage, count, collapse, covers)
 
 /// Two gibibytes are under eight.
-def twoUnderEightGiB : Path (Count.le (2147483648 : Nat) (8589934592 : Nat)) true = Path.here true;
+def twoUnderEightGiB : Path (Count.le (2147483648 : Nat) (8589934592 : Nat)) true = Path.here true
 
 /// Three uses, counted, cover a need of once.
 def threeCoversOnce : Path (covers count usage collapse Once (3 : Nat)) true = Path.here true;

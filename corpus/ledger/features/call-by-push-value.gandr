@@ -2,7 +2,7 @@
 
 /// `call-by-push-value`: a value definition and a computation definition; `-F`
 /// returns a value, `thunk` suspends a computation and `become` runs it.
-def answer = 42;
+def answer = 42
 
 /// A computation returning the answer plus one.
 def next() -> Integer =

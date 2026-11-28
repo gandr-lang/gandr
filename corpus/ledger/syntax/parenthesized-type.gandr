@@ -1,6 +1,4 @@
-@![features(("call-by-push-value", "explicit-exits", "let-statements", "thunks-and-force"))]
+@![features("dependent-functions")]
 
 /// `parenthesized_type`: a parenthesized type.
-@[checks]
-def later : +U (-F Integer);
-def later = thunk { return 1 };
+def first(f : (Integer -> Integer) -> Integer) -> Integer = 1;

@@ -1,4 +1,11 @@
-@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "session-types"))]
+@![features((
+  "capabilities",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "modules",
+  "session-types"
+))]
 
 /// `footprint-separation` checks two forks whose halves share no host interface
 /// that either may change.

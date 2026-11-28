@@ -23,7 +23,7 @@ data Admission : Type where
   | Admitted : Admission
 def admitBlock(ss : Signatures, rs : Rows) -> Admission =
   Admitted
-def addRow : Row = Row (Plain U32);
+def addRow : Row = Row (Plain U32)
 @[boundary(addRow)]
 extern "rust" from "adder" as Adder {
   def add(x : u32) -> u32;

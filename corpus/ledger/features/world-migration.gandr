@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "imports", "let-statements", "located-judgements", "native-primitives", "records", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "native-primitives",
+  "records",
+  "temporary-access"
+))]
 
 /// `world-migration` runs a migration's body at its world and brings
 /// its answer back.
@@ -22,7 +30,7 @@
 /// - see: crates/runtime-emitter/tests/world.rs
 
 // The operator's and the seat's worlds.
-import "../../model/worlds/seat-and-operator.gandr";
+import "../../model/worlds/seat-and-operator.gandr"
 
 /// The seat holds the work done, and a second migration answers
 /// the progress there.

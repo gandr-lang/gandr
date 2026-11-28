@@ -4,11 +4,11 @@
 /// its source declares with no type.
 @[refuses("SignatureMismatch.Unstated")]
 theory Greeted where
-  oper greeting : String;
+  oper greeting : String
 
 // The source writes `greeting` with no signature, so the match reads no type
 // for it.
-import "../features/package-address.gandr" as addressed : Greeted;
+import "../features/package-address.gandr" as addressed : Greeted
 
 @[refuses("SignatureMismatch.Unstated")]
 def relayed = addressed.greeting;

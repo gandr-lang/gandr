@@ -1,4 +1,12 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "type-codes",
+  "universes"
+))]
 
 /// `cylinder-composites`: squares and triangles of paths compose at dimension
 /// 2, as Catt's built-ins compose them, and `fill` and suspension compose
@@ -49,10 +57,10 @@ import std.math.cylinder (
   coneCompositeCells2,
   cylinderSuspended3,
   coneSuspended3
-);
+)
 
 // `whiskerLeft` and `whiskerRight`.
-import std.math.path (whiskerLeft, whiskerRight);
+import std.math.path (whiskerLeft, whiskerRight)
 
 /// Two squares of reflexivities side by side compose to the reflexivity
 /// of the reflexivity.

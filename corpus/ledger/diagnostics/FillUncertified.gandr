@@ -1,4 +1,12 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "pattern-matching", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "let-statements",
+  "pattern-matching",
+  "type-codes",
+  "universes"
+))]
 
 /// `FillUncertified`: a fill at a degree no chain of the catalogue reaches.
 

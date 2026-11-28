@@ -2,6 +2,6 @@
 
 /// `DuplicateImportAlias`: a second import binding an alias an
 /// earlier import binds.
-import "file:///lib/parse.gandr" as parse;
+import "file:///lib/parse.gandr" as parse
 @[refuses("DuplicateImportAlias")]
 import "file:///lib/list.gandr" as parse;

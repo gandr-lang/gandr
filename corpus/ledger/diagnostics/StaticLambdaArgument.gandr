@@ -1,4 +1,12 @@
-@![features(("dependent-functions", "let-statements", "products-and-sums", "records", "thunks-and-force", "type-codes", "universes"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "products-and-sums",
+  "records",
+  "thunks-and-force",
+  "type-codes",
+  "universes"
+))]
 
 /// `StaticLambdaArgument`: a type operator passed where a dynamic parameter
 /// needs a value.

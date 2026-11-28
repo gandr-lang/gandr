@@ -1,4 +1,11 @@
-@![features(("data-parameters", "imports", "modules", "native-lists", "signature-models", "visibility"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "modules",
+  "native-lists",
+  "signature-models",
+  "visibility"
+))]
 
 /// `deployment-file` reads a deployment's site and manifold as the flags
 /// they desugar to.
@@ -21,26 +28,26 @@
 /// - see: corpus/model/worlds/two-processes.manifold.gandr
 /// - see: crates/surface-driver/tests/net.rs
 
-import std.manifold (Site, Manifold, Placement, At);
+import std.manifold (Site, Manifold, Placement, At)
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// The place the far world runs at.
 pub module Site : Model(Site) where
   /// The key its host proves.
-  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
+  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
   /// The socket its host binds.
-  def sockets = "127.0.0.1:7433";
+  def sockets = "127.0.0.1:7433"
   /// The name of the key's secret.
-  def secret = "far";
+  def secret = "far"
 
 /// The place's model, which a placement holds.
-pub def site : Model Site = pack Site at Model Site;
+pub def site : Model Site = pack Site at Model Site
 
 /// The program this deployment runs.
 pub module Manifold : Model(Manifold) where
   /// The migration model, by its path beside this file.
-  def artifact = "../../model/worlds/two-processes.gandr";
+  def artifact = "../../model/worlds/two-processes.gandr"
 
 /// `far` at the site, as one process.
 pub def placements : List Placement = #[

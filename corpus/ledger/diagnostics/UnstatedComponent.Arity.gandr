@@ -5,9 +5,9 @@
 ///
 /// The theory the model derives from.
 theory T where
-  sort Nat : Type;
-  oper add : (a : Nat, b : Nat) --> Nat;
-  rule half : add x ==> x;
+  sort Nat : Type
+  oper add : (a : Nat, b : Nat) --> Nat
+  rule half : add x ==> x
 
 @[refuses("UnstatedComponent.Arity")]
 def model : Model T;

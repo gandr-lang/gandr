@@ -6,9 +6,9 @@
 ///
 /// Counter: a computation carrier, started and stepped.
 theory Counter where
-  sort C : Type[-];
-  oper start : C;
-  oper step : (c : C) --> C;
+  sort C : Type[-]
+  oper start : C
+  oper step : (c : C) --> C
 
 @[refuses("UnstatedComponent.Computation")]
 def counterModel : Model Counter;

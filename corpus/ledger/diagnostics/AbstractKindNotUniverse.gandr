@@ -4,5 +4,5 @@
 /// not a universe.
 module Kinded :> *{type T : Integer} where {
   @[refuses("AbstractKindNotUniverse")]
-  type T = Unit;
+  type T = Unit
 }

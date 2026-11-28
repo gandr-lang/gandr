@@ -12,21 +12,21 @@
 theory Released where {
   /// The version.
   @[inert]
-  oper version : String;
+  oper version : String
 }
 
 /// A family's release.
 module Family : Model(Released) where {
   /// The family's version.
   @[runs("\"0.1.0\"")]
-  def version = "0.1.0";
+  def version = "0.1.0"
 }
 
 /// A package of the family, its version read inert from inert.
 module Member : Model(Released) where {
   /// The version, the family's.
   @[runs("\"0.1.0\"")]
-  def version = Family.version;
+  def version = Family.version
 }
 
 /// The member's version, read by an inert definition.

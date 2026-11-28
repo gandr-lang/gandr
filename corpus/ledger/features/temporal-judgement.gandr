@@ -1,4 +1,11 @@
-@![features(("data-parameters", "identity-types", "imports", "modules", "traces", "web-decomposition"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "modules",
+  "traces",
+  "web-decomposition"
+))]
 
 /// `temporal-judgement`: The temporal judgement (logical time as a web).
 /// Implemented: a binary session's logical time as a two-colour causal web, a
@@ -23,12 +30,12 @@
 //! [Gallai-1967-transitiv_orientierbare_graphen]: https://doi.org/10.1007/BF02020961 "Gallai, Transitiv orientierbare Graphen"
 
 // The native session formers.
-import std.session (Dialogue);
+import std.session (Dialogue)
 
 // The seat's protocol and its messages.
-import "../../model/sessions/seat-base.gandr";
+import "../../model/sessions/seat-base.gandr"
 // The modular decomposition of a dialogue's web.
-import std.buffer (Web);
+import std.buffer (Web)
 
 /// A dialogue that reports once and retires, the seat's send of its report
 /// logged before the operator takes the choice. Its web is series-parallel:
@@ -54,7 +61,7 @@ def retiring : Dialogue Seat.SeatEnd = dialogue
   (right (selected retire))
   (left (offered retire))
   (left closed)
-  (right closed);
+  (right closed)
 
 /// The same play, the operator taking the choice before the seat's report is
 /// logged: the two moves are independent, so the log reads back the web
@@ -71,16 +78,16 @@ def retiringLater : Dialogue Seat.SeatEnd = dialogue
   (right (selected retire))
   (left (offered retire))
   (right closed)
-  (left closed);
+  (left closed)
 
 /// The two logs are one dialogue: they share every endpoint's moves and
 /// every send's receipt, so the path is reflexivity.
-def commuted : Path[.A = Dialogue Seat.SeatEnd] retiring retiringLater = Path.here retiring;
+def commuted : Path[.A = Dialogue Seat.SeatEnd] retiring retiringLater = Path.here retiring
 
 /// The two logs decompose to one web: a web is read off the dialogue it
 /// decomposes, so the path between the logs' webs is reflexivity too.
 def sameWeb : Path[.A = Web] (decompose retiring) (decompose retiringLater) = Path.here
-  (decompose retiring);
+  (decompose retiring)
 
 /// A dialogue that hands off: the seat's notes sent before the operator takes
 /// the choice. Its web leaves a prime node: the seat's notes precede its

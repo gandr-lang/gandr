@@ -12,7 +12,7 @@
 
 /// `intro` opens the type and the value as binders; `assumption` answers the
 /// value, the binder whose type is the second goal's.
-def poly : (a : Type, a) -> a = ~intro (intro assumption);
+def poly : (a : Type, a) -> a = ~intro (intro assumption)
 
 /// The filled body runs as the identity.
 @[runs("7")]

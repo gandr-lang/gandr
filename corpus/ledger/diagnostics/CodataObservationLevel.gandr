@@ -4,4 +4,4 @@
 /// codata declaration's universe.
 @[refuses("CodataObservationLevel")]
 codata Holder(a : Type[+, 1]) : Type[-] where
-  held : a;
+  held : a

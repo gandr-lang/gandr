@@ -1,4 +1,14 @@
-@![features(("buffer-tokens", "call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "pattern-matching", "records", "session-types"))]
+@![features((
+  "buffer-tokens",
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "records",
+  "session-types"
+))]
 
 /// `buffer-tokens`: Buffer tokens.
 /// Implemented: a linear buffer token, placed live by a receive or by
@@ -21,10 +31,10 @@
 //! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 // The native buffer a receive places live.
-import std.buffer (Buf);
+import std.buffer (Buf)
 
 // The ring's host interface.
-import std.io;
+import std.io
 
 /// A buffer allocated and freed: the allocation places it live, and the free
 /// hands it back to the scope that minted it. The `alloc` clause lends its

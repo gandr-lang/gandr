@@ -1,9 +1,17 @@
-@![features(("codata", "corecursion", "data-parameters", "lazy-records", "let-statements", "native-primitives", "universes"))]
+@![features((
+  "codata",
+  "corecursion",
+  "data-parameters",
+  "lazy-records",
+  "let-statements",
+  "native-primitives",
+  "universes"
+))]
 
 /// `instantiation.direction.productivity`: a corecursive call guarded
 /// by an observation.
 codata Stream(a : Type) : Type[-] where
-  head : a;
-  tail : Stream a;
+  head : a
+  tail : Stream a
 def rec nats(n : Integer) -> Stream Integer =
   &{.head => n, .tail => nats[>] (n + 1)}

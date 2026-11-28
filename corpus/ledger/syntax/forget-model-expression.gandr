@@ -1,13 +1,20 @@
-@![features(("call-by-push-value", "data-parameters", "records", "signature-models", "signatures-as-values", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "records",
+  "signature-models",
+  "signatures-as-values",
+  "universes"
+))]
 
 /// `forget_model_expression`: a model whose sort is manifest, read as a model
 /// of its theory by the forgetting map written out.
-@[checks]
+@[checks, form(explicit)]
 theory Pointed where
-  sort P : Type;
-  oper point : P;
-@[checks]
-def zero : Model Pointed with sort P = Integer;
+  sort P : Type
+  oper point : P
+@[checks, form(explicit)]
+def zero : Model Pointed with sort P = Integer
 def zero = *{.point = 0};
-@[checks]
+@[checks, form(explicit)]
 def forgotten() -> -F Model Pointed = forget[sort P = Integer](zero) at Model Pointed;

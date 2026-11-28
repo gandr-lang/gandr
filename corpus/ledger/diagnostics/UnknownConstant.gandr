@@ -2,7 +2,7 @@
 /// a type for.
 /// `b` names nothing, so the checker holds no type for it.
 @[refuses("UnresolvedName")]
-def b = c;
+def b = c
 
 @[refuses("UnknownConstant")]
 def a = b;

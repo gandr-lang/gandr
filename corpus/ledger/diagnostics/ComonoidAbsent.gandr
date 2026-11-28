@@ -4,7 +4,7 @@
 /// has no copy and no discard.
 
 // The qubit type, which carries no comonoid.
-import std.quantum (Qubit);
+import std.quantum (Qubit)
 
 /// Takes a qubit at `->`, whose binder may use it any number of times.
 @[refuses("ComonoidAbsent")]

@@ -3,7 +3,7 @@
 /// `NotAFunctor`: a module binding applies a module that is no functor.
 module Plain where {
   @[runs("1")]
-  def one = 1;
+  def one = 1
 }
 
 @[refuses("NotAFunctor")]

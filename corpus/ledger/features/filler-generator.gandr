@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "type-codes",
+  "universes"
+))]
 
 /// `filler-generator`: a cell over a chain of paths lifts along the cells it
 /// takes as paths of paths.
@@ -39,7 +48,7 @@
 /// - see: #4129 — `associatorNatural`
 
 // `assoc`.
-import std.math.path (assoc);
+import std.math.path (assoc)
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
 def selfLoop(A : Type, x : A, y : A) -> (f : Path x y) -> Path[.A = Path[.A = A] x y] f f =

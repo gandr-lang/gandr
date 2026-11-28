@@ -1,4 +1,11 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "nominal-data", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "universes"
+))]
 
 /// `NotOver`: a telescope transport's second identity that does not lie
 /// over its path.
@@ -11,8 +18,8 @@ data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S (P x) <=> x;
-  rule : P (S x) <=> x;
+  rule : S (P x) <=> x
+  rule : P (S x) <=> x
 }
 
 data Nat : Type where

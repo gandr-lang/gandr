@@ -4,7 +4,7 @@
 /// whose representation the seal hides.
 module Hidden :> *{type T, one : T} where {
   @[checks]
-  type T = Unit;
+  type T = Unit
 
   @[checks]
   def one = *{};

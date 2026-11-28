@@ -4,7 +4,7 @@
 /// the expected one.
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// A list of integers holding a string.
 @[refuses("TypeMismatch")]

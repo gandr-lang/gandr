@@ -21,7 +21,7 @@
 
 // `Ints`, `Tagged`, `Packed`, `tag`, `taggedPath`, `packedPath`,
 // `relayout` and `length`.
-import "../../model/layouts/ribbit-list.gandr";
+import "../../model/layouts/ribbit-list.gandr"
 
 /// Two and five, laid out tagged, move to the packed layout as one pointer to
 /// both and nothing after.

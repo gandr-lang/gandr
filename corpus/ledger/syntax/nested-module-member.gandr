@@ -4,5 +4,5 @@
 module Config where
   module limits where {
     @[checks]
-    def soft = 10;
+    def soft = 10
   }

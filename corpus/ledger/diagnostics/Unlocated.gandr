@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "lazy-records", "let-statements", "located-judgements", "modules", "products-and-sums", "session-types", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "lazy-records",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "products-and-sums",
+  "session-types",
+  "temporary-access"
+))]
 
 /// `Unlocated`: a hold or an opening `let x at w` at the host's world.
 module Seat :> *{
@@ -13,23 +22,23 @@ module Seat :> *{
   progress : Report,
   notes : Handoff
 } where {
-  type Dispatch = String;
-  type Report = String;
-  type Handoff = String;
+  type Dispatch = String
+  type Report = String
+  type Handoff = String
   /// The dispatch a seat receives.
   @[checks]
-  def task = "task";
+  def task = "task"
   /// A report it sends.
   @[checks]
-  def progress = "progress";
+  def progress = "progress"
   /// The notes it hands off.
   @[checks]
-  def notes = "notes";
+  def notes = "notes"
 }
 
-world operator;
+world operator
 
-world seat;
+world seat
 
 @[refuses("Unlocated")]
 def unplaced() -> -F (Seat.Report at seat) =

@@ -4,4 +4,4 @@
 /// a computation universe.
 @[refuses("CodataKindNotUniverse")]
 codata Scaled : Type where
-  doubled : Integer;
+  doubled : Integer

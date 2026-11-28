@@ -2,7 +2,7 @@
 
 /// `ImportUnresolved`: a declaration of a source whose path import resolves
 /// to no source.
-import "./circle-absent.gandr";
+import "./circle-absent.gandr"
 
 @[refuses("ImportUnresolved")]
 data Point : Type where

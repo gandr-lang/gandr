@@ -1,4 +1,12 @@
-@![features(("data-parameters", "dependent-functions", "equivalence-record", "imports", "let-statements", "native-primitives", "records"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "equivalence-record",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "records"
+))]
 
 /// `abi-realizability`: Layouts as realizability predicates.
 /// Implemented: `Option<&T>`'s null niche as a realizability predicate over
@@ -29,15 +37,15 @@
 //! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
 // `Nat`.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // `Heap`, the realisers, the equivalence and `deref_or`'s triple.
-import "../../model/specification/niche-realizability.gandr";
+import "../../model/specification/niche-realizability.gandr"
 
-import std.boundary (Printed, NoParam, Param, Declared, Admission, admit);
+import std.boundary (Printed, NoParam, Param, Declared, Admission, admit)
 
 // `fRow`.
-import "../../model/interop/boundary/function-row.gandr";
+import "../../model/interop/boundary/function-row.gandr"
 
 /// The niche at a reference to an int and the tagged layout: equivalent at
 /// every heap.
@@ -49,7 +57,7 @@ def intLayouts(h : Heap) -> *{w : Nat, ok : vOpt vInt w h} ≃ *{
 
 /// `Option<&int>` passed to `deref_or`: `{V_opt(w)} deref_or(w, d)
 /// {V_opt(w)}`.
-def passed(w : Nat, d : Nat, h : Heap) -> (vOpt vInt w h) -> derefOrWp w d keptOpt h =
+def passed(w : Nat, d : Nat, h : Heap) -> (vOpt vInt w h) -> (derefOrWp w d keptOpt h) =
   derefOrMeets w d h
 
 /// `fn f(x: Option<&u32>, n: u32) -> u32` as rustc built it, admitted

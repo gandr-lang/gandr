@@ -1,4 +1,13 @@
-@![features(("dependent-functions", "imports", "let-statements", "modules", "native-primitives", "nominal-data", "records", "thunks-and-force", "universes"))]
+@![features((
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "nominal-data",
+  "records",
+  "universes"
+))]
 
 /// `glf-model-in-source`: A model of a signature written in source;
 /// the shape parameter.
@@ -23,7 +32,7 @@
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
 // The naturals' signature, `theory Nat`.
-import "../../model/desc/second-order-signatures.gandr";
+import "../../model/desc/second-order-signatures.gandr"
 
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
@@ -34,9 +43,9 @@ data N : Type where
 /// The syntax model as a `Model(Nat)` module: the carrier is the data and
 /// each operation its constructor.
 module SyntaxNat : Model(Nat) where
-  type Nat = N;
-  def zero : N = Z;
-  def succ(n : N) -> N = S n;
+  type Nat = N
+  def zero : N = Z
+  def succ(n : N) -> N = S n
 
 /// The module packed into the record type of `Nat`'s models: its carrier and
 /// its two operations, in the order `Model(Nat)` mints them.
@@ -48,7 +57,7 @@ def syntaxModel : *{nat : Type, zero : nat, succ : nat -> nat} = *{
 /// A second model, on the integers: zero is `0` and the successor adds one.
 def countingModel : *{nat : Type, zero : nat, succ : nat -> nat} = *{
   Integer,
-  *{0, thunk { fun (n) { n + 1 } }}
+  *{0, fun (n) { n + 1 }}
 };
 
 /// The syntax model's successor at its zero builds the data's one: the

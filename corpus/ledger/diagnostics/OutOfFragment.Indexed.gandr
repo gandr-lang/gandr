@@ -12,5 +12,5 @@ data Prog : N -> Type where {
   | Stop : Prog Z
   | Step : (n : N, k : Prog n) --> Prog (S n)
   | Tell : (s : Integer, k : Prog Z) --> Prog Z
-  rule : Tell s (Tell u k) <=> Tell u k;
+  rule : Tell s (Tell u k) <=> Tell u k
 }

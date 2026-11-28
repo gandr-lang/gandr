@@ -5,7 +5,7 @@
 ///
 /// The answers.
 module Answers where
-  def answer = 42;
+  def answer = 42
 
 @[refuses("UnknownMember")]
 def asked = Answers.question;

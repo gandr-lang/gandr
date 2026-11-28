@@ -1,13 +1,21 @@
-@![features(("buffer-tokens", "call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records"))]
+@![features((
+  "buffer-tokens",
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records"
+))]
 
 /// `BufferRead`: a placed buffer read other than by the send, the operation or
 /// the resumption that returns it.
 
 // The native buffer a receive places live.
-import std.buffer (Buf);
+import std.buffer (Buf)
 
 // The ring's host interface.
-import std.io;
+import std.io
 
 /// Copies a buffer the ring holds live, then frees it.
 @[refuses("BufferRead")]

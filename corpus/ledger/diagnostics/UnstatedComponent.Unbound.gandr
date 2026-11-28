@@ -1,4 +1,11 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "native-primitives", "signatures-as-values", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "native-primitives",
+  "signatures-as-values",
+  "universes"
+))]
 
 /// `UnstatedComponent.Unbound`: a model component the derivation cannot state:
 /// a stated law naming a variable its statement does not bind once.
@@ -9,9 +16,9 @@
 /// - see: #4115
 @[refuses("UnstatedComponent.Unbound")]
 theory Loose where
-  sort Carrier : Type;
-  oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law loose : (a : Carrier) -> Path[.A = Bool] (alike a b) true;
+  sort Carrier : Type
+  oper alike : (a : Carrier, b : Carrier) --> Bool
+  law loose : (a : Carrier) -> Path[.A = Bool] (alike a b) true
 
 @[refuses("UnstatedComponent.Unbound")]
 def model : Model Loose;

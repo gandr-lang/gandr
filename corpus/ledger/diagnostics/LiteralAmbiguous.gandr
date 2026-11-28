@@ -12,14 +12,14 @@ data Expr : Type where
 module Leaf : Model(FromNat) with sort Carrier = Expr where {
   /// The leaf.
   @[checks]
-  def fromNat(n : Integer) -> Expr = Lit n;
+  def fromNat(n : Integer) -> Expr = Lit n
 }
 
 /// Every literal read as zero.
 module Nought : Model(FromNat) with sort Carrier = Expr where {
   /// Zero.
   @[checks]
-  def fromNat(n : Integer) -> Expr = Zero;
+  def fromNat(n : Integer) -> Expr = Zero
 }
 
 @[refuses("LiteralAmbiguous")]

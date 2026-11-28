@@ -1,4 +1,13 @@
-@![features(("data-parameters", "identity-types", "let-statements", "list-case", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "list-case",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `cons_pattern`: a path cons pattern: a step and the rest of the path,
 /// written with its glyph and in ASCII.
@@ -9,8 +18,8 @@ data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S (P x) <=> x;
-  rule : P (S x) <=> x;
+  rule : S (P x) <=> x
+  rule : P (S x) <=> x
 }
 def rec wind(p : Path Base Base) -> Int =
   match p where

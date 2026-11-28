@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "equivalence-record", "identity-types", "imports", "native-lists", "records", "type-codes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "equivalence-record",
+  "identity-types",
+  "imports",
+  "native-lists",
+  "records",
+  "type-codes"
+))]
 
 /// `invertible-cells`: Invertible cells between distinct points.
 /// Implemented: a free invertible cell at a point, its loop space the words
@@ -34,37 +43,37 @@
 
 // The circle, the presented integers, the winding number and spinning with
 // their round trips.
-import "../../model/identity/circle-base.gandr";
+import "../../model/identity/circle-base.gandr"
 // The quasi-inverse made bi-invertible, which the equivalence is.
-import "../../model/identity/equivalence.gandr";
+import "../../model/identity/equivalence.gandr"
 
 /// The loop's word: one letter before the empty word.
 @[runs("loop ∷ Path.here Base")]
-def once() -> Path[.A = Circle] Base Base = loop;
+def once() -> Path[.A = Circle] Base Base = loop
 
 /// The inverse of the loop is the letter `back(loop)`, by conversion, which
 /// `Path.back(loop)` converts to.
 def unwound : Path[.A = Path[.A = Circle] Base Base] (Path.back loop) (back loop ∷ Path.here
-  Base) = Path.here (back loop ∷ Path.here Base);
+  Base) = Path.here (back loop ∷ Path.here Base)
 
 /// The loop then its inverse is the empty word: the minted cancellation, read
 /// by conversion.
 def cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop)) (Path.here
-  Base) = Path.here (Path.here Base);
+  Base) = Path.here (Path.here Base)
 
 /// Winding twice around and spinning the count back gives the word the
 /// composite is, by conversion.
 def round : Path[.A = Path[.A = Circle] Base Base] (spin
   (wind (Path.step loop loop))) (loop ∷ loop ∷ Path.here Base) = Path.here
-  (loop ∷ loop ∷ Path.here Base);
+  (loop ∷ loop ∷ Path.here Base)
 
 /// The composite the round trip gives: the loop twice, by conversion.
 def twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop) (loop ∷ loop ∷ Path.here
-  Base) = Path.here (loop ∷ loop ∷ Path.here Base);
+  Base) = Path.here (loop ∷ loop ∷ Path.here Base)
 
 /// Spinning two successors and winding the word counts two.
 @[runs("S (S Z)")]
-def counted : () -> Int = wind (spin (S (S Z)));
+def counted : () -> Int = wind (spin (S (S Z)))
 
 /// The loops at the point and the presented integers are a quasi-inverse, by
 /// `wind` and `spin` with the two round trips at a variable, nothing owed.

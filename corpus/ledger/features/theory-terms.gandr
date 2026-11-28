@@ -1,4 +1,12 @@
-@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `theory-terms`: a theory's closed terms as a type, its rules
 /// the type's conversion.
@@ -27,25 +35,25 @@
 /// A unital magma's signature.
 theory Mag where
   /// The carrier.
-  sort M : Type;
+  sort M : Type
   /// The unit.
-  oper one : M;
+  oper one : M
   /// The product.
-  oper mul : (x : M, y : M) --> M;
+  oper mul : (x : M, y : M) --> M
   /// The unit on the left.
-  rule unitL : mul one x <=> x;
+  rule unitL : mul one x <=> x
   /// The unit on the right.
-  rule unitR : mul x one <=> x;
+  rule unitR : mul x one <=> x
 
 /// The unit cancels on both sides, so the product converts to the unit.
 def cancelled : Path[.A = Terms Mag] (Mag.mul Mag.one (Mag.mul Mag.one Mag.one)) Mag.one = Path.here
-  Mag.one;
+  Mag.one
 
 /// The terms' fold into themselves: each rule's two sides convert under it.
 def rec copy(t : Terms Mag) -> Terms Mag =
   match t where
     | Mag.one => Mag.one
-    | Mag.mul(x, y) => Mag.mul (copy[<] x) (copy[<] y)
+    | Mag.mul x y => Mag.mul (copy[<] x) (copy[<] y)
 
 /// A term with one product, built and folded.
 @[runs("Mag.mul Mag.one Mag.one")]

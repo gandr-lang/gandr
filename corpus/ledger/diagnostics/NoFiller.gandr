@@ -1,8 +1,16 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "universes"
+))]
 
 /// `NoFiller`: a fill asked for a square its generator does not make.
 // `Circle`, `Base`, `loop`.
-import "../../model/identity/circle-base.gandr";
+import "../../model/identity/circle-base.gandr"
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
 def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A] x y) -> Path[.A = Path[.A = A] x y] f f =

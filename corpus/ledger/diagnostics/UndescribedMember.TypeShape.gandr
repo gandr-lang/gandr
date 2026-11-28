@@ -9,5 +9,5 @@
 /// - see: #5662
 @[refuses("UndescribedMember.TypeShape")]
 theory Shape where
-  sort Nat : Type+;
-  sort Big : Type[+, 1];
+  sort Nat : Type+
+  sort Big : Type[+, 1]

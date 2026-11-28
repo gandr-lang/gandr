@@ -1,12 +1,12 @@
 @![features(("call-by-push-value", "let-statements", "located-judgements", "modules", "records"))]
 
 /// `migrate_expression`: a migration of a block to a world.
-world operator;
-world seat;
+world operator
+world seat
 module Seat :> *{mobile type Report, progress : Report} where {
-  type Report = String;
+  type Report = String
   @[checks]
-  def progress = "progress";
+  def progress = "progress"
 }
 @[entry(*{operator, seat})]
 def moved() -> Seat.Report =

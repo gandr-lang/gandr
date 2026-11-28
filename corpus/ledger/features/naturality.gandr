@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "imports", "let-statements", "pattern-matching", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "pattern-matching",
+  "type-codes",
+  "universes"
+))]
 
 /// `naturality`: a term's naturality along a path in one of its arguments, the
 /// action of the term on that path.
@@ -34,7 +43,7 @@
 /// [Benjamin-2025-naturality_higherdimensional_path_types]: https://arxiv.org/abs/2501.11620 "Benjamin et al., Naturality for Higher-Dimensional Path Types"
 
 // `ap`, `apComp`, `assoc`, `natural`, `whiskerRight`.
-import std.math.path (ap, apComp, assoc, natural, whiskerRight);
+import std.math.path (ap, apComp, assoc, natural, whiskerRight)
 
 /// The associator's naturality in its first argument: the square whose sides
 /// are the associators at `fm` and `fp` and whose other sides whisker `fa`.

@@ -1,13 +1,21 @@
-@![features(("call-by-push-value", "imports", "let-statements", "modules", "named-instances", "records", "row-kind"))]
+@![features((
+  "call-by-push-value",
+  "imports",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "records",
+  "row-kind"
+))]
 
 /// `f_type.row.labelled`: a computation type with the capabilities it uses,
 /// an interface whole and an instance by its label, open through a row
 /// variable after the bar.
 
 // The console's host interface.
-import std.io;
+import std.io
 
 /// A computation that returns at once under a row open after the bar.
-@[checks]
+@[checks, form(explicit)]
 def idle[r : Row]() -> -F [Partial, d : std.io.Console.Eff | r] Unit =
   pure *{}

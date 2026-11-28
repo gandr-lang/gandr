@@ -14,32 +14,32 @@
 ///
 /// - owes: #2993 — a list at an operation's port
 
-import std.build (Gandr);
+import std.build (Gandr)
 
 /// A package asking for this language version or later, two features this
 /// toolchain implements, and any system.
 pub module Package : Model(Gandr.Package) where {
   /// The name the manifest records.
-  def name = "probe";
+  def name = "probe"
   /// The version the manifest records.
-  def version = "0.1.0";
+  def version = "0.1.0"
   /// The package's authors.
-  def authors = "The gandr authors";
+  def authors = "The gandr authors"
   /// The licence, an SPDX expression.
-  def licence = "MIT OR Apache-2.0";
+  def licence = "MIT OR Apache-2.0"
   /// The address the package's documentation stands at.
-  def documentation = "https://github.com/gandr-lang/gandr";
+  def documentation = "https://github.com/gandr-lang/gandr"
   /// The address a resolver may fetch the package from.
-  def endpoint = "https://github.com/gandr-lang/gandr";
+  def endpoint = "https://github.com/gandr-lang/gandr"
   /// The least language version the sources ask for.
   @[runs("\">= 0.0\"")]
-  def gandr = ">= 0.0";
+  def gandr = ">= 0.0"
   /// The features the sources use: the manifest and the lock.
-  def features = "project-manifest, package-lock";
+  def features = "project-manifest, package-lock"
   /// The systems the package builds on: any.
-  def systems = "";
+  def systems = ""
   /// The spelling the package asks for: the reader's own.
-  def spelling = "";
+  def spelling = ""
   /// The directory the modules sit under, below the package's root.
-  def sources = "src";
+  def sources = "src"
 }

@@ -5,7 +5,7 @@
 /// `gandr run` writes it.
 
 // The console's host interface.
-import std.io;
+import std.io
 
 /// A greeting printed through the console by its operation's name.
 @[runs("hello, world!\n*{}")]

@@ -1,14 +1,14 @@
-@![features(("call-by-push-value", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
 
 /// `NonExhaustiveMatch`: a match some scrutinee value reaches no arm of.
 data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S (P x) <=> x;
-  rule : P (S x) <=> x;
+  rule : S (P x) <=> x
+  rule : P (S x) <=> x
 }
 
 @[refuses("NonExhaustiveMatch")]
-def unmatched(n : Int) -> -F Int =
+def unmatched(n : Int) -> Int =
   match n {}

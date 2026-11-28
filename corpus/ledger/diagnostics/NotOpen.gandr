@@ -1,10 +1,18 @@
-@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "records", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "let-statements",
+  "located-judgements",
+  "records",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 /// `NotOpen`: a handle crossing to another world over a thunk reached through a
 /// variable, which carries no image.
-world operator;
+world operator
 
-world seat;
+world seat
 
 @[refuses("NotOpen")]
 @[entry(*{operator, seat})]

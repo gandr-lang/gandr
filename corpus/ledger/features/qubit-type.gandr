@@ -19,10 +19,10 @@
 // - see: `../diagnostics/ComonoidAbsent.gandr`
 
 // The qubit type, which carries no comonoid.
-import std.quantum (Qubit);
+import std.quantum (Qubit)
 
 /// The identity gate takes its qubit once and returns it.
-def gate(q : Qubit) ⊸ Qubit = q;
+def gate(q : Qubit) ⊸ Qubit = q
 
 /// A gate applied to the qubit that a gate gives.
 def twice(q : Qubit) ⊸ Qubit = gate (gate (q));

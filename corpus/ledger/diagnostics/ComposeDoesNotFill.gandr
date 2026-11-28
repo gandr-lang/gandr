@@ -1,4 +1,10 @@
-@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "pattern-matching",
+  "universes"
+))]
 
 /// `ComposeDoesNotFill`: a composite whose cells do not meet end to end.
 def meeting(A : Type, x : A, y : A, z : A, p : Path x y, q : Path y z) -> Path x z =

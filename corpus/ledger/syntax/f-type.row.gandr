@@ -2,6 +2,6 @@
 
 /// `f_type.row`: a computation type with the capabilities it uses, open
 /// through a row variable after the bar.
-@[checks]
+@[checks, form(explicit)]
 def idle[r : Row]() -> -F [Partial | r] Unit =
   pure *{}

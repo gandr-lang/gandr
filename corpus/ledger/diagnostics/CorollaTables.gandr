@@ -1,11 +1,18 @@
-@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+@![features((
+  "let-statements",
+  "pattern-matching",
+  "products-and-sums",
+  "records",
+  "signatures-as-values",
+  "universes"
+))]
 
 /// `CorollaTables`: a corolla whose translators are missing on one side
 /// or given twice.
 theory Rig where
-  sort R : Type;
-  oper plus : (x : R, y : R) --> (z : R);
-  oper times : (x : R, y : R) --> (z : R);
+  sort R : Type
+  oper plus : (x : R, y : R) --> (z : R)
+  oper times : (x : R, y : R) --> (z : R)
 
 def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
   match e where

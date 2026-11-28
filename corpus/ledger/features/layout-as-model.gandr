@@ -19,15 +19,15 @@
 /// - see: corpus/model/layouts/truth-in-one-bit.gandr
 
 // `Truth`, `Bit`, `encode`, `decode` and `bitPath`.
-import "../../model/layouts/truth-in-one-bit.gandr";
+import "../../model/layouts/truth-in-one-bit.gandr"
 
 /// The layout stores the true value as the constant one.
 @[runs("Bit.one")]
-def laidOut() -> Terms Bit = encode Truth.yes;
+def laidOut() -> Terms Bit = encode Truth.yes
 
 /// A bit term whose rule fires reads back as the true value.
 @[runs("Truth.yes")]
-def readBack() -> Terms Truth = decode (Bit.band Bit.one (encode Truth.yes));
+def readBack() -> Terms Truth = decode (Bit.band Bit.one (encode Truth.yes))
 
 /// A truth value moves to its bit along the path between the two types.
 @[runs("Bit.one")]

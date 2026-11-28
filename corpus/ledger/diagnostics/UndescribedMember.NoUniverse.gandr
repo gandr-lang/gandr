@@ -8,5 +8,5 @@
 /// - see: #2664
 @[refuses("UndescribedMember.NoUniverse")]
 theory Shape where
-  sort Nat : Type+;
-  sort Bad : Integer;
+  sort Nat : Type+
+  sort Bad : Integer

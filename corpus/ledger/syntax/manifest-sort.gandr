@@ -1,8 +1,16 @@
-@![features(("data-parameters", "explicit-exits", "let-statements", "signature-models", "signatures-as-values", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "let-statements",
+  "signature-models",
+  "signatures-as-values",
+  "type-codes",
+  "universes"
+))]
 
 /// `manifest_sort`: the binding a `with` fixes, a sort and the type it is.
 theory Counter where
-  sort C : Type;
-  oper zero : C;
+  sort C : Type
+  oper zero : C
 def countersOn(x : Type) -> Type =
   return type(Model Counter with sort C = x)

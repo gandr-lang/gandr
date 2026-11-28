@@ -1,4 +1,14 @@
-@![features(("bridge-types", "data-parameters", "dependent-functions", "explicit-exits", "imports", "let-statements", "native-lists", "records", "thunks-and-force"))]
+@![features((
+  "bridge-types",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "native-lists",
+  "records",
+  "thunks-and-force"
+))]
 
 /// `bridge-types`: Bridge types by the identity recursion.
 /// Implemented: `Bridge[.A = A](a, b)` relates two points of `A` at the fibre
@@ -8,7 +18,7 @@
 /// - owes: #3519
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// The total relation between the unit type and the string type.
 def unitString : Bridge[.A = Type] Unit String = thunk {

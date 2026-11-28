@@ -1,4 +1,11 @@
-@![features(("call-by-push-value", "let-statements", "located-judgements", "native-primitives", "records", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "let-statements",
+  "located-judgements",
+  "native-primitives",
+  "records",
+  "visibility"
+))]
 
 /// `migrate-wire` ships a migration to the process a host binds its world to.
 ///
@@ -19,10 +26,10 @@
 /// - owes: #3293
 
 /// The world the migration starts from.
-pub world operator;
+pub world operator
 
 /// The world the migration runs at.
-pub world seat;
+pub world seat
 
 /// The seat computes forty-two, and the answer crosses back.
 @[entry(*{operator, seat}), runs("42")]

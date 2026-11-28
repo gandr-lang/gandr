@@ -1,11 +1,18 @@
-@![features(("let-statements", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "universes"))]
+@![features((
+  "let-statements",
+  "pattern-matching",
+  "products-and-sums",
+  "records",
+  "signatures-as-values",
+  "universes"
+))]
 
 /// `UncertifiedCondition`: univalence over a catalogue whose site fails the
 /// corolla or the Segal condition.
 theory Magma where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
+  sort M : Type
+  oper mul : (x : M, y : M) --> (z : M)
+  oper one : () --> (z : M)
 
 def exchange(b : Bool) -> Bool =
   match b where
@@ -18,7 +25,7 @@ def keep(e : +{Unit}) -> +{Unit} =
 def raised = ua[
   2,
   4
-] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep})
 
 @[refuses("UncertifiedCondition")]
 def empty = ua[

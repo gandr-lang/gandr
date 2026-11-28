@@ -3,17 +3,17 @@
 /// `format`: states the spelling of the declared name in each markup, one
 /// optional text for each of `latex`, `typst` and `md`.
 @[format(*{.latex = "\\varepsilon", .typst = "epsilon", .md = "ε"})]
-def unit = 0;
+def unit = 0
 
 /// An associative operation with a unit, whose members state their own
 /// spellings.
 theory Monoid where
   /// The carrier.
   @[format(*{.latex = "M", .md = "M"})]
-  sort M : Type;
+  sort M : Type
   /// The unit.
   @[format(*{.latex = "\\varepsilon", .typst = "epsilon", .md = "ε"})]
-  oper unit : M;
+  oper unit : M
   /// The operation.
   @[format(*{.latex = "\\oplus", .typst = "plus.circle", .md = "⊕"})]
-  oper combine : (a : M, b : M) --> M;
+  oper combine : (a : M, b : M) --> M

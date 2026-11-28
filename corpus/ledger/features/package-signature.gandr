@@ -11,10 +11,10 @@
 /// What this source reads of the one it imports: one answer, an integer.
 pub theory Answering where
   /// The answer the source exports.
-  oper answer : Integer;
+  oper answer : Integer
 
 // The source's interface holds `answer : Integer`, so the import settles.
-import "../syntax/pub-declaration.gandr" as declared : Answering;
+import "../syntax/pub-declaration.gandr" as declared : Answering
 
 /// The answer, read through the import at its signature.
 @[runs("42")]

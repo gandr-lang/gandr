@@ -5,8 +5,8 @@
 /// rewrites to two normal forms.
 @[refuses("RulesOverlapSecondOrder")]
 theory LetToZero where
-  sort Tm : Type+;
-  oper zero : Tm;
-  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
-  rule zeta : let u t <=> t u;
-  rule toZero : let zero t <=> zero;
+  sort Tm : Type+
+  oper zero : Tm
+  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm
+  rule zeta : let u t <=> t u
+  rule toZero : let zero t <=> zero

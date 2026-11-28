@@ -6,8 +6,8 @@
 /// The theory the model derives from.
 @[refuses("UndescribedMember.NestedOperation")]
 theory T where
-  sort Nat : Type;
-  oper f : (a : Nat) --> (b : Nat);
+  sort Nat : Type
+  oper f : (a : Nat) --> (b : Nat)
   rule twice : (data x : Nat) ==> (o : Nat) {
     node : f(x) --> (m);
     node : f(m) --> (o);

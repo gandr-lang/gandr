@@ -9,12 +9,12 @@
 @[refuses("UndescribedMember.UnwiredDiagram")]
 theory Mixed where
   @[frobenius]
-  sort Q : Type;
-  sort N : Type;
-  oper f : (a : Q) --> (b : Q);
-  oper g : (a : Q) --> (b : Q);
-  oper p : (a : N) --> (b : N);
-  oper q : (a : N) --> (b : N);
+  sort Q : Type
+  sort N : Type
+  oper f : (a : Q) --> (b : Q)
+  oper g : (a : Q) --> (b : Q)
+  oper p : (a : N) --> (b : N)
+  oper q : (a : N) --> (b : N)
 
   rule both : (
     data x : Q,

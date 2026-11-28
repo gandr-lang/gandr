@@ -4,5 +4,5 @@
 /// classifies no codes.
 module Indexed : *{type Hom : Integer -> Integer} where {
   @[refuses("StaticClassifierExpected")]
-  type Hom(n : Integer) = Integer;
+  type Hom(n : Integer) = Integer
 }

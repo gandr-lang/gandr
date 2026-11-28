@@ -23,11 +23,11 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 
 /// Naturals compared constructor by constructor, recursing at `var Nat`.
-def eqNat = Eq.generic Nat;
+def eqNat = Eq.generic Nat
 
 /// Two is two.
 @[runs("+{.0 = *{}}")]
-def sameNat() -> Bool = eqNat (Succ (Succ Zero)) (Succ (Succ Zero));
+def sameNat() -> Bool = eqNat (Succ (Succ Zero)) (Succ (Succ Zero))
 
 /// One is not two: the recursion reaches `Zero` on one side only.
 @[runs("+{.1 = *{}}")]

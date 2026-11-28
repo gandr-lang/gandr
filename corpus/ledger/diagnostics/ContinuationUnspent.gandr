@@ -1,10 +1,18 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 /// `ContinuationUnspent`: an operation clause owing its continuation, which
 /// holds an obligation, finishing without resuming or abandoning it.
 
 // Early exit's host interface.
-import std.process;
+import std.process
 
 /// A task's join protocol and the path it reads.
 module Cancel :> *{
@@ -13,7 +21,7 @@ module Cancel :> *{
 } where {
   /// The path a task reads.
   @[checks]
-  def notes = "notes";
+  def notes = "notes"
 }
 
 @[refuses("ContinuationUnspent")]

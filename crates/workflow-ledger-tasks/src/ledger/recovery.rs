@@ -1430,6 +1430,8 @@ mod tests
     /// group, and `thunk` deleted leaves its `return` where no body passes
     /// (#3496). Each form left is well formed and refused for what it means
     /// where it stands, so each mutant is counted well formed and not filed.
+    /// The ledger states its exemplars in the sugared form, which writes no
+    /// `thunk { return … }`, so that source is the test's own.
     #[test]
     fn a_deleted_licence_leaves_a_well_formed_source_3332()
     {
@@ -1453,8 +1455,12 @@ mod tests
                 include_str!("../../../../corpus/ledger/syntax/rec-block.gandr"),
             ),
             (
-                "parenthesized-type.gandr",
-                include_str!("../../../../corpus/ledger/syntax/parenthesized-type.gandr"),
+                "thunk-return.gandr",
+                concat!(
+                    "@![features((\"call-by-push-value\", \"explicit-exits\", \"let-statements\", ",
+                    "\"thunks-and-force\"))]\n\n/// `parenthesized_type`: a parenthesized type.\n",
+                    "@[checks]\ndef later : +U (-F Integer);\ndef later = thunk { return 1 };\n"
+                ),
             ),
         ] {
             std::fs::write(folder.join(name), text).expect("the exemplar is written");
@@ -1465,26 +1471,26 @@ mod tests
         let licensed = [
             (
                 "break-expression.gandr",
-                99_usize,
+                129_usize,
                 "loop",
                 Mutation::Deleted,
             ),
             (
                 "break-expression.gandr",
-                106,
+                136,
                 "break",
                 Mutation::Missed(String::from("brea")),
             ),
-            ("break-expression.gandr", 106, "break", Mutation::Deleted),
+            ("break-expression.gandr", 136, "break", Mutation::Deleted),
             (
                 "break-value-expression.gandr",
-                119,
+                125,
                 "loop",
                 Mutation::Deleted,
             ),
-            ("rec-block.gandr", 178, "rec", Mutation::Deleted),
-            ("rec-block.gandr", 301, "rec", Mutation::Deleted),
-            ("parenthesized-type.gandr", 102, "thunk", Mutation::Deleted),
+            ("rec-block.gandr", 305, "rec", Mutation::Deleted),
+            ("rec-block.gandr", 417, "rec", Mutation::Deleted),
+            ("thunk-return.gandr", 240, "thunk", Mutation::Deleted),
         ];
         for &(exemplar, at, tile, ref mutation) in &licensed {
             assert!(

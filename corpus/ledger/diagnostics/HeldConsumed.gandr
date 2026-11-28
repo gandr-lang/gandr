@@ -7,10 +7,10 @@
 module Taken where {
   /// The integer, taken.
   @[checks]
-  def take(self : consumed Integer) -> Integer = pure self;
+  def take(self : consumed Integer) -> Integer = pure self
   /// The integer, read.
   @[checks]
-  def look(self : shared Integer) -> Integer = pure 1;
+  def look(self : shared Integer) -> Integer = pure 1
 }
 
 @[refuses("HeldConsumed")]

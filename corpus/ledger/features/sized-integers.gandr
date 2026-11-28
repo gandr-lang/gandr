@@ -17,23 +17,23 @@
 
 /// The greatest `u8` plus one wraps to zero.
 @[runs("0u8")]
-def wrapped_u8() -> u8 = u8.wrapping_add 255u8 1u8;
+def wrapped_u8() -> u8 = u8.wrapping_add 255u8 1u8
 
 /// The least `i8` times minus one wraps to the least `i8`.
 @[runs("-128i8")]
-def wrapped_i8() -> i8 = i8.wrapping_mul (i8.from_integer (- 128)) (i8.from_integer (- 1));
+def wrapped_i8() -> i8 = i8.wrapping_mul (i8.from_integer (- 128)) (i8.from_integer (- 1))
 
 /// The negation of zero is the greatest `u16`, which fills its sixteen bits.
 @[runs("65535u16")]
-def negated_u16() -> u16 = u16.not 0u16;
+def negated_u16() -> u16 = u16.not 0u16
 
 /// The greatest `u8` plus one stays at the greatest.
 @[runs("255u8")]
-def saturated_u8() -> u8 = u8.saturating_add 255u8 1u8;
+def saturated_u8() -> u8 = u8.saturating_add 255u8 1u8
 
 /// The greatest `u8` plus one is absent.
 @[runs("+{.1 = *{}}")]
-def checked_u8() -> u8 + Unit = u8.checked_add 255u8 1u8;
+def checked_u8() -> u8 + Unit = u8.checked_add 255u8 1u8
 
 /// A shift by the bit count is absent.
 @[runs("+{.1 = *{}}")]

@@ -1,10 +1,16 @@
-@![features(("call-by-push-value", "let-statements", "method-calls", "modules", "native-primitives"))]
+@![features((
+  "call-by-push-value",
+  "let-statements",
+  "method-calls",
+  "modules",
+  "native-primitives"
+))]
 
 /// `binary_expression.pipe.field`: the answer of a call is the receiver of
 /// the method that the field names.
 module Counter where
-  def grown(self : consumed Integer, by : Integer) -> -F Integer = pure self + by
-  def read(self : shared Integer) -> -F Integer = pure self
+  def grown(self : consumed Integer, by : Integer) -> Integer = pure self + by
+  def read(self : shared Integer) -> Integer = pure self
 
-def chained(n : Integer) -> -F Integer =
+def chained(n : Integer) -> Integer =
   n.grown 1 |>.grown 2 |>.read ()

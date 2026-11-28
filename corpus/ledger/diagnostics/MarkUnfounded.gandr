@@ -4,5 +4,5 @@
 /// to another world.
 module Alone :> *{mobile type Report} where {
   @[refuses("MarkUnfounded")]
-  type Report = Integer -> Integer;
+  type Report = Integer -> Integer
 }

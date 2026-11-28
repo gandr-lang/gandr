@@ -1,10 +1,17 @@
-@![features(("call-by-push-value", "dependent-functions", "let-statements", "located-judgements", "records", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "let-statements",
+  "located-judgements",
+  "records",
+  "thunks-and-force"
+))]
 
 /// `Immobile.Homed`: a thunk crossing to another world over a call of a
 /// declaration homed where the thunk is formed.
-world operator;
+world operator
 
-world seat;
+world seat
 
 /// The seat's own work, homed at the seat.
 @[entry(seat)]

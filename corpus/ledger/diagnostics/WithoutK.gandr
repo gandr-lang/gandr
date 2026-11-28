@@ -1,4 +1,10 @@
-@![features(("data-parameters", "explicit-exits", "identity-types", "let-statements", "pattern-matching"))]
+@![features((
+  "data-parameters",
+  "explicit-exits",
+  "identity-types",
+  "let-statements",
+  "pattern-matching"
+))]
 
 /// `WithoutK`: a path matched against reflexivity, `here`.
 @[refuses("WithoutK")]

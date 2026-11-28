@@ -1,4 +1,14 @@
-@![features(("call-by-push-value", "effect-handlers", "effect-rows", "imports", "let-statements", "modules", "native-lists", "records", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-lists",
+  "records",
+  "visibility"
+))]
 
 /// `exact-reals`: exact real arithmetic beside the kernel, which a program
 /// reaches through `std.reals.Eff`.
@@ -24,7 +34,7 @@
 /// - see: `corpus/pathological/reals/false-checkpoint.gandr` — a checkpoint whose evidence does not replay
 
 // The exact reals' host interface.
-import std.reals;
+import std.reals
 
 /// The lower end of an enclosure of the root of `plan` no wider than `2^-k`.
 pub def lower(plan : String, k : Integer) -> [std.reals.Eff] String =

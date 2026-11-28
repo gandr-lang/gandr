@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "modules", "nominal-data", "products-and-sums", "records", "signatures-as-values", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "modules",
+  "nominal-data",
+  "products-and-sums",
+  "records",
+  "signatures-as-values",
+  "universes"
+))]
 
 /// `type_path`: a type named through a module, applied when it is a family,
 /// or a call of a function the module declares. A path also names a term
@@ -6,9 +15,9 @@
 /// the theory `Two`.
 theory Two where
   /// A width.
-  sort Width : Type;
+  sort Width : Type
   /// The width of a word.
-  oper word : Width;
+  oper word : Width
 
 /// A piece that its width indexes.
 data Fragment : Terms Two -> Type where {
@@ -17,6 +26,6 @@ data Fragment : Terms Two -> Type where {
 }
 
 module Counter where
-  type Pair(a : Type) = a * a;
-  def same(a : Type) -> Type = a;
+  type Pair(a : Type) = a * a
+  def same(a : Type) -> Type = a
 def twin(p : Fragment Two.word) -> Counter.same (Counter.Pair Integer) = *{1, 2};

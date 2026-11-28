@@ -8,34 +8,34 @@
 ///
 /// - see: #3135 — `gandr`
 
-import std.build (Gandr);
+import std.build (Gandr)
 
 /// The package's model: every field but what it asks of the toolchain inert,
 /// so an edit to any of those leaves the address where it was.
 pub module Package : Model(Gandr.Package) where
   /// The name the manifest records.
-  def name = "hello";
+  def name = "hello"
   /// The version the manifest records.
-  def version = "0.1.0";
+  def version = "0.1.0"
   /// The package's authors.
-  def authors = "The gandr authors";
+  def authors = "The gandr authors"
   /// The licence, an SPDX expression.
-  def licence = "MIT OR Apache-2.0";
+  def licence = "MIT OR Apache-2.0"
   /// The address the package's documentation stands at.
-  def documentation = "https://github.com/gandr-lang/gandr";
+  def documentation = "https://github.com/gandr-lang/gandr"
   /// The address a resolver may fetch the package from.
-  def endpoint = "https://github.com/gandr-lang/gandr";
+  def endpoint = "https://github.com/gandr-lang/gandr"
   /// The least language version the sources ask for: content, so an edit to
   /// it moves the address.
-  def gandr = ">= 0.0";
+  def gandr = ">= 0.0"
   /// The features the sources use, content as `gandr` is.
-  def features = "project-manifest";
+  def features = "project-manifest"
   /// The systems the package builds on, content as `gandr` is.
-  def systems = "";
+  def systems = ""
   /// The spelling the package asks for, inert as its name is.
-  def spelling = "";
+  def spelling = ""
   /// The directory the modules sit under, inert as its name is.
-  def sources = "src";
+  def sources = "src"
 
 /// The package's content: an edit to it moves the address.
 @[runs("\"hello, world\"")]

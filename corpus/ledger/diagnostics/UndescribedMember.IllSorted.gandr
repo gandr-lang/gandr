@@ -10,13 +10,13 @@
 /// - see: #5042
 @[refuses("UndescribedMember.IllSorted")]
 theory TermIdentity where
-  sort Con : Type;
-  sort Sub(d : Con, g : Con) : Type;
-  sort Ty(g : Con) : Type;
-  sort Tm(g : Con, a : Ty g) : Type;
+  sort Con : Type
+  sort Sub(d : Con, g : Con) : Type
+  sort Ty(g : Con) : Type
+  sort Tm(g : Con, a : Ty g) : Type
 
-  oper id : (g : Con) --> Sub g g;
-  oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
-  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d (subTy a s);
+  oper id : (g : Con) --> Sub g g
+  oper subTy : (a : Ty g, s : Sub d g) --> Ty d
+  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d (subTy a s)
 
-  rule tmId : subTm t (id g) ==> t;
+  rule tmId : subTm t (id g) ==> t

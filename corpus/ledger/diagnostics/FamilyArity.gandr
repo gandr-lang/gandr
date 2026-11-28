@@ -1,4 +1,11 @@
-@![features(("data-parameters", "dependent-functions", "let-statements", "products-and-sums", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "let-statements",
+  "products-and-sums",
+  "type-codes",
+  "universes"
+))]
 
 /// `FamilyArity`: a type operator applied to more arguments than its
 /// static Pis take.

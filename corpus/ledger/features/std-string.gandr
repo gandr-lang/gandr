@@ -10,7 +10,7 @@
 /// - owes: #318 — the scanning functions
 /// - owes: #525 — a law over a definition itself
 
-import std.string (concat, isEmpty);
+import std.string (concat, isEmpty)
 
 /// `named` joins a name to a greeting and asks whether the result is empty.
 @[runs("+{.1 = *{}}")]

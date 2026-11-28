@@ -1,9 +1,16 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records"
+))]
 
 /// `BufferReturnedTwice`: a placed buffer handed back a second time.
 
 // The ring's host interface.
-import std.io;
+import std.io
 
 /// Frees one buffer twice in one scope.
 @[refuses("BufferReturnedTwice")]

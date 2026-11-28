@@ -4,7 +4,7 @@
 /// row a role placed there requires of its site.
 
 // The console's host interface.
-import std.io;
+import std.io
 
 /// A world whose role requires the console.
 world far requires [std.io.Console.Eff];

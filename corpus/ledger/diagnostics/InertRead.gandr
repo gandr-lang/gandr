@@ -5,12 +5,12 @@
 /// - see: #3029
 theory Labelled where {
   @[inert]
-  oper label : String;
+  oper label : String
 }
 
 module Box : Model(Labelled) where {
   @[runs("\"box\"")]
-  def label = "box";
+  def label = "box"
 }
 
 @[refuses("InertRead")]

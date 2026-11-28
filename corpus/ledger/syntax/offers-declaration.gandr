@@ -4,7 +4,7 @@
 /// each label bound to a model module the file declares.
 
 // The console's host interface.
-import std.io;
+import std.io
 
 /// The console, granted whole.
 offers [std.io.Console.Eff];

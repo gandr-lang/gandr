@@ -1,4 +1,12 @@
-@![features(("data-parameters", "dependent-functions", "imports", "indexed-data", "let-statements", "records", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "imports",
+  "indexed-data",
+  "let-statements",
+  "records",
+  "universes"
+))]
 
 /// `rust-semantics-thir` derives the postconditions of Corten's `example` and
 /// its buddy allocator's `pop` from THIR written as data.
@@ -22,18 +30,18 @@
 /// - see: corpus/model/interop/thir/buddy-pop.gandr
 
 // `Value`, `Int`, `False`, `Expr` and `wpFn`.
-import std.thir (Value, Int, False, Expr, wpFn);
+import std.thir (Value, Int, False, Expr, wpFn)
 
 // `Item`, `exampleBody`, `exampleSpec`, `exampleMeets`, `exampleReturnsPast`
 // and `identitySpec`.
-import "../../model/interop/thir/example.gandr";
+import "../../model/interop/thir/example.gandr"
 
 // `Nat`.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 // `Vals`, `Ixs`, `freeAt`, `wpMemFn`, `popBody`, `popEnv`, `popPost`, `Own`,
 // `Whole`, `buddy` and `popMeets`.
-import "../../model/interop/thir/buddy-pop.gandr";
+import "../../model/interop/thir/buddy-pop.gandr"
 
 /// `example`'s body paired with evidence that its transformer is below its
 /// specification at every value and postcondition.
@@ -54,7 +62,7 @@ def exampleSpecified : *{
 def returnsPast(
   spec : (Item, Value, Value -> Type) -> Type,
   post : Value -> Type
-) -> (post (Int 0)) -> wpFn Item spec exampleBody False post =
+) -> (post (Int 0)) -> (wpFn Item spec exampleBody False post) =
   exampleReturnsPast spec post
 
 /// From the free list of `order`, `pop` answers its head and leaves
@@ -64,7 +72,9 @@ def popSpecified(
   heads : Vals,
   order : Nat,
   ixs : Ixs
-) -> (freeAt blocks heads order ixs) -> wpMemFn popBody (popEnv order) (popPost blocks heads order ixs) (
-  Own Zero Whole (buddy blocks heads)
+) -> (freeAt blocks heads order ixs) -> (
+  wpMemFn popBody (popEnv order) (popPost blocks heads order ixs) (
+    Own Zero Whole (buddy blocks heads)
+  )
 ) =
   popMeets blocks heads order ixs

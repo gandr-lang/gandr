@@ -18,7 +18,7 @@
 /// - see: corpus/model/runtime/exclusive-update.gandr
 /// - owes: #3205
 
-import "../../model/runtime/exclusive-update.gandr";
+import "../../model/runtime/exclusive-update.gandr"
 
 /// The second view reads what the first wrote back.
 @[runs("Pair 3 2")]

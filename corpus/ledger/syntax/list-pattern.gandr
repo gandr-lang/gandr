@@ -1,9 +1,16 @@
-@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "pattern-matching"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "list-case",
+  "native-lists",
+  "pattern-matching"
+))]
 
 /// `list_pattern`: a list pattern.
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// The first element of a list, or zero for the empty list.
 def head(xs : List Integer) -> Integer =

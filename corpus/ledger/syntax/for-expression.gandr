@@ -1,9 +1,16 @@
-@![features(("data-parameters", "for-loops", "imports", "let-statements", "native-lists", "records"))]
+@![features((
+  "data-parameters",
+  "for-loops",
+  "imports",
+  "let-statements",
+  "native-lists",
+  "records"
+))]
 
 /// `for_expression`: a for loop.
 
 // The native finite lists.
-import std.list (List);
+import std.list (List)
 
 /// A step that does nothing with its integer.
 def tick(n : Integer) -> Unit =

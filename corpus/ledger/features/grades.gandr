@@ -1,4 +1,11 @@
-@![features(("call-by-push-value", "imports", "let-statements", "native-primitives", "records", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "records",
+  "temporary-access"
+))]
 
 /// `grades`: Grades on a hold.
 /// Implemented: `var[1] s = e`, a value held at grade one: made in place, never
@@ -21,7 +28,7 @@
 //! [Orchard-2019-quantitative_program_reasoning_graded_modal_types]: https://doi.org/10.1145/3341714 "Orchard, Liepelt and Eades, Quantitative Program Reasoning with Graded Modal Types"
 
 // The successor, a call whose type synthesises where a statement binds it.
-import "../../model/control/accessor-counter.gandr";
+import "../../model/control/accessor-counter.gandr"
 
 /// A count made in place, bumped through its exclusive view: the read moves the
 /// count out, `resume` writes its successor back, and the access answers what

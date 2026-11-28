@@ -1,4 +1,10 @@
-@![features(("data-parameters", "identity-types", "let-statements", "linear-function", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "linear-function",
+  "universes"
+))]
 
 /// `linear-function`: The linear function `(x : A) ⊸ C`, whose body takes
 /// its parameter once.
@@ -20,18 +26,18 @@
 // - see: `../diagnostics/ShadowCaptured.gandr`
 
 /// The identity, its type supplied by the argument.
-def id[a : Type](x : a) ⊸ a = x;
+def id[a : Type](x : a) ⊸ a = x
 
 /// `id` at the integers.
 @[runs("7")]
-def seven() -> Integer = id 7;
+def seven() -> Integer = id 7
 
 /// The result type reads the parameter through its shadow, and the body takes
 /// its copy once.
-def itself(x : Integer) ⊸ Path x x = Path.here x;
+def itself(x : Integer) ⊸ Path x x = Path.here x
 
 /// A function of linear type, applied once.
-def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f (a);
+def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f (a)
 
 /// A `let` line binds the parameter's one copy, and the last line reads
 /// the name once.

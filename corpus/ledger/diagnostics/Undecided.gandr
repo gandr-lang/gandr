@@ -1,11 +1,23 @@
-@![features(("call-by-push-value", "conditionals", "lazy-records", "let-statements", "native-primitives", "pattern-matching", "products-and-sums", "records", "signatures-as-values", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "conditionals",
+  "lazy-records",
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "products-and-sums",
+  "records",
+  "signatures-as-values",
+  "thunks-and-force",
+  "universes"
+))]
 
 /// `Undecided`: a claim the machine cannot decide: a `ua` whose translator
 /// branches on a lazy record's entry, which the machine does not observe.
 theory Magma where
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
+  sort M : Type
+  oper mul : (x : M, y : M) --> (z : M)
+  oper one : () --> (z : M)
 
 def keep(e : +{Unit}) -> +{Unit} =
   e

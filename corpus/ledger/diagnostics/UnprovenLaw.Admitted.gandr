@@ -1,13 +1,23 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "modules", "native-primitives", "nominal-data", "signatures-as-values", "tactics-over-goals", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "modules",
+  "native-primitives",
+  "nominal-data",
+  "signatures-as-values",
+  "tactics-over-goals",
+  "universes"
+))]
 
 /// `UnprovenLaw.Admitted`: a law of a module's model admitted at a carrier the
 /// host does not provide.
 ///
 /// The theory the model derives from.
 theory Reflexive where
-  sort Carrier : Type;
-  oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) -> Path[.A = Bool] (alike a a) true;
+  sort Carrier : Type
+  oper alike : (a : Carrier, b : Carrier) --> Bool
+  law refl : (a : Carrier) -> Path[.A = Bool] (alike a a) true
 
 /// One value, of a type the source writes.
 data Lone : Type where
@@ -15,7 +25,7 @@ data Lone : Type where
 
 /// The model at `Lone`.
 module Admitting : Model(Reflexive) with sort Carrier = Lone where {
-  def alike(a : Lone, b : Lone) -> Bool = true;
+  def alike(a : Lone, b : Lone) -> Bool = true
   @[refuses("UnprovenLaw.Admitted")]
-  law refl = ~admitted;
+  law refl = ~admitted
 }

@@ -1,4 +1,10 @@
-@![features(("data-parameters", "identity-types", "let-statements", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "pattern-matching",
+  "universes"
+))]
 
 /// `ComposeUncertified`: a composite at a degree no chain of
 /// the catalogue reaches.

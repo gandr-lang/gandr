@@ -4,7 +4,7 @@
 /// reached through it.
 pub module Origin where
   /// The starting point.
-  def zero() -> Integer = 0;
+  def zero() -> Integer = 0
 
 /// The member called through its module's name.
 @[runs("0")]

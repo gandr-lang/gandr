@@ -1,7 +1,7 @@
 @![features(("call-by-push-value", "let-statements", "located-judgements", "records"))]
 
 /// `entry`: names the worlds a declaration is entered at.
-world seat;
+world seat
 @[entry(seat)]
 def opened() -> Unit =
   pure *{}
