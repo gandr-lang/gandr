@@ -24,8 +24,8 @@ def measured(e : Expr) -> Integer =
   match e {
     | Lit n => n
     | Add a b => 2
-    | Share(x).%left => 3
-    | Share(x).%right => 4
+    | (Share x).%left => 3
+    | (Share x).%right => 4
   }
 
 def partial(e : Expr) -> Integer =

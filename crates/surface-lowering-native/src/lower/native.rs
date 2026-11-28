@@ -6299,16 +6299,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         Err(here.out(FragmentBoundary::Unadmitted(super::unread_pattern(name))))
     }
 
-    /// The port a projection pattern `C(x, …).%l` matches: the port `l` of the
-    /// multi-output constructor `C`, its field patterns `x, …`.
+    /// The port a projection pattern `C(x, …).%l` or `(C x …).%l` matches:
+    /// the port `l` of the multi-output constructor `C`, its field patterns
+    /// `x, …`.
     ///
     /// # Specification
     /// - requires: `here` is a projection pattern; `pieces` holds its reading.
     /// - ensures: for a projection off a constructor applied to field patterns,
     ///   or off a bare constructor, whose name [`Self::ported_named`] resolves,
     ///   the constructor's tile, the port at the selected output's tag, and the
-    ///   field patterns in order; the unnamed absence for a projection off
-    ///   anything else.
+    ///   field patterns in order; a constructor pattern in parentheses, which
+    ///   applies its fields by juxtaposition, reads as that pattern. The
+    ///   unnamed absence for a projection off anything else.
     /// - fails: [`LoweringRefusal::PartialField`] at the member when the
     ///   constructor has no such output; the bare-port refusal at the member
     ///   when a bare `.` selects the port, `C(x, …).l`; a misplaced tile inside
@@ -6319,9 +6321,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// The pattern's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an arm per port covers a two-output constructor, an
-    ///   arm missing one port is refused for it, and a port selected with a
-    ///   bare dot is refused.
+    /// - hypothesis: L3 — an arm per port covers a two-output constructor,
+    ///   written glued or by juxtaposition in parentheses, an arm missing one
+    ///   port is refused for it, and a port selected with a bare dot is
+    ///   refused.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| match ret {
         Ok(Maybe::Present(ref read)) => read.fields.len() == read.port.arity,
@@ -6335,13 +6338,31 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     {
         let unnamed = Ok(Maybe::Absent(constructed::Absent::Unnamed));
         let selector = Context::port_link(&pieces.pieces);
-        let Some((target, selected)) =
+        let Some((mut target, selected)) =
             selector.or_else(|| Context::link(here, &pieces.pieces, here.at.span).ok())
         else {
             return unnamed;
         };
         let mut written = Pieces::new();
         read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut written)?;
+        // `(C x).%l`: the group holds the constructor pattern that applies
+        // its fields by juxtaposition, and the port reads that pattern.
+        let grouped = {
+            let mut group = Cursor::new(&written.pieces, target.span);
+            match (
+                group.tile(TileName::PAREN_OPEN),
+                group.operands(),
+                group.tile(TileName::PAREN_CLOSE),
+            ) {
+                (Maybe::Present(_), Run::One(inner), Maybe::Present(_)) => Some(inner),
+                _ => None,
+            }
+        };
+        if let Some(inner) = grouped {
+            target = inner;
+            written = Pieces::new();
+            read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut written)?;
+        }
         if let Maybe::Present(repaired) = written.repair {
             return Err(repaired.refusal(here.name));
         }
