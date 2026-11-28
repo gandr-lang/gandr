@@ -11,6 +11,20 @@ keywords = ["gandr", "language", "lsp"]
 categories = ["development-tools"]
 publish.workspace = true
 
+[features]
+default = []
+# A document's recheck timed and its allocations counted for the benchmark
+# report.
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+# The instrument's layers, as in `gandr-surface-lsp`.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-lsp-core/instrument",
+  "gandr-surface-session/instrument",
+]
+
 # A recheck runs a document's session over the incremental checker's memory
 # checkpoint store and the record plane's memory block store, through the
 # dispatcher's check verb over the run stage's evaluator, and maps the
@@ -48,20 +62,6 @@ serde_json.workspace = true
 [dev-dependencies]
 gandr-surface-lsp-core = { workspace = true, features = ["fixture"] }
 gandr-workflow-sweep.workspace = true
-
-[features]
-default = []
-# A document's recheck timed and its allocations counted for the benchmark
-# report.
-hotpath = ["dep:hotpath", "hotpath/hotpath"]
-# The instrument's layers, as in `gandr-surface-lsp`.
-instrument = [
-  "dep:gandr-core-fork",
-  "gandr-core-fork/instrument",
-  "gandr-surface-dispatcher/instrument",
-  "gandr-surface-lsp-core/instrument",
-  "gandr-surface-session/instrument",
-]
 
 [lints]
 workspace = true

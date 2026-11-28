@@ -11,6 +11,23 @@ keywords = ["gandr", "parser", "report"]
 categories = ["development-tools"]
 publish.workspace = true
 
+[features]
+default = []
+# The report: the molder keeps its census of decisions.
+census = [
+  "dep:gandr-core-fork",
+  "dep:gandr-surface-grammar",
+  "dep:gandr-surface-lsp",
+  "dep:gandr-surface-parser",
+  "dep:gandr-surface-session",
+  "dep:gandr-surface-syntax",
+  "dep:gandr-workflow-ledger-tasks",
+  "dep:gandr-workflow-sweep",
+  "dep:quenchant-shape",
+  "dep:serde_json",
+  "gandr-surface-parser/census",
+]
+
 # The report, built only with the `census` feature: without it the molder
 # keeps no census, and the binary has nothing to count.
 [[bin]]
@@ -36,23 +53,6 @@ gandr-workflow-ledger-tasks = { workspace = true, optional = true }
 gandr-workflow-sweep = { workspace = true, optional = true }
 quenchant-shape = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-
-[features]
-default = []
-# The report: the molder keeps its census of decisions.
-census = [
-  "dep:gandr-core-fork",
-  "dep:gandr-surface-grammar",
-  "dep:gandr-surface-lsp",
-  "dep:gandr-surface-parser",
-  "dep:gandr-surface-session",
-  "dep:gandr-surface-syntax",
-  "dep:gandr-workflow-ledger-tasks",
-  "dep:gandr-workflow-sweep",
-  "dep:quenchant-shape",
-  "dep:serde_json",
-  "gandr-surface-parser/census",
-]
 
 [lints]
 workspace = true

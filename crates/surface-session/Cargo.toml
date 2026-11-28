@@ -12,6 +12,23 @@ categories = ["compilers", "development-tools"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# The instrument's recording sinks, which the hub's build compiles and every
+# other build leaves out. Each layer compiles its sink under this feature.
+# The silent sink, which records nothing, is in every build. The activity
+# layer's rings and the pool's recording fork come with the feature. The
+# counts layer reads the checker's memo tally and the incremental pass's
+# report of each item, which come with it too. The timings layer reads the
+# dispatcher's allocation meter, which comes with it too.
+instrument = [
+  "dep:gandr-surface-diagnostics",
+  "gandr-core-checker/instrument",
+  "gandr-core-fork/instrument",
+  "gandr-core-incremental/instrument",
+  "gandr-surface-dispatcher/instrument",
+]
+
 # The edit-loop measurement prints its matrix; `test = true` builds it with
 # the test targets so its witnesses run.
 [[example]]
@@ -76,23 +93,6 @@ gandr-surface-render-terminal.workspace = true
 gandr-surface-session = { workspace = true, features = ["instrument"] }
 gandr-workflow-sweep.workspace = true
 proptest.workspace = true
-
-[features]
-default = []
-# The instrument's recording sinks, which the hub's build compiles and every
-# other build leaves out. Each layer compiles its sink under this feature.
-# The silent sink, which records nothing, is in every build. The activity
-# layer's rings and the pool's recording fork come with the feature. The
-# counts layer reads the checker's memo tally and the incremental pass's
-# report of each item, which come with it too. The timings layer reads the
-# dispatcher's allocation meter, which comes with it too.
-instrument = [
-  "dep:gandr-surface-diagnostics",
-  "gandr-core-checker/instrument",
-  "gandr-core-fork/instrument",
-  "gandr-core-incremental/instrument",
-  "gandr-surface-dispatcher/instrument",
-]
 
 [lints]
 workspace = true

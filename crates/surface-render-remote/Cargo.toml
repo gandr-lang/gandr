@@ -11,6 +11,11 @@ keywords = ["gandr", "language-server", "no-std", "rendering", "serde"]
 categories = ["compilers", "development-tools", "no-std"]
 publish.workspace = true
 
+[features]
+default = []
+# The serde wire image of every type here, and the validating frame decode.
+serde = ["dep:serde"]
+
 # A leaf: no workspace crate, so a renderer links the presentation vocabulary
 # without the parser or the checker. Serialization is optional.
 # The pinned anodized facade supplies core-only specification helpers;
@@ -25,11 +30,6 @@ serde = { workspace = true, optional = true }
 [dev-dependencies]
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 serde_json.workspace = true
-
-[features]
-default = []
-# The serde wire image of every type here, and the validating frame decode.
-serde = ["dep:serde"]
 
 [lints]
 workspace = true

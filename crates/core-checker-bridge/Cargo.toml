@@ -11,6 +11,13 @@ keywords = ["call-by-push-value", "gandr", "kernel", "no-std", "type-checking"]
 categories = ["compilers", "no-std"]
 publish.workspace = true
 
+[features]
+default = []
+# The trial of each model slot's candidates and kernel readmission timed and
+# their allocations counted for the benchmark report (the driver's `hotpath`
+# bench).
+hotpath = ["dep:hotpath", "gandr-core-checker-base/hotpath", "hotpath/hotpath"]
+
 # The bridge reads the judgement's report from the base. It erases into the
 # term crate's arena and admits through the kernel's choke point, which
 # re-derives every declaration the judgement accepts. A decode of a code
@@ -47,13 +54,6 @@ serde.workspace = true
 gandr-core-checker-base = { workspace = true, features = ["fixture"] }
 proptest.workspace = true
 serde_json.workspace = true
-
-[features]
-default = []
-# The trial of each model slot's candidates and kernel readmission timed and
-# their allocations counted for the benchmark report (the driver's `hotpath`
-# bench).
-hotpath = ["dep:hotpath", "gandr-core-checker-base/hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

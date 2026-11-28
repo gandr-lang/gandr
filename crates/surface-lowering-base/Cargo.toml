@@ -12,6 +12,16 @@ categories = ["compilers", "no-std"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# The test fixtures: parsed and hand-built trees, synthetic positions, origins
+# and spans. The lowering's tests read them beside its own units.
+fixture = ["dep:gandr-surface-parser"]
+# A rule block's decision, its completion included, and the completion's
+# overlap queries and normalization: timed and their allocations counted for
+# the benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -63,16 +73,6 @@ gandr-surface-lowering.workspace = true
 gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
 gandr-surface-lowering-capability.workspace = true
 gandr-surface-parser.workspace = true
-
-[features]
-default = []
-# The test fixtures: parsed and hand-built trees, synthetic positions, origins
-# and spans. The lowering's tests read them beside its own units.
-fixture = ["dep:gandr-surface-parser"]
-# A rule block's decision, its completion included, and the completion's
-# overlap queries and normalization: timed and their allocations counted for
-# the benchmark report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

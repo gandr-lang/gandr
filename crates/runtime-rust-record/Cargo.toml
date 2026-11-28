@@ -11,6 +11,13 @@ keywords = ["abi", "gandr", "interop", "rust"]
 categories = ["development-tools::ffi"]
 publish.workspace = true
 
+# `std` holds the cache and the request, which read files and run the
+# reader. Without it the crate holds the record and its bytes alone, so the
+# `no_std` lowering reads a staged body.
+[features]
+default = ["std"]
+std = ["dep:gandr-core-publish"]
+
 # The pinned anodized facade supplies the specification attributes. BLAKE3
 # keys each cache entry and digests each source that the reader read. The
 # publish crate writes each entry whole.
@@ -18,13 +25,6 @@ publish.workspace = true
 anodized.workspace = true
 blake3.workspace = true
 gandr-core-publish = { workspace = true, optional = true }
-
-# `std` holds the cache and the request, which read files and run the
-# reader. Without it the crate holds the record and its bytes alone, so the
-# `no_std` lowering reads a staged body.
-[features]
-default = ["std"]
-std = ["dep:gandr-core-publish"]
 
 [lints]
 workspace = true

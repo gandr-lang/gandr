@@ -12,6 +12,12 @@ categories = ["data-structures"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# Evaluation/readback boundary diagnostics; no subscriber or std dependency.
+tracing = ["dep:tracing"]
+unfolding-probe = []
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -43,12 +49,6 @@ tracing = { workspace = true, optional = true }
 [dev-dependencies]
 gandr-kernel-core.workspace = true
 proptest.workspace = true
-
-[features]
-default = []
-# Evaluation/readback boundary diagnostics; no subscriber or std dependency.
-tracing = ["dep:tracing"]
-unfolding-probe = []
 
 [lints]
 workspace = true

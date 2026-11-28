@@ -12,6 +12,13 @@ categories = ["concurrency", "no-std"]
 publish.workspace = true
 autobenches = false
 
+[features]
+default = []
+# The activity ring: each worker writes the start and the end of each task
+# into a ring of its own, and the hub folds the rings. Off, the crate carries
+# none of the ring's bytes.
+instrument = ["dep:crossbeam-queue"]
+
 # The measurement: a `harness = false` bench that times the write of one
 # event into the activity ring, alone and beside other producers, and the
 # fold of one tick, with percentiles and allocations.
@@ -37,13 +44,6 @@ quenchant-shape.workspace = true
 [dev-dependencies]
 allocation-counter.workspace = true
 gandr-core-fork = { workspace = true, features = ["instrument"] }
-
-[features]
-default = []
-# The activity ring: each worker writes the start and the end of each task
-# into a ring of its own, and the hub folds the rings. Off, the crate carries
-# none of the ring's bytes.
-instrument = ["dep:crossbeam-queue"]
 
 [lints]
 workspace = true

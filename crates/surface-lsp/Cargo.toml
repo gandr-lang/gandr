@@ -11,6 +11,28 @@ categories = ["development-tools"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# A client of a served session over pipes, for the editor tests, the
+# benchmark report and the parser report.
+client = []
+# A document's recheck timed and its allocations counted for the benchmark
+# report (the driver's `hotpath` bench).
+hotpath = ["gandr-surface-lsp-diagnostics/hotpath"]
+# The instrument's layers: each recheck runs at the sink its client chose,
+# and the session compiles its recording sinks. While a watcher follows the
+# activity, each job of a recheck marks the activity ring, and one thread of
+# the hub folds the ring for the watchers. Off, every recheck runs at the
+# silent sink, which records nothing, and no ring and no fold is compiled.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-lsp-core/instrument",
+  "gandr-surface-lsp-diagnostics/instrument",
+  "gandr-surface-session/instrument",
+]
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -80,28 +102,6 @@ gandr-workflow-output-store.workspace = true
 gandr-workflow-sweep.workspace = true
 percent-encoding.workspace = true
 proptest.workspace = true
-
-[features]
-default = []
-# A client of a served session over pipes, for the editor tests, the
-# benchmark report and the parser report.
-client = []
-# A document's recheck timed and its allocations counted for the benchmark
-# report (the driver's `hotpath` bench).
-hotpath = ["gandr-surface-lsp-diagnostics/hotpath"]
-# The instrument's layers: each recheck runs at the sink its client chose,
-# and the session compiles its recording sinks. While a watcher follows the
-# activity, each job of a recheck marks the activity ring, and one thread of
-# the hub folds the ring for the watchers. Off, every recheck runs at the
-# silent sink, which records nothing, and no ring and no fold is compiled.
-instrument = [
-  "dep:gandr-core-fork",
-  "gandr-core-fork/instrument",
-  "gandr-surface-dispatcher/instrument",
-  "gandr-surface-lsp-core/instrument",
-  "gandr-surface-lsp-diagnostics/instrument",
-  "gandr-surface-session/instrument",
-]
 
 [lints]
 workspace = true

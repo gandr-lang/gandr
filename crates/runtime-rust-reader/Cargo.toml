@@ -12,12 +12,6 @@ publish = false
 [package.metadata.rust-analyzer]
 rustc_private = true
 
-# The reader links rustc's own libraries, so it is no member of the root
-# workspace, whose builds never need the `rustc-dev` component. Its lints are
-# the root's walls that reach a driver: Clippy's groups and the denied
-# warnings.
-[workspace]
-
 [[bin]]
 name = "gandr-rust-reader"
 path = "src/main.rs"
@@ -34,3 +28,9 @@ pedantic = { level = "deny", priority = -1 }
 [lints.rust]
 unsafe_code = "forbid"
 warnings = "deny"
+
+# The reader links rustc's own libraries, so it is no member of the root
+# workspace, whose builds never need the `rustc-dev` component. Its lints are
+# the root's walls that reach a driver: Clippy's groups and the denied
+# warnings.
+[workspace]

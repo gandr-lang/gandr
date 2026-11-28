@@ -18,6 +18,44 @@ categories = ["development-tools"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# The small-device bench's count build (#7359): `gandr check --counts` prints
+# the run's allocations over every thread and the frames that its checks pop.
+# It takes the instrument's counting allocator. Off, no count is compiled.
+counts = ["gandr-kernel-core/counts", "instrument"]
+# The `hotpath` bench: the checker's judgement and readmission and the
+# language server's recheck timed and their allocations counted, the report
+# uploaded to hotpath Cloud when CI asks for it.
+hotpath = [
+  "dep:hotpath",
+  "gandr-surface-dispatcher/hotpath",
+  "gandr-surface-lsp/hotpath",
+  "hotpath/hotpath",
+  "hotpath/hotpath-alloc",
+  "hotpath/hotpath-cloud",
+]
+# The hub's build: each recheck of `gandr lsp` and `gandr serve` runs at the
+# instrument layer its client chose, or at the trace layer while a
+# `gandr view --trace` is attached, `gandr serve` offers `subscribe_activity`,
+# `gandr check --activity` prints each core's occupancy from the activity
+# ring, and the global allocator counts each allocation of its thread for the
+# timings layer. Off, as in `gandr check` and every artifact a recipe builds,
+# no recording sink, no ring and no count is compiled.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-agentic/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-lsp/instrument",
+]
+# On macOS, serve every allocation from one private malloc zone rather than
+# the default zone; off, and on every other target, the system allocator.
+# Off by default: it missed its kill line. README § The global allocator.
+malloc-zone = []
+# Hosted stderr diagnostics; the dispatcher receives instrumentation only.
+tracing = ["dep:tracing", "dep:tracing-subscriber", "gandr-surface-dispatcher/tracing", "tracing/std"]
+
 [[bin]]
 name = "gandr"
 path = "src/main.rs"
@@ -120,44 +158,6 @@ gandr-surface-tui.workspace = true
 [target."cfg(unix)".dev-dependencies]
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 nix.workspace = true
-
-[features]
-default = []
-# The small-device bench's count build (#7359): `gandr check --counts` prints
-# the run's allocations over every thread and the frames that its checks pop.
-# It takes the instrument's counting allocator. Off, no count is compiled.
-counts = ["gandr-kernel-core/counts", "instrument"]
-# The `hotpath` bench: the checker's judgement and readmission and the
-# language server's recheck timed and their allocations counted, the report
-# uploaded to hotpath Cloud when CI asks for it.
-hotpath = [
-  "dep:hotpath",
-  "gandr-surface-dispatcher/hotpath",
-  "gandr-surface-lsp/hotpath",
-  "hotpath/hotpath",
-  "hotpath/hotpath-alloc",
-  "hotpath/hotpath-cloud",
-]
-# The hub's build: each recheck of `gandr lsp` and `gandr serve` runs at the
-# instrument layer its client chose, or at the trace layer while a
-# `gandr view --trace` is attached, `gandr serve` offers `subscribe_activity`,
-# `gandr check --activity` prints each core's occupancy from the activity
-# ring, and the global allocator counts each allocation of its thread for the
-# timings layer. Off, as in `gandr check` and every artifact a recipe builds,
-# no recording sink, no ring and no count is compiled.
-instrument = [
-  "dep:gandr-core-fork",
-  "gandr-core-fork/instrument",
-  "gandr-surface-agentic/instrument",
-  "gandr-surface-dispatcher/instrument",
-  "gandr-surface-lsp/instrument",
-]
-# On macOS, serve every allocation from one private malloc zone rather than
-# the default zone; off, and on every other target, the system allocator.
-# Off by default: it missed its kill line. README § The global allocator.
-malloc-zone = []
-# Hosted stderr diagnostics; the dispatcher receives instrumentation only.
-tracing = ["dep:tracing", "dep:tracing-subscriber", "gandr-surface-dispatcher/tracing", "tracing/std"]
 
 [lints]
 workspace = true

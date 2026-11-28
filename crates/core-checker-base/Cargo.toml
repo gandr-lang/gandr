@@ -12,6 +12,23 @@ categories = ["compilers", "no-std"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# The fixtures of the tests: the arenas, declarations, modules and generators
+# that the tests of the base, the bridge and the top build on. Off, nothing
+# of them compiles outside this crate's own unit tests.
+fixture = ["dep:proptest"]
+# Per-declaration checking timed and its allocations counted for the
+# benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+# The goal memo's tally in each checking context: a hit or a miss counted at
+# each consult, which the counts layer of the hub's instrument reads. The
+# buffer of steps a tracer lends the context, which the trace layer folds; its
+# records read the clock type of the fork crate's activity ring. Off, the
+# context holds no tally and no buffer, and a consult counts nothing.
+instrument = ["dep:gandr-core-fork", "gandr-core-fork/instrument"]
+unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`. Its tests judge a module and
 # then readmit it, so the target reads the bridge as a dev-dependency.
@@ -63,23 +80,6 @@ gandr-core-checker-base = { path = ".", features = ["fixture"] }
 gandr-core-checker-bridge.workspace = true
 gandr-theory-levitation.workspace = true
 proptest.workspace = true
-
-[features]
-default = []
-# The fixtures of the tests: the arenas, declarations, modules and generators
-# that the tests of the base, the bridge and the top build on. Off, nothing
-# of them compiles outside this crate's own unit tests.
-fixture = ["dep:proptest"]
-# Per-declaration checking timed and its allocations counted for the
-# benchmark report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "hotpath/hotpath"]
-# The goal memo's tally in each checking context: a hit or a miss counted at
-# each consult, which the counts layer of the hub's instrument reads. The
-# buffer of steps a tracer lends the context, which the trace layer folds; its
-# records read the clock type of the fork crate's activity ring. Off, the
-# context holds no tally and no buffer, and a consult counts nothing.
-instrument = ["dep:gandr-core-fork", "gandr-core-fork/instrument"]
-unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
 
 [lints]
 workspace = true

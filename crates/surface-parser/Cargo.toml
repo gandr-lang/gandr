@@ -12,6 +12,12 @@ categories = ["no-std", "parser-implementations"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# The molder counts how it settles each decision, for the parser's report
+# (`gandr-workflow-parser-report`). Off, the molder keeps no census.
+census = []
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -34,12 +40,6 @@ gandr-surface-parser = { workspace = true, features = ["census"] }
 gandr-workflow-sweep.workspace = true
 proptest.workspace = true
 regex-lite.workspace = true
-
-[features]
-default = []
-# The molder counts how it settles each decision, for the parser's report
-# (`gandr-workflow-parser-report`). Off, the molder keeps no census.
-census = []
 
 [lints]
 workspace = true

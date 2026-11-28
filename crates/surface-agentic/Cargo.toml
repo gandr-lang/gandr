@@ -10,6 +10,17 @@ keywords = ["agent", "gandr", "language", "mcp"]
 categories = ["development-tools"]
 publish.workspace = true
 
+[features]
+default = []
+# The hub's build: the toolset offers `subscribe_activity`, and the hub folds
+# the activity ring while a subscription follows it. Off, the manifest does
+# not offer it, and no ring and no fold is compiled.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-lsp/instrument",
+]
+
 # The crate reads the language server's shared workspace: its documents, the
 # diagnostics last published for each, and its read-only requests answered
 # off them; and the features ledger, through gandr-surface-features. The wire
@@ -46,17 +57,6 @@ gandr-surface-agentic = { workspace = true, features = ["instrument"] }
 # through crossterm, which has no WASI terminal, so a WASI build takes none.
 [target."cfg(unix)".dependencies]
 gandr-surface-tui.workspace = true
-
-[features]
-default = []
-# The hub's build: the toolset offers `subscribe_activity`, and the hub folds
-# the activity ring while a subscription follows it. Off, the manifest does
-# not offer it, and no ring and no fold is compiled.
-instrument = [
-  "dep:gandr-core-fork",
-  "gandr-core-fork/instrument",
-  "gandr-surface-lsp/instrument",
-]
 
 [lints]
 workspace = true

@@ -1230,9 +1230,7 @@
           "labels": ["kind:feature", "area:core"]
         }
       ],
-      "surface": [
-        "crates/surface-grammar/tests/highlight/fixture/model/include/monoid.hover"
-      ]
+      "surface": ["crates/surface-grammar/tests/highlight/fixture/model/include/monoid.hover"]
     },
     "output": ""
   },

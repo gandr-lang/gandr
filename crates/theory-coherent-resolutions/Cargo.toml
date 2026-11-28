@@ -12,6 +12,12 @@ categories = ["mathematics", "no-std"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# The overlap queries and normalization timed and their allocations counted
+# for the benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -37,12 +43,6 @@ gandr-kernel-core.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-cell-complexes-tools.workspace = true
 proptest.workspace = true
-
-[features]
-default = []
-# The overlap queries and normalization timed and their allocations counted
-# for the benchmark report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

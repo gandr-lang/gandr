@@ -11,6 +11,10 @@ keywords = ["ci", "corpus", "gandr", "outputs"]
 categories = ["development-tools::testing"]
 publish.workspace = true
 
+[[bin]]
+name = "outputs"
+path = "src/main.rs"
+
 # The pinned anodized facade supplies the specification attribute, and BLAKE3
 # the fingerprint of a tree and the key of a value. The store of the outputs
 # holds each value. serde_json reads `cargo metadata`.
@@ -34,10 +38,6 @@ gandr-surface-syntax.workspace = true
 gandr-theory-graphs.workspace = true
 gandr-workflow-output-store.workspace = true
 serde_json.workspace = true
-
-[[bin]]
-name = "outputs"
-path = "src/main.rs"
 
 [lints]
 workspace = true

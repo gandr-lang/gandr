@@ -12,6 +12,30 @@ publish.workspace = true
 autotests = false
 autobenches = false
 
+[features]
+default = []
+# The items the crate's tests read beside its public ones: its shared test
+# fixtures, and each item that a test reads and the crate keeps to itself.
+fixture = []
+# The checker's judgement and readmission, a rule block's decision with its
+# completion, and a closure's lowering and judgement, the prelude's among
+# them, profiled for the benchmark report (the driver's `hotpath` bench).
+hotpath = [
+  "dep:hotpath",
+  "gandr-core-checker/hotpath",
+  "gandr-surface-lowering/hotpath",
+  "hotpath/hotpath",
+]
+# The pool's recording fork: each job it runs writes a start and an end into
+# the activity ring of the thread that runs it. Off, no fork records.
+instrument = ["gandr-core-fork/instrument"]
+# Invocation boundary diagnostics through the caller-owned subscriber.
+tracing = ["dep:tracing"]
+unfolding-probe = [
+  "gandr-core-checker/unfolding-probe",
+  "gandr-core-nbe/unfolding-probe",
+]
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -144,16 +168,16 @@ nix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-# The host's counter waits on its word across processes through the futex.
-[target.'cfg(target_os = "linux")'.dependencies]
-rustix.workspace = true
-
 # The console of a run writes standard output and standard error by the
 # system call of the IO core of the bootstrap, which has its calls on Linux
 # x86-64. The range of a line is a range of `boot-core`.
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 gandr-boot-core.workspace = true
 gandr-boot-io.workspace = true
+
+# The host's counter waits on its word across processes through the futex.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix.workspace = true
 
 # The default width counts the host's physical performance cores; Linux reads
 # them from sysfs with std alone.
@@ -165,30 +189,6 @@ sysctl.workspace = true
 # through `os_sync_wait_on_address_with_timeout`.
 [target."cfg(unix)".dependencies]
 libc.workspace = true
-
-[features]
-default = []
-# The items the crate's tests read beside its public ones: its shared test
-# fixtures, and each item that a test reads and the crate keeps to itself.
-fixture = []
-# The checker's judgement and readmission, a rule block's decision with its
-# completion, and a closure's lowering and judgement, the prelude's among
-# them, profiled for the benchmark report (the driver's `hotpath` bench).
-hotpath = [
-  "dep:hotpath",
-  "gandr-core-checker/hotpath",
-  "gandr-surface-lowering/hotpath",
-  "hotpath/hotpath",
-]
-# The pool's recording fork: each job it runs writes a start and an end into
-# the activity ring of the thread that runs it. Off, no fork records.
-instrument = ["gandr-core-fork/instrument"]
-# Invocation boundary diagnostics through the caller-owned subscriber.
-tracing = ["dep:tracing"]
-unfolding-probe = [
-  "gandr-core-checker/unfolding-probe",
-  "gandr-core-nbe/unfolding-probe",
-]
 
 [lints]
 workspace = true

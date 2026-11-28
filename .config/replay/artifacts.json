@@ -11,10 +11,7 @@
     "each": "crate",
     "name": "the goldens and captures of {crate}",
     "kind": "output",
-    "paths": [
-      "crates/{crate}/tests/golden/",
-      "crates/{crate}/tests/captures/"
-    ],
+    "paths": ["crates/{crate}/tests/golden/", "crates/{crate}/tests/captures/"],
     "inputs": ["crates/{crate}/"],
     "check": ".config/mise/scope cargo nextest run --locked --manifest-path crates/{crate}/Cargo.toml",
     "stale": [100],

@@ -12,6 +12,22 @@ categories = ["compilers", "no-std"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# Per-declaration checking, the trial of each model slot's candidates, and
+# kernel readmission timed and their allocations counted for the benchmark
+# report (the driver's `hotpath` bench).
+hotpath = [
+  "dep:hotpath",
+  "gandr-core-checker-base/hotpath",
+  "gandr-core-checker-bridge/hotpath",
+  "hotpath/hotpath",
+]
+# The tally and the trace buffer of each checking context (the base's
+# `instrument`), which the hub's instrument reads.
+instrument = ["gandr-core-checker-base/instrument"]
+unfolding-probe = ["gandr-core-checker-base/unfolding-probe"]
+
 [[example]]
 name = "staging_templates"
 test = true
@@ -55,22 +71,6 @@ rayon.workspace = true
 ringbuf.workspace = true
 rtrb.workspace = true
 serde_json.workspace = true
-
-[features]
-default = []
-# Per-declaration checking, the trial of each model slot's candidates, and
-# kernel readmission timed and their allocations counted for the benchmark
-# report (the driver's `hotpath` bench).
-hotpath = [
-  "dep:hotpath",
-  "gandr-core-checker-base/hotpath",
-  "gandr-core-checker-bridge/hotpath",
-  "hotpath/hotpath",
-]
-# The tally and the trace buffer of each checking context (the base's
-# `instrument`), which the hub's instrument reads.
-instrument = ["gandr-core-checker-base/instrument"]
-unfolding-probe = ["gandr-core-checker-base/unfolding-probe"]
 
 [lints]
 workspace = true

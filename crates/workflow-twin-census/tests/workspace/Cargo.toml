@@ -1,5 +1,5 @@
 # A workspace of two crates, for the test of the printed census: the emitter
 # depends on `near`.
 [workspace]
-members = ["crates/near", "crates/runtime-emitter"]
 resolver = "3"
+members = ["crates/near", "crates/runtime-emitter"]

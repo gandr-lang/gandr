@@ -10,6 +10,10 @@ keywords = ["gandr", "language", "toolchain"]
 categories = ["development-tools"]
 publish.workspace = true
 
+[features]
+default = []
+hotpath = ["dep:hotpath", "gandr-surface-dispatcher/hotpath", "hotpath/hotpath"]
+
 # The measurement of the adapter of `std.reals.Eff`: `admit`, `enclose` and
 # `decide` through the host and through `theory-exact-reals` with no adapter,
 # each with percentiles and allocations, on the harness of that crate's
@@ -59,10 +63,6 @@ gandr-surface-dispatcher = { workspace = true, features = ["fixture"] }
 gandr-workflow-sweep.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-[features]
-default = []
-hotpath = ["dep:hotpath", "gandr-surface-dispatcher/hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

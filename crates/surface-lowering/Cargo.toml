@@ -12,6 +12,14 @@ categories = ["compilers", "no-std"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# A rule block's decision, its completion included, and the completion's
+# overlap queries and normalization; a model slot's candidates, each one's
+# packing, an include's reduct maps and a derived equality: timed and their
+# allocations counted for the benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "gandr-surface-lowering-expression/hotpath", "gandr-surface-lowering-model/hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -69,14 +77,6 @@ gandr-theory-e-graphs.workspace = true
 gandr-theory-sites.workspace = true
 gandr-theory-stone-duality.workspace = true
 gandr-workflow-sweep.workspace = true
-
-[features]
-default = []
-# A rule block's decision, its completion included, and the completion's
-# overlap queries and normalization; a model slot's candidates, each one's
-# packing, an include's reduct maps and a derived equality: timed and their
-# allocations counted for the benchmark report (the driver's `hotpath` bench).
-hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "gandr-surface-lowering-expression/hotpath", "gandr-surface-lowering-model/hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true

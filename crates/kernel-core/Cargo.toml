@@ -12,6 +12,13 @@ categories = ["compilers"]
 publish.workspace = true
 autotests = false
 
+[features]
+default = []
+# The count of the frames that the checks of the process pop, which
+# `gandr check --counts` prints for the small-device bench (#7359). Off, no
+# count is compiled and a pop reads nothing.
+counts = []
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -50,13 +57,6 @@ gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-core-base = { workspace = true, features = ["fixture"] }
 proptest.workspace = true
-
-[features]
-default = []
-# The count of the frames that the checks of the process pop, which
-# `gandr check --counts` prints for the small-device bench (#7359). Off, no
-# count is compiled and a pop reads nothing.
-counts = []
 
 [lints]
 workspace = true

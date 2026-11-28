@@ -11,6 +11,13 @@ keywords = ["content-addressing", "gandr", "kernel", "rewriting"]
 categories = ["compilers"]
 publish.workspace = true
 
+[features]
+default = []
+# The generators of the tests: the terms that the tests of the record and of
+# the judgement build on. Off, nothing of them compiles outside this crate's
+# own unit tests.
+fixture = ["dep:proptest"]
+
 # The record is built over the kernel's term crates and core/alloc, as the
 # judgement above it is. Pinned arithmetic and absence types add no runtime
 # allocation or std dependency. The anodized facade supplies core-only
@@ -34,13 +41,6 @@ quenchant-shape.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-
-[features]
-default = []
-# The generators of the tests: the terms that the tests of the record and of
-# the judgement build on. Off, nothing of them compiles outside this crate's
-# own unit tests.
-fixture = ["dep:proptest"]
 
 [lints]
 workspace = true

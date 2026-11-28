@@ -11,6 +11,18 @@ keywords = ["gandr", "language", "lsp"]
 categories = ["development-tools"]
 publish.workspace = true
 
+[features]
+default = []
+# The line finder of the tests, for the tests of the crates above.
+fixture = []
+# The instrument's layers, as in `gandr-surface-lsp`.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-session/instrument",
+]
+
 # The core reads a held text through the pipeline's own faces: the session of
 # a document, the dispatcher's type table and root classification, the run
 # stage's evaluator, the incremental checker's memory store, the lowering's
@@ -49,18 +61,6 @@ gandr-storage-records.workspace = true
 gandr-workflow-output-store.workspace = true
 gandr-workflow-sweep.workspace = true
 serde_json.workspace = true
-
-[features]
-default = []
-# The line finder of the tests, for the tests of the crates above.
-fixture = []
-# The instrument's layers, as in `gandr-surface-lsp`.
-instrument = [
-  "dep:gandr-core-fork",
-  "gandr-core-fork/instrument",
-  "gandr-surface-dispatcher/instrument",
-  "gandr-surface-session/instrument",
-]
 
 [lints]
 workspace = true
