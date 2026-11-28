@@ -136,10 +136,9 @@ def skip(n : Nat) -> Nat =
 
 @[refuses("OutsideLoop")]
 def held(n : Nat) -> Nat =
-  loop {
+  loop do
     let t = thunk { break(n) }
     continue
-  }
 
 /// A `for` steps through a native list: `continue` runs the loop again on the
 /// list's tail, `return` leaves the function from inside it, and what follows
