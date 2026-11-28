@@ -1,7 +1,7 @@
 def f() -> -F Unit = {
   var s = 3
   effect c : std.process.Exit.Eff {
-    let d : (Cap { exit }) at c = c
+    let d : Cap[exit] at c = c
     let k : Integer at s = 1
     let m = k
     c.exit 1
