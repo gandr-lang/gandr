@@ -1,4 +1,4 @@
-@![features(("capabilities", "data-parameters", "modules", "visibility"))]
+@![features(("capabilities", "modules", "visibility"))]
 
 // `std.authority`: the ambient authority. `std` reaches the host by
 // capability, on `cap-std`'s design. Authority enters a program in one place,
@@ -16,7 +16,7 @@
 
 /// The ambient authority: every host operation a landed module of `std`
 /// reaches, held once, as `main`'s parameter.
-pub type Authority = Cap { print, eprint, read_line };
+pub type Authority = Cap[print, eprint, read_line]
 
 /// The standard streams' root capability, opened from `authority`.
-pub def console(authority : Authority) -> Cap { print, eprint, read_line } = authority;
+pub def console(authority : Authority) -> Cap[print, eprint, read_line] = authority;
