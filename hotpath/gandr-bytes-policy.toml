@@ -1,16 +1,16 @@
-# The budgets of the allocation of the `gandr` series in bytes
-# (crates/surface-driver/benches/hotpath.rs,
-# https://hotpath.rs/performance_budgets). A function budget takes its
-# `alloc` only in bytes, and the `gandr` report counts allocations
-# (hotpath/gandr-policy.toml). Thus the budgets need a run of their own.
+# The budgets of the allocation of the `gandr` series in bytes. A budget of a
+# function takes its `alloc` only in bytes, and the report of `gandr` counts
+# allocations. Thus the budgets need a run of their own.
+# - see: crates/surface-driver/benches/hotpath.rs, hotpath/gandr-policy.toml,
+#   https://hotpath.rs/performance_budgets
 #
 # The gate `hotpath-gate` of each landing runs the series with
-# `HOTPATH_ALLOC_METRIC=bytes` and judges each budget on that run alone, with
-# no base (crates/workflow-hotpath-guard/src/judge/budget.rs). A broken budget
-# fails `gandr-bytes`, and a commit accepts it with the trailer
-# `Changes-hotpath: gandr-bytes`. `mise run ci:hotpath` uploads such a run as
-# `gandr-bytes` too, and hotpath Cloud checks the same budgets, in the
-# `hotpath / gandr-bytes` check, which is never a required check.
+# `HOTPATH_ALLOC_METRIC=bytes`. It judges each budget on that run alone, with
+# no base. A broken budget fails `gandr-bytes`, and the trailer
+# `Changes-hotpath: gandr-bytes` of a commit accepts it. `mise run ci:hotpath`
+# uploads such a run as `gandr-bytes` too, and hotpath Cloud checks the same
+# budgets. Its check `hotpath / gandr-bytes` is never a required check.
+# - see: crates/workflow-hotpath-guard/src/judge/budget.rs
 
 pr_check = "fail"
 pr_comment = "on_change"
@@ -29,12 +29,14 @@ judged = false
 # declarations, the descriptions and the model signatures; for the kernel
 # record, the arena, the entries and the exports.
 #
-# On `main` at `2bb83b26`, the series measures 3451.9 KB for each resumed
-# lowering, 648.6 KB for each continued program and 30.2 KB for each resumed
-# kernel record, so each budget is broken. Each rule has `fail_check = false`:
-# the gate of each landing shows it and refuses nothing. A rule fails the
-# check again when the copy of #2461 goes, or when a measurement of the grown
-# prelude gives it a new limit.
+# On `main` at `2bb83b26`, a lowering that resumes takes 3451.9 KB. A program
+# that continues takes 648.6 KB, and a kernel record that resumes takes
+# 30.2 KB. Each of these breaks its budget.
+#
+# Each rule has `fail_check = false`: the gate of each landing shows it and
+# refuses nothing. A rule fails the check again when the copy of the prelude
+# goes. A new measurement can also give it a new limit.
+# - see: #2461
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::lower_onto_closure"
 alloc = { avg = "1186 KB" }
