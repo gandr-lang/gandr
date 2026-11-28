@@ -23,6 +23,8 @@ use quenchant_shape::shape::Maybe;
 use crate::error::LoweringRefusal;
 use crate::fixture::hosted;
 use crate::fixture::hosting;
+use crate::fixture::prelude_hosting;
+use crate::fixture::preluded_imported;
 use crate::lower::native::tests::assert_checked;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
@@ -1403,8 +1405,8 @@ fn a_row_label_is_an_instance_after_every_parameter_2271()
     let source =
         include_str!("tests/fixtures/a-row-label-is-an-instance-after-every-parameter-2271.gandr");
     let mut arena = CoreArena::new();
-    let text = hosting(source);
-    let module = hosted(&text, &mut arena);
+    let text = prelude_hosting(source);
+    let module = preluded_imported(&text, &mut arena);
     assert_eq!(
         equal_type_syntax(
             &arena,
@@ -1431,8 +1433,8 @@ fn a_row_label_naming_a_region_binder_is_its_instance_2271()
     // every parameter it takes is written.
     let source = "def twin[r : Region](x : (Cap {print}) at r) -> -F [r : std.io.Console.Eff] Unit = x.print \"x\";\n";
     let mut arena = CoreArena::new();
-    let text = hosting(source);
-    let module = hosted(&text, &mut arena);
+    let text = prelude_hosting(source);
+    let module = preluded_imported(&text, &mut arena);
     let twin = declaration_named(&module, SurfaceName::from("twin")).constant();
     assert!(
         module.implicits(twin).is_empty(),

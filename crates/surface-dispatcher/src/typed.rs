@@ -7386,15 +7386,16 @@ mod tests
         );
     }
 
-    /// The table [`TypeTable::of_unit`] builds for `source` laid importing
-    /// every host interface's module ([`crate::fixture::Listed::hosted`]), its
-    /// offsets the source's own; panics when the grammar or the parse fails.
+    /// The table [`TypeTable::of_unit`] builds for `source` laid after the
+    /// prelude, importing every host interface's module
+    /// ([`crate::fixture::Listed::hosted`]), its offsets the source's own;
+    /// panics when the grammar or the parse fails.
     ///
     /// # Specification
     /// trivial.
     fn hosted_table(source: SourceText<'_>) -> TypeTable
     {
-        let listed = crate::fixture::Listed::hosted(<&str>::from(source));
+        let listed = crate::fixture::Listed::hosted(<&str>::from(source)).preluded();
         let grammar = built_in().expect("the built-in grammar builds");
         TypeTable::of_unit(
             &grammar,
@@ -8897,6 +8898,14 @@ mod tests
                 "[std.io.Console.Eff]",
             ),
         ] {
+            // A source that writes `Cap` reads the prelude's declaration.
+            let (text, unit) =
+                gandr_surface_lowering::prelude::lay(SourceText::from(text.as_str()), &unit)
+                    .expect("the unit lays no prelude");
+            let base = ByteOffset::from(
+                usize::from(gandr_surface_lowering::prelude::base())
+                    .saturating_add(usize::from(base)),
+            );
             let table = TypeTable::of_unit(&grammar, SourceText::from(text.as_str()), &unit, base)
                 .expect("the unit parses");
             let trips: Vec<(String, RoundTrip)> = table

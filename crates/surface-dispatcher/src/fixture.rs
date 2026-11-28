@@ -173,6 +173,36 @@ impl Listed
         Self::new(SourceText::from(written.as_str()))
     }
 
+    /// The laid source after the prelude: a source that writes `Cap` reads the
+    /// prelude's declaration of its row there.
+    ///
+    /// # Specification
+    /// - requires: the unit lays no prelude.
+    /// - ensures: the prelude, a newline, then the text; `base` is as many
+    ///   bytes later.
+    /// - provides: a source naming `Cap` composed where it resolves.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a writer over a capability of a laid source schedules
+    ///   as its own declarations say.
+    /// - witness: `schedule::tests::a_writer_over_a_capability_stays_fused`
+    #[spec(ensures: |ref ret| ret.text.starts_with(gandr_surface_lowering::prelude::TEXT))]
+    #[inline]
+    #[must_use]
+    pub fn preluded(self) -> Self
+    {
+        let (text, unit) =
+            gandr_surface_lowering::prelude::lay(SourceText::from(self.text.as_str()), &self.unit)
+                .expect("the listed unit lays no prelude");
+        let base = ByteOffset::from(
+            usize::from(gandr_surface_lowering::prelude::base())
+                .saturating_add(usize::from(self.base)),
+        );
+        Self { text, unit, base }
+    }
+
     /// The laid source composed as [`crate::compose()`] composes one source
     /// alone, under `root`, its declarations run by the engine `E`.
     ///

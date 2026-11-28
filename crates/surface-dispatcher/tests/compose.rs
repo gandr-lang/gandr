@@ -516,7 +516,8 @@ fn an_effectful_declaration_stays_on_the_checkers_side()
 {
     let listed = fixture::Listed::hosted(include_str!(
         "compose/fixtures/an-effectful-declaration-stays-on-the-checkers-side-listed.gandr"
-    ));
+    ))
+    .preluded();
     let Composed::Settled { report, .. } = listed.composed::<Evaluator>(CorpusRoot::Strict)
     else {
         panic!("the source composes");

@@ -42,10 +42,14 @@ use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
 use crate::fixture::hosted;
 use crate::fixture::hosting;
-use crate::fixture::imported;
 use crate::fixture::listed;
 use crate::fixture::listing;
 use crate::fixture::parsed;
+use crate::fixture::prelude_hosting;
+use crate::fixture::prelude_imported;
+use crate::fixture::prelude_single;
+use crate::fixture::preluded_imported;
+use crate::fixture::preluded_single;
 use crate::lower::lower_module;
 use crate::lower::lower_unit;
 use crate::model::InterfaceFault;
@@ -289,12 +293,10 @@ const fn variable(index: DeBruijnIndex) -> Value
 fn a_capability_type_lowers_to_its_authority()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(include_str!(
-            "tests/fixtures/a-capability-type-lowers-to-its-authority-module.gandr"
-        )),
-        &mut arena,
-    );
+    let text = prelude_single(include_str!(
+        "tests/fixtures/a-capability-type-lowers-to-its-authority-module.gandr"
+    ));
+    let module = preluded_single(&text, &mut arena);
     let DeclarationOutcome::Uncompleted { declared_type } = outcome_of(&module, "fs".into())
     else {
         panic!("a held capability lowers its type");
@@ -354,10 +356,10 @@ fn a_capability_type_lowers_to_its_authority()
 fn a_returner_row_names_whole_interfaces()
 {
     let mut arena = CoreArena::new();
-    let text = hosting(
+    let text = prelude_hosting(
         "def peek(c : Cap {read}) -> -F [std.process.Exit.Eff, std.fs.Eff] String = c.read \"notes\";\n",
     );
-    let module = hosted(&text, &mut arena);
+    let module = preluded_imported(&text, &mut arena);
     let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "peek".into())
     else {
         panic!("the function lowers");
@@ -414,17 +416,20 @@ fn a_host_interface_answers_only_where_its_module_is_imported_4523()
         ("import std.fs ;\n", false),
         ("", false),
     ] {
-        let source = alloc::format!(
+        let source = prelude_imported(&alloc::format!(
             include_str!(
                 "tests/unformatted/a-host-interface-answers-only-where-its-module-is-imported-4523.gandr"
             ),
             imports = imports,
             say = say
-        );
+        ));
         let mut arena = CoreArena::new();
-        let module = imported(&source, &mut arena);
+        let module = preluded_imported(&source, &mut arena);
         let outcome = outcome_of(&module, "say".into());
-        let import = source.find("import");
+        let import = source
+            .match_indices("import")
+            .map(|(at, _)| at)
+            .find(|&at| at >= usize::from(crate::prelude::base()));
         let marked = module
             .reached_imports()
             .iter()
@@ -463,7 +468,7 @@ fn a_stand_in_takes_the_import_of_a_home_the_unit_lacks_5209()
         "tests/fixtures/a-stand-in-takes-the-import-of-a-home-the-unit-lacks-5209-quit.gandr"
     );
     let pbg = grammar();
-    for (laid, unit, completed) in [
+    for (written, standing, completed) in [
         (
             alloc::format!(
                 include_str!(
@@ -471,11 +476,19 @@ fn a_stand_in_takes_the_import_of_a_home_the_unit_lacks_5209()
                 ),
                 quit = quit
             ),
-            Unit::single().standing_in(SurfaceName::from("std.process")),
+            true,
             true,
         ),
-        (String::from(quit), Unit::single(), false),
+        (String::from(quit), false, false),
     ] {
+        let (laid, unit) = crate::prelude::lay(SourceText::from(written.as_str()), &Unit::single())
+            .expect("a single source lays no prelude");
+        let unit = if standing {
+            unit.standing_in(SurfaceName::from("std.process"))
+        }
+        else {
+            unit
+        };
         let tree = parsed(&pbg, SourceText::from(laid.as_str()));
         let mut arena = CoreArena::new();
         let module = lower_unit(
@@ -576,10 +589,10 @@ fn a_row_stays_open_through_its_tail_2270()
 fn an_unknown_operation_or_interface_is_refused_by_name()
 {
     let mut arena = CoreArena::new();
-    let text = hosting(include_str!(
+    let text = prelude_hosting(include_str!(
         "tests/fixtures/an-unknown-operation-or-interface-is-refused-by-name.gandr"
     ));
-    let module = hosted(&text, &mut arena);
+    let module = preluded_imported(&text, &mut arena);
     for name in ["held", "sent"] {
         assert!(
             matches!(
@@ -734,10 +747,10 @@ fn a_row_names_two_instances_of_one_interface_apart_2271()
 fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
 {
     let mut arena = CoreArena::new();
-    let text = hosting(include_str!(
+    let text = prelude_hosting(include_str!(
         "tests/fixtures/an-exercise-is-checked-against-the-authority-it-was-attenuated-to.gandr"
     ));
-    let module = hosted(&text, &mut arena);
+    let module = preluded_imported(&text, &mut arena);
     let peek = tail_of(&module, &arena, "peek".into());
     let Some(&Computation::Exercise {
         capability,
@@ -1181,8 +1194,8 @@ fn an_exercise_s_head_answers_at_its_operation()
 {
     let text = include_str!("tests/fixtures/an-exercise-s-head-answers-at-its-operation.gandr");
     let mut arena = CoreArena::new();
-    let text = hosting(text);
-    let module = hosted(&text, &mut arena);
+    let text = prelude_hosting(text);
+    let module = preluded_imported(&text, &mut arena);
     let read = |ty| arena.value_type(ty).cloned();
     let mut heads: Vec<(&str, Option<ValueType>, Option<ValueType>)> = module
         .origins()
@@ -2770,10 +2783,10 @@ fn a_clause_abandons_its_continuation_1334()
 fn a_scoped_capability_cannot_escape()
 {
     let mut arena = CoreArena::new();
-    let text = hosting(
+    let text = prelude_hosting(
         "def leak() -> -F Cap {exit} = handle c : std.process.Exit.Eff { pure c } with { | pure(x) => pure x | oper exit(code, k) => k *{} };\n",
     );
-    let module = hosted(&text, &mut arena);
+    let module = preluded_imported(&text, &mut arena);
     let report = judged(&module, &mut arena);
     assert!(
         matches!(
@@ -2905,8 +2918,8 @@ fn a_capability_at_a_scope_lives_in_its_region()
         include_str!("tests/unformatted/a-capability-at-a-scope-lives-in-its-region.gandr"),
         clauses = clauses
     );
-    let text = hosting(source.as_str());
-    let module = hosted(&text, &mut arena);
+    let text = prelude_hosting(source.as_str());
+    let module = preluded_imported(&text, &mut arena);
     let outer = tail_of(&module, &arena, "regions".into());
     let Some(&Computation::Scope { subject: inner, .. }) = arena.computation(outer)
     else {

@@ -104,7 +104,7 @@ fn named_calls<Source>(source: Source) -> Vec<(String, Independence)>
 where
     Source: core::fmt::Display,
 {
-    let listed = crate::fixture::Listed::hosted(source);
+    let listed = crate::fixture::Listed::hosted(source).preluded();
     let (module, core, typed) = typed(&listed);
     let core = &core;
     let writers = independent(core, &typed);
