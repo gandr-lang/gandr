@@ -1,9 +1,14 @@
 //! `saturate` adds two `u8` and keeps the greatest `u8` when the sum
 //! does not fit.
 //!
+//! A checked row of a width has an answer of two forms. This source holds the
+//! lowering of that answer to the answer of the executor.
+//!
 //! The checked addition gives the sum, or the unit when the sum is past the
-//! width. A case on that answer clamps it.
-//! A program whose entry is `saturated` exits 255.
+//! width. A case on that answer clamps it. The compiled program of `saturated`
+//! exits 255.
+//!
+//! - see: exit-code.gandr — a wrapping row of a width
 
 /// The checked sum of two words.
 def checked_sum(a : u8, b : u8) -> u8 + Unit = u8.checked_add a b
@@ -26,7 +31,7 @@ def overflowing() -> u8 + Unit = checked_sum 255u8 1u8
 @[runs("7u8")]
 def small() -> u8 = { let sum = checked_sum 3u8 4u8; clamp sum };
 
-/// A large sum is clamped.
+/// The clamp gives 255 for a large sum.
 @[runs("255u8")]
 def large() -> u8 = { let sum = checked_sum 200u8 100u8; clamp sum };
 

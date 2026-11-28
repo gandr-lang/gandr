@@ -1,7 +1,12 @@
 //! `pick` chooses one of two words by a truth value.
 //!
-//! `Bool` is `Unit + Unit`, and `if` is a case of that sum.
-//! A program whose entry is `picked` exits 3.
+//! The lowering to MLIR has no form of its own for `if`. This source holds the
+//! lowering of a truth value to the answer of the executor.
+//!
+//! `Bool` is `Unit + Unit`, and `if` is a case of that sum. The compiled
+//! program of `picked` exits 3.
+//!
+//! - see: left.gandr — a sum of a word and the unit
 
 /// `pick` gives 3 for a true flag and 5 for a false one.
 def pick(flag : Bool) -> u8 = if flag { 3u8 } else { 5u8 };

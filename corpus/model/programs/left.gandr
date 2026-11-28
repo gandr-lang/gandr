@@ -1,7 +1,13 @@
 //! `left` gives a sum of a word and the unit, and a case reads it.
 //!
-//! A sum of a word and the unit is two words: the tag and the word.
-//! A program whose entry is `left_word` exits 9.
+//! The lowering to MLIR gives each value a layout of words. This source holds
+//! the layout of a sum to the answer of the executor.
+//!
+//! A sum of a word and the unit is two words: the tag and the word. A case
+//! reads the tag and gives the word, or 255 for the unit. The compiled program
+//! of `left_word` exits 9.
+//!
+//! - see: pick.gandr — a sum of two units
 
 /// The left injection of 9.
 @[runs("+{.0 = 9u8}")]
