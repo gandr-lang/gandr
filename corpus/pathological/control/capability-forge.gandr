@@ -1,4 +1,4 @@
-@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules"))]
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
 
 // A string standing where a capability is expected.
 //
@@ -13,7 +13,7 @@
 // The filesystem's host interface.
 import std.fs
 
-def peek(c : Cap { read }) -> [std.fs.Eff] String =
+def peek(c : Cap[read]) -> [std.fs.Eff] String =
   c.read "notes"
 
 @[refuses("CapabilityForged")]
