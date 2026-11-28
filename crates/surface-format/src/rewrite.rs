@@ -571,7 +571,7 @@ pub const REWRITES: [Rewrite; 39] = [
         mold: MoldName("constructor_pattern"),
         from: Spelling("Cons(x, rest)"),
         to: Spelling("Cons x rest"),
-        enabled: Enabled::Off,
+        enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PatternApplication,
@@ -579,7 +579,7 @@ pub const REWRITES: [Rewrite; 39] = [
         mold: MoldName("constructor_pattern"),
         from: Spelling("Cons(x, rest)"),
         to: Spelling("Cons x rest"),
-        enabled: Enabled::Off,
+        enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::BareRun,

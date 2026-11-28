@@ -1317,7 +1317,7 @@ fn a_let_that_holds_a_layout_block_is_sugared_8341()
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
         "data Nat : Type where\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n\ndef joined(n : \
-         Nat) -> Nat =\n  let m = match n -> Nat where\n    | Zero => n\n    | Succ(p) => p\n  \
+         Nat) -> Nat =\n  let m = match n -> Nat where\n    | Zero => n\n    | Succ p => p\n  \
          m\n"
     );
 }
