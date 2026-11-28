@@ -1,4 +1,17 @@
-@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "imports", "let-statements", "list-case", "modules", "native-lists", "pattern-matching", "records", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-handlers",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "list-case",
+  "modules",
+  "native-lists",
+  "pattern-matching",
+  "records",
+  "visibility"
+))]
 
 // Two programs exchange a ping over `std.net.Eff`, the host interface
 // for streams to
@@ -62,5 +75,11 @@ def pingAnswered() -> String =
 /// names otherwise, print what came back, and exit with 0.
 def main(args : List String) -> [std.net.Eff, std.io.Console.Eff] Integer =
   match args where
-    | #[] => { let got = serve; std.io.Console.print got; 0 }
-    | #[peer, .._] => { let got = ping peer; std.io.Console.print got; 0 }
+    | #[] =>
+      let got = serve
+      std.io.Console.print got
+      0
+    | #[peer, .._] =>
+      let got = ping peer
+      std.io.Console.print got
+      0

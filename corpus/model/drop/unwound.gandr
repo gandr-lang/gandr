@@ -15,7 +15,18 @@
 //!
 //! [Congard-2025-linear_effects_exceptions_and_resource_safety]: https://arxiv.org/abs/2510.23517 "Congard, Munch-Maccagnoni and Douence, Linear Effects, Exceptions, and Resource Safety"
 
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "modules", "native-lists", "records", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-lists",
+  "records",
+  "temporary-access"
+))]
 
 // The import provides native finite lists.
 import std.list (List)
@@ -36,7 +47,9 @@ def unwound() -> Integer =
     pure 0
   } handle {
     | pure(y) => pure y
-    | oper exit(code, k) => { abandon k; pure 7 }
+    | oper exit(code, k) =>
+      abandon k
+      pure 7
   }
   pure x
 
@@ -55,6 +68,8 @@ def unwound_kept() -> List Integer =
     pure 0
   } handle {
     | pure(y) => pure y
-    | oper exit(code, k) => { abandon k; pure 7 }
+    | oper exit(code, k) =>
+      abandon k
+      pure 7
   }
   pure cons 9 ys

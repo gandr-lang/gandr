@@ -10,7 +10,22 @@
 //! - see: #7968 — an operation with no continuation
 //! - see: `unwound.gandr` — the cleanup after `abandon k`
 
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "modules", "named-instances", "native-lists", "records", "signature-models", "signatures-as-values", "temporary-access", "universes"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "native-lists",
+  "records",
+  "signature-models",
+  "signatures-as-values",
+  "temporary-access",
+  "universes"
+))]
 
 // The import provides native finite lists.
 import std.list (List)
@@ -58,7 +73,9 @@ def abandoned() -> Integer =
     pure 0
   } handle {
     | pure(y) => pure y
-    | oper exit(code, k) => { abandon k; pure 7 }
+    | oper exit(code, k) =>
+      abandon k
+      pure 7
   }
   pure x
 
@@ -91,6 +108,8 @@ def abandonedKept() -> List Integer =
     pure 0
   } handle {
     | pure(y) => pure y
-    | oper exit(code, k) => { abandon k; pure 7 }
+    | oper exit(code, k) =>
+      abandon k
+      pure 7
   }
   pure cons 9 ys

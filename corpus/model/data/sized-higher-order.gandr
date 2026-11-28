@@ -76,7 +76,9 @@ pub def predAt[i : Size](n : Nat[i]) -> Nat[i] =
 def rec halvedAt(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ p => { let q = predAt p; Succ (halvedAt[<] q) }
+    | Succ p =>
+      let q = predAt p
+      Succ (halvedAt[<] q)
 
 /// Half of four: two.
 @[runs("Succ (Succ Zero)")]
@@ -92,7 +94,9 @@ pub def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> Nat[< j]
 def rec boundedHelped(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ p => { let q = boundedAt n p; Succ (boundedHelped[<] q) }
+    | Succ p =>
+      let q = boundedAt n p
+      Succ (boundedHelped[<] q)
 
 /// `boundedTwo` evaluates two through `boundedAt`.
 @[runs("Succ (Succ Zero)")]

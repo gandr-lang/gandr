@@ -7,7 +7,14 @@
 //! continuation. The clause returns nine.
 //!
 //! - see: #1334 — `answered`
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives"
+))]
 
 // The import gives the shared declarations.
 import "./cancel-base.gandr"
@@ -22,5 +29,7 @@ def answered() -> Integer =
     pure 1
   } handle {
     | pure(x) => pure x + 100
-    | oper exit(code, k) => { abandon k; pure 9 }
+    | oper exit(code, k) =>
+      abandon k
+      pure 9
   }

@@ -85,4 +85,6 @@ def pair(v : Vinf, w : Vinf) -> -F Vinf =
 
 /// The `ranked` function ranks the singleton empty set.
 @[checks]
-def ranked() -> -F Ord = { let v = single zero; rank v };
+def ranked() -> -F Ord =
+  let v = single zero
+  rank v

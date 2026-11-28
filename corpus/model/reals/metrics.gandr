@@ -1,4 +1,19 @@
-@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-handlers",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "list-case",
+  "modules",
+  "native-lists",
+  "native-primitives",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "visibility"
+))]
 
 // A program reads the release metrics of the exact reals through
 // `std.reals.Eff`, the host interface of exact reals. `report` gives nine
@@ -87,7 +102,9 @@ def measuredModelled() -> Bool =
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
     | oper enclose(asked, k) => k "0p0" "1p0"
-    | oper decide(asked, k) => { let *{plan, quanta} = asked; k "holds" quanta }
+    | oper decide(asked, k) =>
+      let *{plan, quanta} = asked
+      k "holds" quanta
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k "00"
     | oper restore(text, k) => k 0

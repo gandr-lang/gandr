@@ -13,7 +13,16 @@
 //! - cites: [Maillard-2019-dijkstra_monads_all]
 //! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "native-primitives", "records", "universes"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "records",
+  "universes"
+))]
 
 // The import gives StateLaws.
 import "../effects/state.gandr"
@@ -27,6 +36,10 @@ def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
     pure fun (q) { fun (s) { q *{} s } }
   } handle {
     | pure(w) => pure w
-    | oper get(k) => pure fun (q) { fun (s) { let w = k s; w q s } }
-    | oper put(s, k) => pure fun (q) { fun (_old) { let w = k *{}; w q s } }
+    | oper get(k) => pure fun (q) { fun (s) do
+      let w = k s
+      w q s }
+    | oper put(s, k) => pure fun (q) { fun (_old) do
+      let w = k *{}
+      w q s }
   }

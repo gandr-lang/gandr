@@ -13,7 +13,18 @@
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics"
 //! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
-@![features(("data-parameters", "identity-types", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "signatures-as-values",
+  "universes",
+  "visibility"
+))]
 
 /// `Counter` states a carrier, a start and a step. It has no laws, so it is an
 /// ML signature.
@@ -40,10 +51,14 @@ module Sealed :> Model(Counter) where
 
 /// `openTwice` reads two transparent steps.
 @[runs("2")]
-def openTwice() -> Integer = { let s = Open.start; Open.step (Open.step s) };
+def openTwice() -> Integer =
+  let s = Open.start
+  Open.step (Open.step s)
 
 /// `sealedTwice` returns two sealed steps.
-def sealedTwice() -> Sealed.C = { let s = Sealed.start; Sealed.step (Sealed.step s) };
+def sealedTwice() -> Sealed.C =
+  let s = Sealed.start
+  Sealed.step (Sealed.step s)
 
 /// `Toggle` states an involutive step law.
 theory Toggle where

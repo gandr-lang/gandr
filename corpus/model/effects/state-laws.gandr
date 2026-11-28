@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "native-primitives", "records"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "records"
+))]
 
 // This source tests handlers against state laws.
 //
@@ -22,8 +30,12 @@ def counter() -> (Integer -> Integer) =
     pure fun (s : Integer) { pure b }
   } handle {
     | pure(x) => pure x
-    | oper get(k) => pure fun (s : Integer) { let g = k s; g s }
-    | oper put(s, k) => pure fun (t : Integer) { let g = k *{}; g s }
+    | oper get(k) => pure fun (s : Integer) do
+      let g = k s
+      g s
+    | oper put(s, k) => pure fun (t : Integer) do
+      let g = k *{}
+      g s
   }
 
 /// `counted` runs `counter` from zero.

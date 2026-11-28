@@ -113,7 +113,9 @@ module SetoidCat : Model(CatShape) where {
 
 /// `identity_observed` calls the interface operation at `Integer`.
 @[runs("3")]
-def identity_observed() -> Integer = { let f = SetoidCat.id Integer; f 3 };
+def identity_observed() -> Integer =
+  let f = SetoidCat.id Integer
+  f 3
 
 /// `composite_observed` composes `n + 1` with `n + 2` and applies them to `1`.
 @[runs("4")]

@@ -78,15 +78,23 @@ def unaround(c : Words) -> Words =
 def rec sectWords(c : Words) -> Path[.A = Words] (spinWords (windWords c)) c =
   match c where
     | Nil => Path.here Nil
-    | Loop x => { let p = sectWords[<] x; Path.ap around p }
-    | Unloop x => { let p = sectWords[<] x; Path.ap unaround p }
+    | Loop x =>
+      let p = sectWords[<] x
+      Path.ap around p
+    | Unloop x =>
+      let p = sectWords[<] x
+      Path.ap unaround p
 
 /// At every integer, `retrWords` proves that winding follows spinning.
 def rec retrWords(n : Int) -> Path[.A = Int] (windWords (spinWords n)) n =
   match n where
     | Z => Path.here Z
-    | S x => { let p = retrWords[<] x; Path.ap Winding.turn p }
-    | P x => { let p = retrWords[<] x; Path.ap Winding.unturn p }
+    | S x =>
+      let p = retrWords[<] x
+      Path.ap Winding.turn p
+    | P x =>
+      let p = retrWords[<] x
+      Path.ap Winding.unturn p
 
 /// The `wordsWinding` record gives the two maps and their round trips.
 def wordsWinding : *{

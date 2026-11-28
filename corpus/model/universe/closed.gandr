@@ -37,7 +37,10 @@ data U : Type where
 def rec el(u : U) -> -F Type =
   match u where
     | NatC => return Nat
-    | Arrow a b => { let x = el[<] a; let y = el[<] b; return (+U (x -> -F y)) }
+    | Arrow a b =>
+      let x = el[<] a
+      let y = el[<] b
+      return (+U (x -> -F y))
 
 /// The `endo` function quotes the arrow from `a` to itself after two more
 /// parameters. The quote reads `a`, not `v`.

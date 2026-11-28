@@ -43,7 +43,10 @@ def exchange() -> Unit =
     select seat report
     send seat Seat.progress
     offer seat {
-      | next => { select seat handoff; send seat Seat.notes; close seat }
+      | next =>
+        select seat handoff
+        send seat Seat.notes
+        close seat
       | retire => close seat
     }
   }
@@ -53,8 +56,15 @@ def exchange() -> Unit =
       let first = recv desk
       select desk next
       offer desk {
-        | report => { let second = recv desk; select desk retire; close desk }
-        | handoff => { let notes = recv desk; close desk }
+        | report =>
+          let second = recv desk
+          select desk retire
+          close desk
+        | handoff =>
+          let notes = recv desk
+          close desk
       }
-    | handoff => { let notes = recv desk; close desk }
+    | handoff =>
+      let notes = recv desk
+      close desk
   }

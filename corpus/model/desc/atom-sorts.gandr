@@ -39,7 +39,9 @@ theory Renaming where
 /// `Sort` links.
 def rec atoms(chain : Theory) -> Integer =
   match chain where
-    | Atom name indices rest => { let r = atoms[<] rest; r + 1 }
+    | Atom name indices rest =>
+      let r = atoms[<] rest
+      r + 1
     | Sort name indices rest => atoms[<] rest
     | _ => 0
 

@@ -43,7 +43,9 @@ pub def bytes(s : Repr) -> List Integer =
 pub def rec count(bs : List Integer) -> Integer =
   match bs where
     | Nil => 0
-    | Cons b rest => { let n = count[<] rest; n + 1 }
+    | Cons b rest =>
+      let n = count[<] rest
+      n + 1
 
 /// This function joins two byte lists.
 pub def rec concat(xs : List Integer, ys : List Integer) -> List Integer =

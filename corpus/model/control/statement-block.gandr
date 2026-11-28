@@ -13,7 +13,14 @@
 //!
 //! [Dunfield-2019-bidirectional_typing]: https://doi.org/10.1145/3450952 "Dunfield and Krishnaswami, Bidirectional Typing"
 
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records"
+))]
 
 // Early exit's host interface.
 import std.process
@@ -24,7 +31,9 @@ import std.process
 @[runs("0")]
 def statement() -> Integer =
   effect c : std.process.Exit.Eff {
-    let n = { c.exit 1; pure 0 }
+    let n =
+      c.exit 1
+      pure 0
     pure n
   } handle {
     | pure(y) => pure y

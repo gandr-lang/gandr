@@ -12,7 +12,17 @@
 //! [ISO-2018-programming_languages_c]: https://www.iso.org/standard/74528.html "ISO/IEC JTC 1/SC 22, ISO/IEC 9899:2018, Programming languages — C"
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
-@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "native-primitives", "pattern-matching", "structural-recursion", "visibility"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "list-case",
+  "native-lists",
+  "native-primitives",
+  "pattern-matching",
+  "structural-recursion",
+  "visibility"
+))]
 
 // The native finite lists.
 import std.list (List)
@@ -21,7 +31,9 @@ import std.list (List)
 pub def rec count(xs : List String) -> Integer =
   match xs where
     | #[] => 0
-    | #[x, ..rest] => { let n = count[<] rest; n + 1 }
+    | #[x, ..rest] =>
+      let n = count[<] rest
+      n + 1
 
 /// `main` returns its string argument count as its exit code.
 def main(args : List String) -> Integer = count args;

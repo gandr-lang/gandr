@@ -1,4 +1,12 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 /// `leftOf` and `mkApplied` force a witness whose type decodes a call that
 /// returns a function type.
@@ -59,4 +67,6 @@ def atB() -> Branch = leftOf B (mk (B))
 
 /// The result of `mk(B)` on the branch `L` is `L`.
 @[runs("L")]
-def mkApplied() -> Branch = { let f = mk (B); f L };
+def mkApplied() -> Branch =
+  let f = mk (B)
+  f L

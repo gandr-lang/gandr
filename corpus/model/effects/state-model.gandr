@@ -43,7 +43,9 @@ module Passing : Model(State.Eff) with sort S = Integer where
   type C = Integer -> Integer
   /// `get` gives the current state to its continuation.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
-    fun (s) { let after = k s; after s }
+    fun (s) do
+      let after = k s
+      after s
   /// `put` runs its continuation at the stored state.
   def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
     fun (_old) { k s }
@@ -62,7 +64,9 @@ module Overwriting : Model(StatePutPut) with sort S = Integer where
   type C = Integer -> Integer
   /// `get` gives the current state to its continuation.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
-    fun (s) { let after = k s; after s }
+    fun (s) do
+      let after = k s
+      after s
   /// `put` runs its continuation at the stored state.
   def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
     fun (_old) { k s }

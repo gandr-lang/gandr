@@ -85,7 +85,9 @@ def bound_outside(k : Integer -> (Integer -> Integer), s : Integer) -> (Integer 
 
 /// The `bound_inside` function binds the call inside its result function.
 def bound_inside(k : Integer -> (Integer -> Integer), s : Integer) -> (Integer -> Integer) =
-  fun (_old) { let f = k s; f s }
+  fun (_old) do
+    let f = k s
+    f s
 
 /// The two functions bind the same call at different scopes.
 /// They give the same result under their binder.

@@ -161,8 +161,12 @@ def weakened() -> Integer =
 /// The links of a sort chain or an index chain.
 def rec links(chain : Theory) -> Integer =
   match chain where
-    | Sort _name _indices rest => { let r = links[<] rest; r + 1 }
-    | Port _name _sort _indices rest => { let r = links[<] rest; r + 1 }
+    | Sort _name _indices rest =>
+      let r = links[<] rest
+      r + 1
+    | Port _name _sort _indices rest =>
+      let r = links[<] rest
+      r + 1
     | _ => 0
 
 /// The index ports of the last sort of a sort chain.

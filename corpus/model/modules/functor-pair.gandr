@@ -8,7 +8,13 @@
 //!
 //! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
-@![features(("dependent-functions", "let-statements", "modules", "native-primitives", "visibility"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "visibility"
+))]
 
 /// `Seed` exposes a sealed counter signature.
 pub module Seed :> *{type T, zero : T, next : T -> T, read : T -> Integer} where {
@@ -48,4 +54,6 @@ def a_once() -> A.T = A.step A.seed
 
 /// `b_twice` reads two steps of the second counter.
 @[runs("2")]
-def b_twice() -> Integer = { let one = B.step B.seed; B.read (B.step one) };
+def b_twice() -> Integer =
+  let one = B.step B.seed
+  B.read (B.step one)

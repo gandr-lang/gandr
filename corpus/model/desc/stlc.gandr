@@ -237,12 +237,16 @@ rec {
   def rec reflectDepth(a : ObjTy, _v : sem a Empty) -> Integer =
     match a where
       | Base => 0
-      | Arr dom _cod => { let n = reifyDepth[<] dom Empty; n + 1 }
+      | Arr dom _cod =>
+        let n = reifyDepth[<] dom Empty
+        n + 1
   /// The depth of a type at a context.
   def rec reifyDepth(a : ObjTy, g : Ctx) -> Integer =
     match a where
       | Base => 0
-      | Arr _dom cod => { let n = reifyDepth[<] cod g; n + 1 }
+      | Arr _dom cod =>
+        let n = reifyDepth[<] cod g
+        n + 1
 }
 
 /// The depth of `Base -> Base` as reification reads it: one arrow.

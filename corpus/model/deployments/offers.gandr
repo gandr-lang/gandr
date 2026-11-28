@@ -1,4 +1,17 @@
-@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "modules", "native-primitives", "records", "signature-models", "signatures-as-values", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "native-primitives",
+  "records",
+  "signature-models",
+  "signatures-as-values",
+  "universes",
+  "visibility"
+))]
 
 // A role states what it needs of the site that hosts it, as a row.
 //
@@ -45,4 +58,6 @@ pub world far requires [std.io.Console.Eff, store : Store with sort V = String]
 /// `far` prints its name, computes forty-two and returns it.
 @[entry(*{near, far}), runs("far\n42")]
 def main() -> Integer =
-  migrate [far] { std.io.Console.print "far"; pure (6 * 7) }
+  migrate [far] do
+    std.io.Console.print "far"
+    pure (6 * 7)

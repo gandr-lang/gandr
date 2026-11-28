@@ -44,8 +44,13 @@ def follow(operator : rec open => &{
 }) -> Unit =
   loop {
     offer operator {
-      | report => { let next = recv operator; continue }
-      | retire => { let last = recv operator; close operator; break }
+      | report =>
+        let next = recv operator
+        continue
+      | retire =>
+        let last = recv operator
+        close operator
+        break
     }
   }
 
@@ -58,8 +63,14 @@ def tally(operator : rec open => &{
   var seen = 0
   loop {
     offer operator {
-      | report => { let next = recv operator; access seen as v { resume v (v + 1) }; continue }
-      | retire => { let last = recv operator; close operator; break }
+      | report =>
+        let next = recv operator
+        access seen as v { resume v (v + 1) }
+        continue
+      | retire =>
+        let last = recv operator
+        close operator
+        break
     }
   }
   pure seen
@@ -76,7 +87,9 @@ def asking(seat : rec open => +{more : Integer >? open, done : end}) -> Unit =
 def serving(desk : rec open => &{report : Integer >? open}) -> Unit =
   loop {
     offer desk {
-      | report => { let next = recv desk; continue }
+      | report =>
+        let next = recv desk
+        continue
     }
   }
 

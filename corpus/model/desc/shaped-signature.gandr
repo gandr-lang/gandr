@@ -34,7 +34,9 @@ theory Cells where
 /// Structural recursion over a face chain: one per `Face`.
 def rec faces(chain : Theory) -> Integer =
   match chain where
-    | Face name points rest => { let r = faces[<] rest; r + 1 }
+    | Face name points rest =>
+      let r = faces[<] rest
+      r + 1
     | _ => 0
 
 /// The square heads the sort chain of `Cells`, with its six faces.

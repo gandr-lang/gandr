@@ -56,8 +56,12 @@ def hearsOneReport() -> Integer =
 def hearing(desk : rec open => &{more : Integer >? open, done : end}) -> Unit =
   loop {
     offer desk {
-      | more => { let heard = recv desk; continue }
-      | done => { close desk; break }
+      | more =>
+        let heard = recv desk
+        continue
+      | done =>
+        close desk
+        break
     }
   }
 

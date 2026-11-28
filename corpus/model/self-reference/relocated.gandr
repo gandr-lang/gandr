@@ -9,7 +9,16 @@
 //!
 //! A polled Rust future cannot make this move.
 //! - see: #1183 — `relocated`
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives", "records", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "records",
+  "temporary-access"
+))]
 
 import std.process
 
@@ -22,6 +31,8 @@ def relocated() -> Integer =
     pure 0
   } handle {
     | pure(y) => pure y
-    | oper exit(code, k) => { let m = k *{}; pure m + 100 }
+    | oper exit(code, k) =>
+      let m = k *{}
+      pure m + 100
   }
   pure x + r

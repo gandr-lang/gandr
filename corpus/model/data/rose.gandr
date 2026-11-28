@@ -97,14 +97,19 @@ rec {
   @[checks]
   def rec treeSize(t : Rose) -> Nat =
     match t where
-      | Node kids => { let s = forestSize[<] kids; Succ s }
+      | Node kids =>
+        let s = forestSize[<] kids
+        Succ s
 
   /// The nodes of a forest: each tree's, summed.
   @[checks]
   def rec forestSize(ts : Forest) -> Nat =
     match ts where
       | Empty => Zero
-      | More t rest => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
+      | More t rest =>
+        let a = treeSize[<] t
+        let b = forestSize[<] rest
+        plus a b
 }
 
 /// A node without children.

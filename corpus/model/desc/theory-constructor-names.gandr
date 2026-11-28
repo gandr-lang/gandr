@@ -37,7 +37,9 @@ data Kind : Type where
 /// This recursion counts `Oper` links.
 def rec opsOf(chain : Theory) -> Integer =
   match chain where
-    | Oper name inputs outputs rest => { let r = opsOf[<] rest; r + 1 }
+    | Oper name inputs outputs rest =>
+      let r = opsOf[<] rest
+      r + 1
     | _ => 0
 
 /// `Presents` reads the two operations of `Mon`.

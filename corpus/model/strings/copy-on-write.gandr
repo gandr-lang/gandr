@@ -85,7 +85,9 @@ pub def long() -> [Partial] Repr = own (repeatOnto 97 24 (Nil : List Integer))
 
 /// `alone` appends `!` to an unshared long string and copies no buffer.
 @[runs("0")]
-def alone() -> [Partial] Integer = { let s = long; copies (push s 33) };
+def alone() -> [Partial] Integer =
+  let s = long
+  copies (push s 33)
 
 /// `shared` appends `!` to a copied long string.
 /// The write copies one buffer.

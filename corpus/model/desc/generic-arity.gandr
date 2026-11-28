@@ -32,7 +32,9 @@ pub theory Monoid where
 /// This recursion counts `Oper` links in a presentation.
 def rec operations(chain : Theory) -> Integer =
   match chain where
-    | Oper name inputs outputs rest => { let r = operations[<] rest; r + 1 }
+    | Oper name inputs outputs rest =>
+      let r = operations[<] rest
+      r + 1
     | _ => 0
 
 /// This function gets an operation count from a `Presents` value.
