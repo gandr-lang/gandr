@@ -35,7 +35,7 @@ def collected() -> Integer =
 
 /// A caller selects one output.
 def total(m : Integer) -> Integer =
-  (sumDiff m 2).s
+  (sumDiff m 2).%s
 
 /// A function of two inputs.
 def recombine(s : Integer, d : Integer) -> Integer =
