@@ -1,4 +1,12 @@
-@![features(("corecursion", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "corecursion",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // A recursive definition marks each call to itself: `f[<]` descends, `f[>]`
 // produces, and an unmarked call is refused.
@@ -23,12 +31,12 @@ data Nat : Type where
 def rec bare(n : Nat) -> Nat =
   match n where
     | Zero => return n
-    | Succ(p) => bare p
+    | Succ p => bare p
 
 def rec marked(n : Nat) -> Nat =
   match n where
     | Zero => n
-    | Succ(p) => marked[<] p
+    | Succ p => marked[<] p
 
 def rec idle(n : Nat) -> Nat = n
 
@@ -37,7 +45,7 @@ def rec idle(n : Nat) -> Nat = n
 def rec varied(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
-    | Succ(p) => varied[<] p p
+    | Succ p => varied[<] p p
 
 /// A productive claim outside a copattern block: nothing is observed before
 /// the function runs again.
@@ -45,7 +53,7 @@ def rec varied(n : Nat, m : Nat) -> Nat =
 def rec ahead(n : Nat) -> Nat =
   match n where
     | Zero => return n
-    | Succ(p) => ahead[>] p
+    | Succ p => ahead[>] p
 
 /// A recursive definition of no parameter binds its own name over its body,
 /// which this one never calls.

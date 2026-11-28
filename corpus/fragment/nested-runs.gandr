@@ -1,4 +1,14 @@
-@![features(("call-by-push-value", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "thunks-and-force",
+  "universes"
+))]
 
 // A call nested inside an expression runs first, and its result stands where
 // the call stood.
@@ -23,7 +33,7 @@ data Nat : Type where
 def rec down(n : Nat) -> -F Nat =
   match n where
     | Zero => n
-    | Succ(p) => down[<] p
+    | Succ p => down[<] p
 
 @[runs("Zero")]
 def held : +U (-F Nat)
@@ -37,14 +47,14 @@ def ran = down Zero
 def scrutinised(n : Nat) -> -F Nat =
   match down n where
     | Zero => n
-    | Succ(p) => p
+    | Succ p => p
 
 @[checks]
 def scrutinised_run(n : Nat) -> -F Nat =
   let m = down n
   match m where
     | Zero => n
-    | Succ(p) => p
+    | Succ p => p
 
 @[checks]
 def kept(n : Nat) -> -F (+U (-F Nat)) =
@@ -54,7 +64,7 @@ def kept(n : Nat) -> -F (+U (-F Nat)) =
 def armed(n : Nat) -> -F Nat =
   match n where
     | Zero => Zero
-    | Succ(p) => Succ (down p)
+    | Succ p => Succ (down p)
 
 @[runs("Succ Zero")]
 def armed_three() -> -F Nat = armed (Succ (Succ (Succ Zero)))

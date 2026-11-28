@@ -1,4 +1,17 @@
-@![features(("call-by-push-value", "corecursion", "data-parameters", "explicit-exits", "lazy-records", "let-statements", "nested-runs", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+@![features((
+  "call-by-push-value",
+  "corecursion",
+  "data-parameters",
+  "explicit-exits",
+  "lazy-records",
+  "let-statements",
+  "nested-runs",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "universes"
+))]
 
 // Exits: `return` and `become` end a computation, each beside an elided twin
 // that leaves the keyword out.
@@ -21,13 +34,13 @@ data Nat : Type where
 def rec down(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
-    | Succ(p) => become down[<] p
+    | Succ p => become down[<] p
 
 @[checks]
 def rec down_elided(n : Nat) -> -F Nat =
   match n where
     | Zero => n
-    | Succ(p) => down_elided[<] p
+    | Succ p => down_elided[<] p
 
 @[checks]
 def twice(n : Nat) -> -F Nat =
@@ -85,13 +98,13 @@ def named_elided(n : Nat) -> -F Nat =
 def rec stated(n : Nat) -> -F Nat =
   match n where
     | Zero => { return n; }
-    | Succ(p) => { become stated[<] p; }
+    | Succ p => { become stated[<] p; }
 
 @[checks]
 def rec stated_elided(n : Nat) -> -F Nat =
   match n where
     | Zero => { n }
-    | Succ(p) => { stated_elided[<] p }
+    | Succ p => { stated_elided[<] p }
 
 @[checks]
 def sequenced(n : Nat) -> -F Nat =
@@ -183,24 +196,24 @@ def returned = return Zero
 def predecessor(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => return n
-    | Succ(p) => pure p
+    | Succ p => pure p
   return m
 
 @[checks]
 def predecessor_elided(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => return n
-    | Succ(p) => pure p
+    | Succ p => pure p
   m
 
 @[checks]
 def pick(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => return n
-    | Succ(p) => {
+    | Succ p => {
       let q = match p {
         | Zero => return n
-        | Succ(r) => pure r
+        | Succ r => pure r
       }
       pure q
     }
@@ -210,10 +223,10 @@ def pick(n : Nat) -> -F Nat =
 def pick_elided(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => return n
-    | Succ(p) => {
+    | Succ p => {
       let q = match p {
         | Zero => return n
-        | Succ(r) => pure r
+        | Succ r => pure r
       }
       pure q
     }
@@ -241,24 +254,24 @@ def pick_three_elided() -> -F Nat = pick_elided (Succ (Succ (Succ Zero)))
 def handed(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => become down n
-    | Succ(p) => pure p
+    | Succ p => pure p
   return Succ m
 
 @[checks]
 def handed_elided(n : Nat) -> -F Nat =
   let m = match n where
     | Zero => become down n
-    | Succ(p) => pure p
+    | Succ p => pure p
   Succ m
 
 @[checks]
 def rec skim(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
-    | Succ(p) => {
+    | Succ p => {
       let _ = match p where
         | Zero => return p
-        | Succ(r) => pure r
+        | Succ r => pure r
       become skim[<] p
     }
 
@@ -266,10 +279,10 @@ def rec skim(n : Nat) -> -F Nat =
 def rec skim_elided(n : Nat) -> -F Nat =
   match n where
     | Zero => n
-    | Succ(p) => {
+    | Succ p => {
       let _ = match p where
         | Zero => return p
-        | Succ(r) => pure r
+        | Succ r => pure r
       skim_elided[<] p
     }
 
@@ -283,14 +296,14 @@ def skimmed_elided() -> -F Nat = skim_elided (Succ (Succ (Succ Zero)))
 def joined(n : Nat) -> -F Nat =
   let m = match n -> -F Nat where
     | Zero => return n
-    | Succ(p) => pure p
+    | Succ p => pure p
   return m
 
 @[refuses("OutOfFragment.JoinsBlock")]
 def joined_elided(n : Nat) -> -F Nat =
   let m = match n -> -F Nat where
     | Zero => return n
-    | Succ(p) => pure p
+    | Succ p => pure p
   m
 
 @[refuses("UnresolvedTypeHead")]

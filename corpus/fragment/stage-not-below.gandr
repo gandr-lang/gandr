@@ -1,4 +1,10 @@
-@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // A marked call checks where its argument stands below the stage of the
 // parameter the recursion descends on: a field of the constructor a case on
@@ -15,7 +21,7 @@ data Nat : Type where
 def rec same(n : Nat) -> Nat =
   match n where
     | Zero => n
-    | Succ(p) => same[<] n
+    | Succ p => same[<] n
 
 /// A recursion over a type with no constructors to open: nothing stands
 /// below the stage.
@@ -26,4 +32,4 @@ def rec counted(n : Integer) -> Integer = counted[<] n
 def rec down(n : Nat) -> Nat =
   match n where
     | Zero => n
-    | Succ(p) => down[<] p
+    | Succ p => down[<] p
