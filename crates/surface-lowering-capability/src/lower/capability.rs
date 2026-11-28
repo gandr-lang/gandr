@@ -518,6 +518,47 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
             let _minted = sink.foreign(interface);
         }
     }
+
+    /// The type that the parentheses at `at` hold, or `at` itself when it
+    /// writes none: the operand of a placed capability, `(Cap {exit}) at c`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the one operand of a parenthesized type, through each pair of
+    ///   parentheses; `at` for any other form.
+    /// - fails: the refusal of a form whose tiles do not read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a capability placed at a scope, written in
+    ///   parentheses, lives in the scope's region.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    #[inline]
+    pub fn unparenthesized(
+        &self,
+        mut at: Placed,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        // Bounded by the depth of the tree: each pass enters one pair.
+        while let Some((_, Former::ParenthesizedType)) = self.cx().form_at(at)? {
+            let mut pieces = Pieces::new();
+            read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
+            let &[
+                Piece::Tile { .. },
+                Piece::Operand(inner),
+                Piece::Tile { .. },
+            ] = pieces.pieces.as_slice()
+            else {
+                break;
+            };
+            at = inner;
+        }
+
+        Ok(at)
+    }
 }
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
@@ -611,14 +652,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   the outermost to the one binding `c`, counted from one, the depth the
     ///   checker gives that region. Where `c` names none and is a region binder
     ///   of the definition the type stands in, the region is [`Region::Bound`]
-    ///   at that binder's ordinal. A capability type operand stands as the
-    ///   type, its region recorded; any other operand is kept in the region,
-    ///   the operand read as a value type where the at type stands. Where `c`
-    ///   names none of these and an earlier declaration, the type is the handle
-    ///   `T at c` to a value of the operand meaningful at the world that
-    ///   declaration declares, the operand read as a value type where the at
-    ///   type stands (a declaration that declares no world is the checker's to
-    ///   refuse).
+    ///   at that binder's ordinal. A capability type operand, bare or in
+    ///   parentheses, stands as the type, its region recorded at the
+    ///   capability; any other operand is kept in the region, the operand read
+    ///   as a value type where the at type stands. Where `c` names none of
+    ///   these and an earlier declaration, the type is the handle `T at c` to a
+    ///   value of the operand meaningful at the world that declaration
+    ///   declares, the operand read as a value type where the at type stands (a
+    ///   declaration that declares no world is the checker's to refuse).
     /// - fails: the wrong-sort refusal where no value type is read;
     ///   [`LoweringRefusal::UnresolvedName`] at `c` when neither a capability
     ///   scope, a hold, a region binder nor an earlier declaration binds it; a
@@ -630,12 +671,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a capability at the inner of two nested scopes and at
-    ///   the outer one mint their depths, a name no scope binds is refused, an
-    ///   integer kept at a scope mints the kept type and one kept at a hold
-    ///   inside the scope counts both, each asserted exactly; a handle at a
-    ///   declared world mints the handle type; a thunk kept at a region binder
-    ///   in a parameter and in a body's ascription keeps it at the binder's
-    ///   ordinal, and a scope of the binder's name inside the body shadows it.
+    ///   the outer one mint their depths, one of them written in parentheses, a
+    ///   name no scope binds is refused, an integer kept at a scope mints the
+    ///   kept type and one kept at a hold inside the scope counts both, each
+    ///   asserted exactly; a handle at a declared world mints the handle type;
+    ///   a thunk kept at a region binder in a parameter and in a body's
+    ///   ascription keeps it at the binder's ordinal, and a scope of the
+    ///   binder's name inside the body shadows it.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
     /// - witness: `gandr-surface-lowering::lower::world::tests::the_located_forms_lower_to_their_world_forms`
@@ -675,10 +717,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             };
         };
         self.host().read(operand.node, site.reading);
-        if let Some((_, Former::CapabilityType)) = self.cx().form_at(operand)? {
-            let _first = self.cx_mut().regions.insert(operand.node, region);
-            self.host()
-                .plan(site, super::Plan::Transparent(operand.node));
+        // The parentheses read their capability as it is: the at type stands
+        // as the capability that they hold.
+        let held = self.shared().unparenthesized(operand)?;
+        if let Some((_, Former::CapabilityType)) = self.cx().form_at(held)? {
+            let _first = self.cx_mut().regions.insert(held.node, region);
+            self.host().plan(site, super::Plan::Transparent(held.node));
         }
         else {
             self.host()
