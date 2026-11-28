@@ -1,12 +1,12 @@
-@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules"))]
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules"))]
 
 /// `CapabilityOutsideAuthority`: an operation exercised through a capability
 /// that does not grant it.
 
 // The filesystem's host interface.
-import std.fs;
+import std.fs
 
 /// A write through a capability that grants reading alone.
 @[refuses("CapabilityOutsideAuthority")]
-def save(c : Cap { read }) -> [std.fs.Eff] Unit =
+def save(c : Cap[read]) -> [std.fs.Eff] Unit =
   c.write "notes" "draft"

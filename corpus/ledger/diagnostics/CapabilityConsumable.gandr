@@ -1,6 +1,6 @@
-@![features(("capabilities", "data-parameters", "let-statements", "records", "sized-types"))]
+@![features(("capabilities", "let-statements", "records"))]
 
 /// `CapabilityConsumable`: a capability of the consumable grade.
 @[refuses("CapabilityConsumable")]
-def discard(c : Cap[1] { write }) -> Unit =
+def discard(c : Cap[1][write]) -> Unit =
   *{}
