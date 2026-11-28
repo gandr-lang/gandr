@@ -4,7 +4,7 @@ data Nat : Type where {
 }
 def rec plus(n : Nat, m : Nat) -> -F Nat = match m {
     | Zero => n
-    | Succ(p) => Succ (plus[<] n p)
+    | Succ p => Succ (plus[<] n p)
   };
 def k : +U (Nat -> -F Nat) ;
 def k = thunk { fun (x) { return Succ x } } ;

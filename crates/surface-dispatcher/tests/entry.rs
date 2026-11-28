@@ -838,8 +838,8 @@ fn a_second_run_refusal_is_located_where_its_bound_spelling_is_380()
     );
     let fold = |arm: &str| {
         format!(
-            "{data}def rec tell(n : Int) -> -F Int = {{\n  match n {{\n    | Z => Z\n    | S(x) => \
-                 {arm}\n    | P(x) => {arm}\n  }}\n}};\n"
+            "{data}def rec tell(n : Int) -> -F Int = {{\n  match n {{\n    | Z => Z\n    | S x => \
+                 {arm}\n    | P x => {arm}\n  }}\n}};\n"
         )
     };
     // The nested call is judged by the second run, over the bind the
