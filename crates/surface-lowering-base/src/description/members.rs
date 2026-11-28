@@ -492,7 +492,7 @@ impl Reader<'_, '_>
                         && dot == TileName::PORT_SELECT
                         && field == TileName::IDENTIFIER
                     {
-                        // `(C a).l` names the port `C(a).l` does.
+                        // `(C a).%l` names the port `C(a).%l` does.
                         let mut target = target;
                         let mut called = self.pieces(target)?;
                         while let [

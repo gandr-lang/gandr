@@ -1562,7 +1562,7 @@ pub enum Plan
     /// A tuple ending a body whose result is a group of outputs: the return
     /// of the members in the lowerer's operand store, one per output.
     ReturnAll(FormStretch),
-    /// One output of a call whose result is a group, `f(a).l`: the call,
+    /// One output of a call whose result is a group, `f(a).%l`: the call,
     /// every output bound, and the one at `index` returned.
     SelectedOutput
     {

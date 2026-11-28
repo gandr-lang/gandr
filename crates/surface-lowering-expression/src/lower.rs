@@ -10227,31 +10227,30 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   performs it with the unit as its payload, as
     ///   `Capability::exercise_bare` reads it; a bare selection `s.m` of a
     ///   method whose one input is its receiver calls it on `s`, as
-    ///   `Capability::method_bare` reads it; a selection `C(a, …).l` off a
-    ///   multi-output constructor is its port `l`, as `Native::port` reads it;
-    ///   a selection by position projects the entry at that place of the type
-    ///   written for its operand, or of the pair the operand is when no type is
-    ///   written, as `Models::positional` reads it; a selection read as a
-    ///   computation off a name whose written type is a thunked lazy record
-    ///   over labels observes the entry its label names; a selection off a name
-    ///   whose written type is a type over labels projects the entry its label
-    ///   names, as `Models::selection` reads it; a selection off a name whose
-    ///   written type is a data family without indices reads the field its
-    ///   label names off every constructor, as `Native::data_field` reads it; a
-    ///   selection off a flattened model implicit is the parameter of the
-    ///   component it names, as `Models::flattened_member` reads it; a
-    ///   selection off a value no written type states, a chain of selections
-    ///   ending at a binder's or a declaration's name not capitalised, or one
-    ///   link off a name written at a patched type, projects the field its
-    ///   label names of the record the value is, as `Models::field` reads it. A
-    ///   chain of selections whose head is a capitalised name is a path: inside
-    ///   a functor whose parameter the head names, a one-link path is that
-    ///   parameter's value component, as [`Self::parameter_value`] reads it; a
-    ///   path whose head, capitalised or not, names a module an enclosing
-    ///   module declares reaches the member that module exports, as
-    ///   [`Self::enclosed_member`] reads it, and stands as that member's
-    ///   constant as below; otherwise it is resolved through the outermost
-    ///   scope, its head the module the path's source sees
+    ///   `Capability::method_bare` reads it; a selection `C(a, …).l` or `f(a,
+    ///   …).l` that names a port is refused for its bare dot; a selection by
+    ///   position projects the entry at that place of the type written for its
+    ///   operand, or of the pair the operand is when no type is written, as
+    ///   `Models::positional` reads it; a selection read as a computation off a
+    ///   name whose written type is a thunked lazy record over labels observes
+    ///   the entry its label names; a selection off a name whose written type
+    ///   is a type over labels projects the entry its label names, as
+    ///   `Models::selection` reads it; a selection off a name whose written
+    ///   type is a data family without indices reads the field its label names
+    ///   off every constructor, as `Native::data_field` reads it; a selection
+    ///   off a flattened model implicit is the parameter of the component it
+    ///   names, as `Models::flattened_member` reads it; a selection off a value
+    ///   no written type states, a chain of selections ending at a binder's or
+    ///   a declaration's name not capitalised, or one link off a name written
+    ///   at a patched type, projects the field its label names of the record
+    ///   the value is, as `Models::field` reads it. A chain of selections whose
+    ///   head is a capitalised name is a path: inside a functor whose parameter
+    ///   the head names, a one-link path is that parameter's value component,
+    ///   as [`Self::parameter_value`] reads it; a path whose head, capitalised
+    ///   or not, names a module an enclosing module declares reaches the member
+    ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
+    ///   as that member's constant as below; otherwise it is resolved through
+    ///   the outermost scope, its head the module the path's source sees
     ///   ([`Self::see_module`](crate::lower::Expressions::see_module)), at the
     ///   depth that binds it: a path ending at an exported value component
     ///   stands as that member's constant when the member is declared strictly
@@ -10361,11 +10360,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         if Capability::new(self.host()).method_bare(site)? == arity::Planned(true) {
             return Ok(());
         }
-        // `C(a, …).l` names the port `l` of the multi-output constructor `C`.
+        // `C(a, …).%l` names the port `l` of the multi-output constructor `C`.
         if Native::new(self.host()).port(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
-        // `f(a, …).l` selects the output `l` of a call returning a group.
+        // `f(a, …).%l` selects the output `l` of a call returning a group.
         if Models::new(self.host()).selected_output(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }

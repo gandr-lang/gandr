@@ -280,7 +280,7 @@ unbuilt! {
     LinearPorts => "linear_ports",
     /// A pattern naming a multi-output constructor with no output: the joint
     /// pattern over a node's outputs, the linear reading's. At grade ω a value
-    /// is one port, matched as `C(x).l`.
+    /// is one port, matched as `C(x).%l`.
     PortPattern => "port_pattern",
     /// A value a static bracket fixes that the lowering does not read: a
     /// face's value that is no record written in place.

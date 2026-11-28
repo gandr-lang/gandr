@@ -31,8 +31,8 @@
 //!
 //! **A many-out operation's outputs carry their port labels.** The plan keeps
 //! the name tile of each output port, as the source writes it. So a caller
-//! selects an output by its label, `divmod(m, n).q`, and binds the outputs by
-//! their labels, `let (.r, .q) = divmod(m, n);`, as it does a function's. A
+//! selects an output by its label, `divmod(m, n).%q`, and binds the outputs by
+//! their labels, `let %(.r, .q) = divmod(m, n);`, as it does a function's. A
 //! port no source names, one an `ext` member generates, has no label, and then
 //! every output stays positional. The alternative was to read the labels again
 //! from the operation's signature at each call; the plan already holds what

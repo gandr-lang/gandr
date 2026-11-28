@@ -1292,7 +1292,7 @@ struct Inverse(bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Width(usize);
 
-/// A port pattern `C(x, …).l` as read: the port and its field patterns.
+/// A port pattern `C(x, …).%l` as read: the port and its field patterns.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -5277,7 +5277,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
         else {
             return unplanned;
         };
-        // `(C a).l` selects as `C(a).l` does.
+        // `(C a).%l` selects as `C(a).%l` does.
         let Some(target) = self.host().ungrouped_target(target, site.at.node)?
         else {
             return unplanned;
@@ -6236,7 +6236,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 None => self.constructor_named(site, name),
             };
             // A multi-output constructor is matched through one port at a
-            // time, `C(x).l`.
+            // time, `C(x).%l`.
             if let Maybe::Absent(_) = found {
                 let ported = match family {
                     Some(family) => self.qualified_ported(site, family, name)?,

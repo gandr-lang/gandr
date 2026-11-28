@@ -2656,7 +2656,7 @@ fn a_constructor_applies_to_its_fields()
 }
 
 /// A multi-output constructor is one port per output, each an ordinary
-/// constructor over the shared inputs at consecutive tags; `C(a).l` is the
+/// constructor over the shared inputs at consecutive tags; `C(a).%l` is the
 /// port `l` applied to `a`, `C(a)` the record of its ports, and the two ports
 /// of one input stay apart.
 #[test]
@@ -5477,8 +5477,8 @@ fn a_qualified_constructor_names_its_family_s_constructor_2428()
 }
 
 /// `Expr.Share` names the multi-output constructor through its family:
-/// `Expr.Share(a).r` is the port, `Expr.Share(a)` the record of the ports,
-/// and `Expr.Share(x).l` a port pattern coverage counts. A bare
+/// `Expr.Share(a).%r` is the port, `Expr.Share(a)` the record of the ports,
+/// and `Expr.Share(x).%l` a port pattern coverage counts. A bare
 /// `Expr.Share(x)` pattern is the joint pattern, and a name the family lacks
 /// is its unknown member.
 #[test]
@@ -5497,7 +5497,7 @@ fn a_qualified_multi_output_constructor_names_its_ports()
     assert_eq!(
         tag,
         ConstructorTag::from(2_usize),
-        "`Expr.Share(a).right` is the port after `Lit` and `Share.left`"
+        "`Expr.Share(a).%right` is the port after `Lit` and `Share.left`"
     );
     let Some(&Value::Record(ref record)) =
         arena.value(body_named(&module, SurfaceName::from("ports")))
