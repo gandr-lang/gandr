@@ -29,13 +29,12 @@ import std.process
 @[runs("1")]
 def unwritten() -> Integer =
   var x = 1
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     access x as v { let _ = c.exit 1; resume v 5 } unwind { pure *{} }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }
   pure x

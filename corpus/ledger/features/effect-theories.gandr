@@ -112,14 +112,13 @@ theory StateGetGet where
 /// The handler answers four, so the scope runs to eight.
 @[runs("8")]
 def readTwice() -> Integer =
-  effect st : StateGetGet with sort S = Integer {
+  effect st : StateGetGet with sort S = Integer do
     let a = st.get
     let b = st.get
     pure a + b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper get(k) => k 4
-  }
 
 /// A returner whose row names `State.Eff` at `Integer`, its instance `st` a
 /// capability over `get` and `put`.

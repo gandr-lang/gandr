@@ -118,13 +118,12 @@ def sift_zero() -> [Partial] Nat = become sift Zero
 
 /// A loop inside a handler's body leaves with its value to the body.
 def handled(n : Nat) -> [Partial] Nat =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let m = loop { break(Succ n) }
     pure m
-  } handle {
+  handle
     | pure(x) => pure Succ x
     | oper exit(code, k) => k *{}
-  }
 
 /// The loop's value, through the `pure` clause.
 @[runs("Succ (Succ Zero)")]

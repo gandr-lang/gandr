@@ -38,7 +38,7 @@ import "./seat-base.gandr"
         (series (event right 5) (event right 6)))))
 ]
 def exchange() -> Unit =
-  let desk = fork (seat : Seat.SeatEnd) {
+  let desk = fork (seat : Seat.SeatEnd) do
     let task = recv seat
     select seat report
     send seat Seat.progress
@@ -49,7 +49,6 @@ def exchange() -> Unit =
         close seat
       | retire => close seat
     }
-  }
   send desk Seat.task
   offer desk {
     | report =>

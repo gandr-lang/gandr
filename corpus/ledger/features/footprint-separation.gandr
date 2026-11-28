@@ -41,11 +41,10 @@ import std.process
 /// Both halves hold the capability attenuated to reading, so they share the
 /// file system only to read it.
 def reading(c : Cap[read]) -> [std.fs.Eff] Unit =
-  let found = fork (task : Task.Join) {
+  let found = fork (task : Task.Join) do
     let text = c.read Task.notes
     send task text
     close task
-  }
   let mine = c.read Task.notes
   let text = recv found
   close found
@@ -56,11 +55,10 @@ def apart(files : Cap[write], process : Cap[exit]) -> [
   std.fs.Eff,
   std.process.Exit.Eff
 ] Unit =
-  let found = fork (task : Task.Join) {
+  let found = fork (task : Task.Join) do
     files.write Task.notes "task"
     send task Task.notes
     close task
-  }
   process.exit 0
   let text = recv found
   close found

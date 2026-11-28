@@ -30,12 +30,11 @@ import std.process
 /// the rest once.
 @[runs("0")]
 def statement() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let n =
       c.exit 1
       pure 0
     pure n
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) => k *{}
-  }

@@ -10,9 +10,8 @@
     (series (event left 0) (parallel (event left 1) (series (event right 0) (event right 1)))))
 ]
 def asked() -> Unit =
-  let heard = fork (task : String >! end) {
+  let heard = fork (task : String >! end) do
     send task "yes"
     close task
-  }
   let said = recv heard
   close heard

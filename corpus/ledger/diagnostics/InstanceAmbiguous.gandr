@@ -20,13 +20,12 @@ def say() -> [out : std.io.Console.Eff] Unit =
 @[refuses("InstanceAmbiguous")]
 def ambiguous() -> Integer =
   effect a : std.io.Console.Eff {
-    effect b : std.io.Console.Eff {
+    effect b : std.io.Console.Eff do
       say
       pure 0
-    } handle {
+    handle
       | pure(x) => pure x
       | oper print(line, k) => pure 2
-    }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1

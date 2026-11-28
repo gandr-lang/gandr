@@ -8,7 +8,17 @@
 //!
 //! Rust `Pin` prevents a moved future from dangling self-reference.
 //! - see: #1183 — `dangling`
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives", "records", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "records",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 import std.process
 
@@ -16,15 +26,14 @@ import std.process
 @[refuses("ViewEscaped")]
 def dangling() -> Integer =
   var x = 5
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     let k = access x as v {
       c.exit 1
       resume v (v + 7)
       pure thunk { pure v }
     }
     force k
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) => k *{}
-  }
   pure x

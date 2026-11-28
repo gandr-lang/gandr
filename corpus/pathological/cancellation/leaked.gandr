@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types",
+  "thunks-and-force"
+))]
 
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A thunk may be forced twice or never, so a resumption inside one
@@ -15,15 +24,13 @@ import std.process
 /// end is open.
 @[refuses("ContinuationCaptured")]
 def leaked() -> Unit =
-  effect c : std.process.Exit.Eff {
-    let found = fork (task : Cancel.Join) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (task : Cancel.Join) do
       send task Cancel.notes
       close task
-    }
     c.exit 1
     let text = recv found
     close found
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => force thunk { k *{} }
-  }

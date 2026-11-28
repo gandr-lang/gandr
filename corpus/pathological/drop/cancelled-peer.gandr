@@ -30,20 +30,18 @@ import std.process
 /// The peer ends before the handler abandons the root continuation.
 @[runs("7")]
 def cancelled() -> Integer =
-  effect c : std.process.Exit.Eff {
-    let found = fork (peer : Integer >! Integer >! end) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (peer : Integer >! Integer >! end) do
       send peer 1
       send peer 2
       close peer
-    }
     let first = recv found
     c.exit 1
     let second = recv found
     close found
     pure second
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }

@@ -32,60 +32,53 @@ import std.process
 /// The peer waits for a payload after it sends its first payload.
 @[runs("7")]
 def parked() -> Integer =
-  effect c : std.process.Exit.Eff {
-    let found = fork (peer : Integer >! Integer >? end) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (peer : Integer >! Integer >? end) do
       send peer 1
       let x = recv peer
       close peer
-    }
     let first = recv found
     c.exit 1
     send found 2
     close found
     pure first
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }
 
 /// The root abandons its continuation before the peer receives a payload.
 @[runs("7")]
 def late() -> Integer =
-  effect c : std.process.Exit.Eff {
-    let found = fork (peer : Integer >? end) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (peer : Integer >? end) do
       let x = recv peer
       close peer
-    }
     c.exit 1
     send found 2
     close found
     pure 1
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }
 
 /// The root abandons its continuation before it receives the
 /// worker's queued end.
 @[runs("7")]
 def forwarded() -> Integer =
-  effect c : std.process.Exit.Eff {
-    let r = fork (relay : (Integer >! end) >! end) {
-      let w = fork (worker : Integer >? end) {
+  effect c : std.process.Exit.Eff do
+    let r = fork (relay : (Integer >! end) >! end) do
+      let w = fork (worker : Integer >? end) do
         let n = recv worker
         close worker
-      }
       send relay w
       close relay
-    }
-    let t = fork (tick : Integer >! end) {
+    let t = fork (tick : Integer >! end) do
       send tick 1
       close tick
-    }
     let one = recv t
     close t
     c.exit 1
@@ -94,9 +87,8 @@ def forwarded() -> Integer =
     close held
     close r
     pure one
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }

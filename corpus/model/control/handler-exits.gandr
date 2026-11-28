@@ -13,7 +13,20 @@
 //!
 //! [Plotkin-2013-handling_algebraic_effects]: https://doi.org/10.2168/LMCS-9(4:23)2013 "Plotkin and Pretnar, Handling Algebraic Effects"
 
-@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "explicit-exits", "imports", "let-statements", "loops", "modules", "native-primitives", "pattern-matching", "records"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-handlers",
+  "effect-rows",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "loops",
+  "modules",
+  "native-primitives",
+  "pattern-matching",
+  "records"
+))]
 
 // Early exit's host interface.
 import std.process
@@ -22,24 +35,22 @@ import std.process
 /// `pure` clause.
 @[runs("101")]
 def resumed() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => k *{}
-  }
 
 /// A `return` in the handled body leaves the handler, the `pure` clause
 /// skipped.
 def left(n : Integer) -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 1
     return n
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => k *{}
-  }
 
 /// `left` at five, by a run.
 @[runs("5")]
@@ -49,13 +60,12 @@ def left_run() -> Integer = become left 5
 /// handler.
 @[runs("9")]
 def discarded() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     return 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => pure 9
-  }
 
 /// A `return` inside two handlers leaves both.
 @[runs("4")]
@@ -74,17 +84,16 @@ def nested() -> Integer =
 
 /// A `case` whose one arm returns and whose other arm continues the body.
 def branch(n : Integer) -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let m = match n {
       | 0 => return 8
       | _ => pure n
     }
     c.exit 2
     pure m + 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => k *{}
-  }
 
 /// The returning arm, by a run.
 @[runs("8")]
@@ -98,15 +107,14 @@ def branch_one() -> Integer = become branch 1
 /// `looped` carries `Partial` through the handler.
 @[runs("105")]
 def looped() -> [Partial] Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let v = loop {
       break(5)
     }
     pure v
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => k *{}
-  }
 
 /// A `return` inside a loop leaves the loop and the handler.
 @[runs("2")]
@@ -123,13 +131,12 @@ def looped_out() -> [Partial] Integer =
 /// An operation clause that returns answers for the handler.
 @[runs("9")]
 def answered() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 1
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => 9
-  }
 
 /// `Stack(C, D)` names a continuation type.
 /// It states the computation it resumes and its result.
@@ -140,13 +147,12 @@ def dropped(k : Stack (-F Unit) (-F Integer)) -> Integer =
 /// The handler returns that function result.
 @[runs("9")]
 def handed_on() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     return 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => dropped k
-  }
 
 /// A function with a continuation type resumes the continuation it receives.
 def resume_stack(j : Stack (-F Unit) (-F Integer)) -> Integer =
@@ -156,13 +162,12 @@ def resume_stack(j : Stack (-F Unit) (-F Integer)) -> Integer =
 /// The body then passes through the `pure` clause.
 @[runs("101")]
 def resumed_on() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => resume_stack k
-  }
 
 /// A type member can name a continuation type.
 /// Its function resumes the continuation it receives.
@@ -177,13 +182,12 @@ module Conts where
 /// That function resumes the body.
 @[runs("101")]
 def resumed_aliased() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => Conts.aliased k
-  }
 
 /// A continuation runs from a computation, never from a value type.
 @[refuses("OutOfFragment.WrongSort")]

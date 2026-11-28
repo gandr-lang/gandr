@@ -3,5 +3,7 @@
 /// `UsedAfterClose`: an endpoint acted on after it was closed.
 @[refuses("UsedAfterClose")]
 def seat_closed_twice() -> Unit =
-  let desk = fork (seat : end) { close seat; close seat }
+  let desk = fork (seat : end) do
+    close seat
+    close seat
   close desk

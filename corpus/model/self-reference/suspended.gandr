@@ -11,7 +11,16 @@
 //! Rust uses `Pin` from RFC 2349 for a self-borrowing future.
 //! C++ keeps such an object immobile by convention.
 //! - see: #1183 — `suspended`
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives", "records", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "records",
+  "temporary-access"
+))]
 
 import std.process
 
@@ -19,11 +28,10 @@ import std.process
 @[runs("12")]
 def suspended() -> Integer =
   var x = 5
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     access x as v { c.exit 1; resume v (v + 7) }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) => k *{}
-  }
   pure x

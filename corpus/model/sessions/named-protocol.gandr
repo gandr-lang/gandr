@@ -37,7 +37,9 @@ def tellsOne(seat : Report) -> Unit =
 /// A fork at the module's protocol, whose child hears one number.
 @[runs("*{}")]
 def forkedAtModule() -> Unit =
-  let seat = fork (operator : Desk.Ask) { let heard = hearsOne operator; pure *{} }
+  let seat = fork (operator : Desk.Ask) do
+    let heard = hearsOne operator
+    pure *{}
   send seat 1
   close seat
 

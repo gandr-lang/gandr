@@ -43,17 +43,15 @@ def handed() -> Unit =
 /// The parent hands its end to `answer`, which receives what the child sent.
 @[runs("7")]
 def asked() -> Integer =
-  let desk = fork (seat : Integer >! end) {
+  let desk = fork (seat : Integer >! end) do
     send seat 7
     close seat
-  }
   answer desk
 
 /// The parent hands its end to `report` beside a note, which the child takes.
 @[runs("*{}")]
 def reported() -> Unit =
-  let desk = fork (seat : String >? end) {
+  let desk = fork (seat : String >? end) do
     let note = recv seat
     close seat
-  }
   report "done" desk

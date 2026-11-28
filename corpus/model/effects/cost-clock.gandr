@@ -58,10 +58,10 @@ def rec passes(clock : Fuel) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Int
 
 /// The passes under the counting model.
 def countedPasses(clock : Fuel) -> (Nat -> Nat) -> Nat =
-  effect cost : Cost.Eff with sort N = Nat -> Nat {
+  effect cost : Cost.Eff with sort N = Nat -> Nat do
     let _answer = passes clock
     pure counted
-  } handle Counting
+  handle Counting
 
 /// The unfolding at clock three counts three.
 def prefixThree : Path (countOf (countedPasses (Tick (Tick (Tick Stop))))) (3 : Nat) = Path.here
@@ -83,10 +83,10 @@ def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 /// The loop that never ends, under the counting model. It checks, and it
 /// has no count.
 def countedSpin() -> [Partial] ((Nat -> Nat) -> Nat) =
-  effect cost : Cost.Eff with sort N = Nat -> Nat {
+  effect cost : Cost.Eff with sort N = Nat -> Nat do
     let _answer = spin
     pure counted
-  } handle Counting
+  handle Counting
 
 /// A loop that ends after one pass charges one.
 def once() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
@@ -96,10 +96,10 @@ def once() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 
 /// The loop that ends, under the counting model.
 def countedOnce() -> [Partial] ((Nat -> Nat) -> Nat) =
-  effect cost : Cost.Eff with sort N = Nat -> Nat {
+  effect cost : Cost.Eff with sort N = Nat -> Nat do
     let _answer = once
     pure counted
-  } handle Counting
+  handle Counting
 
 /// The loop that ends is within one, as its run reports it: one when the bound
 /// holds, zero when it does not.

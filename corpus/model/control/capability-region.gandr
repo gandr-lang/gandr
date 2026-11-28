@@ -10,43 +10,50 @@
 //!
 //! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
-@![features(("capabilities", "effect-handlers", "explicit-exits", "imports", "let-statements", "located-judgements", "modules", "records", "sized-types"))]
+@![features((
+  "capabilities",
+  "effect-handlers",
+  "explicit-exits",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "records",
+  "sized-types"
+))]
 
 // Early exit's host interface.
 import std.process
 
 /// `named` gives the scope capability its region type.
 def named() -> Unit =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let d : Cap[exit] at c = c
     return *{}
-  } handle {
+  handle
     | pure(x) => x
     | oper exit(code, k) => *{}
-  }
 
 /// A capability held for the whole run is not one a scope introduced: the
 /// scope's capability would outlive its scope there.
 @[refuses("CapabilityEscaped")]
 def held() -> Unit =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let d : Cap[exit] = c
     return *{}
-  } handle {
+  handle
     | pure(x) => x
     | oper exit(code, k) => *{}
-  }
 
 /// Inside a second scope the outer capability still names the outer region.
 def outer() -> Unit =
   effect c : std.process.Exit.Eff {
-    effect e : std.process.Exit.Eff {
+    effect e : std.process.Exit.Eff do
       let d : Cap[exit] at c = c
       return *{}
-    } handle {
+    handle
       | pure(x) => x
       | oper exit(code, k) => *{}
-    }
   } handle {
     | pure(x) => x
     | oper exit(code, k) => *{}
@@ -57,14 +64,13 @@ def outer() -> Unit =
 @[refuses("CapabilityEscaped")]
 def swapped() -> Unit =
   effect c : std.process.Exit.Eff {
-    effect e : std.process.Exit.Eff {
+    effect e : std.process.Exit.Eff do
       let d : Cap[exit] at e = c
       let f : Cap[exit] at c = e
       return *{}
-    } handle {
+    handle
       | pure(x) => x
       | oper exit(code, k) => *{}
-    }
   } handle {
     | pure(x) => x
     | oper exit(code, k) => *{}
@@ -73,21 +79,19 @@ def swapped() -> Unit =
 /// Only a scope capability names a region.
 @[refuses("UnresolvedName")]
 def unbound(c : Integer) -> Unit =
-  effect e : std.process.Exit.Eff {
+  effect e : std.process.Exit.Eff do
     let d : Cap[exit] at c = e
     return *{}
-  } handle {
+  handle
     | pure(x) => return x
     | oper exit(code, k) => return *{}
-  }
 
 /// `plain` keeps an integer until scope `c` ends.
 /// `kept-view.gandr` shows a view in the same region.
 def plain() -> Unit =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let d : Integer at c = 1
     return *{}
-  } handle {
+  handle
     | pure(x) => x
     | oper exit(code, k) => *{}
-  }

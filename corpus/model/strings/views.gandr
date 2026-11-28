@@ -15,7 +15,19 @@
 //! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
 //! [boats-2024-references_are_jumps]: https://without.boats/blog/references-are-like-jumps/ "boats, References are like jumps"
 
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "records", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "records",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 // This source imports declarations for lists, bytes, ownership, locations and
 // writes.
@@ -67,12 +79,11 @@ def twiceThrough() -> List Integer =
 @[runs("3")]
 def keptInRegion() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w {
       pure count (bytes w)
     }
     force k
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  }

@@ -7,7 +7,17 @@
 //! lifetime parameter as `fn read<'a>(k: &'a T)`.
 //!
 //! - see: corpus/pathological/regions/stashed.gandr — a returned thunk outside its region
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 import std.process
 
@@ -18,10 +28,9 @@ def read[r : Region](k : (() -> Integer) at r) -> Integer = force k
 @[runs("3")]
 def lent() -> Integer =
   var s = 3
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w { pure pure w }
     read k
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, rest) => pure 0
-  }

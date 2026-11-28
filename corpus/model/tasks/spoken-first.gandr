@@ -25,11 +25,10 @@ import "./task-base.gandr"
       (parallel (series (event left 1) (event left 2)) (event right 2))))
 ]
 def spokenFirst() -> Unit =
-  let heard = fork (task : Task.Volunteer) {
+  let heard = fork (task : Task.Volunteer) do
     send task Task.notes
     let answer = recv task
     close task
-  }
   let told = recv heard
   send heard told
   close heard

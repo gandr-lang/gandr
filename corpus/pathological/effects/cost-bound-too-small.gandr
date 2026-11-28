@@ -1,4 +1,16 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "identity-types", "imports", "let-statements", "modules", "named-instances", "native-primitives", "signature-models"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "native-primitives",
+  "signature-models"
+))]
 
 // A cost bound below a run's count, which is refused `EndpointMismatch`.
 //
@@ -25,10 +37,10 @@ def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 
 /// The steps under the counting model.
 def countedSteps() -> (Nat -> Nat) -> Nat =
-  effect cost : Cost.Eff with sort N = Nat -> Nat {
+  effect cost : Cost.Eff with sort N = Nat -> Nat do
     let _answer = threeSteps
     pure counted
-  } handle Counting
+  handle Counting
 
 /// The bound two is one step too small: the count of the steps is three, so
 /// `Count.le` answers `false`.

@@ -27,12 +27,11 @@ import "./ring-base.gandr"
 /// kernel's receive binds it until the kernel closes it.
 def bufferMoved() -> Unit =
   let buffer = fork (owner : Ring.Buffer) { close owner }
-  let ring = fork (kernel : Ring.Moving) {
+  let ring = fork (kernel : Ring.Moving) do
     let held = recv kernel
     close held
     send kernel Ring.done
     close kernel
-  }
   send ring buffer
   let cqe = recv ring
   close ring

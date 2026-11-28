@@ -12,7 +12,20 @@
 //! - owes: #2139 — a value type that quantifies a region
 //! - see: corpus/pathological/regions/natural.gandr — invalid squares
 
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "identity-types", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "temporary-access",
+  "thunks-and-force",
+  "visibility"
+))]
 
 // `pass` returns a thunk in its input region.
 import "./passed.gandr"
@@ -28,43 +41,39 @@ pub def touch[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r)
 @[runs("5")]
 def passNatural() -> Integer =
   var s = 5
-  effect outer : std.process.Exit.Eff {
+  effect outer : std.process.Exit.Eff do
     let k : (() -> Integer) at outer = access shared s as w { pure pure w }
-    effect inner : std.process.Exit.Eff {
+    effect inner : std.process.Exit.Eff do
       let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner] (fun (x) {
         let y : (() -> Integer) at outer = pass x
         pure y
       }) (fun (x) { let z : (() -> Integer) at inner = x; pass z }) = Path.here
         (fun (x) { let y : (() -> Integer) at outer = pass x; pure y })
       force k
-    } handle {
+    handle
       | pure(y) => pure y
       | oper exit(code, rest) => pure 0
-    }
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, rest) => pure 0
-  }
 
 /// `touchNatural` compares `touch` across the widening. Conversion reassociates
 /// the binds.
 @[runs("5")]
 def touchNatural() -> Integer =
   var s = 5
-  effect outer : std.process.Exit.Eff {
+  effect outer : std.process.Exit.Eff do
     let k : (() -> Integer) at outer = access shared s as w { pure pure w }
-    effect inner : std.process.Exit.Eff {
+    effect inner : std.process.Exit.Eff do
       let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner] (fun (x) {
         let y : (() -> Integer) at outer = touch x
         pure y
       }) (fun (x) { let z : (() -> Integer) at inner = x; touch z }) = Path.here
         (fun (x) { let y : (() -> Integer) at outer = touch x; pure y })
       force k
-    } handle {
+    handle
       | pure(y) => pure y
       | oper exit(code, rest) => pure 0
-    }
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, rest) => pure 0
-  }

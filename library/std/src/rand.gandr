@@ -82,12 +82,12 @@ pub def lcg[a : Type](w : Integer, seed : Integer, body : () -> [std.rand.Eff] a
       force body
     | true =>
       let modulus = span w
-      let stepped : Integer -> (Integer -> (Integer -> [std.rand.Eff] a)) = effect r : std.rand.Eff {
+      let stepped : Integer -> (Integer -> (Integer -> [std.rand.Eff] a)) = effect r : std.rand.Eff do
         let x = force body
         pure fun (state : Integer) {
           pure fun (last : Integer) { pure fun (divisor : Integer) { pure x } }
         }
-      } handle {
+      handle
         | pure(x) => pure x
         | oper draw(n, k) => pure fun (state : Integer) {
           pure fun (last : Integer) { pure fun (divisor : Integer) {
@@ -114,7 +114,6 @@ pub def lcg[a : Type](w : Integer, seed : Integer, body : () -> [std.rand.Eff] a
                   g2 divisor
           } }
         }
-      }
       let s1 = stepped seed
       let s2 = s1 w
       s2 1

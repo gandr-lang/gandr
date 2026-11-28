@@ -9,7 +9,15 @@
 //!
 //! - see: `authority.gandr` — a parent exits while its task end stays open
 
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 // The import gives the task protocols.
 import "./task-base.gandr"
@@ -19,15 +27,13 @@ import std.process
 /// A scope exits after its parent reads the task end to its close.
 @[runs("*{}")]
 def joined() -> Unit =
-  effect c : std.process.Exit.Eff {
-    let found = fork (task : Task.Join) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (task : Task.Join) do
       send task Task.notes
       close task
-    }
     let text = recv found
     close found
     c.exit 1
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => k *{}
-  }

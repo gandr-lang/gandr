@@ -18,11 +18,10 @@ import "../../model/moves/file-base.gandr"
 @[refuses("UsedAfterClose")]
 def closedAfterMove() -> Unit =
   let file = fork (owner : File.Handle) { close owner }
-  let task = fork (closer : File.Closer) {
+  let task = fork (closer : File.Closer) do
     let held = recv closer
     close held
     close closer
-  }
   send task file
   close file
   close task

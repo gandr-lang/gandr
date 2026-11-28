@@ -26,13 +26,12 @@ import std.process
 @[runs("112")]
 def relocated() -> Integer =
   var x = 5
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     access x as v { c.exit 1; resume v (v + 7) }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       let m = k *{}
       pure m + 100
-  }
   pure x + r

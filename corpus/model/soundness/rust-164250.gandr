@@ -5,7 +5,17 @@
 //! The checker rejects that write before the program runs.
 //!
 //! - see: #1492
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 // Early exit's host interface.
 import std.process
@@ -13,10 +23,9 @@ import std.process
 /// `kept` forces a view inside the handler region that holds its value.
 def kept() -> Integer =
   var l = 42
-  effect inner : std.process.Exit.Eff {
+  effect inner : std.process.Exit.Eff do
     let q2 : (() -> Integer) at inner = access shared l as w { pure pure w }
     force q2
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) => pure 0
-  }

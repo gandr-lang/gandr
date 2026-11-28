@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A clause that neither resumes nor abandons it would leave the
@@ -14,15 +22,13 @@ import std.process
 /// A scope whose exit clause drops the rest while its task's end is open.
 @[refuses("ContinuationUnspent")]
 def dropped() -> Unit =
-  effect c : std.process.Exit.Eff {
-    let found = fork (task : Cancel.Join) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (task : Cancel.Join) do
       send task Cancel.notes
       close task
-    }
     c.exit 1
     let text = recv found
     close found
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure *{}
-  }

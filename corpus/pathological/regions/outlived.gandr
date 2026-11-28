@@ -8,7 +8,17 @@
 //! its source. The source imports the early exit host interface.
 //!
 //! - see: corpus/model/regions/passed.gandr — a result inside its region
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 import std.process
 
@@ -19,11 +29,10 @@ def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) = pu
 @[refuses("TypeMismatch")]
 def outlived() -> Integer =
   var s = 4
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } }
     let back : () -> Integer = pass k
     force back
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, rest) => pure 0
-  }

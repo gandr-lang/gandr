@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 // A task runs as its parent's peer, and no region bounds it: a task naming a
 // capability its scope introduced could run past the scope's end, so the fork
@@ -12,15 +20,13 @@ import std.process
 /// A task exiting through its scope's capability after closing its end.
 @[refuses("CapabilityEscaped")]
 def outlived() -> Unit =
-  effect c : std.process.Exit.Eff {
-    let found = fork (task : Task.Join) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (task : Task.Join) do
       send task Task.notes
       close task
       c.exit 1
-    }
     let text = recv found
     close found
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => k *{}
-  }

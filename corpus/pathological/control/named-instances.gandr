@@ -1,4 +1,15 @@
-@![features(("call-by-push-value", "effect-handlers", "effect-rows", "implicit-arguments", "imports", "let-statements", "modules", "named-instances", "records", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "effect-rows",
+  "implicit-arguments",
+  "imports",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "records",
+  "thunks-and-force"
+))]
 
 // What `../../model/control/named-instances.gandr` proves, refused: a call
 // omitting an instance passes the one instance of its interface in scope,
@@ -21,13 +32,12 @@ import std.process
 @[refuses("InstanceAmbiguous")]
 def ambiguous() -> Integer =
   effect a : std.io.Console.Eff {
-    effect b : std.io.Console.Eff {
+    effect b : std.io.Console.Eff do
       say ()
       pure 0
-    } handle {
+    handle
       | pure(x) => pure x
       | oper print(line, k) => pure 2
-    }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
@@ -54,13 +64,12 @@ def defaulted() -> [o : std.io.Console.Eff] Unit = std.io.Console.print "default
 /// of `std.io.Console.Eff`'s operations.
 @[refuses("CapabilityAmplified")]
 def misplaced() -> Integer =
-  effect p : std.process.Exit.Eff {
+  effect p : std.process.Exit.Eff do
     say[.out = p] ()
     pure 0
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 1
-  }
 
 /// A label in a parameter's row naming no instance: the function's own row
 /// binds none.

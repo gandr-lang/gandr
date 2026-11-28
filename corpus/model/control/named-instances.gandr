@@ -46,26 +46,24 @@ pub def say() -> [out : std.io.Console.Eff] Unit = out.print "said"
 /// call passes it.
 @[runs("1")]
 def resolved() -> Integer =
-  effect a : std.io.Console.Eff {
+  effect a : std.io.Console.Eff do
     say
     pure 0
-  } handle {
+  handle
     | pure(x) => pure x
     | oper print(line, k) => pure 1
-  }
 
 /// Two instances handled around the call, the outer named: its clause
 /// answers.
 @[runs("1")]
 def namedOuter() -> Integer =
   effect a : std.io.Console.Eff {
-    effect b : std.io.Console.Eff {
+    effect b : std.io.Console.Eff do
       say[.out = a]
       pure 0
-    } handle {
+    handle
       | pure(x) => pure x
       | oper print(line, k) => pure 2
-    }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
@@ -75,13 +73,12 @@ def namedOuter() -> Integer =
 @[runs("2")]
 def namedInner() -> Integer =
   effect a : std.io.Console.Eff {
-    effect b : std.io.Console.Eff {
+    effect b : std.io.Console.Eff do
       say[.out = b]
       pure 0
-    } handle {
+    handle
       | pure(x) => pure x
       | oper print(line, k) => pure 2
-    }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
@@ -96,13 +93,12 @@ def sayLine(s : String) -> [out : std.io.Console.Eff] Unit = out.print s
 /// `sayLineRuns` passes its explicit argument and a scope instance.
 @[runs("1")]
 def sayLineRuns() -> Integer =
-  effect a : std.io.Console.Eff {
+  effect a : std.io.Console.Eff do
     sayLine "line"
     pure 0
-  } handle {
+  handle
     | pure(x) => pure x
     | oper print(line, k) => pure 1
-  }
 
 /// Steps down to the ground, which a recursion takes apart one by one.
 data Steps : Type where
@@ -124,15 +120,14 @@ def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit =
 /// handler answers every level's line.
 @[runs("3")]
 def descendRuns() -> Integer =
-  effect a : std.io.Console.Eff {
+  effect a : std.io.Console.Eff do
     descend (Step (Step (Step Ground)))
     pure 0
-  } handle {
+  handle
     | pure(x) => pure x
     | oper print(line, k) =>
       let n = k *{}
       pure (n + 1)
-  }
 
 /// `both` holds two console instances.
 /// It prints through `first` before `second`.
@@ -145,13 +140,12 @@ def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit =
 @[runs("1")]
 def outerFirst() -> Integer =
   effect a : std.io.Console.Eff {
-    effect b : std.io.Console.Eff {
+    effect b : std.io.Console.Eff do
       both[.first = a, .second = b]
       pure 0
-    } handle {
+    handle
       | pure(x) => pure x
       | oper print(line, k) => pure 2
-    }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
@@ -162,13 +156,12 @@ def outerFirst() -> Integer =
 @[runs("2")]
 def innerFirst() -> Integer =
   effect a : std.io.Console.Eff {
-    effect b : std.io.Console.Eff {
+    effect b : std.io.Console.Eff do
       both[.first = b, .second = a]
       pure 0
-    } handle {
+    handle
       | pure(x) => pure x
       | oper print(line, k) => pure 2
-    }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1
@@ -192,13 +185,12 @@ def bothWritten[r : Region, r1 : Region](
 @[runs("2")]
 def bothWrittenRuns() -> Integer =
   effect a : std.io.Console.Eff {
-    effect b : std.io.Console.Eff {
+    effect b : std.io.Console.Eff do
       bothWritten b a
       pure 0
-    } handle {
+    handle
       | pure(x) => pure x
       | oper print(line, k) => pure 2
-    }
   } handle {
     | pure(x) => pure x
     | oper print(line, k) => pure 1

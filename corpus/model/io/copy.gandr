@@ -70,10 +70,10 @@ def rec copy(buffer : List u8, passes : Passes) -> [
 /// The run of `copy` under `Scripted`, from a tape whose input is `input`:
 /// the tape after it.
 def copied(input : List u8, buffer : List u8, passes : Passes) -> Tape =
-  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut do
     copy buffer passes
     pure fun (tape) { pure tape }
-  } handle Scripted
+  handle Scripted
   program (Tape input #[])
 
 /// Five passes.

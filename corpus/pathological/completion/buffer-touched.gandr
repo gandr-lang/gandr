@@ -17,12 +17,11 @@ import "../../model/completion/ring-base.gandr"
 @[refuses("UsedAfterClose")]
 def bufferTouched() -> Unit =
   let buffer = fork (owner : Ring.Buffer) { close owner }
-  let ring = fork (kernel : Ring.Moving) {
+  let ring = fork (kernel : Ring.Moving) do
     let held = recv kernel
     close held
     send kernel Ring.done
     close kernel
-  }
   send ring buffer
   close buffer
   let cqe = recv ring

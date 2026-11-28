@@ -10,7 +10,17 @@
 //!
 //! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
-@![features(("call-by-push-value", "dependent-functions", "imports", "let-statements", "located-judgements", "modules", "session-types", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "session-types",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr"
@@ -22,11 +32,10 @@ import "../../model/completion/ring-base.gandr"
 def regionEnded() -> Unit =
   var buf = Ring.read
   let buffer : (() -> Ring.Sqe) at buf = access shared buf as w { pure thunk { pure w } }
-  let ring = fork (kernel : ((() -> Ring.Sqe) at buf) >? (Ring.Cqe) >! end) {
+  let ring = fork (kernel : ((() -> Ring.Sqe) at buf) >? (Ring.Cqe) >! end) do
     let sqe = recv kernel
     send kernel Ring.done
     close kernel
-  }
   send ring buffer
   let cqe = recv ring
   close ring

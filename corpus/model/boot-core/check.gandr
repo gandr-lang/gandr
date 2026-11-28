@@ -234,19 +234,19 @@ def located(ended : Ended) -> Checked =
 /// The answer of `check_utf8` for `bytes`, under `Extent`. The extent holds
 /// the bytes alone, from the address 4096.
 def utf8_in(bytes : List u8) -> Checked =
-  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 do
     let checked = check_utf8 (Range 4096u64 (counted bytes))
     pure fun (memory) { pure Gave (utf8_word checked) memory }
-  } handle Extent
+  handle Extent
   judged (program (Memory 4096u64 bytes))
 
 /// The answer of `find_zero` for `bytes`, under `Extent`. The extent holds
 /// the bytes alone, from the address 4096.
 def zero_in(bytes : List u8) -> Checked =
-  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 do
     let found = find_zero (Range 4096u64 (counted bytes))
     pure fun (memory) { pure Gave (found_word found) memory }
-  } handle Extent
+  handle Extent
   located (program (Memory 4096u64 bytes))
 
 /// The check of UTF-8 gives the position of the first fault: 2 for the bytes

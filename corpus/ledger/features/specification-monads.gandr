@@ -52,15 +52,18 @@ import "../../model/effects/tree.gandr"
 /// unit. A read hands the initial state to what runs after, and a store runs
 /// what follows from the stored value.
 def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
-  effect st : StateLaws with sort S = Integer {
+  effect st : StateLaws with sort S = Integer do
     let n = st.get
     st.put (n + 1)
     pure fun (q) { fun (s) { q (*{}) s } }
-  } handle {
+  handle
     | pure(w) => pure w
-    | oper get(k) => pure fun (q) { fun (s) { let w = k s; w q s } }
-    | oper put(s, k) => pure fun (q) { fun (_old) { let w = k (*{}); w q s } }
-  }
+    | oper get(k) => pure fun (q) { fun (s) do
+      let w = k s
+      w q s }
+    | oper put(s, k) => pure fun (q) { fun (_old) do
+      let w = k (*{})
+      w q s }
 
 /// The increment as a tree.
 def incrTree : Prog (Either StateOp Void) Unit = Op (Left Get) (fun (n) {

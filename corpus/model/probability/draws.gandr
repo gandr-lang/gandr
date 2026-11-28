@@ -66,17 +66,16 @@ def tailOf(rest : List Integer) -> List Integer =
 /// a function of a list, which answers each draw with the next integer of the
 /// list, and with 0 past its end.
 def summedFrom() -> (List Integer -> Integer) =
-  effect r : std.rand.Eff {
+  effect r : std.rand.Eff do
     let total = summed
     pure fun (rest : List Integer) { pure total }
-  } handle {
+  handle
     | pure(x) => pure x
     | oper draw(width, k) => pure fun (rest : List Integer) do
       let next = headOr rest
       let after = tailOf rest
       let g = k next
       g after
-  }
 
 /// `summedFrom` over `#[3, 2]`: the sum is 5.
 @[runs("5")]

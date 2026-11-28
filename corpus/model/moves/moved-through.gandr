@@ -26,11 +26,10 @@ import "./file-base.gandr"
 ]
 def movedThrough() -> Unit =
   let file = fork (owner : File.Handle) { close owner }
-  let task = fork (writer : File.Writer) {
+  let task = fork (writer : File.Writer) do
     let held = recv writer
     send writer held
     close writer
-  }
   send task file
   let back = recv task
   close back

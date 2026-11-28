@@ -8,36 +8,43 @@
 //! ends. The source imports the early exit host interface.
 //!
 //! - see: #1494 — `keptPastHold`, `keptPastNestedHold`
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 import std.process
 
 /// `keptPastHold` forces a view after its hold ends.
 @[refuses("ViewEscaped")]
 def keptPastHold() -> Integer =
-  effect inner : std.process.Exit.Eff {
+  effect inner : std.process.Exit.Eff do
     var l = 42
     let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } }
     force q
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) => pure 0
-  }
 
 /// `keptPastNestedHold` does the same with nested handlers.
 @[refuses("ViewEscaped")]
 def keptPastNestedHold() -> Integer =
-  effect outer : std.process.Exit.Eff {
-    let x : Integer = effect inner : std.process.Exit.Eff {
+  effect outer : std.process.Exit.Eff do
+    let x : Integer = effect inner : std.process.Exit.Eff do
       var l = 42
       let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } }
       force q
-    } handle {
+    handle
       | pure(y) => pure y
       | oper exit(code, k) => pure 0
-    }
     pure x
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) => pure 0
-  }

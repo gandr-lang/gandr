@@ -25,60 +25,55 @@ import std.process
 /// `resumed` resumes the exit continuation.
 @[runs("101")]
 def resumed() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => k *{}
-  }
 
 /// `answered` returns nine.
 @[runs("9")]
 def answered() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => pure 9
-  }
 
 /// `coded` returns the exit payload.
 @[runs("5")]
 def coded() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 5
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) => pure code
-  }
 
 /// `summed` adds codes from nested exits.
 @[runs("108")]
 def summed() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 3
     c.exit 4
     pure 1
-  } handle {
+  handle
     | pure(x) => pure x + 100
     | oper exit(code, k) =>
       let rest = k *{}
       pure rest + code
-  }
 
 /// `printed` counts console prints.
 @[runs("2")]
 def printed() -> Integer =
-  effect out : std.io.Console.Eff {
+  effect out : std.io.Console.Eff do
     out.print "one"
     out.print "two"
     pure 7
-  } handle {
+  handle
     | pure(x) => pure 0
     | oper print(line, k) =>
       let rest = k *{}
       pure rest + 1
-  }

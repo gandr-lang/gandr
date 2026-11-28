@@ -102,12 +102,11 @@ theory Skipping where
 /// then nine, and its right side what follows.
 @[refuses("HandlerUnlawful")]
 def discarding() -> Integer =
-  effect st : Skipping with sort S = Integer {
+  effect st : Skipping with sort S = Integer do
     st.put 1
     let a = st.get
     pure a
-  } handle {
+  handle
     | pure(x) => pure x
     | oper get(k) => k 4
     | oper put(s, k) => pure 9
-  }

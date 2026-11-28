@@ -15,10 +15,9 @@ import std.process
 
 /// Returns `n` after an exit its handler resumes.
 def quiet(n : Integer) -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 1
     return n
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => k *{}
-  }

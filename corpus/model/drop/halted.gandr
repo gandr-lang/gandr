@@ -55,28 +55,26 @@ def halting() -> [h : Halt.Eff with sort R = Integer] Integer =
 @[runs("blame: `afterHalt` is owed its body")]
 def halted() -> Integer =
   var x = 1
-  let r : Integer = effect h : Halt.Eff with sort R = Integer {
+  let r : Integer = effect h : Halt.Eff with sort R = Integer do
     access x as v { let _ = halting; resume v 5 } unwind { afterHalt 1 }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper halt(code) => pure 7
-  }
   pure x
 
 /// The same access across an exit whose clause abandons `k` itself.
 @[runs("blame: `afterHalt` is owed its body")]
 def abandoned() -> Integer =
   var x = 1
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     access x as v { let _ = c.exit 1; resume v 5 } unwind { afterHalt 1 }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }
   pure x
 
 /// The function creates a two-element list with its argument first.
@@ -89,13 +87,12 @@ def pairOf(a : Integer) -> List Integer =
 def haltedKept() -> List Integer =
   let ys = pairOf 1
   var x = 1
-  let r : Integer = effect h : Halt.Eff with sort R = Integer {
+  let r : Integer = effect h : Halt.Eff with sort R = Integer do
     access x as v { let _ = halting; resume v 5 } unwind { let _ = ys; pure *{} }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper halt(code) => pure 7
-  }
   pure cons 9 ys
 
 /// The same list across an exit whose clause abandons `k` itself.
@@ -103,13 +100,12 @@ def haltedKept() -> List Integer =
 def abandonedKept() -> List Integer =
   let ys = pairOf 1
   var x = 1
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }
   pure cons 9 ys

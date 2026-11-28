@@ -26,15 +26,13 @@ module Cancel :> *{
 
 @[refuses("ContinuationUnspent")]
 def dropped() -> Unit =
-  effect c : std.process.Exit.Eff {
-    let found = fork (task : Cancel.Join) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (task : Cancel.Join) do
       send task Cancel.notes
       close task
-    }
     c.exit 1
     let text = recv found
     close found
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure *{}
-  }

@@ -31,107 +31,98 @@ import std.io
 /// A buffer allocated and never freed.
 @[refuses("BufferUnreturned")]
 def neverFreed() -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     pure *{}
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) => k b
     | oper free(b, k) => k *{}
-  }
 
 /// A buffer freed twice.
 @[refuses("BufferReturnedTwice")]
 def freedTwice() -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     let first = r.free b
     r.free b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) => k b
     | oper free(b, k) => k *{}
-  }
 
 /// A buffer read as a value while it is held.
 @[refuses("BufferRead")]
 def readWhileHeld() -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     let copied : Buf = b
     r.free b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) => k b
     | oper free(b, k) => k *{}
-  }
 
 /// An `alloc` clause that drops the buffer its scope minted rather than
 /// resuming with it.
 @[refuses("BufferUnreturned")]
 def mintDropped() -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     r.free b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) => pure *{}
     | oper free(b, k) => k *{}
-  }
 
 /// A mock kernel that receives a buffer and never hands it back: the receive
 /// placed it live, and the kernel's body ends holding it.
 @[refuses("BufferUnreturned")]
 def receivedKept() -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     r.free b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) =>
-      let ring = fork (kernel : Buf >? end) {
+      let ring = fork (kernel : Buf >? end) do
         let held = recv kernel
         close kernel
-      }
       send ring b
       close ring
     | oper free(b, k) => k *{}
-  }
 
 /// A mock kernel that hands the buffer it received back twice.
 @[refuses("BufferReturnedTwice")]
 def receivedReturnedTwice() -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     r.free b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) =>
-      let ring = fork (kernel : Buf >? Buf >! Buf >! end) {
+      let ring = fork (kernel : Buf >? Buf >! Buf >! end) do
         let held = recv kernel
         send kernel held
         send kernel held
         close kernel
-      }
       send ring b
       let first = recv ring
       let second = recv ring
       close ring
       k first
     | oper free(b, k) => k *{}
-  }
 
 /// A buffer freed in one arm of a case and kept in the other, refused at the
 /// arm that keeps it.
 @[refuses("BufferUnreturned")]
 def freedInOneArm(flag : Bool) -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     match flag where
       | true => r.free b
       | false => pure *{}
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) => k b
     | oper free(b, k) => k *{}
-  }

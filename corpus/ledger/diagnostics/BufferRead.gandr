@@ -20,12 +20,11 @@ import std.io
 /// Copies a buffer the ring holds live, then frees it.
 @[refuses("BufferRead")]
 def readWhileHeld() -> Unit =
-  effect r : std.io.Ring.Eff {
+  effect r : std.io.Ring.Eff do
     let b = r.alloc 4096
     let copied : Buf = b
     r.free b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper alloc(n, b, k) => k b
     | oper free(b, k) => k *{}
-  }

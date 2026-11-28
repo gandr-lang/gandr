@@ -35,25 +35,23 @@ theory Halt.Eff where
 /// A halt performed inside an unwind.
 @[refuses("UnwindEffect")]
 def halted() -> Integer =
-  effect h : Halt.Eff with sort R = Integer {
+  effect h : Halt.Eff with sort R = Integer do
     var n = 0
     access n as v { abort v } unwind { h.halt 1 }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper halt(code) => pure 7
-  }
 
 /// An exit whose clause abandons `k` inside an unwind.
 @[refuses("UnwindEffect")]
 def abandoned() -> Integer =
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let _ = c.exit 1
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       var n = 0
       access n as v { abort v } unwind { abandon k }
       pure 7
-  }

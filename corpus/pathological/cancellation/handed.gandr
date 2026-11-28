@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "data-parameters", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A function handed the rest could resume it twice or never, so
@@ -19,15 +28,13 @@ def resume_stack(j : Stack (-F Unit) (-F Unit)) -> Unit =
 /// end is open.
 @[refuses("ContinuationAsValue")]
 def handed() -> Unit =
-  effect c : std.process.Exit.Eff {
-    let found = fork (task : Cancel.Join) {
+  effect c : std.process.Exit.Eff do
+    let found = fork (task : Cancel.Join) do
       send task Cancel.notes
       close task
-    }
     c.exit 1
     let text = recv found
     close found
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => resume_stack k
-  }

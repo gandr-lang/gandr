@@ -1,4 +1,11 @@
-@![features(("call-by-push-value", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 // A pending completion dropped: a read is submitted and its completion is
 // never reaped, though the kernel posts "exactly one matching CQE for every
@@ -10,10 +17,9 @@ import "../../model/completion/ring-base.gandr"
 /// A read submitted and its pending completion left unreaped.
 @[refuses("LinearResidue")]
 def pendingDropped() -> Unit =
-  let ring = fork (kernel : Ring.Submission) {
+  let ring = fork (kernel : Ring.Submission) do
     let sqe = recv kernel
     send kernel Ring.done
     close kernel
-  }
   send ring Ring.read
   pure *{}

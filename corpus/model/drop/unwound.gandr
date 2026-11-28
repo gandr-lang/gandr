@@ -42,15 +42,14 @@ def later : Integer -> Unit
 @[runs("blame: `later` is owed its body")]
 def unwound() -> Integer =
   var x = 1
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     access x as v { let _ = c.exit 1; resume v 5 } unwind { later 1 }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }
   pure x
 
 /// The function creates a two-element list with its argument first.
@@ -63,13 +62,12 @@ def built(a : Integer) -> List Integer =
 def unwound_kept() -> List Integer =
   let ys = built 1
   var x = 1
-  let r : Integer = effect c : std.process.Exit.Eff {
+  let r : Integer = effect c : std.process.Exit.Eff do
     access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} }
     pure 0
-  } handle {
+  handle
     | pure(y) => pure y
     | oper exit(code, k) =>
       abandon k
       pure 7
-  }
   pure cons 9 ys

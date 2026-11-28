@@ -51,7 +51,7 @@ def unended() -> Unit =
 @[refuses("KeptEscaped")]
 def keptPastRegion() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w {
       pure thunk do
         let bs = bytes w
@@ -59,17 +59,16 @@ def keptPastRegion() -> Integer =
     }
     let j : () -> Integer = thunk { force k }
     force j
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  }
 
 /// The string written while the region around it keeps a view of it: the kept
 /// view would read the string while it is written.
 @[refuses("HeldKept")]
 def writtenWhileKept() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w {
       pure thunk do
         let bs = bytes w
@@ -77,7 +76,6 @@ def writtenWhileKept() -> Integer =
     }
     access s as v { resume v v }
     force k
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  }

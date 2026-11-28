@@ -21,17 +21,15 @@ import "../../model/completion/ring-base.gandr"
 /// this checks until a kernel can be bounded by the buffer's hold,
 /// when a reaper that outlives the hold becomes the refusal.
 def bufferOrphaned() -> Unit =
-  let reaper = fork (reactor : Ring.Reaping) {
+  let reaper = fork (reactor : Ring.Reaping) do
     let pending = recv reactor
     let cqe = recv pending
     close pending
     close reactor
-  }
-  let ring = fork (kernel : Ring.Submission) {
+  let ring = fork (kernel : Ring.Submission) do
     let sqe = recv kernel
     send kernel Ring.done
     close kernel
-  }
   send ring Ring.read
   send reaper ring
   close reaper

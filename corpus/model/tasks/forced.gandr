@@ -25,11 +25,10 @@ import "./task-base.gandr"
       (parallel (event left 2) (series (event right 1) (event right 2)))))
 ]
 def forced() -> Unit =
-  let asked = fork (task : Task.Relay) {
+  let asked = fork (task : Task.Relay) do
     let request = recv task
     send task request
     close task
-  }
   send asked Task.notes
   let reply = recv asked
   close asked

@@ -39,17 +39,17 @@ module Ring :> *{
 
 @[refuses("ContinuationUsedTwice")]
 def resumedTwice() -> Unit =
-  effect c : std.process.Exit.Eff {
-    let ring = fork (kernel : Ring.Submission) {
+  effect c : std.process.Exit.Eff do
+    let ring = fork (kernel : Ring.Submission) do
       let sqe = recv kernel
       send kernel Ring.done
       close kernel
-    }
     send ring Ring.read
     c.exit 1
     let cqe = recv ring
     close ring
-  } handle {
+  handle
     | pure(x) => pure x
-    | oper exit(code, k) => { let first = k *{}; k *{} }
-  }
+    | oper exit(code, k) =>
+      let first = k *{}
+      k *{}

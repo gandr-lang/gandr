@@ -173,10 +173,9 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
           let filled : List u8 = if held { placed buffer input } else { buffer }
           let rest : List u8 = if held { left buffer input } else { input }
           let count : Integer = if held { size input - size rest } else { bad_file }
-          let done = fork (kernel : (Integer * List u8) >! end) {
+          let done = fork (kernel : (Integer * List u8) >! end) do
             send kernel (count, filled)
             close kernel
-          }
           let after = k done
           after (Tape rest output)
     }
@@ -194,10 +193,9 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
           let held = file == 1
           let bytes : List u8 = if held { front buffer count } else { #[] }
           let written : Integer = if held { size bytes } else { bad_file }
-          let done = fork (kernel : (Integer * List u8) >! end) {
+          let done = fork (kernel : (Integer * List u8) >! end) do
             send kernel (written, buffer)
             close kernel
-          }
           let after = k done
           after (Tape input (joined output bytes))
     }
@@ -205,10 +203,9 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
   def close_file(file : Integer, k : Shut -> (Tape -> Tape)) -> Tape -> Tape =
     fun (tape) do
       let status : Integer = if file == 0 { 0 } else { if file == 1 { 0 } else { bad_file } }
-      let done = fork (kernel : Integer >! end) {
+      let done = fork (kernel : Integer >! end) do
         send kernel status
         close kernel
-      }
       let after = k done
       after tape
 
@@ -239,10 +236,10 @@ def echo() -> [
 /// output, and the fourth stays.
 @[runs("Tape (cons 4u8 nil) (cons 1u8 (cons 2u8 (cons 3u8 nil)))")]
 def echoed() -> Tape =
-  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut do
     let count = echo
     pure fun (tape) { pure tape }
-  } handle Scripted
+  handle Scripted
   program (Tape #[1u8, 2u8, 3u8, 4u8] #[])
 
 /// A write to the file 2, which `Scripted` does not hold, gets the count `-9`.
@@ -250,9 +247,9 @@ def echoed() -> Tape =
 /// and the tape before the run otherwise.
 @[runs("Tape nil (cons 9u8 nil)")]
 def refused() -> Tape =
-  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut do
     let wrote = returned (io.write 2 #[7u8] 1)
     let named = wrote.0 == bad_file
     pure fun (tape) { if named { pure Tape #[] #[9u8] } else { pure tape } }
-  } handle Scripted
+  handle Scripted
   program (Tape #[] #[])

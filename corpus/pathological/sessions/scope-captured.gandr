@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "records", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "records",
+  "session-types"
+))]
 
 // An endpoint named inside a capability scope's body: the scope's clause
 // receives the rest of the body as its continuation, and may drop it or
@@ -15,10 +23,9 @@ import std.process
 @[refuses("CapturedEndpoint")]
 def closedInScope() -> Unit =
   let desk = fork (seat : end) { close seat }
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     c.exit 1
     close desk
-  } handle {
+  handle
     | pure(v) => pure v
     | oper exit(code, k) => pure *{}
-  }

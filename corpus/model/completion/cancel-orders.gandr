@@ -17,16 +17,14 @@ import "./ring-base.gandr"
 
 /// The target's completion reaped before the cancellation's.
 def targetFirst() -> Unit =
-  let pending = fork (target : Ring.Submission) {
+  let pending = fork (target : Ring.Submission) do
     let sqe = recv target
     send target Ring.done
     close target
-  }
-  let cancel = fork (canceller : Ring.Submission) {
+  let cancel = fork (canceller : Ring.Submission) do
     let sqe = recv canceller
     send canceller Ring.done
     close canceller
-  }
   send pending Ring.read
   send cancel Ring.read
   let first = recv pending
@@ -36,16 +34,14 @@ def targetFirst() -> Unit =
 
 /// The cancellation's completion reaped before the target's.
 def cancelFirst() -> Unit =
-  let pending = fork (target : Ring.Submission) {
+  let pending = fork (target : Ring.Submission) do
     let sqe = recv target
     send target Ring.done
     close target
-  }
-  let cancel = fork (canceller : Ring.Submission) {
+  let cancel = fork (canceller : Ring.Submission) do
     let sqe = recv canceller
     send canceller Ring.done
     close canceller
-  }
   send pending Ring.read
   send cancel Ring.read
   let first = recv cancel
@@ -56,18 +52,16 @@ def cancelFirst() -> Unit =
 /// The target's pending completion moved into the cancellation, which reaps it
 /// and then posts its own: the submitter keeps only the cancellation's.
 def cancelConsumes() -> Unit =
-  let pending = fork (target : Ring.Submission) {
+  let pending = fork (target : Ring.Submission) do
     let sqe = recv target
     send target Ring.done
     close target
-  }
-  let cancel = fork (canceller : Ring.Cancelling) {
+  let cancel = fork (canceller : Ring.Cancelling) do
     let owed = recv canceller
     let reaped = recv owed
     close owed
     send canceller Ring.done
     close canceller
-  }
   send pending Ring.read
   send cancel pending
   let own = recv cancel
@@ -77,17 +71,15 @@ def cancelConsumes() -> Unit =
 /// a receive whose payload is itself a receive. It takes the target's pending
 /// completion, reaps it and posts nothing of its own.
 def cancelWrittenOut() -> Unit =
-  let pending = fork (target : Ring.Submission) {
+  let pending = fork (target : Ring.Submission) do
     let sqe = recv target
     send target Ring.done
     close target
-  }
-  let cancel = fork (canceller : ((Ring.Cqe) >? end) >? end) {
+  let cancel = fork (canceller : ((Ring.Cqe) >? end) >? end) do
     let owed = recv canceller
     let reaped = recv owed
     close owed
     close canceller
-  }
   send pending Ring.read
   send cancel pending
   close cancel

@@ -38,40 +38,37 @@ import std.process
 @[runs("3")]
 def keptView() -> Integer =
   var s = 3
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w { pure pure w }
     force k
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  }
 
 /// `keptAgain` binds the kept thunk at its region type.
 /// It then forces that thunk.
 @[runs("3")]
 def keptAgain() -> Integer =
   var s = 3
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w { pure pure w }
     let j : (() -> Integer) at c = k
     force j
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  }
 
 /// The region releases the held value when its scope ends.
 /// `released` then writes the value back.
 @[runs("4")]
 def released() -> Integer =
   var s = 3
-  let n : Integer = effect c : std.process.Exit.Eff {
+  let n : Integer = effect c : std.process.Exit.Eff do
     let k : (() -> Integer) at c = access shared s as w { pure pure w }
     force k
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  }
   access s as v { resume v (n + 1) }
   pure s
 
@@ -80,14 +77,13 @@ def released() -> Integer =
 @[runs("3")]
 def keptRead() -> Integer =
   var s = 3
-  effect c : std.process.Exit.Eff {
+  effect c : std.process.Exit.Eff do
     let n : Integer at c = access shared s as w { pure w }
     access s as v { resume v (v + 1) }
     pure 3
-  } handle {
+  handle
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
-  }
 
 /// A hold opens a region for its own value.
 /// `keptInHold` keeps a shared view in that region.

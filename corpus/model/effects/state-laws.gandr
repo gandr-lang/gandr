@@ -22,13 +22,13 @@ import "./state.gandr"
 
 /// `counter` passes state through reads and stores.
 def counter() -> (Integer -> Integer) =
-  effect st : StatePutLaws with sort S = Integer {
+  effect st : StatePutLaws with sort S = Integer do
     st.put 1
     let a = st.get
     st.put (a + 1)
     let b = st.get
     pure fun (s : Integer) { pure b }
-  } handle {
+  handle
     | pure(x) => pure x
     | oper get(k) => pure fun (s : Integer) do
       let g = k s
@@ -36,7 +36,6 @@ def counter() -> (Integer -> Integer) =
     | oper put(s, k) => pure fun (t : Integer) do
       let g = k *{}
       g s
-  }
 
 /// `counted` runs `counter` from zero.
 @[runs("2")]
@@ -47,24 +46,22 @@ def counted() -> Integer =
 /// `readTwice` handles two reads as one read.
 @[runs("8")]
 def readTwice() -> Integer =
-  effect st : StateGetGet with sort S = Integer {
+  effect st : StateGetGet with sort S = Integer do
     let a = st.get
     let b = st.get
     pure a + b
-  } handle {
+  handle
     | pure(x) => pure x
     | oper get(k) => k 4
-  }
 
 /// `storeTwice` keeps the second stored value.
 @[runs("3")]
 def storeTwice() -> Integer =
-  effect st : StatePutPut with sort S = Integer {
+  effect st : StatePutPut with sort S = Integer do
     st.put 1
     st.put 2
     pure 3
-  } handle {
+  handle
     | pure(x) => pure x
     | oper get(k) => k 4
     | oper put(s, k) => k *{}
-  }
