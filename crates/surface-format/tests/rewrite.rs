@@ -2689,6 +2689,50 @@ fn a_constructor_result_is_written_juxtaposed_5803()
     }
 }
 
+/// A port pattern by juxtaposition stands in parentheses before its
+/// selection, as a port's expression does: `Share(x).%left` is written
+/// `(Share x).%left` in either form, a qualified constructor's too, and the
+/// written spelling formats as it stands.
+#[test]
+fn a_port_pattern_is_written_juxtaposed_in_its_parentheses()
+{
+    let grammar = grammar();
+    let glued = "\
+data Expr : Type where
+  | Lit : (n : Integer) --> Expr
+  | Share : (e : Expr) --> (left : Expr, right : Expr)
+
+def rec size(e : Expr) -> Integer =
+  match e where
+    | Lit n => 1
+    | Share(x).%left => size[<] x
+    | Expr.Share(x).%right => size[<] x
+";
+    let juxtaposed = "\
+data Expr : Type where
+  | Lit : (n : Integer) --> Expr
+  | Share : (e : Expr) --> (left : Expr, right : Expr)
+
+def rec size(e : Expr) -> Integer =
+  match e where
+    | Lit n => 1
+    | (Share x).%left => size[<] x
+    | (Expr.Share x).%right => size[<] x
+";
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, glued, form, Selection::Every),
+            juxtaposed,
+            "{form}"
+        );
+        assert_eq!(
+            spelled(&grammar, juxtaposed, form, Selection::Every),
+            juxtaposed,
+            "{form}: the juxtaposed port stands"
+        );
+    }
+}
+
 /// The rewrites' sweep: every corpus source formats into either form, the
 /// formatter checking its meaning, and formats once in it.
 mod sweeps

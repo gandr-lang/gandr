@@ -2786,8 +2786,7 @@ impl<'source> Respelling<'_, 'source>
             },
             (RewriteName::PatternApplication, Direction::Sugar | Direction::Desugar) => {
                 // A port pattern selects one output of a constructor,
-                // `Share(x).left`: the selection reads the glued pattern
-                // before it, so the pattern keeps its list.
+                // `(Share x).%left`: the selection reads an atom before it.
                 let ported = self.parents.get(&at).is_some_and(|&parent| {
                     matches!(
                         self.tree.node(parent).map(gandr_surface_syntax::Node::label),
@@ -2795,10 +2794,7 @@ impl<'source> Respelling<'_, 'source>
                             if self.grammar.rule_of(mold).is_ok_and(|rule| rule.name().0 == "projection_expression")
                     )
                 });
-                if ported {
-                    return None;
-                }
-                self.juxtaposed_pattern(&mut out, parts)?
+                self.juxtaposed_pattern(&mut out, parts, ported)?
             },
             (RewriteName::BareRun, Direction::Sugar | Direction::Desugar) => {
                 self.bare_run(&mut out, parts)?
@@ -4115,7 +4111,9 @@ impl<'source> Respelling<'_, 'source>
 
     /// Write the constructor pattern whose parts are `parts` as
     /// juxtaposition: `Cons(x, rest)` as `Cons x rest` and `Tree.Leaf(x)` as
-    /// `Tree.Leaf x`. Parenthesize each field that is no atom.
+    /// `Tree.Leaf x`. Parenthesize each field that is no atom. A `ported`
+    /// pattern, the target of a port selection, stands in parentheses:
+    /// `Share(x).%left` as `(Share x).%left`.
     /// Do not write a pattern with no list.
     /// Do not write a pattern that holds a comment.
     ///
@@ -4128,6 +4126,7 @@ impl<'source> Respelling<'_, 'source>
         &self,
         out: &mut Builder<'source>,
         parts: &[Part<'source>],
+        ported: bool,
     ) -> Option<Band>
     {
         if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
@@ -4155,6 +4154,13 @@ impl<'source> Respelling<'_, 'source>
         if !closed || fields.is_empty() {
             return None;
         }
+        if ported {
+            let open = Leaf {
+                context: Spacing::Operand,
+                ..out.written(SourceFragment::from(OPEN_PAREN.0), Material::Token)
+            };
+            out.leaves.push(open);
+        }
         for (index, part) in head.iter().enumerate() {
             if index > 0 {
                 out.leaves.extend(part.before.iter().copied());
@@ -4164,6 +4170,10 @@ impl<'source> Respelling<'_, 'source>
         for child in fields {
             out.glue();
             out.place(&self.field(child), Band::Atom);
+        }
+        if ported {
+            out.token(CLOSE_PAREN);
+            return Some(Band::Atom);
         }
         Some(Band::Application)
     }
