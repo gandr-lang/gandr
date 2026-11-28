@@ -1,6 +1,6 @@
 //! This source shows methods that answer places.
 //!
-//! A mode parameter makes a receiver answer `View[m](a)`.
+//! A mode parameter makes a receiver answer `View[m] a`.
 //! A method body names a place in its receiver.
 //!
 //! A block call lends the place at the requested mode.
