@@ -93,7 +93,7 @@ Run the crate's tests from the repository root:
 cargo nextest run -p gandr-surface-pretty
 ```
 
-The goldens live in `tests/golden/`, one `.narrow.txt` at 40 columns and one `.wide.txt` at 100 per pair; `UPDATE_EXPECT=1` rewrites them.
+Each golden page is a value of the kind `printed` of the store of outputs, one `.narrow.txt` at 40 columns and one `.wide.txt` at 100 for each pair. The gate of outputs compares each page with the page of the base.
 
 ## Where the detail lives
 

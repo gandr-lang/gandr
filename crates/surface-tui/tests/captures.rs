@@ -1,13 +1,12 @@
 //! The rendered captures: the recorded bus frames of each scene, replayed
 //! through the side view. Each state that a frame leaves keeps every rule of
 //! the visual language. A blank line in the frames ends a capture: the scene's
-//! panes are drawn as SVG and compared with the committed file.
-//! `UPDATE_EXPECT=1` records the files again.
+//! panes are drawn as SVG, which is a value of the kind `captures` of the
+//! store of outputs. The gate of outputs compares it with the SVG of the base.
 
 use std::fs;
 use std::path::Path;
 
-use expect_test::expect_file;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_render_remote::Shown;
 use gandr_surface_render_remote::conform;
@@ -22,34 +21,34 @@ use gandr_workflow_output_store::given;
 #[derive(Clone, Copy, Debug)]
 struct Scene
 {
-    /// The stem of the files.
+    /// The stem of the frames and of the name of each capture.
     stem: &'static str,
     /// The first head of each pane of the run that the capture shows.
     leads: &'static [&'static str],
 }
 
 /// Replay the frames of `scene` through the side view, check each state that a
-/// frame leaves against the rules, and compare each capture with its file.
+/// frame leaves against the rules, and give each capture to the store.
 ///
 /// # Specification
 /// - requires: `tests/frames/<stem>.jsonl` holds one frame per line, and a
 ///   blank line after each state that the scene captures.
 /// - ensures: each frame leaves a rendering that breaks no rule, with the state
 ///   before it as the earlier one. The capture at the n-th blank line,
-///   one-based, equals `tests/captures/<stem>.<n>.svg`, and the scene has one
+///   one-based, goes to the store of outputs as the value `<stem>.<n>.svg` of
+///   the kind `captures`, when the environment names a run. The scene has one
 ///   capture at least.
-/// - provides: the golden of each capture of the scene. Each capture goes to
-///   the store of outputs as a value of the kind `captures`, when the
-///   environment names a run.
+/// - provides: the golden of each capture of the scene.
 /// - fails: never.
 /// - panics: when a file is missing, a line is not a frame, a state breaks a
-///   rule, or a capture differs from its file.
-/// - executable: none — the effects are the files that the comparison reads,
-///   and the panics are the checks.
+///   rule, a capture shows no pane, or the store cannot be written.
+/// - executable: none — the effects are the values that the store takes, and
+///   the panics are the checks.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the recorded frames give the committed SVG; a change of
-///   one column's width fails the comparison with the lines that moved.
+/// - hypothesis: L3 — the recorded frames give the SVG of the base; a change of
+///   one column's width changes the value, and the gate of outputs shows the
+///   lines that moved.
 /// - witness: `tests::captures::the_warrants_scene_renders_as_its_captures`
 /// - witness: `tests::captures::the_schedule_scene_renders_as_its_capture`
 /// - witness: `tests::captures::the_derivation_scene_renders_as_its_captures`
@@ -63,7 +62,6 @@ fn captured(scene: Scene)
             .with_extension("jsonl"),
     )
     .expect("the scene's frames are committed");
-    let captures = tests.join("captures");
     let mut following = Following::default();
     let mut earlier = following.frame();
     let mut drawn = rendering(&earlier);
@@ -91,7 +89,6 @@ fn captured(scene: Scene)
             let image = svg(shown);
             let _given = given::give(Kind("captures"), &name, image.as_bytes())
                 .unwrap_or_else(|error| panic!("the capture `{name}` goes to the store: {error}"));
-            expect_file![captures.join(name)].assert_eq(&image);
             continue;
         }
         let frame: RenderFrame = serde_json::from_str(line).expect("each line is a frame");

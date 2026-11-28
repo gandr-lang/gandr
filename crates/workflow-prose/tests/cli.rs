@@ -25,9 +25,7 @@ macro_rules! scratch {
         if root.exists() {
             std::fs::remove_dir_all(&root).unwrap();
         }
-        for dir in ["corpus", "crates/surface-render-terminal/tests/golden"] {
-            std::fs::create_dir_all(root.join(dir)).unwrap();
-        }
+        std::fs::create_dir_all(root.join("corpus")).unwrap();
         std::fs::write(
             root.join("corpus/a.gandr"),
             concat!("/// ", $sentence, "\ndef x = 1 ;\n"),

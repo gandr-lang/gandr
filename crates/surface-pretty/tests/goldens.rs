@@ -4,18 +4,16 @@
 //! Paired goldens present one node at the narrow page (40 columns) and the wide
 //! page (100 columns). The wide page must hold exactly the one-line spelling
 //! written beside the fixture — the flattened image of every document is that
-//! line — and both pages are compared whole against `tests/golden/`.
+//! line. Each page is a value of the kind `printed` of the store of outputs,
+//! and the gate of outputs compares it whole with the page of the base.
 //! A zero-column pair pins fallback when both separator branches are tainted.
-//! Regenerate with `UPDATE_EXPECT=1` and review the diff.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
-use std::path::Path;
 
 use anodized::spec;
-use expect_test::expect_file;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::Fuel;
@@ -149,12 +147,12 @@ enum Root
     Computation(CoreNode),
 }
 
-/// A golden pair: its file stem, the one-line spelling, and the fidelity
-/// both pages carry.
+/// A golden pair: its name, the one-line spelling, and the fidelity both
+/// pages carry.
 #[derive(Clone, Copy, Debug)]
 struct Pinned<'text>
 {
-    /// The file stem under `tests/golden/`.
+    /// The name of the pair: each page is a value at this name and its page.
     name: &'static str,
     /// The one-line spelling.
     flat: &'text str,
@@ -226,15 +224,16 @@ where
 /// Presents `root` at both pages and pins them: the wide page holds
 /// exactly the one-line spelling when that fits it, since no layout costs
 /// less than one line within the page; both carry the pinned fidelity;
-/// and each matches its golden file, which ends in a line feed.
+/// and each goes to the store of outputs, with a line feed at its end.
 ///
 /// # Specification
 /// - requires: a nonempty fixture key with no path separator, and a flat
 ///   spelling without a line ending or tab. The source fits default ceilings.
-/// - ensures: both pages match their files and expected fidelity; a spelling
-///   that fits the wide page appears there unchanged.
+/// - ensures: both pages carry the expected fidelity and go to the store; a
+///   spelling that fits the wide page appears there unchanged.
 /// - provides: independent byte-for-byte layout observations.
-/// - panics: on a layout refusal, unreadable golden or mismatched observation.
+/// - panics: on a layout refusal, a store that cannot be written, or a
+///   mismatched observation.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — finite narrow and wide arrow, bracket and control-string
@@ -294,31 +293,28 @@ fn pin_in(
         "{}: both pages carry the fidelity",
         pinned.name
     );
-    compared(
+    given_page(
         &format!("{}.narrow.txt", pinned.name),
         &format!("{at_narrow}\n"),
     );
-    compared(
+    given_page(
         &format!("{}.wide.txt", pinned.name),
         &format!("{at_wide}\n"),
     );
 }
 
 /// Gives the printed page `text` to the store of outputs as the value `name`
-/// of the kind `printed`, when the environment names a run, and compares it
-/// with the file `name` under `tests/golden/`.
+/// of the kind `printed`, when the environment names a run.
 ///
 /// # Specification
 /// trivial.
-fn compared(
+fn given_page(
     name: &str,
     text: &str,
 )
 {
     let _given = given::give(Kind("printed"), name, text.as_bytes())
         .unwrap_or_else(|error| panic!("the page `{name}` goes to the store: {error}"));
-    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
-    expect_file![directory.join(name)].assert_eq(text);
 }
 
 /// The wide-page spelling and fidelity of `root`.
@@ -782,7 +778,7 @@ fn doubly_tainted_pair_keeps_the_broken_separator()
         PageWidth::from(0_u32),
     );
     assert_eq!(presentation.fidelity(), Fidelity::Faithful);
-    compared("tainted_pair.zero.txt", &format!("{presentation}\n"));
+    given_page("tainted_pair.zero.txt", &format!("{presentation}\n"));
 }
 
 /// A nominal type without arguments is its bare name at both pages: the

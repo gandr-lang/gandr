@@ -401,16 +401,15 @@ version = "3.0.0"
 default-features = false
 features = ["fast", "zeroize"]
 
-# Snapshot comparison for the frozen tables of the grammar, the printer's
-# layout goldens and the inline completion's ranking golden: a file or an
-# inline literal compared whole, a diff on mismatch, and a rewrite under
-# `UPDATE_EXPECT=1`. It has no features to leave off.
+# Snapshot comparison for the frozen tables of the grammar and the ranking
+# golden of the inline completion. It compares a file or an inline literal
+# whole, and prints a diff on a mismatch. `UPDATE_EXPECT=1` writes the
+# snapshot again. It has no optional feature.
 # consumers:
 # - surface-format (dev)
 # - surface-grammar (dev)
 # - surface-lsp (dev)
 # - surface-lsp-base (dev)
-# - surface-pretty (dev)
 [workspace.dependencies.expect-test]
 version = "1.5.1"
 default-features = false

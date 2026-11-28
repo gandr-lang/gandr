@@ -38,7 +38,6 @@ quenchant-shape.workspace = true
 # renders its refusals through the writer of the outputs crate. Each rendered
 # text goes to the store of the outputs.
 [dev-dependencies]
-expect-test.workspace = true
 gandr-core-checker.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-dispatcher.workspace = true
