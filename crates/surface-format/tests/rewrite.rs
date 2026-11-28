@@ -392,6 +392,39 @@ fn a_labelled_result_row_is_written_before_its_type_2271()
     }
 }
 
+/// The sugared form writes a handler in its layout form, `effect r : T do`
+/// with `handle` on a line of its own at the column of the handler's line,
+/// and a fork's block of statements after `do`, as the witness
+/// `bufferReturned` stands; its layout form formats as it stands, and the
+/// explicit form keeps either spelling.
+#[test]
+fn a_handler_and_a_fork_take_their_layout_form()
+{
+    let grammar = grammar();
+    let source =
+        include_str!("rewrite/unformatted/a-handler-and-a-fork-take-their-layout-form.gandr");
+    let sugared = include_str!(
+        "rewrite/unformatted/a-handler-and-a-fork-take-their-layout-form-sugared.gandr"
+    );
+    assert_eq!(
+        hosted_spelled(&grammar, source, Form::Sugared),
+        sugared,
+        "sugared"
+    );
+    assert_eq!(
+        hosted_spelled(&grammar, sugared, Form::Sugared),
+        sugared,
+        "the layout form stands"
+    );
+    for written in [source, sugared] {
+        assert_eq!(
+            hosted_spelled(&grammar, written, Form::Explicit),
+            written,
+            "explicit"
+        );
+    }
+}
+
 /// #1327: the sugared form writes a value-function alias at its shortest:
 /// one domain unparenthesised however deeply written, nested aliases among
 /// them, and a binder nothing later reads left out; a list of domains, a

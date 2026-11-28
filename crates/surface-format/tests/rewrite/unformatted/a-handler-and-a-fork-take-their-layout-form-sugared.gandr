@@ -1,0 +1,43 @@
+@![features((
+  "buffer-tokens",
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "pattern-matching",
+  "records",
+  "session-types"
+))]
+
+import std.buffer (Buf)
+
+import std.io
+
+def bufferReturned() -> Unit =
+  effect r : std.io.Ring.Eff do
+    let b = r.alloc 4096
+    r.free b
+  handle
+    | pure(x) => pure x
+    | oper alloc(n, b, k) =>
+      let ring = fork (kernel : Buf >? Buf >! end) do
+        let held = recv kernel
+        send kernel held
+        close kernel
+      send ring b
+      let filled = recv ring
+      close ring
+      k filled
+    | oper free(b, k) => k *{}
+
+def freedInEachArm(flag : Bool) -> Unit =
+  effect r : std.io.Ring.Eff do
+    let b = r.alloc 4096
+    match flag where
+      | true => r.free b
+      | false => r.free b
+  handle
+    | pure(x) => pure x
+    | oper alloc(n, b, k) => k b
+    | oper free(b, k) => k *{}
