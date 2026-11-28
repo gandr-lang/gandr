@@ -17,6 +17,6 @@ def twice(x : Circle) -> Circle = match x {
 };
 def astray(n : Nat) -> Nat = match n {
   | Z => Z
-  | S(m) => m
+  | S m => m
   | loop => Z
 };

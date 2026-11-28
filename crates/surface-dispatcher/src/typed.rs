@@ -7701,7 +7701,7 @@ mod tests
         );
         assert_eq!(
             at("p)\n"),
-            named("p) =>", "p"),
+            named("p =>", "p"),
             "a pattern variable's use, its pattern"
         );
         assert_eq!(
@@ -7715,7 +7715,7 @@ mod tests
             "a constructor in a term, its name in the family"
         );
         assert_eq!(
-            at("Succ(p)"),
+            at("Succ p"),
             named("Succ : (n :", "Succ"),
             "a constructor in a pattern, its name in the family"
         );
@@ -7943,7 +7943,7 @@ mod tests
             "the other parameter: its one use"
         );
         assert_eq!(
-            uses("p) =>"),
+            uses("p =>"),
             [at("p)\n")],
             "a pattern variable: its one use"
         );
@@ -7955,7 +7955,7 @@ mod tests
         assert_eq!(
             uses("Succ : (n :"),
             [
-                at("Succ(p)"),
+                at("Succ p"),
                 at("Succ (plus"),
                 at("Succ (Succ"),
                 at("Succ Zero")
@@ -8396,7 +8396,7 @@ mod tests
                 .binders_at(found(typing, SourceText::from("pl\n")))
                 .map(|(_, site)| site.start())
                 .collect::<Vec<_>>(),
-            ["p) =>", "m : Nat)", "plus(", "n : Nat,"]
+            ["p =>", "m : Nat)", "plus(", "n : Nat,"]
                 .map(|needle| found(typing, SourceText::from(needle))),
             "each binder at its own written name, the arm's before the function's"
         );
@@ -9814,17 +9814,17 @@ mod tests
             "the letter it inverts"
         );
         assert_eq!(
-            at("S(x) => {"),
+            at("S x => {"),
             pattern("S", "Int -> Int"),
             "a constructor's name at its type"
         );
         assert_eq!(
-            at("(x) => { let c"),
-            pattern("S(x)", "Int"),
+            at(" x => { let c"),
+            pattern("S x", "Int"),
             "the constructor pattern at its family"
         );
         assert_eq!(
-            at("x) => { let c"),
+            at("x => { let c"),
             pattern("x", "Int"),
             "the field at the constructor's field type"
         );
@@ -9858,7 +9858,7 @@ mod tests
         ));
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("f) =>")),
+            answer(&table, source, SourceText::from("f =>")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
                 ty: String::from("+U (a -> -F Vinf)"),
@@ -10677,11 +10677,7 @@ mod tests
             "typed/fixtures/a-run-bound-match-s-patterns-answer-298.gandr"
         ));
         let table = table(source);
-        for (needle, ty) in [
-            ("Zero => return p", "Nat"),
-            ("(r) =>", "Nat"),
-            ("r) =>", "Nat"),
-        ] {
+        for (needle, ty) in [("Zero => return p", "Nat"), ("r => pure r", "Nat")] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Binder, SourceText::from(ty)),
@@ -11646,7 +11642,7 @@ mod tests
             own(used.saturating_add(1_usize)).is_some_and(|span| usize::from(span.start()) < used),
             "the byte after a use answers the application around it, not the use"
         );
-        let pattern = start("Succ(p) =>");
+        let pattern = start("Succ p =>");
         assert_eq!(
             own(pattern).map(|span| (usize::from(span.start()), usize::from(span.end()))),
             Some((pattern, pattern.saturating_add(4_usize))),
@@ -11776,14 +11772,14 @@ mod tests
         ));
         let table = table(source);
         let read: Vec<(&str, String)> = [
-            "FZ(_)",
+            "FZ _",
             include_str!("typed/unformatted/an-indexed-constructor-pattern-types-its-fields-and-name-3539-read.gandr"),
-            "VC(k, _, t)",
-            "_, t)",
-            "_) => S k",
-            "_) => y",
-            "MkBox(_)",
-            "_) => Z\n",
+            "VC k _ t",
+            "_ t =>",
+            "_ => S k",
+            "_ => y",
+            "MkBox _",
+            "_ => Z\n",
         ]
         .into_iter()
         .map(|needle| {
@@ -11797,17 +11793,17 @@ mod tests
         assert_eq!(
             read,
             [
-                ("FZ(_)", String::from("+U ((a : N) -> -F (Fin (S a)))")),
-                ("_) => Z\n    | FS", String::from("N")),
+                ("FZ _", String::from("+U ((a : N) -> -F (Fin (S a)))")),
+                ("_ => Z\n    | FS", String::from("N")),
                 (
-                    "VC(k, _, t)",
+                    "VC k _ t",
                     String::from("+U ((a : N) -> N -> V N a -> -F V N (S a))")
                 ),
-                ("_, t)", String::from("N")),
-                ("_) => S k", String::from("V N k")),
-                ("_) => y", String::from("V N _")),
-                ("MkBox(_)", String::from("+U (N -> -F Box N)")),
-                ("_) => Z\n", String::from("N")),
+                ("_ t =>", String::from("N")),
+                ("_ => S k", String::from("V N k")),
+                ("_ => y", String::from("V N _")),
+                ("MkBox _", String::from("+U (N -> -F Box N)")),
+                ("_ => Z\n", String::from("N")),
             ],
             "each name at the index its constructor states, each field at its declared type"
         );

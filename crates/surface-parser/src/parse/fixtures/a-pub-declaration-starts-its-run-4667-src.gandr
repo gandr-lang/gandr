@@ -5,7 +5,7 @@ pub def one : Nat = Zero
 pub def rec two(n : Nat) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(m) => two[<] m
+    | Succ m => two[<] m
 
 @[checks]
 pub data Bit : Type where

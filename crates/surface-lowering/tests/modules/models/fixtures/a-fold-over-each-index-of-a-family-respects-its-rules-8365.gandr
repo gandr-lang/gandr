@@ -17,8 +17,8 @@ def rec same(w : Width, t : Gate w) -> Gate w =
     | Dark => Dark
     | Lit => Lit
     | Nil => Nil
-    | Swap(x) => Swap (same[<] Word x)
-    | Hold(c, x) => Hold (same[<] Bit c) (same[<] Word x)
+    | Swap x => Swap (same[<] Word x)
+    | Hold c x => Hold (same[<] Bit c) (same[<] Word x)
 
 def rec bits(t : Gate Bit) -> Gate Bit =
   match t where
@@ -30,5 +30,5 @@ def rec turned(w : Width, t : Gate w) -> Gate w =
     | Dark => Lit
     | Lit => Dark
     | Nil => Nil
-    | Swap(x) => Swap (turned[<] Word x)
-    | Hold(c, x) => Hold (turned[<] Bit c) (turned[<] Word x)
+    | Swap x => Swap (turned[<] Word x)
+    | Hold c x => Hold (turned[<] Bit c) (turned[<] Word x)

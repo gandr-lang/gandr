@@ -28,7 +28,7 @@ def literal(u : Integer, s : Bool) -> pairOf Integer Bool = *{.x = u, .y = s};
 def rec tower(n : Nat) -> Type =
   match n {
     | Zero => return Integer
-    | Succ(m) => return type(Integer * (tower [<] m))
+    | Succ m => return type(Integer * (tower [<] m))
   }
 
 def towered(u : Integer, w : Integer) -> tower (Succ Zero) = *{u, w};
@@ -38,13 +38,13 @@ def towerFirst(v : tower (Succ Zero)) -> Integer = v.0
 def sem(a : Ty, _d : Ctx) -> Type =
   match a {
     | Base => return Integer
-    | Arr(_x, _y) => return Unit
+    | Arr _x _y => return Unit
   }
 
 def rec env(g : Ctx, d : Ctx) -> Type =
   match g {
     | Empty => return Unit
-    | Extend(h, a) => return type((env [<] h d) * (sem a d))
+    | Extend h a => return type((env [<] h d) * (sem a d))
   }
 
 def lookup(d : Ctx, v : env (Extend Empty Base) d) -> Integer = v.1

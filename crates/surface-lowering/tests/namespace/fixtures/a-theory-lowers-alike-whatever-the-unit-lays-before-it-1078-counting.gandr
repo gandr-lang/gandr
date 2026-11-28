@@ -3,6 +3,6 @@ theory Monoid where {
   oper one : () --> (z : M)
 }
 def count(presented : Theory) -> Integer = match presented {
-  | Presents(sorts, opers, rules) => 1
+  | Presents sorts opers rules => 1
   | _ => 0
 };

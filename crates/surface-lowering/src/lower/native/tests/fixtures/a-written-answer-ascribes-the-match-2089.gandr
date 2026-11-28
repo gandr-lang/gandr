@@ -7,6 +7,6 @@ def bound() -> Integer = {
   pure (m + m)
 };
 def counted(n : Nat) -> Nat = {
-  let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p }
+  let m = match n -> -F Nat { | Zero => pure n | Succ p => pure p }
   pure m
 };

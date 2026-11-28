@@ -15,25 +15,25 @@ data Box(a : Type) : Type where {
 }
 def rec toN(m : N, i : Fin m) -> N =
   match i {
-    | FZ(_) => Z
-    | FS(p, j) => S (toN[<] p j)
+    | FZ _ => Z
+    | FS p j => S (toN[<] p j)
   }
 def vlen(m : N, v : V N m) -> N =
   match v {
     | VN => Z
-    | VC(k, _, t) => S k
+    | VC k _ t => S k
   }
 def vsnd(m : N, v : V N m) -> N =
   match v {
     | VN => Z
-    | VC(k, y, _) => S k
+    | VC k y _ => S k
   }
 def vthd(m : N, v : V N m) -> N =
   match v {
     | VN => Z
-    | VC(_, y, _) => y
+    | VC _ y _ => y
   }
 def unbox(b : Box N) -> N =
   match b {
-    | MkBox(_) => Z
+    | MkBox _ => Z
   }

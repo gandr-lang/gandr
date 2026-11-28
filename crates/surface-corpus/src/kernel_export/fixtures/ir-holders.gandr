@@ -31,6 +31,6 @@ data Codes(d : Type) : Type[+, 1] where
 @[builtin("irArgs")]
 def rec fields(d : Type, c : Codes d, x : Type, t : x -> d) -> Type =
   match c where
-    | Stop(e) => return Unit
-    | Ask(a, f) => return (Pair a (fun (y) { fields[<] d (f y) x t }))
-    | Read(a, f) => return (Pair (x -> a) (fun (h) { return Unit }))
+    | Stop e => return Unit
+    | Ask a f => return (Pair a (fun (y) { fields[<] d (f y) x t }))
+    | Read a f => return (Pair (x -> a) (fun (h) { return Unit }))

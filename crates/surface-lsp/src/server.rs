@@ -12215,7 +12215,7 @@ mod tests
             Value::Array(vec![
                 location("base.gandr", 3, 17, 18),
                 location("base.gandr", 5, 14, 15),
-                location("base.gandr", 6, 31, 32),
+                location("base.gandr", 6, 30, 31),
             ]),
             "a parameter's uses stay in its declaration, though every importer reads the source"
         );
@@ -17277,14 +17277,14 @@ mod tests
             "a caret just past a name answers the name"
         );
         assert_eq!(
-            definition(&mut linked, 6, 24),
-            Value::Array(vec![link(range(6, 23, 27), plus, plus)]),
+            definition(&mut linked, 6, 23),
+            Value::Array(vec![link(range(6, 22, 26), plus, plus)]),
             "a recursive call links to its declaration from its name, its marker aside (#827)"
         );
         assert_eq!(
-            definition(&mut linked, 6, 33),
+            definition(&mut linked, 6, 32),
             Value::Array(vec![link(
-                range(6, 33, 34),
+                range(6, 32, 33),
                 range(6, 11, 12),
                 range(6, 11, 12)
             )]),
@@ -17352,7 +17352,7 @@ mod tests
         let n = Value::Array(vec![
             mark(1, 3, 13, 14),
             mark(2, 5, 14, 15),
-            mark(2, 6, 31, 32),
+            mark(2, 6, 30, 31),
         ]);
         assert_eq!(
             highlight(uri, 5, 14),
@@ -17365,19 +17365,19 @@ mod tests
             n,
             "a caret just past a name marks it"
         );
-        let plus = Value::Array(vec![mark(1, 3, 8, 12), mark(2, 6, 23, 27)]);
+        let plus = Value::Array(vec![mark(1, 3, 8, 12), mark(2, 6, 22, 26)]);
         assert_eq!(
             highlight(uri, 3, 9),
             plus,
             "a recursive declaration marks its name and its call"
         );
-        assert_eq!(highlight(uri, 6, 24), plus, "its call marks the same");
+        assert_eq!(highlight(uri, 6, 23), plus, "its call marks the same");
         assert_eq!(
             highlight(uri, 6, 7),
             Value::Array(vec![
                 mark(1, 2, 4, 8),
                 mark(2, 6, 6, 10),
-                mark(2, 6, 17, 21),
+                mark(2, 6, 16, 20),
                 mark(2, 8, 10, 14),
                 mark(2, 8, 16, 20),
             ]),
@@ -17417,16 +17417,16 @@ mod tests
             }).collect::<Vec<_>>(), "wordPattern": gandr_surface_parser::WORD_PATTERN})
         };
         let uri = "file:///tmp/referred.gandr";
-        let n = ranges(&[(3, 13, 14), (5, 14, 15), (6, 31, 32)]);
+        let n = ranges(&[(3, 13, 14), (5, 14, 15), (6, 30, 31)]);
         assert_eq!(
             linked(uri, 3, 13),
             n,
             "a parameter's binder links itself and its uses"
         );
-        assert_eq!(linked(uri, 6, 31), n, "a use links the same ranges");
+        assert_eq!(linked(uri, 6, 30), n, "a use links the same ranges");
         assert_eq!(
             linked(uri, 6, 11),
-            ranges(&[(6, 11, 12), (6, 33, 34)]),
+            ranges(&[(6, 11, 12), (6, 32, 33)]),
             "a binder a constructor pattern introduces links its use"
         );
         assert_eq!(

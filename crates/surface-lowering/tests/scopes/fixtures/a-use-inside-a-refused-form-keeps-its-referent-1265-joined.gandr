@@ -5,7 +5,7 @@ data Nat : Type where {
 def joined(n : Nat) -> -F Nat = {
   let m = match n -> -F Nat {
     | Zero => return n
-    | Succ(p) => pure p
+    | Succ p => pure p
   }
   return m
 };

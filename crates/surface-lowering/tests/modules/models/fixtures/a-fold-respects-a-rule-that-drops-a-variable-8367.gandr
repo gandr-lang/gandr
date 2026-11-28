@@ -18,7 +18,7 @@ def rec copy(w : Width, t : Fragment w) -> Fragment w =
     | High => High
     | Zero => Zero
     | One => One
-    | Choose(c, x, y) => Choose (copy[<] Bit c) (copy[<] Word x) (copy[<] Word y)
+    | Choose c x y => Choose (copy[<] Bit c) (copy[<] Word x) (copy[<] Word y)
 
 def rec crossed(w : Width, t : Fragment w) -> Fragment w =
   match t where
@@ -26,10 +26,10 @@ def rec crossed(w : Width, t : Fragment w) -> Fragment w =
     | High => High
     | Zero => Zero
     | One => One
-    | Choose(c, x, y) => Choose (crossed[<] Bit c) (crossed[<] Word y) (crossed[<] Word x)
+    | Choose c x y => Choose (crossed[<] Bit c) (crossed[<] Word y) (crossed[<] Word x)
 
 def rec under(t : Fragment Word, d : Fragment Word) -> Fragment Word =
   match t where
     | Zero => d
     | One => One
-    | Choose(c, x, y) => Choose c (under[<] x d) (under[<] y d)
+    | Choose c x y => Choose c (under[<] x d) (under[<] y d)

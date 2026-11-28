@@ -8,5 +8,5 @@ data Tree : Type where
 /// result of the call at that staged type.
 def rec first(t : Tree) -> Integer =
   match t where
-    | Leaf(x) => x
-    | Node(k) => first[<] (k 0)
+    | Leaf x => x
+    | Node k => first[<] (k 0)

@@ -9,7 +9,7 @@ module Counting where {
 def rec shadowed(n : Peano, m : Peano) -> -F Peano =
   match m {
     | Origin => return n
-    | Next(n) => return n
+    | Next n => return n
   }
 def hides(answer : Integer) -> -F Integer = return answer
 def opened() -> -F Integer = { import Counting; let two = 3; return two };

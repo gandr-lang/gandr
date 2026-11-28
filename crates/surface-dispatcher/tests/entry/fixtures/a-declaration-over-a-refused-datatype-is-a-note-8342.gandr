@@ -11,4 +11,4 @@ def flip(b : Bit) -> Bit =
   match b where
     | Low => High
     | High => Low
-    | Not(c) => c
+    | Not c => c

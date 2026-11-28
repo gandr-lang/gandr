@@ -8,6 +8,6 @@ theory Pointed where {
 }
 def applies(link : Theory) -> Integer =
   match link {
-    | Theory.App(head, rest) => 1
+    | Theory.App head rest => 1
     | _ => 0
   }

@@ -9,7 +9,7 @@ module Counting where {
 def rec shadowed(n : Nat, m : Nat) -> -F Nat =
   match m {
     | Zero => return n
-    | Succ(n) => return n
+    | Succ n => return n
   }
 def hides(answer : Integer) -> -F Integer = return answer
 def opened() -> -F Integer = { import Counting; let two = 3; return two };

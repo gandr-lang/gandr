@@ -6,7 +6,7 @@ data Nat : Type where {
 def predecessor(n : Nat) -> Nat = {
   let m = match n {
     | Zero => return n
-    | Succ(p) => pure p
+    | Succ p => pure p
   }
   m
 };

@@ -22,14 +22,14 @@ def matched(e : Expr) -> Integer = match e { | Share(x) => return 0 | _ => retur
 
 def measured(e : Expr) -> Integer =
   match e {
-    | Lit(n) => n
-    | Add(a, b) => 2
+    | Lit n => n
+    | Add a b => 2
     | Share(x).%left => 3
     | Share(x).%right => 4
   }
 
 def partial(e : Expr) -> Integer =
-  match e { | Lit(n) => return n | Add(a, b) => return 2 | Share(x).%left => return 3 }
+  match e { | Lit n => return n | Add a b => return 2 | Share(x).%left => return 3 }
 
 data Tree : Type where {
   | Tip : (n : Integer) --> Tree

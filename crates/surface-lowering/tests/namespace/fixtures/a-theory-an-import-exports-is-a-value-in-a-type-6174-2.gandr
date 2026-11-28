@@ -2,7 +2,7 @@ import "./base.gandr"
 
 def shapeOf(presented : Theory) -> Type =
   match presented where
-    | Theory.Presents(sorts, opers, rules) => return String
+    | Theory.Presents sorts opers rules => return String
     | _ => return Bool
 
 def qualified : shapeOf M.Shape = "a"

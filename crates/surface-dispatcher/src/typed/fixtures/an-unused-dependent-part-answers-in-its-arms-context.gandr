@@ -3,5 +3,5 @@ data Vinf : Type[+, 1] where {
 }
 
 def members(v : Vinf) -> Type = match v {
-  | Sup(a, f) => a
+  | Sup a f => a
 };

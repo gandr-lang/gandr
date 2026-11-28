@@ -6,7 +6,7 @@ def pick(n : Nat, m : Nat) -> -F Nat = {
   let k = Succ n
   match n {
     | Zero => n
-    | Succ(p) => n
+    | Succ p => n
   }
 };
 def id : Nat -> Nat

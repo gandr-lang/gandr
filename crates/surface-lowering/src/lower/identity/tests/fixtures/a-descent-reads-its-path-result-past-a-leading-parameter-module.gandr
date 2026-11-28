@@ -5,5 +5,5 @@ data Int : Type where {
 def up(n : Int) -> Int = S n
 def rec descend(k : Int, b : Int) -> Path[.A = Int] b b = match b {
   | Z => Path.here Z
-  | S(x) => Path.step (Path.ap up (descend[<] k x)) (Path.here (S x))
+  | S x => Path.step (Path.ap up (descend[<] k x)) (Path.here (S x))
 };

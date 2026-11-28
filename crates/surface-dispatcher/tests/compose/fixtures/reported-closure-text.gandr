@@ -7,8 +7,8 @@ data Int : Type where {
 }
 def rec tell(n : Int) -> Int = match n {
   | Z => Z
-  | S(x) => S (tell[<] x)
-  | P(x) => P (tell[<] x)
+  | S x => S (tell[<] x)
+  | P x => P (tell[<] x)
 };
 def one : Integer = 1
 def owed : Integer

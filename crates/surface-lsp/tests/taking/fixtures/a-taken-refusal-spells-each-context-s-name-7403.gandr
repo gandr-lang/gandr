@@ -11,4 +11,4 @@ data Packed : (s : Sig) --> Type where
   | Hold : (n : Nat, v : Pred (Succ n)) --> Packed (Pack n v)
 def first(n : Nat, v : Pred (Succ n), h : Packed (Pack n v)) -> At n =
   match h where
-    | Hold(m, w) => A m
+    | Hold m w => A m

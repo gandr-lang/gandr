@@ -330,7 +330,7 @@ fn each_shadowing_binder_keeps_the_binding_it_hides_6270()
         shadows,
         [
             Shadow {
-                binder: ending("Succ(n", 1_usize),
+                binder: ending("Succ n", 1_usize),
                 hidden: Resolution::Binder(ending("shadowed(n", 1_usize)),
             },
             Shadow {

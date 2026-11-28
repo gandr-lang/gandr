@@ -21,8 +21,8 @@ def tell(p : Path[.A = Circle] Base Base) -> -F Integer =
 def rec spin(n : Int) -> -F Path[.A = Circle] Base Base =
   match n {
     | Z => return Path.here Base
-    | S(x) => { let c = spin[<] x; return loop ∷ c }
-    | P(x) => { let c = spin[<] x; return back (loop) ∷ c }
+    | S x => { let c = spin[<] x; return loop ∷ c }
+    | P x => { let c = spin[<] x; return back (loop) ∷ c }
   }
 
 def flip(x : Circle) -> -F Circle =

@@ -25,7 +25,7 @@ def overSig(a : Int) -> Path[.A = Int] (S a) (S
   a) = Path.step (Path.ap up (sig a)) (Path.here (S a))
 def rec descend(b : Int) -> Path[.A = Int] b b = match b {
   | Z => Path.here Z
-  | S(x) => Path.step (Path.ap up (descend[<] x)) (Path.here (S x))
+  | S x => Path.step (Path.ap up (descend[<] x)) (Path.here (S x))
 };
 def mapped(f : Circle -> Int) -> Path[.A = Int] (f Base) (f Base) = Path.back (Path.ap f loop)
 def pointed(c : Circle) -> Path[.A = Circle] Base Base = Path.step (Path.back c) loop

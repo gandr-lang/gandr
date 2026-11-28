@@ -13,4 +13,4 @@ def same(n : N) -> N = n
 def rec kept(n : N) -> Path[.A = N] (same n) n =
   match n where
     | Z => Path.here Z
-    | S(x) => Path.ap up (kept[<] x)
+    | S x => Path.ap up (kept[<] x)

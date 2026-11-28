@@ -8,7 +8,7 @@ data List(a : Type) : Type where
 
 def rec length(a : Type) : List a -> Nat where
   | Nil => Zero
-  | Cons(_, rest) => Succ (length[<] a rest)
+  | Cons _ rest => Succ (length[<] a rest)
 
 def two() -> Nat = length Nat (Cons Zero (Cons Zero (Nil : List Nat)))
 

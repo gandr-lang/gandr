@@ -8,5 +8,5 @@ def moved(A : Type, P : A -> Type, x : A, y : A, p : Path[.A = A] x y, v : P x) 
   v
 def rec plus : (Nat, Nat) -> Nat where {
   | Zero, k => k
-  | Succ(j), k => Succ (plus[<] j k)
+  | Succ j, k => Succ (plus[<] j k)
 }
