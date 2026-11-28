@@ -94,7 +94,9 @@ jobs:
       # rustdoc gates of a landing document them on Linux. These passes
       # document each crate on macOS, with the private items and each rustdoc
       # lint denied. One pass takes the default features, and one takes each
-      # feature.
+      # feature. The feature `full` of `gandr-runtime-mlir` builds its shim
+      # with an MLIR toolchain, and the runner has none. No crate depends on
+      # that crate, so the second pass leaves it out.
       #
       # The passes render no page, and they run after a failed suite too.
       # Their build directory is not in the cache, so the cache holds the build
@@ -106,7 +108,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings -Zunstable-options --check
         run: |
           cargo doc --workspace --locked --no-deps --document-private-items
-          cargo doc --workspace --locked --no-deps --document-private-items --all-features
+          cargo doc --workspace --locked --no-deps --document-private-items --all-features --exclude gandr-runtime-mlir
       - name: save the target directory
         if: ${{ always() && steps.target.outcome == 'success' && steps.target.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
