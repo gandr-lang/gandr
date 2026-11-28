@@ -2097,9 +2097,12 @@ fn write<'source>(
                             .collect()
                     });
                     let own = unended.as_deref().unwrap_or(own);
-                    // A rewrite that ends a declaration in a `}` before
-                    // another form writes the `;` that the layout pass
-                    // would otherwise read as the close of a block.
+                    // A rewrite that ends a declaration in the `}` of a
+                    // block before another form writes the `;` that the
+                    // layout pass would otherwise read as the close of that
+                    // block. The `}` of a brace that a sigil leads, as of
+                    // `*{a, b}`, ends no item, and the layout pass places
+                    // its separator.
                     let closed: Vec<Leaf<'source>>;
                     let own = match own.iter().rev().find(|leaf| {
                         leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty()
@@ -2107,7 +2110,7 @@ fn write<'source>(
                         Some(&last)
                             if followed
                                 && changed.is_some()
-                                && braced(own)
+                                && block_closed(own)
                                 && !braced(unit.leaves)
                                 && leaf::declares(own) =>
                         {
@@ -2185,6 +2188,36 @@ fn braced(leaves: &[Leaf<'_>]) -> bool
         .rev()
         .find(|leaf| leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty())
         .is_some_and(|last| <&str>::from(last.text) == "}")
+}
+
+/// Whether the last token of `leaves` that the source writes is a `}` that
+/// closes a plain `{`, which the layout pass reads as the close of a block;
+/// the `}` of a brace that a sigil leads, as `*{` or `+{`, is none.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: one flag for each bracket open at once
+fn block_closed(leaves: &[Leaf<'_>]) -> bool
+{
+    let mut plain: Vec<bool> = Vec::new();
+    let mut closed = false;
+    for text in leaves
+        .iter()
+        .filter(|leaf| leaf.material == Material::Token)
+        .map(|leaf| <&str>::from(leaf.text))
+        .filter(|text| !text.is_empty())
+    {
+        closed = false;
+        if text.ends_with(['{', '(', '[']) {
+            plain.push(text == "{");
+        }
+        else if matches!(text, "}" | ")" | "]") {
+            closed = plain.pop().unwrap_or(false) && text == "}";
+        }
+    }
+    closed
 }
 
 /// The leaves of the clean top-level form `form` of `tree`, whose leaves

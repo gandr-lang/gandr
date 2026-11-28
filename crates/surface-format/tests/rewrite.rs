@@ -2224,6 +2224,77 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
     .assert_eq(&laid(Form::Explicit));
 }
 
+/// The explicit form writes a product of a module member `*{a, b}`, in a
+/// layout body and in braces, and a product after the module as well: the
+/// member that ends in the product's `}` keeps its separator, so no rewrite
+/// is withdrawn. The sugared form writes each one back as `a * b`.
+#[test]
+fn a_module_member_s_product_is_written_in_its_braces()
+{
+    let grammar = grammar();
+    let source = concat!(
+        "@![features((\"data-parameters\", \"modules\", \"products-and-sums\", \"records\"))]\n",
+        "\n",
+        "module Shapes where\n",
+        "  /// Pairs.\n",
+        "  type Pair(a : Type, b : Type) = a * b\n",
+        "  /// Triples.\n",
+        "  type Triple(a : Type) = a * a * a\n",
+        "\n",
+        "module Braced where {\n",
+        "  type Pair(a : Type, b : Type) = a * b\n",
+        "}\n",
+        "\n",
+        "def paired() -> Integer * Bool = *{1, true};\n",
+    );
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid = |form: Form| {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "nothing is withdrawn in {form:?}"
+        );
+        formatted.into_text()
+    };
+    expect![[r#"
+        @![features(("data-parameters", "modules", "products-and-sums", "records"))]
+
+        module Shapes where
+          /// Pairs.
+          type Pair(a : Type, b : Type) = *{a, b}
+          /// Triples.
+          type Triple(a : Type) = *{a, a, a}
+
+        module Braced where {
+          type Pair(a : Type, b : Type) = *{a, b}
+        }
+
+        def paired() -> *{Integer, Bool} = *{1, true};
+    "#]]
+    .assert_eq(&laid(Form::Explicit));
+    expect![[r#"
+        @![features(("data-parameters", "modules", "products-and-sums", "records"))]
+
+        module Shapes where
+          /// Pairs.
+          type Pair(a : Type, b : Type) = a * b
+          /// Triples.
+          type Triple(a : Type) = a * a * a
+
+        module Braced where {
+          type Pair(a : Type, b : Type) = a * b
+        }
+
+        def paired() -> Integer * Bool = *{1, true};
+    "#]]
+    .assert_eq(&laid(Form::Sugared));
+}
+
 /// A definition's result written `-F B` is written `B` in the sugared form,
 /// the returner the lowering inserts, a module member's and a merged function
 /// form's among them, and one with an effect row `[E] B`, its row before the
