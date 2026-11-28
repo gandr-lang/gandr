@@ -16,6 +16,7 @@
 //! - `refusals`, the refusals that `gandr check` prints for a refusing source;
 //! - `rendered`, a diagnostic that the terminal renderer writes;
 //! - `roles`, the roles that the highlight gives a source;
+//! - `unanswered`, the kinds of name that the editor answers nothing at;
 //! - `uncommented`, the items of a corpus source that carry no comment.
 //!
 //! `<kinds>` is one kind, two or more kinds with a comma between them, or
@@ -26,8 +27,9 @@
 //! files of a checkout. The run walks its own work tree. The binary of a
 //! commit walks any other tree, in the checkout below the target directory.
 //! The tests of a package give the values of `captures`, `formatted`,
-//! `hovers`, `printed`, `rendered` and `uncommented`. The run starts them in
-//! its own work tree, and the binary of a commit starts them in its checkout.
+//! `hovers`, `printed`, `rendered`, `unanswered` and `uncommented`. The run
+//! starts them in its own work tree, and the binary of a commit starts them in
+//! its checkout.
 //!
 //! With no revision, the tree is the work tree with its changes. The store is
 //! the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs`.
@@ -50,10 +52,11 @@
 //! `Changes-output: <kind>`. It prints one refusal for each such kind. With no
 //! `--head`, the commits end at `HEAD`.
 //!
-//! `uncommented` is a ratchet: each line of a value is a member, and the name
-//! of its source is not a part of it. For a ratchet, `difference` prints the
-//! members that the head adds, and it exits with 1 only when the head adds a
-//! member and no commit names the kind. The head can drop a member.
+//! `unanswered` and `uncommented` are ratchets: each line of a value is a
+//! member, and the name of its source is not a part of it. For a ratchet,
+//! `difference` prints the members that the head adds, and it exits with 1
+//! only when the head adds a member and no commit names the kind. The head
+//! can drop a member.
 //!
 //! `--cost` adds each part of the run with its count and its time.
 //!
@@ -90,7 +93,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is captures, formatted, hovers, printed, recovery, refusals, rendered, roles or uncommented;\n       <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
+const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is captures, formatted, hovers, printed, recovery, refusals, rendered, roles, unanswered or uncommented;\n       <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
 
 /// How many changes `difference` prints when the command line names no
 /// count.

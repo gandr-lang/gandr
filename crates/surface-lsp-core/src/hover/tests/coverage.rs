@@ -293,6 +293,8 @@ fn the_exemplar_answers_each_name_it_declares()
 /// source, and it judges each held key.
 mod sweeps
 {
+    use gandr_workflow_output_store::Kind;
+    use gandr_workflow_output_store::given;
     use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Rotation;
@@ -359,7 +361,9 @@ mod sweeps
     }
 
     /// Each gap of each source `sweep` visits has its key in the ledger, and,
-    /// when `stale` is judged, each held key has a gap.
+    /// when `stale` is judged, each held key has a gap. When the environment
+    /// names a run of the outputs, the sweep visits each source, and it gives
+    /// its keys as the one value `corpus` of the kind `unanswered`.
     ///
     /// # Specification
     /// trivial.
@@ -369,11 +373,14 @@ mod sweeps
     )
     {
         eprintln!("{}", sweep.rotation());
-        let sources = sweep.visit_rotating(
-            SAMPLE,
-            NIGHTS,
-            &corpus::sources().expect("the corpus reads"),
-        );
+        let corpus = corpus::sources().expect("the corpus reads");
+        let asked = given::asked().is_some();
+        let sources = if asked {
+            corpus
+        }
+        else {
+            sweep.visit_rotating(SAMPLE, NIGHTS, &corpus)
+        };
         let mut found: BTreeMap<String, String> = BTreeMap::new();
         for source in &sources {
             let written = std::fs::read_to_string(&source.path).expect("a corpus source is read");
@@ -382,6 +389,15 @@ mod sweeps
                     .entry(key)
                     .or_insert_with(|| format!("{}:{site}", source.name));
             }
+        }
+        if asked {
+            let mut value = String::new();
+            for key in found.keys() {
+                value.push_str(key);
+                value.push('\n');
+            }
+            let _given = given::give(Kind("unanswered"), "corpus", value.as_bytes())
+                .unwrap_or_else(|error| panic!("the gaps of the corpus go to the store: {error}"));
         }
         let path = ledger_path();
         if stale == Stale::Judged && std::env::var_os("SURFACE_LSP_COVERAGE_WRITE_LEDGER").is_some()

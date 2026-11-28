@@ -2159,6 +2159,7 @@ dependencies = [
  "gandr-surface-session",
  "gandr-surface-syntax",
  "gandr-workflow-debt-ledger",
+ "gandr-workflow-output-store",
  "gandr-workflow-sweep",
  "pathdiff",
  "quenchant-anodized",

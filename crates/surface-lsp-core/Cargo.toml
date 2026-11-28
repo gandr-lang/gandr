@@ -43,10 +43,12 @@ quenchant-shape.workspace = true
 
 # A test of a hover reads a record store of its own. The corpus sweeps draw
 # their samples through the sweep crate. The coverage sweep compares its gaps
-# with its debt ledger. A test reads an answer as JSON.
+# with its debt ledger, and gives them to the store of the outputs. A test
+# reads an answer as JSON.
 [dev-dependencies]
 gandr-storage-records.workspace = true
 gandr-workflow-debt-ledger.workspace = true
+gandr-workflow-output-store.workspace = true
 gandr-workflow-sweep.workspace = true
 serde_json.workspace = true
 

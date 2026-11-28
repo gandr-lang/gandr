@@ -66,8 +66,12 @@ pub const ROLES: Kind = Kind("roles");
 /// comment gate of the corpus gives. It is a ratchet.
 pub const UNCOMMENTED: Kind = Kind("uncommented");
 
+/// The kind of the kinds of name that the editor answers nothing at, which
+/// the coverage sweep of the language server gives. It is a ratchet.
+pub const UNANSWERED: Kind = Kind("unanswered");
+
 /// Each kind, in the order of the names.
-pub const KINDS: [Kind; 9] = [
+pub const KINDS: [Kind; 10] = [
     CAPTURES,
     FORMATTED,
     HOVERS,
@@ -76,13 +80,14 @@ pub const KINDS: [Kind; 9] = [
     REFUSALS,
     RENDERED,
     ROLES,
+    UNANSWERED,
     UNCOMMENTED,
 ];
 
 /// Each kind that is a ratchet: a line of a value is a member, and the gate
 /// refuses a member that the head has and the base does not have. The head
 /// can drop a member.
-pub const RATCHETS: [Kind; 1] = [UNCOMMENTED];
+pub const RATCHETS: [Kind; 2] = [UNANSWERED, UNCOMMENTED];
 
 /// A kind whose values only a test can compute: the tests of its package give
 /// each value to the store.
@@ -100,7 +105,7 @@ pub struct Tested
 }
 
 /// Each kind whose values only a test can compute, in the order of the names.
-pub const TESTED: [Tested; 6] = [
+pub const TESTED: [Tested; 7] = [
     Tested {
         kind: CAPTURES,
         package: "gandr-surface-tui",
@@ -130,6 +135,12 @@ pub const TESTED: [Tested; 6] = [
         package: "gandr-surface-render-terminal",
         filter: "test(/^render::/)",
         inputs: &crate::tree::REFUSAL_INPUTS,
+    },
+    Tested {
+        kind: UNANSWERED,
+        package: "gandr-surface-lsp-core",
+        filter: "test(=hover::tests::coverage::sweeps::every_corpus_name_answers_or_is_owed)",
+        inputs: &["corpus"],
     },
     Tested {
         kind: UNCOMMENTED,
