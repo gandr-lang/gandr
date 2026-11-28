@@ -11064,7 +11064,7 @@ mod tests
                 "def kept+0:38 `m` variable→parameter",
                 "def kept+1:8 `m` variable→parameter",
                 "def kept+2:24 `m` variable→parameter",
-                "def kept+3:27 `m` variable→parameter",
+                "def kept+3:26 `m` variable→parameter",
                 "def keptTally+1:8 `t` variable→parameter",
                 "def keptDuo+1:8 `d` variable→parameter",
             ],
@@ -11184,7 +11184,7 @@ mod tests
                 "def unwrap_or_zero+2:6 `None` enumMember value",
                 "def unwrap_or_zero+3:6 `Some` enumMember value",
                 "def unwrap_or_zero+3:11 `x` variable declaration+value",
-                "def unwrap_or_zero+3:17 `x` variable value",
+                "def unwrap_or_zero+3:16 `x` variable value",
                 "def kept+0:4 `kept` function declaration",
                 "def kept+0:9 `m` parameter declaration+value",
                 "def kept+0:36 `m` parameter value",
@@ -11194,7 +11194,7 @@ mod tests
                 "def kept+2:24 `m` parameter value",
                 "def kept+3:6 `Some` enumMember value",
                 "def kept+3:11 `x` variable declaration+value",
-                "def kept+3:27 `m` parameter value",
+                "def kept+3:26 `m` parameter value",
             ],
             "the family, its constructors and their telescope binder, each definition, parameter \
              and pattern variable declare; a constructor matched in a pattern and each name read \
@@ -11230,9 +11230,9 @@ mod tests
                 "pub def rec plus+2:14 `n` parameter value",
                 "pub def rec plus+3:6 `Succ` enumMember value",
                 "pub def rec plus+3:11 `p` variable declaration+value",
-                "pub def rec plus+3:23 `plus` function computation",
-                "pub def rec plus+3:31 `n` parameter value",
-                "pub def rec plus+3:33 `p` variable value",
+                "pub def rec plus+3:22 `plus` function computation",
+                "pub def rec plus+3:30 `n` parameter value",
+                "pub def rec plus+3:32 `p` variable value",
             ],
             "#1487: the recursive call's name, written with its claim as `plus[<]`, is run as a \
              computation as any called name is; the arguments passed to it are values"
@@ -12305,7 +12305,7 @@ mod tests
         let minus = item(
             "following.gandr",
             "minus",
-            lines(minus_at, below(minus_at, 5), 31),
+            lines(minus_at, below(minus_at, 5), 30),
             span(minus_at, 8, 13),
         );
         let difference = item(
@@ -12343,26 +12343,26 @@ mod tests
                 serde_json::json!({"item": minus})
             ),
             serde_json::json!([
-                call("from", &minus, &[span(below(minus_at, 5), 19, 24)]),
+                call("from", &minus, &[span(below(minus_at, 5), 18, 23)]),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "divided",
-                        lines(divided_at, below(divided_at, 3), 61),
+                        lines(divided_at, below(divided_at, 3), 60),
                         span(divided_at, 8, 15)
                     ),
-                    &[span(below(divided_at, 3), 27, 32)]
+                    &[span(below(divided_at, 3), 26, 31)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedUp",
-                        lines(halved_at, below(halved_at, 3), 70),
+                        lines(halved_at, below(halved_at, 3), 69),
                         span(halved_at, 8, 16)
                     ),
-                    &[span(below(halved_at, 3), 27, 32)]
+                    &[span(below(halved_at, 3), 26, 31)]
                 ),
                 call("from", &difference, &[span(difference_at, 29, 34)]),
             ]),
@@ -12373,7 +12373,7 @@ mod tests
                 "callHierarchy/outgoingCalls",
                 serde_json::json!({"item": minus})
             ),
-            serde_json::json!([call("to", &minus, &[span(below(minus_at, 5), 19, 24)])]),
+            serde_json::json!([call("to", &minus, &[span(below(minus_at, 5), 18, 23)])]),
             "`minus` calls itself once, at the recursive call's name; `Succ` and `Zero` are no calls"
         );
         assert_eq!(
@@ -16205,7 +16205,7 @@ mod tests
                 )
                 .0,
             ),
-            Character::from(24_u32),
+            Character::from(23_u32),
         );
         let opened = |capabilities: Value| {
             let mut server = Connected::default();
