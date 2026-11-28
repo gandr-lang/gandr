@@ -41,7 +41,8 @@ def tick(n : Nat) -> Unit =
 
 /// A loop that only runs `tick` again: it never leaves.
 def spin(n : Nat) -> [Partial] Nat =
-  loop { tick n; }
+  loop do
+    tick n;
 
 /// A `break` with a value leaves the loop with it, and what follows reads it.
 def first(n : Nat) -> [Partial] Nat =
@@ -103,8 +104,11 @@ def until_none() -> [Partial] Integer = become until_done 0
 def sift(n : Nat) -> [Partial] Nat =
   loop {
     match n where
-      | Zero => { break; }
-      | Succ p => { tick p; continue; }
+      | Zero =>
+        break;
+      | Succ p =>
+        tick p
+        continue;
   }
   n
 
@@ -162,7 +166,8 @@ def find_none() -> Nat = become find_succ (cons Zero nil) (Succ Zero)
 
 /// A `for` ending a body runs it on every cell and returns unit.
 def for_each(xs : List Nat) -> Unit =
-  for x in xs { tick x; }
+  for x in xs do
+    tick x;
 
 /// A `for` leaves with unit on the empty list, so a `break` with a value of
 /// another type does not check.
