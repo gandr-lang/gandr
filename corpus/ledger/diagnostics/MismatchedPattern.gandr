@@ -13,4 +13,4 @@ data Box : Type where
 def mixed(b : Bit) -> Integer =
   match b where
     | Zero => return 0
-    | Boxed(n) => return n
+    | Boxed n => return n
