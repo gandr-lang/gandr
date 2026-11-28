@@ -48,7 +48,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - requires: the mint sweep has run, so each signature's type is minted.
     /// - ensures: each slot of the current source that holds no refusal and no
     ///   fault, and that carries an `export` mark, takes the fault of its mark
-    ///   when [`export_fault`] finds one in its declared type; a slot with no
+    ///   when [`export_fault()`] finds one in its declared type; a slot with no
     ///   declared type takes [`FragmentBoundary::Export`]. Each other slot is
     ///   unchanged.
     /// - panics: none.

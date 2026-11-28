@@ -2782,7 +2782,7 @@ where
     })
 }
 
-/// The parts of a view type `View[m] a`, as [`view_type`] reads them.
+/// The parts of a view type `View[m] a`, as [`view_type()`] reads them.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -2792,7 +2792,7 @@ where
 /// - executable: none — a plain pair.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`view_type`].
+/// - hypothesis: L3 — as [`view_type()`].
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ViewType

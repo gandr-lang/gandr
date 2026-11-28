@@ -8,13 +8,13 @@
 //! operation here takes an [`Io`] that [`start`] gives and [`stop`] ends.
 //! [`open`] takes the path of a file as a [`Range`](gandr_boot_core::Range)
 //! of `boot-core`, and gives a [`Descriptor`]. [`read`] writes the next bytes
-//! of the file into a [`Place`](gandr_boot_core::Place), [`write`] gives the
+//! of the file into a [`Place`](gandr_boot_core::Place), [`write()`] gives the
 //! bytes of a [`Range`](gandr_boot_core::Range) to a descriptor, and
 //! [`close`] ends the descriptor. Each refusal is one [`Refused`]: the name of
 //! the operation and the error number of the kernel. No function allocates,
 //! and no function panics.
 //!
-//! [`open`], [`read`], [`write`] and [`close`] each make one system call by
+//! [`open`], [`read`], [`write()`] and [`close`] each make one system call by
 //! the crate's own function in assembly, and they never repeat a call. So an
 //! interrupted call is a refusal with the error number `EINTR`, and a write
 //! that the kernel takes in part gives its count, and the caller decides. The
@@ -30,7 +30,7 @@
 //!
 //! The crate has the system calls of Linux on x86-64 alone. On each other
 //! target the crate compiles, and each use of [`start`], [`open`], [`read`],
-//! [`write`], [`close`] or [`stop`] is one error of the compiler that names
+//! [`write()`], [`close`] or [`stop`] is one error of the compiler that names
 //! the target. A seek and the walk of a directory are not in the crate.
 //!
 //! # References
@@ -97,7 +97,7 @@ pub enum Operation
     Open,
     /// [`read`].
     Read,
-    /// [`write`].
+    /// [`write()`].
     Write,
     /// [`close`].
     Close,
