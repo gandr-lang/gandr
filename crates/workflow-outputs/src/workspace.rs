@@ -87,12 +87,58 @@ pub fn closure(
     directories.into_iter().collect()
 }
 
+/// The directories below `crates/` of `package`, of each workspace package
+/// that a test of `package` depends on, and of the closure of each one, in
+/// name order.
+///
+/// A test of `package` builds with its development dependencies, so each one
+/// is in this closure. A development dependency of another package does not
+/// build the test, so it is not.
+///
+/// # Specification
+/// - ensures: the directories are in name order, each one time, and they hold
+///   the [`closure`] of `package`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package, its dependency on a second package, the
+///   dependency of the second on a third, a development dependency on a fourth,
+///   and a development dependency of the second on a fifth give the first four.
+/// - witness: `workspace::tests::the_test_closure_holds_the_development_dependencies_of_the_package`
+#[spec(ensures: |ret| ret.is_sorted())]
+#[inline]
+#[must_use]
+pub fn test_closure(
+    metadata: &Value,
+    package: &str,
+) -> Vec<String>
+{
+    let mut directories: BTreeSet<String> = closure(metadata, package).into_iter().collect();
+    let found = metadata["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|found| found["name"] == package);
+    let development = found
+        .and_then(|found| found["dependencies"].as_array())
+        .into_iter()
+        .flatten()
+        .filter(|dependency| {
+            dependency["path"].is_string() && dependency["kind"].as_str() == Some("dev")
+        })
+        .filter_map(|dependency| dependency["name"].as_str());
+    for name in development {
+        directories.extend(closure(metadata, name));
+    }
+    directories.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests
 {
     use serde_json::json;
 
     use super::closure;
+    use super::test_closure;
 
     /// A package, its dependency on a second package, the dependency of the
     /// second on a third, and a development dependency on a fourth give the
@@ -113,5 +159,31 @@ mod tests
             {"name": "d", "manifest_path": "/r/crates/dir-d/Cargo.toml", "dependencies": []}
         ]});
         assert_eq!(closure(&metadata, "a"), ["dir-a", "dir-b", "dir-c"]);
+    }
+
+    /// A package, its dependency on a second package, the dependency of the
+    /// second on a third, a development dependency on a fourth, and a
+    /// development dependency of the second on a fifth give the directories
+    /// of the first four.
+    #[test]
+    fn the_test_closure_holds_the_development_dependencies_of_the_package()
+    {
+        let metadata = json!({"packages": [
+            {"name": "a", "manifest_path": "/r/crates/dir-a/Cargo.toml", "dependencies": [
+                {"name": "b", "path": "/r/crates/dir-b", "kind": null},
+                {"name": "d", "path": "/r/crates/dir-d", "kind": "dev"},
+                {"name": "serde", "kind": "dev"}
+            ]},
+            {"name": "b", "manifest_path": "/r/crates/dir-b/Cargo.toml", "dependencies": [
+                {"name": "c", "path": "/r/crates/dir-c", "kind": "build"},
+                {"name": "e", "path": "/r/crates/dir-e", "kind": "dev"}
+            ]},
+            {"name": "c", "manifest_path": "/r/crates/dir-c/Cargo.toml", "dependencies": []},
+            {"name": "d", "manifest_path": "/r/crates/dir-d/Cargo.toml", "dependencies": []},
+            {"name": "e", "manifest_path": "/r/crates/dir-e/Cargo.toml", "dependencies": []}
+        ]});
+        assert_eq!(test_closure(&metadata, "a"), [
+            "dir-a", "dir-b", "dir-c", "dir-d"
+        ]);
     }
 }

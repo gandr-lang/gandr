@@ -30,6 +30,8 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::given;
 use serde_json::Value;
 
 use super::buffer::Offset;
@@ -561,7 +563,8 @@ fn host_path(text: &str) -> Option<&str>
 
 /// Each headline source's hovers, against its golden under
 /// `gandr-surface-grammar`'s `tests/highlight/`. `UPDATE_EXPECT=1` rewrites
-/// them.
+/// them. Each text goes to the store of outputs as a value of the kind
+/// `hovers`, when the environment names a run of the tests of the kind.
 #[test]
 fn the_headline_sources_hover_as_their_goldens()
 {
@@ -587,6 +590,8 @@ fn the_headline_sources_hover_as_their_goldens()
                 "the hover golden of `{path}` holds the absolute path `{held}`; a golden names a path under `<corpus>` alone"
             );
         }
+        let _given = given::give(Kind("hovers"), path, text.as_bytes())
+            .unwrap_or_else(|error| panic!("the hovers of `{path}` go to the store: {error}"));
         expect_file![goldens.join(path).with_extension("hover")].assert_eq(&text);
     }
 }

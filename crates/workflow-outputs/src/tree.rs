@@ -100,7 +100,7 @@ const REFUSING: [&str; 2] = ["corpus/pathological/", "corpus/ledger/diagnostics/
 
 /// The paths at the root that a refusal reads: the corpus, the library, and
 /// the workspace of the library with its lock.
-const REFUSAL_INPUTS: [&str; 5] = [
+pub const REFUSAL_INPUTS: [&str; 5] = [
     "corpus",
     "library",
     "workspace.gandr",
@@ -306,8 +306,25 @@ impl Tree
     #[inline]
     pub fn refusal_inputs(&self) -> Result<String, TreeError>
     {
+        self.inputs(&REFUSAL_INPUTS)
+    }
+
+    /// The git objects of the paths `paths` of this tree, as git lists them.
+    /// Two trees with one such text hold the same files at those paths.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`TreeError::Git`] when git cannot list the tree.
+    #[inline]
+    pub fn inputs(
+        &self,
+        paths: &[&str],
+    ) -> Result<String, TreeError>
+    {
         let mut arguments = vec!["ls-tree", "-z", self.id.as_str(), "--"];
-        arguments.extend(REFUSAL_INPUTS);
+        arguments.extend(paths);
         git(&self.repository, &[], &arguments)
     }
 
