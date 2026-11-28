@@ -22,10 +22,9 @@ import "./data-base.gandr"
 def rec listLength(xs : List Integer) -> Integer =
   match xs where
     | Nil => 0
-    | Cons _ rest => {
+    | Cons _ rest =>
       let counted = listLength[<] rest
       counted + 1
-    }
 
 /// The parameter classifies the bare list as `List(Integer)`.
 /// Its field classifies the inner integer.
@@ -44,10 +43,9 @@ def annotatedLength() -> Integer = listLength (Cons 1 (Cons 2 Nil) : List Intege
 def rec tally(c : Color, cs : List Color) -> Integer =
   match cs where
     | Nil => 0
-    | Cons _ rest => {
+    | Cons _ rest =>
       let counted = tally[<] c rest
       counted + 1
-    }
 
 /// The second argument classified by the second parameter.
 @[runs("3")]
@@ -57,10 +55,9 @@ def colours() -> Integer = tally Red (Cons Red (Cons Green (Cons Blue Nil)))
 def rec anyLength(a : Type, xs : List a) -> Integer =
   match xs where
     | Nil => 0
-    | Cons _ rest => {
+    | Cons _ rest =>
       let counted = anyLength[<] a rest
       counted + 1
-    }
 
 /// The parameter `xs` receives the list at `a = Integer`.
 /// The preceding argument determines `a`.

@@ -65,14 +65,12 @@ def sortOf(ports : Theory) -> String =
 /// `name -> sort` for each operation. A member of another kind gives `?`.
 def rec memberLines(chain : Theory) -> String =
   match chain where
-    | Theory.Const name inputs outputs rest => {
+    | Theory.Const name inputs outputs rest =>
       let r = memberLines[<] rest
       concat (concat (concat name " : ") (concat (sortOf outputs) "\n")) r
-    }
-    | Theory.Oper name inputs outputs rest => {
+    | Theory.Oper name inputs outputs rest =>
       let r = memberLines[<] rest
       concat (concat (concat name " -> ") (concat (sortOf outputs) "\n")) r
-    }
     | Theory.End => ""
     | _ => "?\n"
 

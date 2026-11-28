@@ -85,11 +85,10 @@ def rec forward(to : u64, from : u64, left : Length) -> [
 ] Unit =
   match left where
     | Zero => pure *{}
-    | Next rest => {
+    | Next rest =>
       let byte = p.load8 from
       p.store8 to byte
       forward[<] (u64.wrapping_add to 1u64) (u64.wrapping_add from 1u64) rest
-    }
 
 /// Copy the `left` bytes before `from_end` to the `left` bytes before
 /// `to_end`, the last byte first.
@@ -98,13 +97,12 @@ def rec backward(to_end : u64, from_end : u64, left : Length) -> [
 ] Unit =
   match left where
     | Zero => pure *{}
-    | Next rest => {
+    | Next rest =>
       let to = u64.wrapping_sub to_end 1u64
       let from = u64.wrapping_sub from_end 1u64
       let byte = p.load8 from
       p.store8 to byte
       backward[<] to from rest
-    }
 
 /// Write `byte` to `left` bytes from `to` on.
 def rec spread(to : u64, byte : u8, left : Length) -> [
@@ -112,10 +110,9 @@ def rec spread(to : u64, byte : u8, left : Length) -> [
 ] Unit =
   match left where
     | Zero => pure *{}
-    | Next rest => {
+    | Next rest =>
       p.store8 to byte
       spread[<] (u64.wrapping_add to 1u64) byte rest
-    }
 
 /// The order of the `left_length` bytes from `left` on and the `right_length`
 /// bytes from `right` on.
@@ -128,7 +125,7 @@ def rec ordered(left : u64, right : u64, right_length : Length, left_length : Le
       | Next right_rest => pure Less
     | Next left_rest => match right_length where
       | Zero => pure Greater
-      | Next right_rest => {
+      | Next right_rest =>
         let one = p.load8 left
         let two = p.load8 right
         if u8.to_integer one < u8.to_integer two {
@@ -144,7 +141,6 @@ def rec ordered(left : u64, right : u64, right_length : Length, left_length : Le
               left_rest
           }
         }
-      }
 
 /// Copy the bytes of `from` into the first bytes of `to`. The two ranges
 /// share no byte. The answer is `Short` when `to` is shorter than `from`,

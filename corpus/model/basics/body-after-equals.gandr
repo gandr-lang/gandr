@@ -24,10 +24,9 @@ data Count : Type where { | None : Count | More : (n : Count) --> Count }
 def summedTwice(n : Integer) -> Integer = n + n
 
 /// Four times its argument, statements in a block after `=`.
-def quadruple(n : Integer) -> Integer = {
+def quadruple(n : Integer) -> Integer =
   let m = summedTwice n
   summedTwice m
-};
 
 /// The size of a count, a recursive body after `=`.
 def rec size(n : Count) -> Integer = match n { | None => 0 | More m => 1 + size[<] m };

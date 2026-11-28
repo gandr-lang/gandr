@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "modules", "native-primitives", "pattern-matching", "signatures-as-values", "thunks-and-force", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "pattern-matching",
+  "signatures-as-values",
+  "thunks-and-force",
+  "universes"
+))]
 
 // This source defines a precategory.
 //
@@ -106,7 +117,7 @@ def identity_observed() -> Integer = { let f = SetoidCat.id Integer; f 3 };
 
 /// `composite_observed` composes `n + 1` with `n + 2` and applies them to `1`.
 @[runs("4")]
-def composite_observed() -> Integer = {
+def composite_observed() -> Integer =
   let h = SetoidCat.comp
     Integer
     Integer
@@ -114,4 +125,3 @@ def composite_observed() -> Integer = {
     (fun (n) { n + 1 })
     (fun (n) { n + 2 })
   h 1
-};

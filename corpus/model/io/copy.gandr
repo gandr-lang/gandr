@@ -58,7 +58,7 @@ def rec copy(buffer : List u8, passes : Passes) -> [
 ] Unit =
   match passes where
     | Spent => pure *{}
-    | Pass rest => {
+    | Pass rest =>
       let read = returned (io.read 0 buffer)
       if read.0 <= 0 {
         pure *{}
@@ -66,7 +66,6 @@ def rec copy(buffer : List u8, passes : Passes) -> [
         let wrote = returned (io.write 1 read.1 read.0)
         copy[<] buffer rest
       }
-    }
 
 /// The run of `copy` under `Scripted`, from a tape whose input is `input`:
 /// the tape after it.

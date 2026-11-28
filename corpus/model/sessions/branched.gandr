@@ -1,4 +1,14 @@
-@![features(("call-by-push-value", "conditionals", "lazy-records", "let-statements", "loops", "native-primitives", "pattern-matching", "products-and-sums", "session-types"))]
+@![features((
+  "call-by-push-value",
+  "conditionals",
+  "lazy-records",
+  "let-statements",
+  "loops",
+  "native-primitives",
+  "pattern-matching",
+  "products-and-sums",
+  "session-types"
+))]
 
 // A case runs one of its arms, so each arm acts on an endpoint from where the
 // case found it.
@@ -26,10 +36,9 @@ def reportsByMatch(seat : Integer >! end, early : Bool) -> Unit =
 /// A seat that reports until it has nothing more to say. The test of a
 /// `while` is a case, and what follows the loop runs in its false branch.
 def draining(seat : rec open => +{more : Integer >! open, done : end}, more : Bool) -> Unit =
-  while more {
+  while more do
     select seat more
     send seat 1
-  }
   select seat done
   close seat
 

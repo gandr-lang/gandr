@@ -1,4 +1,19 @@
-@![features(("call-by-push-value", "data-parameters", "effect-handlers", "effect-rows", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "pattern-matching", "records", "structural-recursion", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "effect-handlers",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "list-case",
+  "modules",
+  "native-lists",
+  "native-primitives",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "visibility"
+))]
 
 // A machine resumes from its checkpoint and reaches the verdict of an
 // uninterrupted run, through `std.reals.Eff`.
@@ -32,11 +47,10 @@ import "./reals-base.gandr"
 pub def rec settle(machine : Integer, fuel : List Integer) -> [std.reals.Eff] String =
   match fuel where
     | #[] => pure "exhausted"
-    | #[_, ..rest] => {
+    | #[_, ..rest] =>
       let *{now, same} = std.reals.step machine
       let spent = now == "exhausted"
       match spent { | true => settle[<] machine rest | false => pure now }
-    }
 
 /// Sixteen quanta of fuel.
 pub def sixteen : List Integer = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

@@ -44,7 +44,7 @@ pub def terminated(cs : List Integer) -> List Integer =
 def rec cView(bs : List Integer) -> CView =
   match bs where
     | Nil => Interior
-    | Cons b rest => {
+    | Cons b rest =>
       let zero = b == 0
       let left = count rest
       let last = left == 0
@@ -56,14 +56,12 @@ def rec cView(bs : List Integer) -> CView =
         | false => {
           match zero where
             | true => Interior
-            | false => {
+            | false =>
               let tail = cView[<] rest
               match tail where
                 | Borrowed t => Borrowed bs
                 | Interior => Interior
-            }
         }
-    }
 
 /// `hi` builds an owned `hi` string with a zero.
 @[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]

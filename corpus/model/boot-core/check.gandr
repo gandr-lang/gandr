@@ -97,7 +97,7 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
 ] Utf8 =
   match left where
     | Zero => pure Valid
-    | Next one => {
+    | Next one =>
       let here = beyond base index
       let byte = p.load8 here
       let lead = u8.to_integer byte
@@ -110,21 +110,20 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
           if lead < 224 {
             match one where
               | Zero => pure Fault index
-              | Next two => {
+              | Next two =>
                 let second = p.load8 (beyond here 1u64)
                 if inside second 128 191 {
                   utf8[<] base (beyond index 2u64) two
                 } else {
                   pure Fault index
                 }
-              }
           } else {
             if lead < 240 {
               match one where
                 | Zero => pure Fault index
                 | Next two => match two where
                   | Zero => pure Fault index
-                  | Next three => {
+                  | Next three =>
                     let second = p.load8 (beyond here 1u64)
                     if inside second (low_of_three lead) (high_of_three lead) {
                       let third = p.load8 (beyond here 2u64)
@@ -136,7 +135,6 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
                     } else {
                       pure Fault index
                     }
-                  }
             } else {
               if lead < 245 {
                 match one where
@@ -145,7 +143,7 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
                     | Zero => pure Fault index
                     | Next three => match three where
                       | Zero => pure Fault index
-                      | Next four => {
+                      | Next four =>
                         let second = p.load8 (beyond here 1u64)
                         if inside second (low_of_four lead) (high_of_four lead) {
                           let third = p.load8 (beyond here 2u64)
@@ -162,7 +160,6 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
                         } else {
                           pure Fault index
                         }
-                      }
               } else {
                 pure Fault index
               }
@@ -170,7 +167,6 @@ def rec utf8(base : u64, index : u64, left : Length) -> [
           }
         }
       }
-    }
 
 /// Whether `range` is valid UTF-8: `Valid` when the range is a whole sequence
 /// of valid UTF-8, an empty range included, and else `Fault` at the position

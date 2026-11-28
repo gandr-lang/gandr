@@ -35,20 +35,18 @@ import "../data/data-base.gandr"
 def rec lines(modules : List String) -> String =
   match modules where
     | Nil => ""
-    | Cons path rest => {
+    | Cons path rest =>
       let more = lines[<] rest
       "  \"${ path }\",\n${ more }"
-    }
 
 /// The `modules` array: `[]` when the list is empty, else one line per module
 /// between the brackets.
 def listed(modules : List String) -> String =
   match modules where
     | Nil => "[]"
-    | Cons _ _ => {
+    | Cons _ _ =>
       let each = lines modules
       "[\n${ each }]"
-    }
 
 /// A manifest's body: the `[package]` table with the name, the version
 /// and the modules.

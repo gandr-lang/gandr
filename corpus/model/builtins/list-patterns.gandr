@@ -1,4 +1,15 @@
-@![features(("data-parameters", "imports", "let-statements", "list-case", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "list-case",
+  "native-lists",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 // This source tests native list patterns.
 //
@@ -71,10 +82,9 @@ def eight() -> Integer =
 /// whole matched list.
 def headed(xs : List Integer) -> Integer =
   match xs where
-    | all @ #[a, .._] => {
+    | all @ #[a, .._] =>
       let counted = shortLength all
       a + counted
-    }
     | #[] => 0
 
 /// `seven` reads five and the two elements it heads.

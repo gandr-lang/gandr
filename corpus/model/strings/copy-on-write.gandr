@@ -56,20 +56,18 @@ pub def rec beforeZero(bs : List Integer, b : Integer) -> List Integer =
 /// place and copies a shared buffer.
 pub def push(s : Repr, b : Integer) -> Written =
   match s where
-    | Inline bs => {
+    | Inline bs =>
       let grown = beforeZero bs b
       let stored = store grown
       match stored where
         | Inline kept => Written stored 0
         | Shared n moved => Written stored 1
-    }
-    | Shared n bs => {
+    | Shared n bs =>
       let grown = beforeZero bs b
       let alone = n == 1
       match alone where
         | true => Written (Shared 1 grown) 0
         | false => Written (Shared 1 grown) 1
-    }
 
 /// This function counts the buffers that the write fills anew.
 pub def copies(w : Written) -> Integer =

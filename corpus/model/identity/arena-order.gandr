@@ -1,4 +1,14 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "pattern-matching", "products-and-sums", "records", "type-codes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "let-statements",
+  "pattern-matching",
+  "products-and-sums",
+  "records",
+  "type-codes",
+  "universes"
+))]
 
 /// This source compares two allocation orders for one linked arena.
 ///
@@ -87,10 +97,9 @@ def oneArena : Path builtABC builtBAC = *{
 /// The `walk` consumer reads the label two links after its start.
 def walk(r : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer}) -> Integer =
   match r where
-    | *{.start = s, .next = n, .label = l} => {
+    | *{.start = s, .next = n, .label = l} =>
       let once = n s
       l (n once)
-    }
 
 /// The consumer reaches `c` in the first order.
 @[runs("3")]

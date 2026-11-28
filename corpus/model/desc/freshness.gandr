@@ -40,10 +40,9 @@ def rec conditions(chain : Theory) -> Integer =
   match chain where
     | Rule name lhs rhs rest => conditions[<] rest
     | Turned name lhs rhs rest => conditions[<] rest
-    | Fresh atom term rest => {
+    | Fresh atom term rest =>
       let r = conditions[<] rest
       r + 1
-    }
     | _ => 0
 
 /// `Pi` states one condition.

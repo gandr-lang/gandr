@@ -17,7 +17,18 @@
 //! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 //! [boats-2024-references_are_jumps]: https://without.boats/blog/references-are-like-jumps/ "boats, References are like jumps"
 
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "imports", "let-statements", "located-judgements", "modules", "native-primitives", "temporary-access", "thunks-and-force"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "located-judgements",
+  "modules",
+  "native-primitives",
+  "temporary-access",
+  "thunks-and-force"
+))]
 
 // Early exit's host interface.
 import std.process
@@ -91,10 +102,9 @@ def keptInHold() -> Integer =
 @[runs("4")]
 def keptInInner() -> Integer =
   var s = 3
-  let n : Integer = {
+  let n : Integer =
     var r = 0
     let k : (() -> Integer) at r = access shared s as w { pure pure w }
     force k
-  }
   access s as v { resume v (n + 1) }
   pure s

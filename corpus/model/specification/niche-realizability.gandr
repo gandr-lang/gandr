@@ -206,21 +206,18 @@ def marshalled(vt : (Nat, Heap) -> Type, h : Heap, w : Nat) -> (vOpt vt w h) -> 
 } =
   match w where
     | Zero => match h where
-      | Emp => fun (ok) {
+      | Emp => fun (ok) do
         let meets = fromOptMeets vt Zero Emp
         let e = meets ok
         *{Tag Zero Zero, e}
-      }
-      | Cell l v rest => fun (ok) {
+      | Cell l v rest => fun (ok) do
         let meets = fromOptMeets vt Zero (Cell l v rest)
         let e = meets ok
         *{Tag Zero Zero, e}
-      }
-    | Succ n => fun (ok) {
+    | Succ n => fun (ok) do
       let meets = fromOptMeets vt (Succ n) h
       let e = meets ok
       *{Tag (Succ Zero) (Succ n), e}
-    }
 
 /// The tag-zero half of `unmarshalled`: the null word.
 def unmarshalledNone(vt : (Nat, Heap) -> Type, h : Heap, p : Nat) -> (
@@ -228,16 +225,14 @@ def unmarshalledNone(vt : (Nat, Heap) -> Type, h : Heap, p : Nat) -> (
 ) -> *{w : Nat, ok : vOpt vt w h} =
   match p where
     | Zero => match h where
-      | Emp => fun (ok) {
+      | Emp => fun (ok) do
         let meets = toOptMeets vt (Tag Zero Zero) Emp
         let e = meets ok
         *{Zero, e}
-      }
-      | Cell l v rest => fun (ok) {
+      | Cell l v rest => fun (ok) do
         let meets = toOptMeets vt (Tag Zero Zero) (Cell l v rest)
         let e = meets ok
         *{Zero, e}
-      }
     | Succ _n => fun (none) { match (none : Void) {} }
 
 /// The tag-one half of `unmarshalled`: the reference itself.
@@ -247,11 +242,10 @@ def unmarshalledSome(vt : (Nat, Heap) -> Type, h : Heap, s : Nat, p : Nat) -> (
   match s where
     | Zero => match p where
       | Zero => fun (none) { match (none : Void) {} }
-      | Succ n => fun (ok) {
+      | Succ n => fun (ok) do
         let meets = toOptMeets vt (Tag (Succ Zero) (Succ n)) h
         let e = meets ok
         *{Succ n, e}
-      }
     | Succ _n => fun (none) { match (none : Void) {} }
 
 /// `unmarshalled` at a written pair, by its tag.
@@ -277,10 +271,9 @@ def toTagged(vt : (Nat, Heap) -> Type, h : Heap, x : *{w : Nat, ok : vOpt vt w h
   ok : vTag vt r h
 } =
   match x where
-    | *{w, ok} => {
+    | *{w, ok} =>
       let m = marshalled vt h w
       m ok
-    }
 
 /// The tagged layout's realisers to the niche layout's.
 def fromTagged(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag vt r h}) -> *{
@@ -288,10 +281,9 @@ def fromTagged(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag v
   ok : vOpt vt w h
 } =
   match y where
-    | *{r, ok} => {
+    | *{r, ok} =>
       let u = unmarshalled vt h r
       u ok
-    }
 
 /// A niche realiser marshalled and back is itself, at a word.
 def sectAt(vt : (Nat, Heap) -> Type, h : Heap, w : Nat) -> (ok : vOpt vt w h) -> Path[.A = *{
@@ -309,10 +301,9 @@ def nicheSect(vt : (Nat, Heap) -> Type, h : Heap, x : *{w : Nat, ok : vOpt vt w 
   fromTagged vt h (toTagged vt h x)
 ) x =
   match x where
-    | *{w, ok} => {
+    | *{w, ok} =>
       let s = sectAt vt h w
       s ok
-    }
 
 /// The tag-zero half of `retrTagged`.
 def retrNone(vt : (Nat, Heap) -> Type, h : Heap, p : Nat) -> (
@@ -363,10 +354,9 @@ def taggedRetr(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag v
   toTagged vt h (fromTagged vt h y)
 ) y =
   match y where
-    | *{r, ok} => {
+    | *{r, ok} =>
       let s = retrTagged vt h r
       s ok
-    }
 
 /// The two layouts' realisers are isomorphic at every heap: the
 /// marshaller and its inverse, with both round trips.

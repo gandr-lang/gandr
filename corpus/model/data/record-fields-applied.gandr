@@ -7,10 +7,9 @@
 /// A field bound once and applied twice.
 def twoSteps(m : *{start : () -> Integer, step : Integer -> Integer}) -> Integer =
   match m where
-    | *{.start = s, .step = t} => {
+    | *{.start = s, .step = t} =>
       let zero = s ()
       t (t zero)
-    }
 
 /// A field bound once and applied once.
 def oneStep(m : *{start : () -> Integer, step : Integer -> Integer}) -> Integer =

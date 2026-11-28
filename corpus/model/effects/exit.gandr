@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "effect-handlers", "imports", "let-statements", "modules", "native-primitives", "records"))]
+@![features((
+  "call-by-push-value",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "records"
+))]
 
 // This source tests deep handlers for exit and console effects.
 //
@@ -56,10 +64,9 @@ def summed() -> Integer =
     pure 1
   } handle {
     | pure(x) => pure x + 100
-    | oper exit(code, k) => {
+    | oper exit(code, k) =>
       let rest = k *{}
       pure rest + code
-    }
   }
 
 /// `printed` counts console prints.
@@ -71,8 +78,7 @@ def printed() -> Integer =
     pure 7
   } handle {
     | pure(x) => pure 0
-    | oper print(line, k) => {
+    | oper print(line, k) =>
       let rest = k *{}
       pure rest + 1
-    }
   }

@@ -1,4 +1,15 @@
-@![features(("data-parameters", "dependent-functions", "effect-rows", "identity-types", "let-statements", "loops", "native-primitives", "pattern-matching", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "effect-rows",
+  "identity-types",
+  "let-statements",
+  "loops",
+  "native-primitives",
+  "pattern-matching",
+  "universes",
+  "visibility"
+))]
 
 // This source shows `Partial` rows.
 //
@@ -14,12 +25,11 @@
 /// A loop that breaks only when one is below zero: it never returns, and its
 /// row says it may not.
 def spin(x : Bool) -> [Partial] Bool =
-  let y = loop {
+  let y = loop do
     let below = 1 < 0
     match below where
       | true => break(x)
       | false => continue
-  }
   y
 
 /// A caller of `spin` holds `Partial` in its own row.

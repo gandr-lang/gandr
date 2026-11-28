@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "lazy-records", "let-statements", "loops", "native-primitives", "products-and-sums", "session-types", "temporary-access"))]
+@![features((
+  "call-by-push-value",
+  "lazy-records",
+  "let-statements",
+  "loops",
+  "native-primitives",
+  "products-and-sums",
+  "session-types",
+  "temporary-access"
+))]
 
 // This source drives an endpoint through a recursive protocol with a loop.
 // Such a loop need not exit.
@@ -58,11 +67,10 @@ def tally(operator : rec open => &{
 /// `asking` selects a report and hears its answer on each pass.
 /// The loop issues every command and never exits.
 def asking(seat : rec open => +{more : Integer >? open, done : end}) -> Unit =
-  loop {
+  loop do
     select seat more
     let heard = recv seat
     continue
-  }
 
 /// `serving` hears reports over a protocol with no exit.
 def serving(desk : rec open => &{report : Integer >? open}) -> Unit =
@@ -75,10 +83,9 @@ def serving(desk : rec open => &{report : Integer >? open}) -> Unit =
 /// `beacon` sends a report on each pass and never hears one.
 /// The bridge declines it as it declines a loop that receives.
 def beacon(seat : rec open => Integer >! open) -> Unit =
-  loop {
+  loop do
     send seat 1
     continue
-  }
 
 /// `followed` sends two reports and a retirement to a forked desk.
 @[runs("*{}")]

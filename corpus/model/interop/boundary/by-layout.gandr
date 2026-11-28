@@ -76,12 +76,12 @@ def low(w : u64) -> i32 = i32.from_integer (u64.to_integer w)
 def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
   match fuel where
     | Zero => None
-    | Succ rest => {
+    | Succ rest =>
       let n = u64.to_integer w
       let bit = int.mod n 2
       match bit == 1 where
         | true => Some TagNil
-        | false => {
+        | false =>
           let h = Memory.word w
           let head = low h
           let t = Memory.word (past n 8)
@@ -89,8 +89,6 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
           match tail where
             | None => None
             | Some l => Some (TagCons head l)
-        }
-    }
 
 /// The packed list at the word `w`, or `None` once `fuel` runs out or at the
 /// fourth tag. A pointer's cell holds two elements in its first word and the
@@ -98,7 +96,7 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
 def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe Packed =
   match fuel where
     | Zero => None
-    | Succ rest => {
+    | Succ rest =>
       let n = u64.to_integer w
       let tag = int.mod n 4
       match tag == 0 where
@@ -106,7 +104,7 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe Packed =
         | false => match tag == 1 where
           | true => Some (One (i32.from_integer (int.div n 4)))
           | false => match tag == 2 where
-            | true => {
+            | true =>
               let xy = Memory.word (past n (- 2))
               let m = u64.to_integer xy
               let x = i32.from_integer m
@@ -116,29 +114,25 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe Packed =
               match tail where
                 | None => None
                 | Some l => Some (Many x y l)
-            }
             | false => None
-    }
 
 /// The length of the tagged list at `w`, or `-1` when it does not read.
 pub def taggedLengthAt(w : u64) -> [Memory] Integer =
   let read = readTagged fuel w
   match read where
     | None => - 1
-    | Some l => {
+    | Some l =>
       let f = Path.walk (fun (X) { X -> Integer }) taggedPath (fun (l) { length l })
       f l
-    }
 
 /// The length of the packed list at `w`, or `-1` when it does not read.
 pub def packedLengthAt(w : u64) -> [Memory] Integer =
   let read = readPacked fuel w
   match read where
     | None => - 1
-    | Some l => {
+    | Some l =>
       let f = Path.walk (fun (X) { X -> Integer }) packedPath (fun (l) { length l })
       f l
-    }
 
 /// `deref_or(x: Option<&u32>, d: u32) -> u32`: `d` at the null word, and the
 /// `u32` the word addresses at any other.

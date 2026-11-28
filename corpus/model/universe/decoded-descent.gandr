@@ -49,10 +49,9 @@ rec {
   pub def rec elL(u : UL) -> -F Type =
     match u where
       | NatL => return Nat
-      | ListL a => {
+      | ListL a =>
         let e = elL[<] a
         return (List e)
-      }
       | PiL a b => return (+U ((x : elL [<] a) -> -F (elL [<] (b x))))
 }
 

@@ -54,14 +54,13 @@ def rec seek(here : u64, byte : u8, position : u64, left : Length) -> [
 ] Found =
   match left where
     | Zero => pure Absent
-    | Next rest => {
+    | Next rest =>
       let each = p.load8 here
       if same each byte {
         pure At position
       } else {
         seek[<] (u64.wrapping_add here 1u64) byte (u64.wrapping_add position 1u64) rest
       }
-    }
 
 /// `true` when the `left` bytes from `here` on are the `left` bytes from
 /// `needle` on.
@@ -70,7 +69,7 @@ def rec matches(here : u64, needle : u64, left : Length) -> [
 ] Bool =
   match left where
     | Zero => pure true
-    | Next rest => {
+    | Next rest =>
       let one = p.load8 here
       let two = p.load8 needle
       if same one two {
@@ -78,7 +77,6 @@ def rec matches(here : u64, needle : u64, left : Length) -> [
       } else {
         pure false
       }
-    }
 
 /// The first of `tries` positions from `here` on where the bytes of `needle`
 /// start, counted from `position`. Each position has the bytes of the needle
@@ -89,14 +87,13 @@ def rec scan(here : u64, needle : Range, position : u64, tries : Length) -> [
   match tries where
     | Zero => pure Absent
     | Next rest => match needle where
-      | Range start length => {
+      | Range start length =>
         let hit = matches here start length
         if hit {
           pure At position
         } else {
           scan[<] (u64.wrapping_add here 1u64) needle (u64.wrapping_add position 1u64) rest
         }
-      }
 
 /// The count of the positions where a needle of the length `needle` starts in
 /// a range of the length `range` and ends in it: one more than the difference,

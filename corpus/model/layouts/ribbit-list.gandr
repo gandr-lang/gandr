@@ -168,10 +168,9 @@ def movedNamed() -> Packed = Path.walk (fun (X) { X }) taggedIsPacked oneTwoThre
 pub def rec length(l : Ints) -> Integer =
   match l where
     | Nil => 0
-    | Cons x rest => {
+    | Cons x rest =>
       let n = length[<] rest
       n + 1
-    }
 
 /// The length on the tagged layout, by transport along its admission.
 @[runs("3")]

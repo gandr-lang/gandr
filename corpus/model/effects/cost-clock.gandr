@@ -52,10 +52,9 @@ data Fuel : Type where
 def rec passes(clock : Fuel) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
   match clock where
     | Stop => pure 0
-    | Tick rest => {
+    | Tick rest =>
       cost.charge (costs (1 : Nat))
       passes[<] rest
-    }
 
 /// The passes under the counting model.
 def countedPasses(clock : Fuel) -> (Nat -> Nat) -> Nat =
@@ -77,10 +76,9 @@ def boundThree : Path (withinThree (3 : Nat)) true = Path.here true
 
 /// A loop that never ends charges one on each pass.
 def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
-  loop {
+  loop do
     cost.charge (costs (1 : Nat))
     continue
-  }
 
 /// The loop that never ends, under the counting model. It checks, and it
 /// has no count.
@@ -92,10 +90,9 @@ def countedSpin() -> [Partial] ((Nat -> Nat) -> Nat) =
 
 /// A loop that ends after one pass charges one.
 def once() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
-  loop {
+  loop do
     cost.charge (costs (1 : Nat))
     break(0)
-  }
 
 /// The loop that ends, under the counting model.
 def countedOnce() -> [Partial] ((Nat -> Nat) -> Nat) =

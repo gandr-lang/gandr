@@ -46,10 +46,9 @@ theory Receive where
 /// and `Bound` links.
 def rec abstracted(chain : Theory) -> Integer =
   match chain where
-    | Abstracted name sort indices atoms binders rest => {
+    | Abstracted name sort indices atoms binders rest =>
       let r = abstracted[<] rest
       r + 1
-    }
     | Port name sort indices rest => abstracted[<] rest
     | Bound name sort indices binders rest => abstracted[<] rest
     | _ => 0
@@ -58,11 +57,10 @@ def rec abstracted(chain : Theory) -> Integer =
 /// constant has no input port, so it adds nothing.
 def rec abstracting(chain : Theory) -> Integer =
   match chain where
-    | Oper name inputs outputs rest => {
+    | Oper name inputs outputs rest =>
       let here = abstracted inputs
       let r = abstracting[<] rest
       here + r
-    }
     | Const name inputs outputs rest => abstracting[<] rest
     | _ => 0
 

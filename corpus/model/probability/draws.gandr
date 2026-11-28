@@ -1,4 +1,19 @@
-@![features(("call-by-push-value", "data-parameters", "dependent-functions", "effect-handlers", "effect-rows", "exact-distributions", "imports", "let-statements", "list-case", "modules", "native-lists", "native-primitives", "pattern-matching", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "effect-rows",
+  "exact-distributions",
+  "imports",
+  "let-statements",
+  "list-case",
+  "modules",
+  "native-lists",
+  "native-primitives",
+  "pattern-matching",
+  "visibility"
+))]
 
 // A program sums two draws of two fair bits through `std.rand.Eff`, the host
 // interface of randomness.
@@ -56,12 +71,11 @@ def summedFrom() -> (List Integer -> Integer) =
     pure fun (rest : List Integer) { pure total }
   } handle {
     | pure(x) => pure x
-    | oper draw(width, k) => pure fun (rest : List Integer) {
+    | oper draw(width, k) => pure fun (rest : List Integer) do
       let next = headOr rest
       let after = tailOf rest
       let g = k next
       g after
-    }
   }
 
 /// `summedFrom` over `#[3, 2]`: the sum is 5.

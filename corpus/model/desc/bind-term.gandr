@@ -50,10 +50,9 @@ def rec derived(chain : Theory) -> Integer =
   match chain where
     | Rule name lhs rhs rest => derived[<] rest
     | Turned name lhs rhs rest => derived[<] rest
-    | Derived outer position inner lhs rhs rest => {
+    | Derived outer position inner lhs rhs rest =>
       let r = derived[<] rest
       r + 1
-    }
     | _ => 0
 
 /// Completion derives two rules for the alpha-equivalent overlap in `Alpha`,
