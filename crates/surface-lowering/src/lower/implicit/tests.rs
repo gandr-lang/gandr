@@ -1429,7 +1429,7 @@ fn a_row_label_naming_a_region_binder_is_its_instance_2271()
 {
     // `twin`'s labels name its region binders: they bind no parameter, and
     // every parameter it takes is written.
-    let source = "def twin[r : Region](x : Cap {print} at r) -> -F [r : std.io.Console.Eff] Unit = x.print \"x\";\n";
+    let source = "def twin[r : Region](x : (Cap {print}) at r) -> -F [r : std.io.Console.Eff] Unit = x.print \"x\";\n";
     let mut arena = CoreArena::new();
     let text = hosting(source);
     let module = hosted(&text, &mut arena);
