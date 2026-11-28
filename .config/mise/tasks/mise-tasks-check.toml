@@ -2596,36 +2596,34 @@ fi
 echo 'retired check OK: no item, refusal tag or comment marks a form as retired'
 {% endraw %}'''
 
-# The references ledger holds no `reference` row in the tree, and each
-# `reading` and `work` row of `ledger/references.sql` names a citation that
-# the crates' documentation or the corpus makes. The documentation keeps its
-# shape: a key line names a library citation key, or `vault:` and a vault
-# page's `mint:` uuid, with its role; a key has one role at a site; and a
-# crate's README lists under `## References` exactly the keys its modules
-# cite. When `$XDG_CONFIG_HOME/gandr-factory/references` names the library's BibTeX
-# file (`library <path>`) and the vault's checkout (`vault <path>`), each key
-# must be a citation key there or a page's `mint:`; without it, a key is read
-# for its shape alone. A site whose source has changed since its last reading
-# is reported stale, never refused. The citation window refuses a work the
-# crates or the corpus cite that appeared before the cutoff year
-# `.config/references/window.toml` states, at a site no entry there covers;
-# a work whose year neither its key nor a `work` row of the ledger states; and
-# an entry covering no such work (`window.sql`). A site the citation
-# refresh records in the ledger's `fidelity` table is held to its record
-# (`fidelity.sql`, #4533): a historical site names its follow-up, a site
-# citing one work its traced works, and a narrower newest work its anchor or
-# the statement that none exists; the site no longer cites the work the
-# refresh replaced, and a crate site cites each work by a key line stating
-# what the site takes, never `lineage`, `background` or a bare locator. Each
-# case in `.config/references/cases.json` holds sources and the lines
-# `cites.awk` prints for them, each case in `.config/references/window.json`
-# the citations, the years and the policy, and the window's findings, and
-# each case in `.config/references/fidelity.json` the citations, the corpus
-# sources and the `fidelity` rows, and the refresh's findings. Each case in
-# `.config/references/watch.json` holds the paper watch's recorded OpenAlex
-# works, its state and the vault ledger's `paper` rows, and the delta
-# `watch.jq` reads from them (#2544). Every finding is printed before the
-# gate fails.
+# The references ledger holds no `reference` row in the tree. Each `reading`
+# and `work` row of the ledger names a citation that the crates or the corpus
+# make. A key line names a library citation key, or `vault:` and the `mint:`
+# uuid of a vault page, with its role. A key has one role at a site, and the
+# README of a crate lists exactly the keys that its modules cite.
+#
+# A configuration file can name the BibTeX file of the library and the
+# checkout of the vault. Then each key is a citation key of the library or
+# the `mint:` of a page. Without it, the task reads each key for its shape.
+# The task reports a site whose source changed after its last reading as
+# stale, and it refuses nothing for it.
+#
+# The binary `references window` of `gandr-workflow-references` is the
+# citation window. It refuses a work older than the cutoff year at a site
+# that no `[[site]]` entry keeps. The task holds each site of the `fidelity`
+# table to the record of the citation refresh.
+#
+# The cases of `cites.awk`, of the refresh and of the paper watch are files
+# of JSON beside the scripts. Each test of the binary reads the cases of
+# `cites.awk` too. The task prints each finding, and then it fails.
+#
+# - see: `ledger/references.sql`
+# - see: `$XDG_CONFIG_HOME/gandr-factory/references`
+# - see: `.config/references/window.toml`
+# - see: `.config/references/fidelity.sql`
+# - see: `.config/references/cases.json`
+# - see: `.config/references/fidelity.json`
+# - see: `.config/references/watch.json`
 ["check:references"]
 description = "The references ledger is the crates' citations, each key line keyed and given its role, each README listing its crate's keys, every work older than the citation window allowed where it is cited, and every site the citation refresh records held to its record"
 tools.jq = "1.8.1"
@@ -2651,21 +2649,6 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/references/cases.json)
-while IFS= read -r case; do
-  dir=$(mktemp -d "$fresh/window.XXXXXX")
-  jq -r '.cite[]' <<< "$case" > "$dir/cites.tsv"
-  jq -r '.policy' <<< "$case" > "$dir/window.toml"
-  sqlite3 -bail "$dir/case.db" < ledger/references.sql
-  sqlite3 -bail -tabs "$dir/case.db" 'DELETE FROM reference;' 'DELETE FROM work;' \
-    "$(jq -r '.work[] | "INSERT INTO work VALUES('"'"'\(.[0])'"'"', \(.[1]), \(if .[2] then "'"'"'\(.[2])'"'"'" else "NULL" end));"' <<< "$case")" \
-    'CREATE TABLE cite(kind TEXT, key TEXT, crate TEXT, module TEXT, role TEXT, location TEXT);' \
-    ".import $dir/cites.tsv cite"
-  got=$(references_window "$dir/case.db" "$dir/window.toml")
-  if [[ "$got" != "$(jq -r '.output | join("\n")' <<< "$case")" ]]; then
-    printf 'references window case FAILED: %s\n  gave:\n%s\n' "$(jq -r .name <<< "$case")" "$got" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/references/window.json)
 while IFS= read -r case; do
   dir=$(mktemp -d "$fresh/fidelity.XXXXXX")
   jq -r '.cite[]' <<< "$case" > "$dir/cites.tsv"
@@ -2751,10 +2734,7 @@ if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   failed=1
 fi
-if ! window=$(references_window "$db" .config/references/window.toml); then
-  failed=1
-elif [[ -n $window ]]; then
-  printf '%s\n' "$window" >&2
+if ! .config/mise/scope cargo run --locked --quiet --package gandr-workflow-references --bin references -- window > /dev/null; then
   failed=1
 fi
 fidelity=$(references_fidelity "$db")
@@ -2776,7 +2756,7 @@ SELECT count(*) || ' rows, ' || count(DISTINCT key) || ' sources at ' || count(D
   || count(*) FILTER (WHERE key NOT GLOB 'doi:*' AND key NOT GLOB 'arXiv:*') || ' by key, the rest by locator; '
   || count(*) FILTER (WHERE read_blob IS NOT NULL) || ' read, '
   || (SELECT count(*) FROM reference r JOIN source s USING (crate, module) WHERE r.read_blob <> s.blob) || ' of them stale'
-FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation window opens in ' || (SELECT cutoff FROM window) || ', ' || count(*) || ' allowlist entries holding what it refuses' FROM allow;"); $(sqlite3 "$db" "SELECT count(DISTINCT crate || ' ' || module) || ' sites the citation refresh records' FROM fidelity;")"
+FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT count(DISTINCT crate || ' ' || module) || ' sites the citation refresh records' FROM fidelity;")"
 {% endraw %}'''
 
 # The stacking rule's readings (#1264): `open.jq` reads the open pull

@@ -63,16 +63,22 @@
 #   row naming a shipped surface of `surfaces.json` (`views.jq`). An issue
 #   the coordinator signed is not judged, as for `## Surface`.
 #
-# A `## Sources` row citing a paper dated before the citation window's cutoff
-# (`.config/references/window.toml`, #4708) names the newer work that
-# supersedes it in What it gives, `superseded by `<key>``, its key dated at or
-# after the cutoff, or opens that cell `exemplar: <why no newer work states
-# what the unit builds>`, as a `[[site]]` entry of the window does. A paper's
-# date is its key's: a library key's year, `Author-YYYY-…`, or an arXiv
-# identifier's, as `window.sql` reads them; a key carrying none is not judged.
-# The cutoff is the named argument `cutoff` (`cutoff.jq`), and a reading given
-# none judges no date. A `not read` row, and an issue the coordinator signed,
-# is not judged, so no unit signed before the rule becomes unclaimable.
+# A `## Sources` row can cite a paper older than the cutoff of the citation
+# window. Then its What it gives names the newer work, `superseded by
+# `<key>``, with a key at or after the cutoff. Or the cell opens with
+# `exemplar: <why no newer work states what the unit builds>`, as a
+# `[[site]]` entry of the window does.
+#
+# The date of a paper is the year that its key carries: `Author-YYYY-…`, or
+# the year of an arXiv identifier, as `references window` reads it. A key
+# with no year has no judgement. The named argument `cutoff` gives the
+# cutoff, and a reading with no cutoff judges no date. The rule judges no
+# `not read` row and no issue that the coordinator signed. So the rule
+# closes no unit that the coordinator signed before the rule.
+#
+# - see: `.config/references/window.toml`
+# - see: `cutoff.jq`
+# - see: #4708
 #
 # A section's HTML comments are not content, so a hint left in a section
 # leaves it unanswered until it is written. The unit form
@@ -140,10 +146,13 @@ def engineering_findings($labels):
       end
   end;
 
-# The year a source's key carries (#4708), or null: a library key's,
-# `Author-YYYY-…`, or an arXiv identifier's, new style `arXiv:YYMM.…` or old
-# style `arXiv:archive/YYMM…`, as `window.sql` reads them. A DOI, a vault page,
-# a path and an issue carry none.
+# The year that the key of a source carries, or null. A library key carries
+# `Author-YYYY-…`. An arXiv identifier carries its year in its first two
+# digits, in the new style and in the old style with an archive.
+# `references window` reads the year the same way. A DOI, a vault page, a
+# path and an issue carry none.
+#
+# - see: #4708
 def paper_year:
   if test("^arXiv:[0-9]{4}\\.") then 2000 + (.[6:8] | tonumber)
   elif test("^arXiv:[^/]+/[0-9]{2}") then (capture("/(?<yy>[0-9]{2})").yy | tonumber) as $yy | (if $yy >= 90 then 1900 else 2000 end) + $yy

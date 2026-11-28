@@ -1,0 +1,38 @@
+[package]
+name = "gandr-workflow-references"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Reads the citations of the crates and the corpus, and refuses a work older than the citation window at a site that no entry keeps, by the `references` binary"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "references", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "references"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The binary reads its flags through clap, and the policy with serde and
+# toml. The pinned anodized facade supplies the executable specifications.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+# Each test reads the recorded cases of the citations as JSON.
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -2815,6 +2815,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-references"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "quenchant-anodized",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "gandr-workflow-spec-cost"
 version = "0.0.0"
 dependencies = [
