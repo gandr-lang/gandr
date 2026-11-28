@@ -1,4 +1,16 @@
-@![features(("call-by-push-value", "dependent-functions", "effect-handlers", "effect-rows", "let-statements", "modules", "native-primitives", "pattern-matching", "thunks-and-force", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "effect-handlers",
+  "effect-rows",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "pattern-matching",
+  "thunks-and-force",
+  "universes",
+  "visibility"
+))]
 
 // `std.rand`: the home of randomness' host interface, `std.rand.Eff`, whose
 // operation draws fair bits from the entropy source of the operating system.
@@ -65,11 +77,10 @@ pub def span(w : Integer) -> Integer =
 /// passes to the model outside `lcg`.
 pub def lcg[a : Type](w : Integer, seed : Integer, body : () -> [std.rand.Eff] a) -> [std.rand.Eff] a =
   match 1 <= w && w <= 64 where
-    | false => {
+    | false =>
       let _ = std.rand.draw w
       force body
-    }
-    | true => {
+    | true =>
       let modulus = span w
       let stepped : Integer -> (Integer -> (Integer -> [std.rand.Eff] a)) = effect r : std.rand.Eff {
         let x = force body
@@ -81,33 +92,29 @@ pub def lcg[a : Type](w : Integer, seed : Integer, body : () -> [std.rand.Eff] a
         | oper draw(n, k) => pure fun (state : Integer) {
           pure fun (last : Integer) { pure fun (divisor : Integer) {
             match n == last where
-              | true => {
+              | true =>
                 let next = int.mod (6364136223846793005 * state + 1442695040888963407) modulus
                 let g = k (int.div next divisor)
                 let g1 = g next
                 let g2 = g1 last
                 g2 divisor
-              }
               | false => match 1 <= n && n <= w where
-                | true => {
+                | true =>
                   let d = span (w - n)
                   let next = int.mod (6364136223846793005 * state + 1442695040888963407) modulus
                   let g = k (int.div next d)
                   let g1 = g next
                   let g2 = g1 n
                   g2 d
-                }
-                | false => {
+                | false =>
                   let outside = std.rand.draw n
                   let g = k outside
                   let g1 = g state
                   let g2 = g1 last
                   g2 divisor
-                }
           } }
         }
       }
       let s1 = stepped seed
       let s2 = s1 w
       s2 1
-    }

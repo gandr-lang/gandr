@@ -150,7 +150,7 @@ def load(
   memory : Memory
 ) -> Ended =
   match memory where
-    | Memory base bytes => {
+    | Memory base bytes =>
       let position = place base bytes address width
       if position >= 0 {
         let after = k (fetch bytes position width)
@@ -158,7 +158,6 @@ def load(
       } else {
         pure Outside member address
       }
-    }
 
 /// `memory` with the `width` bytes at `address` set to `value`, given to `k`,
 /// or `Outside` with the name `member` when one byte is outside the extent.
@@ -171,14 +170,13 @@ def store(
   memory : Memory
 ) -> Ended =
   match memory where
-    | Memory base bytes => {
+    | Memory base bytes =>
       let position = place base bytes address width
       if position >= 0 {
         k (Memory base (put bytes position width value))
       } else {
         pure Outside member address
       }
-    }
 
 /// The model of memory in the source: `Ptr.Eff` over a list of bytes from a
 /// base address. A load or a store outside the extent ends the run with

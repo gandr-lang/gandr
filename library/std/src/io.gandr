@@ -166,7 +166,7 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
   def read(file : Integer, buffer : List u8, k : Returned -> (Tape -> Tape)) -> Tape -> Tape =
     fun (tape) {
       match tape where
-        | Tape input output => {
+        | Tape input output =>
           let held = file == 0
           let filled : List u8 = if held { placed buffer input } else { buffer }
           let rest : List u8 = if held { left buffer input } else { input }
@@ -177,7 +177,6 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
           }
           let after = k done
           after (Tape rest output)
-        }
     }
   /// A write to the file 1 adds the first `count` bytes of the buffer to the
   /// output. Its count is the number of those bytes.
@@ -189,7 +188,7 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
   ) -> Tape -> Tape =
     fun (tape) {
       match tape where
-        | Tape input output => {
+        | Tape input output =>
           let held = file == 1
           let bytes : List u8 = if held { front buffer count } else { #[] }
           let written : Integer = if held { size bytes } else { bad_file }
@@ -199,11 +198,10 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
           }
           let after = k done
           after (Tape input (joined output bytes))
-        }
     }
   /// A close of the file 0 or 1 gives the status 0.
   def close_file(file : Integer, k : Shut -> (Tape -> Tape)) -> Tape -> Tape =
-    fun (tape) {
+    fun (tape) do
       let status : Integer = if file == 0 { 0 } else { if file == 1 { 0 } else { bad_file } }
       let done = fork (kernel : Integer >! end) {
         send kernel status
@@ -211,7 +209,6 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
       }
       let after = k done
       after tape
-    }
 
 /// The answer of a completion of a read or a write under `Scripted`: the
 /// count, then the buffer.
