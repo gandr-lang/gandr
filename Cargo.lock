@@ -2674,6 +2674,17 @@ name = "gandr-workflow-debt-ledger"
 version = "0.0.0"
 
 [[package]]
+name = "gandr-workflow-feature-tiers"
+version = "0.0.0"
+dependencies = [
+ "gandr-surface-features",
+ "gandr-surface-grammar",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "serde_json",
+]
+
+[[package]]
 name = "gandr-workflow-gate"
 version = "0.0.0"
 dependencies = [

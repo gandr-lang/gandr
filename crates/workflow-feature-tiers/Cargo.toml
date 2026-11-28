@@ -1,0 +1,25 @@
+[package]
+name = "gandr-workflow-feature-tiers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "A spike: the seams of the workspace against the features ledger and the corpus, printed by the `feature-tiers` binary"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "ledger", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+
+[[bin]]
+name = "feature-tiers"
+path = "src/main.rs"
+
+# serde_json reads the metadata of Cargo and the rows of the features ledger.
+# The grammar and the parser give the rules that a source of the corpus uses.
+[dependencies]
+gandr-surface-features.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-syntax.workspace = true
+serde_json.workspace = true
