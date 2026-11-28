@@ -84,6 +84,7 @@ INSERT INTO builtin VALUES('and','crates/core-term/src/builtin.rs','value','give
 INSERT INTO builtin VALUES('bool','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('bool.not','crates/core-term/src/builtin.rs','value','given','stated');
 INSERT INTO builtin VALUES('buf','crates/core-term/src/builtin.rs','atom','given','stated');
+INSERT INTO builtin VALUES('cap','crates/core-term/src/builtin.rs','former','given','stated');
 INSERT INTO builtin VALUES('char','crates/core-term/src/builtin.rs','atom','given','stated');
 INSERT INTO builtin VALUES('cons','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
 INSERT INTO builtin VALUES('decompose','crates/surface-lowering-identity/src/lower/identity.rs','member','given','stated');
