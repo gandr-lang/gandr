@@ -1294,6 +1294,10 @@ fn items<'group, 'source>(
     // What opened the last code when it is a group: a line after an
     // attribute block starts the member it decorates, at its own indent.
     let mut after = Opens::Other;
+    // Whether an `effect` of the statement waits for its `handle`: a line
+    // that `handle` starts then continues the statement at its own column,
+    // where the layout pass reads it as part of the handler above it.
+    let mut effect = false;
     let mut base: Option<Indent> = placed
         .first()
         .filter(|first| first.gap.breaks() == Breaks::Yes && first.element.kind() == Kind::Code)
@@ -1338,16 +1342,28 @@ fn items<'group, 'source>(
                         },
                         (Columns::Read, Some(None)) | (Columns::Unread, Some(_)) => deeper,
                     };
-                if unseparated && continues && !attribute && (!armed || deeper) {
+                let handled = effect
+                    && matches!(current.element, Element::Text(text) if <&str>::from(text) == "handle");
+                if unseparated && continues && !attribute && (!armed || deeper) && !handled {
                     continuation = Continuation::Continued;
                 }
                 else {
                     base = Some(current.indent);
+                    effect = effect && handled;
                 }
             }
         }
         match current.element {
-            Element::Text(_) | Element::Verbatim(_) => {
+            Element::Text(text) => {
+                last = Some(current.branch);
+                after = Opens::Other;
+                match <&str>::from(text) {
+                    "effect" => effect = true,
+                    "handle" => effect = false,
+                    _ => {},
+                }
+            },
+            Element::Verbatim(_) => {
                 last = Some(current.branch);
                 after = Opens::Other;
             },

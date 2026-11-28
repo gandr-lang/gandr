@@ -1981,7 +1981,10 @@ impl<'source> Respelling<'_, 'source>
     /// expression. Each block's opener is the one the layout pass reads
     /// there: none after `=`, `=>` or `else`, `then` for the first block of a
     /// conditional, and `do` for the block of a lambda, a thunk, a loop, a
-    /// fork or a migration.
+    /// fork, a migration or a handler's body. A fork's body is an expression,
+    /// so its block is a node of its own: the fork reads that node's tiles. A
+    /// handler's clauses after `handle` are its second block: they hold arms
+    /// and no statement, and the line-final `handle` opens them.
     ///
     /// # Specification
     /// trivial.
@@ -1999,14 +2002,39 @@ impl<'source> Respelling<'_, 'source>
             },
             _ => return Vec::new(),
         };
+        // A fork's body is an expression: its block in braces is the child
+        // node that the body's hole holds.
+        let source = if host == "fork_expression" {
+            let body = written_children(self.grammar, self.tree, at).filter(|&child| {
+                matches!(
+                    self.tree.node(child).map(Node::label),
+                    Some(NodeLabel::Meld(mold))
+                        if self.grammar.rule_of(mold).is_ok_and(|rule| rule.name().0 == "block")
+                )
+            });
+            let Some(body) = body.last()
+            else {
+                return Vec::new();
+            };
+            body
+        }
+        else {
+            at
+        };
         let mut blocks = Vec::new();
         let mut current: Option<Braced> = None;
         let mut separated = false;
+        // Whether the open block holds a handler's clauses: the `{` after
+        // `handle`.
+        let mut clauses = false;
+        // The text of the tile before, which tells a handler's clauses from
+        // its body.
+        let mut previous = "";
         // The written `;` that the child before was. A `;` right before the
         // block's `}` ends its last statement, so the block's value is the
         // unit: the layout form writes it too.
         let mut trailing: Option<ByteSpan> = None;
-        for child in written_children(self.grammar, self.tree, at) {
+        for child in written_children(self.grammar, self.tree, source) {
             let after = trailing.take();
             let Some(NodeLabel::Tile(mold)) = self.tree.node(child).map(Node::label)
             else {
@@ -2019,8 +2047,9 @@ impl<'source> Respelling<'_, 'source>
             let tile = self.grammar.rule_of(mold).map_or("", |rule| rule.name().0);
             let label = self.grammar.mold(mold).map_or("", |def| def.label);
             let span = node.span();
+            let before = core::mem::replace(&mut previous, <&str>::from(text));
             match (label, <&str>::from(text)) {
-                ("{", "{") if tile == STATEMENT_BLOCK.0 || BRACED_HOSTS.contains(&host) => {
+                ("{", "{") if tile == STATEMENT_BLOCK.0 || BRACED_HOSTS.contains(&tile) => {
                     current = Some(Braced {
                         open: span,
                         opener: Spelling(""),
@@ -2028,6 +2057,7 @@ impl<'source> Respelling<'_, 'source>
                         close: span,
                     });
                     separated = false;
+                    clauses = host == HANDLER.0 && before == "handle";
                 },
                 (";", written) => {
                     if let Some(block) = current.as_mut() {
@@ -2043,7 +2073,7 @@ impl<'source> Respelling<'_, 'source>
                     else {
                         continue;
                     };
-                    if !separated {
+                    if !separated && !clauses {
                         return Vec::new();
                     }
                     block.close = span;
@@ -2052,8 +2082,15 @@ impl<'source> Respelling<'_, 'source>
                     }
                     // A form writes all its blocks in one form: a layout
                     // block beside a braced one of the same form reads as
-                    // neither spelling.
-                    let Some(opener) = self.opener(host, &block)
+                    // neither spelling. The line-final `handle` opens the
+                    // clauses, so they take no opener of their own.
+                    let opener = if clauses {
+                        (!self.bracketed(block.open)).then_some(Spelling(""))
+                    }
+                    else {
+                        self.opener(host, &block)
+                    };
+                    let Some(opener) = opener
                     else {
                         return Vec::new();
                     };
@@ -4384,16 +4421,17 @@ const STATEMENT_BLOCK: MoldName = MoldName("statement_block");
 
 /// The rules whose own tiles hold a statement block in braces, a block that
 /// is no hole of [`STATEMENT_BLOCK`].
-const BRACED_HOSTS: [&str; 5] = [
+const BRACED_HOSTS: [&str; 6] = [
     "block",
     "if_expression",
     "for_expression",
     "while_expression",
     "loop_expression",
+    "handle_expression",
 ];
 
 /// The rules whose block a line-final `do` opens in the layout form.
-const DO_HOSTS: [&str; 7] = [
+const DO_HOSTS: [&str; 8] = [
     "lambda_expression",
     "thunk_expression",
     "fork_expression",
@@ -4401,6 +4439,7 @@ const DO_HOSTS: [&str; 7] = [
     "loop_expression",
     "for_expression",
     "while_expression",
+    "handle_expression",
 ];
 
 /// A statement block in braces that the layout form writes.
@@ -4516,7 +4555,10 @@ fn shape<'source>(
 /// statement, and the close adds none. The line break before such a close
 /// leaves with the line of the `}`, and so does a written `;` right after
 /// it: the line end writes the separator, and a `;` after a laid block's
-/// last line would end a statement of that block.
+/// last line would end a statement of that block. A token that the `}`'s
+/// line holds after it, as `handle` after a handler's body, starts a line of
+/// its own at the column of the line where the block's form starts: there
+/// the column rule closes the block and reads the token on in the form.
 ///
 /// # Specification
 /// trivial.
@@ -4537,12 +4579,22 @@ fn at_next_token(leaves: Vec<Leaf<'_>>) -> Vec<Leaf<'_>>
     }
     let mut out = Vec::with_capacity(leaves.len());
     let mut held = Vec::new();
+    // The whitespace that holds each line break so far, in order: the line
+    // a form starts on gives the column of a token after its closed block.
+    let mut breaks: Vec<Leaf<'_>> = Vec::new();
+    // Whether a line break stands between the held close and the leaf.
+    let mut broken = false;
     for leaf in leaves {
         let moved = rewritten(&leaf);
         let trivia = matches!(
             leaf.material,
             Material::Whitespace | Material::LineComment | Material::BlockComment
         );
+        let breaking = matches!(leaf.material, Material::LineComment)
+            || (leaf.material == Material::Whitespace && <&str>::from(leaf.text).contains('\n'));
+        if leaf.material == Material::Whitespace && breaking {
+            breaks.push(leaf);
+        }
         if moved {
             if leaf.offside == Offside::Closes {
                 while out
@@ -4551,17 +4603,45 @@ fn at_next_token(leaves: Vec<Leaf<'_>>) -> Vec<Leaf<'_>>
                 {
                     let _line = out.pop();
                 }
+                broken = false;
             }
             held.push(leaf);
         }
         else if trivia && !held.is_empty() {
+            broken = broken || breaking;
             out.push(leaf);
         }
         else {
             let closed = held
                 .iter()
-                .any(|held: &Leaf<'_>| held.offside == Offside::Closes);
+                .find(|held: &&Leaf<'_>| held.offside == Offside::Closes)
+                .copied();
             let here = ByteSpan::new(leaf.span.start(), leaf.span.start()).unwrap_or(leaf.span);
+            let semicolon = leaf.material == Material::Token
+                && leaf.origin == Origin::Source
+                && <&str>::from(leaf.text) == ";";
+            if let Some(close) = closed
+                && !broken
+                && !semicolon
+                && !<&str>::from(leaf.text).is_empty()
+                && let Origin::Rewrite(form) = close.origin
+                && let Some(line) = breaks
+                    .iter()
+                    .rev()
+                    .find(|line: &&Leaf<'_>| line.span.end() <= form.start())
+            {
+                let text = <&str>::from(line.text);
+                let indent = text
+                    .rfind('\n')
+                    .and_then(|at| text.get(at ..))
+                    .unwrap_or(text);
+                out.push(Leaf {
+                    span: here,
+                    text: SourceFragment::from(indent),
+                    origin: Origin::Rewrite(form),
+                    ..*line
+                });
+            }
             out.extend(
                 core::mem::take(&mut held)
                     .into_iter()
@@ -4570,11 +4650,7 @@ fn at_next_token(leaves: Vec<Leaf<'_>>) -> Vec<Leaf<'_>>
                         moved
                     }),
             );
-            if !(closed
-                && leaf.material == Material::Token
-                && leaf.origin == Origin::Source
-                && <&str>::from(leaf.text) == ";")
-            {
+            if !(closed.is_some() && semicolon) {
                 out.push(leaf);
             }
         }
