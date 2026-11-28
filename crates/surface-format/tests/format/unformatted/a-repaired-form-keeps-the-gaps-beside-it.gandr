@@ -1,0 +1,2 @@
+def f(h) = h.type == 1;
+def   b = 2 ;

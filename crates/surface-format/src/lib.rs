@@ -35,7 +35,9 @@
 //! - A repaired form: a top-level form holding grout or a minted close, or that
 //!   a parser obligation touches, is copied from its first token to its last,
 //!   so formatting a source mid-edit never moves what the parser had to guess
-//!   at. Its [`Piece`] says [`Layout::Repaired`].
+//!   at. Its [`Piece`] says [`Layout::Repaired`]. The gap before it and the gap
+//!   after it are copied too: the parser guessed where its neighbours start,
+//!   and a line break that the layout adds there can start another form.
 //!
 //! A comment spanning lines, or holding a tab, is copied the same way.
 //!
@@ -749,10 +751,10 @@ pub enum Layout
 ///   does a separator ending a top-level statement; the text ends in one line
 ///   break unless it is empty, and uses the line ending most of the source's
 ///   breaks use. A form the parser repaired, or that an obligation touches, is
-///   copied as written. Each other form is laid out at `options.page` as the
-///   crate root describes, and formatting the text again returns it unchanged.
-///   One piece per top-level form, in order, spans it in the source and in the
-///   text.
+///   copied as written, and so is the gap before it and after it. Each other
+///   form is laid out at `options.page` as the crate root describes, and
+///   formatting the text again returns it unchanged. One piece per top-level
+///   form, in order, spans it in the source and in the text.
 /// - provides: the text `gandr fmt` writes and the language server's formatting
 ///   edits.
 /// - fails: as `# Errors` states.
@@ -773,6 +775,7 @@ pub enum Layout
 /// - witness: `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`
 /// - witness: `tests::format::top_level_forms_and_comments_keep_their_lines`
 /// - witness: `tests::format::a_repaired_form_is_copied_as_written`
+/// - witness: `tests::format::a_repaired_form_keeps_the_gaps_beside_it`
 /// - witness: `tests::format::the_source_line_ending_is_kept`
 /// - witness: `tests::format::pieces_place_each_top_level_form`
 /// - witness: `tests::format::a_form_written_against_the_one_before_starts_its_own_line`
@@ -1904,15 +1907,29 @@ fn write<'source>(
             dropped.push(only.span);
             continue;
         }
+        // A form the parser repaired guessed where its neighbours start, so
+        // the gap on either side of it is copied as written: a break that the
+        // layout adds there can start a different form.
+        let repaired = |unit: &Unit<'_, '_>| {
+            unit.leaves.first().is_some_and(|leaf| {
+                matches!(leaf.owner, Owner::Form(form) if flat.integrity(form) == Integrity::Repaired)
+            })
+        };
+        let previous = at.checked_sub(2).and_then(|before| units.get(before));
+        let as_written = previous
+            .filter(|&before| repaired(before) || repaired(unit))
+            .and_then(|before| ByteSpan::new(before.span.end(), unit.span.start()).ok())
+            .and_then(|gap| source.fragment(gap).ok());
         if !text.is_empty() {
-            match (unit.joins, unit.gap) {
-                (Joins::Touching, _) => {},
-                (Joins::SameLine, _) => text.push(' '),
-                (Joins::OwnLine, Gap::Blank) => {
+            match (as_written, unit.joins, unit.gap) {
+                (Some(gap), ..) => text.push_str(<&str>::from(gap)),
+                (None, Joins::Touching, _) => {},
+                (None, Joins::SameLine, _) => text.push(' '),
+                (None, Joins::OwnLine, Gap::Blank) => {
                     text.push_str(breaks);
                     text.push_str(breaks);
                 },
-                (Joins::OwnLine, Gap::Adjacent | Gap::Space | Gap::Break) => {
+                (None, Joins::OwnLine, Gap::Adjacent | Gap::Space | Gap::Break) => {
                     text.push_str(breaks);
                 },
             }

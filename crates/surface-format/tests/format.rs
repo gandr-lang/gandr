@@ -769,6 +769,26 @@ fn a_repaired_form_is_copied_as_written()
 }
 
 #[test]
+fn a_repaired_form_keeps_the_gaps_beside_it()
+{
+    let grammar = grammar();
+    let source = include_str!("format/unformatted/a-repaired-form-keeps-the-gaps-beside-it.gandr");
+    let formatted = formatted(&grammar, source, WIDE);
+    assert_eq!(
+        <&str>::from(formatted.text()),
+        "def f(h) = h.type == 1;\ndef b = 2;\n",
+        "the parser starts a form at `type`, and a break there would start a different form"
+    );
+    let layouts: Vec<Layout> = formatted
+        .pieces()
+        .iter()
+        .map(|piece| piece.layout)
+        .collect();
+    assert_eq!(layouts.first(), Some(&Layout::Repaired));
+    assert_eq!(layouts.last(), Some(&Layout::Formatted));
+}
+
+#[test]
 fn the_source_line_ending_is_kept()
 {
     let grammar = grammar();
