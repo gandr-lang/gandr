@@ -151,6 +151,10 @@ pub enum RewriteName
     /// `s.m`; both forms write the selection alone, the one spelling of the
     /// call.
     BareRun,
+    /// A capability's label set: `Cap {o}` and `Cap[o]`, `Cap[g] {o}` and
+    /// `Cap[g][o]`; both forms write the labels in the bracket after the
+    /// head, the one spelling of a capability.
+    CapabilityBracket,
 }
 
 impl RewriteName
@@ -176,6 +180,7 @@ impl RewriteName
         Self::TypeApplication,
         Self::HandlerWords,
         Self::BareRun,
+        Self::CapabilityBracket,
     ];
 
     /// The rewrite's name, as a caller selects it: `type-application`.
@@ -206,6 +211,7 @@ impl RewriteName
             Self::TypeApplication => "type-application",
             Self::HandlerWords => "handler-words",
             Self::BareRun => "bare-run",
+            Self::CapabilityBracket => "capability-bracket",
         }
     }
 
@@ -292,7 +298,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 42] = [
+pub const REWRITES: [Rewrite; 44] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -631,6 +637,22 @@ pub const REWRITES: [Rewrite; 42] = [
         mold: APPLICATION,
         from: Spelling("s.m ()"),
         to: Spelling("s.m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::CapabilityBracket,
+        direction: Direction::Sugar,
+        mold: MoldName("type_application.juxtaposed"),
+        from: Spelling("Cap {o}"),
+        to: Spelling("Cap[o]"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::CapabilityBracket,
+        direction: Direction::Desugar,
+        mold: MoldName("type_application.juxtaposed"),
+        from: Spelling("Cap {o}"),
+        to: Spelling("Cap[o]"),
         enabled: Enabled::On,
     },
 ];
@@ -2522,6 +2544,9 @@ impl<'source> Respelling<'_, 'source>
             (RewriteName::BareRun, Direction::Sugar | Direction::Desugar) => {
                 self.bare_run(&mut out, parts)?
             },
+            (RewriteName::CapabilityBracket, Direction::Sugar | Direction::Desugar) => {
+                self.capability_bracket(&mut out, parts)?
+            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -3380,6 +3405,55 @@ impl<'source> Respelling<'_, 'source>
         Some(operand.band)
     }
 
+    /// Write the application whose parts are `parts` with the labels of its
+    /// label set in a bracket after its head, answering an atom's band: `Cap
+    /// {read, write}` as `Cap[read, write]`. Nothing when a comment stands
+    /// among its parts or in the label set, or for any other application. A
+    /// placed capability's parenthesis is then needless, and the form around
+    /// it leaves it out. The meaning check withdraws the rewrite where the
+    /// head is no capability.
+    ///
+    /// # Specification
+    /// trivial.
+    fn capability_bracket(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        let (head, set) = head_and_argument(parts)?;
+        let Child::Node(node) = set
+        else {
+            return None;
+        };
+        if self.rule(node) != Some(LABEL_SET)
+            || self
+                .shape_of(set)
+                .is_some_and(|(_, commented)| commented == Commented::Yes)
+        {
+            return None;
+        }
+        let tokens = self.tokens(set);
+        let (&open, rest) = tokens.split_first()?;
+        let (&close, labels) = rest.split_last()?;
+        if <&str>::from(open) != "{" || <&str>::from(close) != "}" {
+            return None;
+        }
+        out.place(&self.operand(head), Band::Atom);
+        out.token(Spelling("["));
+        for &label in labels {
+            if <&str>::from(label) == COMMA.0 {
+                out.token(COMMA);
+                out.gap(Spelling(" "));
+            }
+            else {
+                out.fragment(label);
+            }
+        }
+        out.token(Spelling("]"));
+        Some(Band::Atom)
+    }
+
     /// Write the forgetting map's form spanning `extent` whose parts are
     /// `parts` as its model, answering the model's band, when the checker
     /// would apply a forgetting map there; nothing when a comment stands
@@ -4216,7 +4290,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 43] = [
+const RULES: [MoldName; 44] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -4260,7 +4334,11 @@ const RULES: [MoldName; 43] = [
     MoldName("module_definition_member"),
     MoldName("attributed_module_member"),
     HANDLER,
+    LABEL_SET,
 ];
+
+/// A label set: `{read, write}`.
+const LABEL_SET: MoldName = MoldName("label_set");
 
 /// A capability scope: `effect c : I { M } handle { … }`.
 const HANDLER: MoldName = MoldName("handle_expression");
