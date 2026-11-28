@@ -1,4 +1,28 @@
-@![features(("call-by-push-value", "capabilities", "conditionals", "data-parameters", "dependent-functions", "effect-handlers", "effect-rows", "imports", "let-statements", "list-case", "modules", "named-instances", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "products-and-sums", "session-types", "signature-models", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "capabilities",
+  "conditionals",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "effect-rows",
+  "imports",
+  "let-statements",
+  "list-case",
+  "modules",
+  "named-instances",
+  "native-lists",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "products-and-sums",
+  "session-types",
+  "signature-models",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // `std.io`: the standard streams, which a program writes and reads through
 // the console's root capability, and `Io`, the IO of a program as a theory.
@@ -29,16 +53,16 @@
 import std.list (List)
 
 /// One line, written to standard output through `console`.
-pub def print(console : Cap { print }, line : String) -> [std.io.Console.Eff] Unit =
+pub def print(console : Cap[print], line : String) -> [std.io.Console.Eff] Unit =
   console.print line
 
 /// One line, written to standard error through `console`.
-pub def eprint(console : Cap { eprint }, line : String) -> [std.io.Stderr.Eff] Unit =
+pub def eprint(console : Cap[eprint], line : String) -> [std.io.Stderr.Eff] Unit =
   console.eprint line
 
 /// The next line of standard input through `console`, with its newline. It
 /// answers the empty string once the input runs out.
-pub def read_line(console : Cap { read_line }) -> [std.io.Stdin.Eff] String =
+pub def read_line(console : Cap[read_line]) -> [std.io.Stdin.Eff] String =
   console.read_line
 
 /// The IO of a program: a read, a write and the close of a file. Each

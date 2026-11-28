@@ -8,7 +8,7 @@ Packages and modules are lowercase, and types and theories are capitalized: `std
 
 ## Host access is by capability
 
-`std` reaches the host on `cap-std`'s design: no ambient authority. A handle is the authority to act under it, and no path or address escapes the handle it was opened under. In gandr a handle is a capability of a host effect's operations (`Cap { read, write }` of `Fs`): a parameter, attenuable, scoped by its handler. Authority enters a program in one place, as `main`'s parameter, and never through a global. That is what `cap_std::ambient_authority()` marks in Rust.
+`std` reaches the host on `cap-std`'s design: no ambient authority. A handle is the authority to act under it, and no path or address escapes the handle that it comes from. In gandr a handle is a capability of a host effect's operations (`Cap[read, write]` of `Fs`): a parameter, attenuable, scoped by its handler. Authority enters a program in one place, as `main`'s parameter, and never through a global. That is what `cap_std::ambient_authority()` marks in Rust.
 
 ## The module map
 
