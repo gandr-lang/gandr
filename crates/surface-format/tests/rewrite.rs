@@ -2296,6 +2296,62 @@ fn a_module_member_s_product_is_written_in_its_braces()
     .assert_eq(&laid(Form::Sugared));
 }
 
+/// The sugared form writes a block in braces after an opener in its layout
+/// form when the block spans lines: the opener ends its line, each statement
+/// stands on a line of its own, and neither brace nor the `;` after the close
+/// is written. A block on one line keeps its braces. The explicit form keeps
+/// the braces as the source writes them.
+#[test]
+fn a_block_in_braces_after_an_opener_is_written_in_its_layout_form()
+{
+    let grammar = grammar();
+    let source = concat!(
+        "@![features((\"let-statements\"))]\n",
+        "\n",
+        "def f(x : Integer) -> Integer = {\n",
+        "  let y = x;\n",
+        "  y\n",
+        "};\n",
+        "\n",
+        "def h(b : Bool) -> Integer = if b then { 1 } else { 2 };\n",
+    );
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid = |form: Form| {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "nothing is withdrawn in {form:?}"
+        );
+        formatted.into_text()
+    };
+    expect![[r#"
+        @![features(("let-statements"))]
+
+        def f(x : Integer) -> Integer =
+          let y = x
+          y
+
+        def h(b : Bool) -> Integer = if b then { 1 } else { 2 };
+    "#]]
+    .assert_eq(&laid(Form::Sugared));
+    expect![[r#"
+        @![features(("let-statements"))]
+
+        def f(x : Integer) -> Integer = {
+          let y = x
+          y
+        };
+
+        def h(b : Bool) -> Integer = if b then { 1 } else { 2 };
+    "#]]
+    .assert_eq(&laid(Form::Explicit));
+}
+
 /// A definition's result written `-F B` is written `B` in the sugared form,
 /// the returner the lowering inserts, a module member's and a merged function
 /// form's among them, and one with an effect row `[E] B`, its row before the
