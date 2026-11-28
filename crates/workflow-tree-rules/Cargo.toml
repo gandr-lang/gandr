@@ -1,0 +1,36 @@
+[package]
+name = "gandr-workflow-tree-rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Holds each tracked file of the tree to its rules: no merge residue, no path of a home directory, and Markdown only on the list of READMEs, by the `tree-rules` binary"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "lint", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "tree-rules"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The binary reads its flags through clap and the patterns of each rule with
+# regex. The pinned anodized facade supplies the executable specifications.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+regex.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

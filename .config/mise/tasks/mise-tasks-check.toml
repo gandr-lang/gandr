@@ -1573,10 +1573,11 @@ run = "typos"
 # Documentation shape. `README.md` is a crate's only document: an overview
 # linking into the crate's rustdoc, where mechanism, decisions and
 # specification detail live. The first command refuses tracked markdown
-# outside the allowlist, matched by Git's glob pathspec so `*` stays within
-# one directory, which sizelint's patterns cannot express. The ledger's
-# README, its generated syntax ledger and its bootstrap census (#2896) are on
-# it, a library's README (its module map, `library/std/README.md`), the pull
+# outside the list `.config/markdown/readmes`: the rule `markdown` of
+# `tree-rules` (`crates/workflow-tree-rules`), whose `*` stays within one
+# directory, which sizelint's patterns cannot express. The ledger's README,
+# its generated syntax ledger and its bootstrap census (#2896) are on it, a
+# library's README (its module map, `library/std/README.md`), the pull
 # request template, which GitHub reads as markdown, and the filers' issue
 # templates (#3112), which `issue:file` posts as markdown. A literate sketch
 # host, `corpus/sketch/*/*.gandr.md` (#4723), is a program in markdown, not
@@ -1587,26 +1588,7 @@ run = "typos"
 ["check:markdown"]
 description = "Tracked markdown on the README allowlist and within its budgets"
 run = [
-  '''
-outside=$(git ls-files -- '*.md' \
-  ':(exclude,glob)README.md' \
-  ':(exclude,glob)CHANGELOG.md' \
-  ':(exclude,glob)crates/README.md' \
-  ':(exclude,glob)crates/*/README.md' \
-  ':(exclude,glob)contrib/*/README.md' \
-  ':(exclude,glob)library/*/README.md' \
-  ':(exclude,glob)ledger/README.md' \
-  ':(exclude,glob)ledger/census.md' \
-  ':(exclude,glob).config/issues/templates/*.md' \
-  ':(exclude,glob)corpus/sketch/*/*.gandr.md' \
-  ':(exclude,glob).github/pull_request_template.md')
-if [ -n "$outside" ]; then
-  printf '%s\n' "$outside" >&2
-  echo 'markdown check FAILED: tracked markdown outside the README allowlist; move its prose into rustdoc' >&2
-  exit 1
-fi
-echo 'markdown check OK: every tracked markdown file is on the README allowlist'
-''',
+  ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-tree-rules --bin tree-rules -- --rule markdown",
   "git ls-files -z -- '*.md' | xargs -0 sizelint check",
 ]
 
@@ -1904,74 +1886,30 @@ exec .config/mise/gated .config/mise/scope cargo nextest run --locked --profile 
 # a driver's `.orig` backup or a `.rej` hunk, or the
 # `_BACKUP_`, `_BASE_`, `_LOCAL_` and `_REMOTE_` copies `git mergetool`
 # writes, which hold clean text no marker scan sees (#1642), or `wt:warm`'s
-# clone probe, `.wt-warm-probe`, a tool's leftover (#3222). The line
-# patterns live in
-# `.config/merge-residue/patterns` and the path patterns in `names` beside
-# it, one extended regular expression per line; each case in `cases.json`
-# holds a `line` or a `path` and whether the patterns read it as residue;
-# the line scan skips that file, whose cases are residue by design. Git
-# writes conflict markers as EXACTLY seven marker characters followed by
-# end-of-line or whitespace plus a label (`<<<<<<< HEAD`, bare `=======`).
-# Anchoring on `([[:space:]]|$)` keeps real markers matched while rejecting
-# longer decorative runs -- setext underlines and `====` delimiter rules are
-# not conflicts. The trailer patterns bracket a character so the patterns
-# file does not match itself. The `:/` pathspec scopes the line scan to
-# tracked files under the repository root whatever directory the hook runs
-# from; the name scan lists them from the root.
+# clone probe, `.wt-warm-probe`, a tool's leftover (#3222). The rule
+# `residue` of `tree-rules` (`crates/workflow-tree-rules`) reads the line
+# patterns of `.config/merge-residue/patterns` and the path patterns of
+# `names` beside it, one regular expression a line. Each case of
+# `cases.json` is a test of that crate, and the line scan skips that file,
+# whose cases are residue by design. Git writes conflict markers as EXACTLY
+# seven marker characters followed by end-of-line or whitespace plus a label
+# (`<<<<<<< HEAD`, bare `=======`). Anchoring on `([[:space:]]|$)` keeps real
+# markers matched while rejecting longer decorative runs -- setext underlines
+# and `====` delimiter rules are not conflicts. The trailer patterns bracket
+# a character so the patterns file does not match itself.
 ["check:merge-residue"]
 description = "Detect conflict markers and merge-driver residue in tracked files"
-tools.jq = "1.8.1"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-root=$(git rev-parse --show-toplevel)
-patterns="$root/.config/merge-residue/patterns"
-names="$root/.config/merge-residue/names"
-cases="$root/.config/merge-residue/cases.json"
-failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  want=$(jq -r .residue <<< "$case")
-  if jq -e 'has("path")' <<< "$case" > /dev/null; then
-    kind=path
-    text=$(jq -r .path <<< "$case")
-    against=$names
-  else
-    kind=line
-    text=$(jq -r .line <<< "$case")
-    against=$patterns
-  fi
-  got=false
-  if grep -qE -f "$against" <<< "$text"; then got=true; fi
-  if [[ "$got" != "$want" ]]; then
-    printf 'merge residue case FAILED: %s\n  %s: %s\n  read as residue: %s, recorded: %s\n' "$name" "$kind" "$text" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' "$cases")
-(( failed == 0 )) || exit 1
-if git grep -nIE -f "$patterns" -- ':/' ':(top,exclude).config/merge-residue/cases.json'; then
-  echo 'merge residue check FAILED: conflict markers or merge-driver residue found' >&2
-  exit 1
-fi
-if git -C "$root" ls-files | grep -E -f "$names"; then
-  echo 'merge residue check FAILED: tracked files named as merge residue' >&2
-  exit 1
-fi
-echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no conflict markers, merge-driver residue or residue file names in tracked files"
-'''
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-tree-rules --bin tree-rules -- --rule residue"
 
 # No line of the tree holds the path of a home directory, which names an
-# account of a host on a public surface (#7041). One `rg` reads every file
-# that git does not ignore, after the cases of `.config/local-paths/` read as
-# recorded. A placeholder name of `placeholders` stands. The check sits in no
-# group of `.config/gate-scope/table.json` and in no row of its `reads`, so
-# it is light and each change runs it. The integration cycle's plain lane
-# runs it too, and no run on `landing` runs it (#7478).
+# account of a host on a public surface (#7041). The rule `paths` of
+# `tree-rules` reads each tracked file that is not binary against the
+# patterns of `.config/local-paths/patterns`. A placeholder name of
+# `placeholders` stands. Each case of `cases.json` is a test of
+# `crates/workflow-tree-rules`.
 ["check:local-paths"]
 description = "No line of the tree holds the path of a home directory"
-tools.jq = "1.8.1"
-tools.ripgrep = "15.2.0"
-run = ".config/local-paths/check.bash"
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-tree-rules --bin tree-rules -- --rule paths"
 
 # A workflow never hashes a tarball through `hashFiles`: the expression
 # engine reads the whole archive within a 120 s budget, and a build state

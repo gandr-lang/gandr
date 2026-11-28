@@ -1,0 +1,15 @@
+# The Markdown files of the tree, one glob a line. A `*` stands for any run of
+# characters within one segment of a path. The rule `markdown` of
+# `crates/workflow-tree-rules` refuses each tracked Markdown file that no glob
+# matches: its prose goes into rustdoc.
+README.md
+CHANGELOG.md
+crates/README.md
+crates/*/README.md
+contrib/*/README.md
+library/*/README.md
+ledger/README.md
+ledger/census.md
+.config/issues/templates/*.md
+corpus/sketch/*/*.gandr.md
+.github/pull_request_template.md
