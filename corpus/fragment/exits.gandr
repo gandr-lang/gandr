@@ -97,8 +97,10 @@ def named_elided(n : Nat) -> -F Nat =
 @[checks]
 def rec stated(n : Nat) -> -F Nat =
   match n where
-    | Zero => { return n; }
-    | Succ p => { become stated[<] p; }
+    | Zero =>
+      return n;
+    | Succ p =>
+      become stated[<] p;
 
 @[checks]
 def rec stated_elided(n : Nat) -> -F Nat =
