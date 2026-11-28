@@ -19,38 +19,34 @@ pr_comment = "on_change"
 judged = false
 
 # The per-component floor (#2395): what a component laid after the prelude
-# allocates to use the prelude's judgement again. Where a component still
-# copies a part of the prelude and does not share it (#2461), its average
-# grows with the prelude. Thus a budget that a grown prelude breaks shows the
-# floor growing with it. The series measures 1090 KB for each resumed
-# lowering, 333 KB for each continued program and 15.1 KB for each resumed
-# kernel record (`a2485e814`, linux-x86_64). The shared parts are these: for
-# the lowering, the tables of each node, the tables by declaration, the
-# declarations, the descriptions and the model signatures; for the kernel
-# record, the arena, the entries and the exports.
+# allocates to use the judgement of the prelude again. A component copies a
+# part of the prelude and does not share it (#2461). Thus its average grows
+# with the prelude. The shared parts are these: for the lowering, the tables
+# of each node, the tables by declaration, the declarations, the descriptions
+# and the model signatures; for the kernel record, the arena, the entries and
+# the exports.
 #
-# On `main` at `2bb83b26`, a lowering that resumes takes 3451.9 KB. A program
-# that continues takes 648.6 KB, and a kernel record that resumes takes
-# 30.2 KB. Each of these breaks its budget.
+# Each budget is the average of `main` at `e74290a5` with a margin of 2 %. A
+# lowering that resumes takes 3451.2 KB, a program that continues takes
+# 648.6 KB, and a kernel record that resumes takes 30.2 KB. A run in bytes
+# repeats: macOS arm64 at `3fe1bdf2` and Linux x86-64 at `e74290a5` give the
+# same three averages. Thus a larger average is a growth of the copy.
 #
-# Each rule has `fail_check = false`: the gate of each landing shows it and
-# refuses nothing. A rule fails the check again when the copy of the prelude
-# goes. A new measurement can also give it a new limit.
+# At `a2485e814`, before the root commit, the series gave 1090 KB, 333 KB and
+# 15.1 KB. A prelude that a component reads by reference brings each budget
+# back to that floor.
 # - see: #2461
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::lower_onto_closure"
-alloc = { avg = "1186 KB" }
+alloc = { avg = "3520.3 KB" }
 message = "a component's lowering resumed onto the prelude's copies the prelude's slots, structures and other collected tables, and its origins (#2461)"
-fail_check = false
 
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::program::after"
-alloc = { avg = "512 KB" }
+alloc = { avg = "661.6 KB" }
 message = "a component's program continued from the prelude's copies the prelude's program (#2461)"
-fail_check = false
 
 [[functions.budgets]]
 match = "gandr_core_checker_bridge::bridge::resume"
-alloc = { avg = "16 KB" }
+alloc = { avg = "30.9 KB" }
 message = "a component's readmission resumed from the prelude's record shares its kernel arena, entries and exports; a grown average copies one of them again (#2461)"
-fail_check = false
