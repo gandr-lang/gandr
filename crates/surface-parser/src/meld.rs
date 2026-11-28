@@ -2648,6 +2648,54 @@ impl<'pbg> MeldState<'pbg>
         Some(application)
     }
 
+    /// The sort of an operand that opens next as the argument the head
+    /// applies by juxtaposition, where the head's sort outranks the slot's.
+    ///
+    /// Juxtaposition binds tighter than every operator, so the argument
+    /// stands in the head's own spine. Where no hole stands below the head,
+    /// the slot sort is only the expression default (#6102). Where the head is
+    /// the right operand of an operator of its own sort, the argument stays
+    /// under that operator: the codomain of `(u : A) -> p (k u)` applies `p`
+    /// to the group as a type, inside an expression's parentheses too.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the head operand's sort exactly when
+    ///   [`Self::applies_next_in`] answers for it, and `slot` is
+    ///   [`OpenSlot::Tile`] or the cell below the head is an infix or prefix
+    ///   operator of the head's sort. `None` otherwise.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: two reads of the slope and the reads of
+    ///   [`Self::applies_next_in`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group after the codomain of an arrow in an
+    ///   expression's parentheses, after a type in a type's slot and after a
+    ///   value in an expression's slot: the group reads as a type in the first
+    ///   two and as an expression in the last.
+    /// - witness: `tests::grammar::a_group_after_an_arrow_s_codomain_is_its_argument`
+    /// - witness: `tests::acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102`
+    #[spec(ensures: |ret| ret.is_none() || ret == self.head_operand_sort())]
+    fn juxtaposed_argument(
+        &self,
+        slot: Option<OpenSlot>,
+    ) -> Option<Sort>
+    {
+        let sort = self.head_operand_sort()?;
+        self.applies_next_in(sort)?;
+        let below = self
+            .stack
+            .len()
+            .checked_sub(2)
+            .and_then(|index| self.stack.get(index));
+        let under_operator = below.is_some_and(|cell| {
+            matches!(cell.role, Role::Operator { sort: own, shape: OpShape::Infix | OpShape::Prefix, .. } if own == sort)
+        });
+        (slot == Some(OpenSlot::Tile) || under_operator).then_some(sort)
+    }
+
     /// Whether a tile of `mold` over `text` opens a value and no type: the
     /// tile is a word, a literal or a `{`, it opens an operand of a term sort,
     /// and no label of its token opens a type operand (#6101).
@@ -3430,7 +3478,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort() && ret.argument == ret.head_sort.filter(|&sort| self.open_slot() == Some(OpenSlot::Tile) && self.applies_next_in(sort).is_some()) && ret.endpoint == self.spine_operands() && bool::from(ret.boundary) == self.open_slot().is_none())]
+    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort() && ret.argument == self.juxtaposed_argument(self.open_slot()) && ret.endpoint == self.spine_operands() && bool::from(ret.boundary) == self.open_slot().is_none())]
     pub fn admissibility_frontier(&self) -> Frontier
     {
         let open = self.open_form_mold();
@@ -3441,9 +3489,7 @@ impl<'pbg> MeldState<'pbg>
             head_operand: self.head_is_operand(),
             head_sort,
             expected: slot.map_or(Sort::Expression, OpenSlot::sort),
-            argument: head_sort.filter(|&sort| {
-                slot == Some(OpenSlot::Tile) && self.applies_next_in(sort).is_some()
-            }),
+            argument: self.juxtaposed_argument(slot),
             endpoint: self.spine_operands(),
             boundary: BoundarySlot::from(slot.is_none()),
         }
@@ -8949,12 +8995,13 @@ pub struct Frontier
     /// sort (a local `InconMeld`), so the pre-filter discards it before any
     /// dry-run.
     pub expected: Sort,
-    /// The sort of the head operand, when no hole stands below the head and
-    /// an operand that opens next stands as the argument the head applies by
-    /// juxtaposition. The slot sort is then only the expression default, and
-    /// the head's sort ranks the argument instead. Thus `Run (…)` reads its
-    /// group as a type where a broken binder leaves the `.` of a type path
-    /// open below `Run` (#6102).
+    /// The sort of the head operand, when an operand that opens next stands
+    /// as the argument the head applies by juxtaposition and the head's sort
+    /// ranks it in place of the slot sort: where no hole stands below the
+    /// head, or where the head is the right operand of an operator of its own
+    /// sort. Thus `Run (…)` reads its group as a type where a broken binder
+    /// leaves the `.` of a type path open below `Run` (#6102), and `(u : A) ->
+    /// p (k u)` applies `p` to its group inside an expression's parentheses.
     pub argument: Option<Sort>,
     /// The sort of the operands that the spine at the head takes, where the
     /// rule of the spine's head states it: an expression after `Path`.

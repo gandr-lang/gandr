@@ -303,6 +303,48 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
     Ok(())
 }
 
+/// A group after the codomain of an arrow is the argument the codomain
+/// applies, `(u : A) -> p (k u)`: in a type's slot, and inside an
+/// expression's parentheses, where a value function type stands as a value.
+/// Juxtaposition binds tighter than the arrow, so the group reads as a type
+/// under it and not as a second operand of the parentheses.
+#[test]
+fn a_group_after_an_arrow_s_codomain_is_its_argument() -> Result<(), Failure>
+{
+    let cases = [
+        ("def f : (u : Type) -> p (k u);", 2_usize),
+        ("def f = ((u : Type) -> p (k u));", 2),
+        ("def f = (Type -> p (Maybe u));", 2),
+        ("def f = ((u : Type) -> Tree s p (k u));", 4),
+        ("def f = ((u : Type) -> p q);", 1),
+    ];
+    let grammar = built();
+    for (source, expected) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let applied = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == "type_application.juxtaposed"),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => false,
+            })
+            .count();
+        assert_eq!(
+            applied, expected,
+            "`{source}`: the type applications it reads"
+        );
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
 /// The descent `[<]` is an operand of its own, with a space on each side:
 /// `el [<] a` reads the descent as the first operand after the head, and a
 /// stage glued to its type keeps its reading, `Nat[< i]`. Each parses clean.

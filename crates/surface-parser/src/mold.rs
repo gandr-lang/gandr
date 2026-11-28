@@ -3801,10 +3801,11 @@ impl<'pbg> Molder<'pbg>
     ///   replaced by the empty delta, so the returned key is at most the full
     ///   key; the sort matches when it is the sort the candidate's place
     ///   expects, or the candidate opens a declaration at the top level; reads
-    ///   `state` without changing it. Where no hole stands below the head, an
-    ///   operand that opens at the head, as its juxtaposed argument or as a
-    ///   call that continues it, expects the head's sort. Every other candidate
-    ///   expects the frontier's slot sort.
+    ///   `state` without changing it. Where the frontier names the sort of a
+    ///   juxtaposed argument ([`Frontier::argument`]), an operand that opens at
+    ///   the head, as its juxtaposed argument or as a call that continues it,
+    ///   expects the head's sort. Every other candidate expects the frontier's
+    ///   slot sort.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3829,9 +3830,10 @@ impl<'pbg> Molder<'pbg>
     {
         let continuation = CandidateRank::from(!bool::from(state.would_continue_form(mold)));
         let mold_sort = self.pbg.mold(mold).map_or(Sort::Item, |def| def.sort);
-        // Where no hole stands below the head, an operand that opens at the
-        // head, as its juxtaposed argument or as a call or an instantiation
-        // that continues it, takes the head's sort, not the expression default.
+        // Where the frontier names a juxtaposed argument's sort, an operand
+        // that opens at the head, as its juxtaposed argument or as a call or an
+        // instantiation that continues it, takes the head's sort, not the
+        // slot's.
         let opens_operand = matches!(
             self.pbg.tile_kind(mold),
             Ok(TileKind::Operand | TileKind::Start | TileKind::AbsorbingStart | TileKind::Prefix)
