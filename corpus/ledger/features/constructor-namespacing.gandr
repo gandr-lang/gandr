@@ -1,4 +1,11 @@
-@![features(("let-statements", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `constructor-namespacing`: Constructor names namespaced by family.
 /// Implemented: a constructor named by its family, `Family.Constructor`, in a
@@ -22,11 +29,11 @@ data Shape : Type where
 def length(s : Shape) -> Integer =
   match s where
     | Shape.Dot => 0
-    | Shape.Line(n) => n
+    | Shape.Line n => n
 
 /// A line built by its qualified name.
 @[runs("3")]
-def measured() -> Integer = length (Shape.Line 3);
+def measured() -> Integer = length (Shape.Line 3)
 
 /// A mark on a page, whose `Dot` shares its name with a shape's.
 data Mark : Type where
@@ -41,7 +48,7 @@ def width(m : Mark) -> Integer =
 
 /// A dot's width, built through its family.
 @[runs("1")]
-def dotted() -> Integer = width Mark.Dot;
+def dotted() -> Integer = width Mark.Dot
 
 /// A shared subterm with two ports.
 data Expr : Type where
@@ -51,13 +58,13 @@ data Expr : Type where
 /// The size of an expression, each port matched by its qualified name.
 def rec size(e : Expr) -> Integer =
   match e where
-    | Expr.Lit(n) => 1
+    | Expr.Lit n => 1
     | Expr.Share(x).left => size[<] x
     | Expr.Share(x).right => size[<] x
 
 /// A port built by its qualified name.
 @[runs("1")]
-def shared() -> Integer = size (Expr.Share (Expr.Lit 7)).right;
+def shared() -> Integer = size (Expr.Share (Expr.Lit 7)).right
 
 /// The record of both ports, built by the qualified name.
 def ports : *{left : Expr, right : Expr} = Expr.Share (Expr.Lit 7);

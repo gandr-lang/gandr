@@ -1,4 +1,12 @@
-@![features(("dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `OutOfFragment.Arity`: a form out of the fragment: the form is a former of
 /// this sort, offered a number of operands it does not take.
@@ -13,7 +21,7 @@ data U : Type where
 def rec el(u : U) -> Type =
   match u where
     | NatC => return Nat
-    | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (x -> y) }
+    | Arrow a b => { let x = el[<] a; let y = el[<] b; return (x -> y) }
 
 @[refuses("OutOfFragment.Arity")]
 def unapplied(c : U) -> el = return c;

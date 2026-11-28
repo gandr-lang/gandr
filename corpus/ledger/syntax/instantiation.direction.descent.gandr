@@ -1,4 +1,10 @@
-@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `instantiation.direction.descent`: a recursive call made on
 /// a smaller argument.
@@ -8,4 +14,4 @@ data Nat : Type where
 def rec down(n : Nat) -> Nat =
   match n where
     | Zero => n
-    | Succ(p) => down[<] p
+    | Succ p => down[<] p

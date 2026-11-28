@@ -1,4 +1,11 @@
-@![features(("let-statements", "native-primitives", "pattern-matching", "signatures-as-values", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "native-primitives",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `atom-sorts`: Atom sorts.
 /// Implemented: `sort Name : Atom;` in a theory block, a port abstracting its
@@ -26,27 +33,27 @@
 
 /// One atom sort and nothing else.
 theory AtomOnly where
-  sort Name : Atom;
+  sort Name : Atom
 
 /// Names and the terms that mention them: a variable names an atom, and a
 /// renaming takes two atoms and a term.
 theory Renaming where
-  sort Name : Atom;
-  sort Tm : Type;
-  oper var : (a : Name) --> Tm;
-  oper rename : (a : Name, b : Name, t : Tm) --> Tm;
+  sort Name : Atom
+  sort Tm : Type
+  oper var : (a : Name) --> Tm
+  oper rename : (a : Name, b : Name, t : Tm) --> Tm
 
 /// Structural recursion over a sort chain: one per `Atom` link, none for an
 /// ordinary `Sort`.
 def rec atoms(chain : Theory) -> Integer =
   match chain where
-    | Atom(name, indices, rest) => { let r = atoms[<] rest; r + 1 }
-    | Sort(name, indices, rest) => atoms[<] rest
+    | Atom name indices rest => { let r = atoms[<] rest; r + 1 }
+    | Sort name indices rest => atoms[<] rest
     | _ => 0
 
 /// The renaming signature declares one atom sort, `Name`.
 @[runs("1")]
 def atomSorts() -> Integer = match Renaming {
-  | Presents(sorts, opers, rules) => atoms sorts
+  | Presents sorts opers rules => atoms sorts
   | _ => 0
 };

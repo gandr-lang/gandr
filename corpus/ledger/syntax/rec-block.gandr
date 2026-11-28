@@ -1,4 +1,13 @@
-@![features(("call-by-push-value", "explicit-exits", "let-statements", "mutual-recursion", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "call-by-push-value",
+  "explicit-exits",
+  "let-statements",
+  "mutual-recursion",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `rec_block`: a recursive group: definitions that may name each other.
 data Nat : Type where
@@ -9,10 +18,10 @@ rec {
   def rec even(n : Nat) -> -F Integer =
     match n where
       | Zero => return 1
-      | Succ(p) => odd[<] p
+      | Succ p => odd[<] p
   @[checks]
   def rec odd(n : Nat) -> -F Integer =
     match n where
       | Zero => return 0
-      | Succ(p) => even[<] p
+      | Succ p => even[<] p
 }

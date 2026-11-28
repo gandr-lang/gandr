@@ -14,7 +14,7 @@ data Outer : Type where
 /// The integer two constructors down, or zero.
 def depth(m : Outer) -> Integer =
   match m where
-    | Some(Yes(n)) => n
+    | Some (Yes n) => n
     | _ => 0
 
 /// The match run on a value holding 41.

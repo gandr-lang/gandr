@@ -1,4 +1,10 @@
-@![features(("let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `DescentOnSeveralParameters`: a recursive definition whose claims descend
 /// on two parameters.
@@ -11,5 +17,5 @@ def rec both(m : Nat, n : Nat) -> Nat =
   match m where
     | Zero => match n where
       | Zero => Zero
-      | Succ(q) => both[<] m q
-    | Succ(p) => both[<] p n
+      | Succ q => both[<] m q
+    | Succ p => both[<] p n

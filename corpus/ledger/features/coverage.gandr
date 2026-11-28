@@ -12,11 +12,11 @@ data Shape : Type where
 def weight(s : Shape) -> Integer =
   match s where
     | Dot => 0
-    | Line(0) => 0
-    | Line(n) => n
-    | Pair(Dot, b) => 1
-    | Pair(Line(n), b) => n
-    | Pair(Pair(a, c), b) => 2
+    | Line 0 => 0
+    | Line n => n
+    | Pair Dot b => 1
+    | Pair (Line n) b => n
+    | Pair (Pair a c) b => 2
 
 /// The match run on a pair whose left part is a line of seven.
 @[runs("7")]

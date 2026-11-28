@@ -10,4 +10,4 @@ data Nat : Type where
 def rec bare(n : Nat) -> Nat =
   match n where
     | Zero => return n
-    | Succ(p) => bare p
+    | Succ p => bare p

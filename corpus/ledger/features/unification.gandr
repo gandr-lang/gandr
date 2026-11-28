@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "records", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "universes"
+))]
 
 /// `unification`: Unification and index refinement.
 /// Implemented: the solution step, which replaces the variable side of an arm's
@@ -44,5 +53,5 @@ data Tagged : Code -> Type where
 /// constructor's code.
 def untag(c : Code, v : Tagged c) -> decode c =
   match v where
-    | AnInt(i) => i
+    | AnInt i => i
     | AUnit => *{}

@@ -1,4 +1,10 @@
-@![features(("call-by-push-value", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "call-by-push-value",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 /// `bicontextual-kernel-key` keys the kernel's check memo by the binders a
 /// goal's judgement reads.
@@ -40,8 +46,8 @@ data Either : Type where
 /// Answers `n` whichever side `e` takes, each branch under the field it binds.
 def side(n : Nat, e : Either) -> Nat =
   match e -> -F Nat where
-    | Count(_m) => n
-    | Mark(_f) => n
+    | Count _m => n
+    | Mark _f => n
 
 /// The flag side answers the natural `side` takes first.
 @[runs("Succ Zero")]

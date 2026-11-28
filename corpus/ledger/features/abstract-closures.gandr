@@ -1,4 +1,12 @@
-@![features(("call-by-push-value", "dependent-functions", "let-statements", "nominal-data", "pattern-matching", "thunks-and-force", "universes"))]
+@![features((
+  "call-by-push-value",
+  "dependent-functions",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "thunks-and-force",
+  "universes"
+))]
 
 /// `abstract-closures` converts each closure of a program to an abstract
 /// closure over the context variables its code names.
@@ -47,7 +55,7 @@ def either(a : Nat, b : Nat) -> () -> Nat =
   thunk {
     match a -> -F Nat where
       | Zero => b
-      | Succ(_p) => a
+      | Succ _p => a
   }
 
 /// The thunk `either` returns, forced, answers the second natural when the

@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "tarski-universes", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "tarski-universes",
+  "universes"
+))]
 
 /// `descent_type`: a decoder's own recursion in the type that an arm returns,
 /// at a code below the code that it decodes.
@@ -13,4 +22,4 @@ data U : Type where
 def rec el(u : U) -> Type =
   match u where
     | IntU => return Integer
-    | FunU(a, b) => return ((el [<] a) -> (el [<] b))
+    | FunU a b => return ((el [<] a) -> (el [<] b))

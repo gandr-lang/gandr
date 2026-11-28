@@ -1,4 +1,11 @@
-@![features(("let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `cut-schedules` sums a complete tree with every recursive call under a cut.
 ///
@@ -45,13 +52,13 @@ data Tree : Type where
 def rec full(d : Depth) -> Tree =
   match d where
     | Zero => Leaf 1
-    | Succ(p) => Node (full[<] p) (full[<] p)
+    | Succ p => Node (full[<] p) (full[<] p)
 
 /// The sum of the leaves of `t`, each half summed under its own cut.
 def rec sum(t : Tree) -> Integer =
   match t where
-    | Leaf(n) => n
-    | Node(l, r) => {
+    | Leaf n => n
+    | Node l r => {
       let a = sum[<] l
       let b = sum[<] r
       a + b

@@ -1,4 +1,11 @@
-@![features(("call-by-push-value", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "call-by-push-value",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 /// `OutOfFragment.JoinsBlock`: a form out of the fragment: the form is a match
 /// written with an answer, `case e -> T { … }`, whose arms continue the block
@@ -12,5 +19,5 @@ data Nat : Type where
 def joined(n : Nat) -> -F Nat =
   let m = match n -> -F Nat where
     | Zero => return n
-    | Succ(p) => pure p
+    | Succ p => pure p
   return m

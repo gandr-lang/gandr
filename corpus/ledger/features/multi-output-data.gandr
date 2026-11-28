@@ -1,4 +1,13 @@
-@![features(("data-parameters", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "records", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `multi-output-data`: Multi-output data constructors.
 /// Implemented: at grade ω a constructor that writes an output group reads as
@@ -22,17 +31,17 @@ data Expr : Type where
 /// `size` counts an expression's nodes and reads each port on its own.
 def rec size(e : Expr) -> Integer =
   match e where
-    | Lit(n) => 1
-    | Add(a, b) => { let x = size[<] a; let y = size[<] b; x + y + 1 }
+    | Lit n => 1
+    | Add a b => { let x = size[<] a; let y = size[<] b; x + y + 1 }
     | Share(x).left => size[<] x
     | Share(x).right => size[<] x
 
 /// `twice` adds the sizes of both ports of one share.
 @[runs("3")]
-def twice() -> Integer = size (Add (Share (Lit 1)).left (Share (Lit 1)).right);
+def twice() -> Integer = size (Add (Share (Lit 1)).left (Share (Lit 1)).right)
 
 /// The two ports of a share, as a record.
-def ports : *{left : Expr, right : Expr} = Share (Lit 1);
+def ports : *{left : Expr, right : Expr} = Share (Lit 1)
 
 /// A pair that duplicates a value into two ports of one parameter.
 data Pair(a : Type) : Type where

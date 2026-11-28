@@ -1,4 +1,11 @@
-@![features(("let-statements", "nested-runs", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "let-statements",
+  "nested-runs",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `run_expression`: running a computation where a value is read.
 data Nat : Type where
@@ -7,6 +14,6 @@ data Nat : Type where
 def rec down(n : Nat) -> Nat =
   match n where
     | Zero => n
-    | Succ(p) => down[<] p
+    | Succ p => down[<] p
 def twice(n : Nat) -> Nat =
   down (run down n)

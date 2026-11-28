@@ -1,4 +1,11 @@
-@![features(("dependent-functions", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "dependent-functions",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `higher-order-fields`: Function fields in described families.
 /// Implemented: a constructor field `A -> T` is the function former of the
@@ -28,19 +35,19 @@ data Program : Type where {
   | Done : (x : Integer) --> Program
   | Get : (k : Integer -> Program) --> Program
   | Put : (s : Integer, k : Program) --> Program
-  rule : Put s (Put u k) <=> Put u k;
+  rule : Put s (Put u k) <=> Put u k
 }
 
 /// The state-passing handler, reaching a read's rest through its
 /// continuation.
 def rec final(p : Program, s : Integer) -> Integer =
   match p where
-    | Done(x) => x
-    | Get(k) => final[<] (k s) s
-    | Put(t, k) => final[<] k t
+    | Done x => x
+    | Get k => final[<] (k s) s
+    | Put t k => final[<] k t
 
 /// Answers the state it reads.
-def answered(x : Integer) -> Program = Done x;
+def answered(x : Integer) -> Program = Done x
 
 /// A store, then a read of it.
 @[runs("5")]

@@ -1,4 +1,13 @@
-@![features(("data-parameters", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `string-model`: A string written in the language.
 /// Implemented: a string written in the language: inline bytes or a counted
@@ -21,7 +30,7 @@
 //! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
 // The lists the bytes are held in.
-import "../../model/data/data-base.gandr";
+import "../../model/data/data-base.gandr"
 
 /// Where a string's bytes live: inline, in the string itself, when they fit;
 /// otherwise in a buffer on the heap that every copy of the string shares,
@@ -33,20 +42,20 @@ data Repr : Type where
 /// The bytes a string holds, wherever they live.
 def bytes(s : Repr) -> List Integer =
   match s where
-    | Inline(bs) => bs
-    | Shared(n, bs) => bs
+    | Inline bs => bs
+    | Shared n bs => bs
 
 /// The number of bytes in a list.
 def rec count(bs : List Integer) -> Integer =
   match bs where
     | Nil => 0
-    | Cons(b, rest) => { let n = count[<] rest; n + 1 }
+    | Cons b rest => { let n = count[<] rest; n + 1 }
 
 /// One byte list followed by another.
 def rec concat(xs : List Integer, ys : List Integer) -> List Integer =
   match xs where
     | Nil => ys
-    | Cons(x, rest) => (Cons x (concat[<] rest ys) : List Integer)
+    | Cons x rest => (Cons x (concat[<] rest ys) : List Integer)
 
 /// The number of bytes a string keeps inline, its terminating zero included.
 @[runs("24")]

@@ -1,4 +1,11 @@
-@![features(("call-by-push-value", "let-statements", "nominal-data", "pattern-matching", "records", "universes"))]
+@![features((
+  "call-by-push-value",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "universes"
+))]
 
 /// `bicontextual-core` carries each core node's support and each item's
 /// footprint, the half of the bicontextual judgement that stands today.
@@ -54,8 +61,8 @@ data Either : Type where
 @[reads(*{Either, Nat})]
 def side(n : Nat, e : Either) -> Nat =
   match e -> -F Nat where
-    | Count(_m) => n
-    | Mark(_f) => n
+    | Count _m => n
+    | Mark _f => n
 
 /// Calls `side` on a flag. It reads its callee and the data
 /// each constructor builds.
@@ -64,11 +71,11 @@ def marked() -> Nat =
   side (Succ Zero) (Mark On)
 
 /// An integer, which names no item.
-def answer : Integer;
+def answer : Integer
 
 /// The answer's value reads nothing.
 @[reads(())]
-def answer = 42;
+def answer = 42
 
 /// Returns its parameter. It reads the type `Nat`, and never the bound `x`.
 @[reads(Nat)]

@@ -1,4 +1,11 @@
-@![features(("corecursion", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "universes"))]
+@![features((
+  "corecursion",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "universes"
+))]
 
 /// `UnguardedCorecursion`: a productivity claim standing outside
 /// a copattern arm.
@@ -10,4 +17,4 @@ data Nat : Type where
 def rec ahead(n : Nat) -> Nat =
   match n where
     | Zero => return n
-    | Succ(p) => ahead[>] p
+    | Succ p => ahead[>] p

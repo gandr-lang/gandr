@@ -1,4 +1,13 @@
-@![features(("data-parameters", "dependent-functions", "identity-types", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "identity-types",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `StageNotCarried`: a transport moves a value of a recursion along a path
 /// whose carrier is not a set.
@@ -14,4 +23,4 @@ data Nat : Type where
 def rec alongLoop(n : Nat, q : Path Base Base) -> Nat =
   match n where
     | Zero => Zero
-    | Succ(m) => Succ (alongLoop[<] (Path.walk (fun (x) { Nat }) q m) q)
+    | Succ m => Succ (alongLoop[<] (Path.walk (fun (x) { Nat }) q m) q)

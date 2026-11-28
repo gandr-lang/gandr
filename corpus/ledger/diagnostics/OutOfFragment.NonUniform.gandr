@@ -1,4 +1,11 @@
-@![features(("explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes"))]
+@![features((
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes"
+))]
 
 /// `OutOfFragment.NonUniform`: a form out of the fragment: the form is a
 /// recursive call passing, where one of the definition's unchanging parameters
@@ -13,4 +20,4 @@ data Nat : Type where
 def rec shadowed(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => return n
-    | Succ(n) => shadowed[<] n n
+    | Succ n => shadowed[<] n n
