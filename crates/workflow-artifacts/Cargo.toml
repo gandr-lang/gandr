@@ -1,0 +1,35 @@
+[package]
+name = "gandr-workflow-artifacts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Holds the tree to the list of the files that a program writes: no tracked output, and a clean checkout after the gates, by the `artifacts` binary"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "artifacts", "workflow"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "artifacts"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The binary reads its flags through clap, and the list with serde and
+# serde_json. The pinned anodized facade supplies the executable
+# specifications.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

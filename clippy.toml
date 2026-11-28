@@ -11,6 +11,13 @@ allow-unwrap-in-tests = true
 # keeps clippy's default list.
 doc-valid-idents = ["JUnit", ".."]
 
+# A test that compares with a file of the tree writes that file again, and
+# each pair of changes that move the file conflicts. A test gives its value
+# to the store of the outputs, or compares with a text in its source.
+disallowed-macros = [
+  { path = "expect_test::expect_file", reason = "a golden file of the tree: give the value to the store of the outputs, or compare with a text in the source" },
+]
+
 # `multiple_crate_versions` stays denied for every split but these.
 #
 # `hashbrown`: petgraph 0.8.3 pins `hashbrown` 0.15 and kasuari 0.4, the

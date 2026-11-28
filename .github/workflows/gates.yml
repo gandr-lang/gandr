@@ -212,6 +212,16 @@ jobs:
           KACHE_OCI_USERNAME: ${{ github.actor }}
           KACHE_OCI_PASSWORD: ${{ github.token }}
         run: ${{ matrix.run }} $PRIORITIES
+      # The tree tracks no file of an output or a ratchet of the list of
+      # artifacts. The run of the gate leaves the checkout clean. A file that a
+      # test writes and that the list does not have shows itself here.
+      #
+      # - see: `.config/replay/artifacts.json`
+      - name: hold the tree to the list of artifacts
+        if: ${{ matrix.target }}
+        run: |
+          cargo run --locked --quiet --package gandr-workflow-artifacts --bin artifacts -- tracked
+          cargo run --locked --quiet --package gandr-workflow-artifacts --bin artifacts -- clean
       # The JUnit report of each run of `main`, with the time of each test. A
       # reader of the times of the suites downloads it as `junit-<slug>`.
       - name: keep the times of the tests

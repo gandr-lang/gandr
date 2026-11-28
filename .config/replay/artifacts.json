@@ -10,6 +10,7 @@
   {
     "name": "the comment ledger",
     "kind": "ratchet",
+    "pending": "debt-ledgers-by-the-base",
     "paths": ["corpus/uncommented.ledger"],
     "inputs": [
       "corpus/",
@@ -37,6 +38,7 @@
   {
     "name": "the references ledger",
     "kind": "output",
+    "pending": "ledger-outputs-out-of-the-tree",
     "paths": ["ledger/references.sql"],
     "inputs": ["crates/", "corpus/", ".config/references/"],
     "check": "mise run check:references",
@@ -47,7 +49,6 @@
     "kind": "output",
     "paths": [
       "library/std/package.gandr.toml",
-      "workspace.gandr.toml",
       "corpus/model/projects/hello/package.gandr.toml",
       "corpus/model/projects/tools/package.gandr.toml",
       "corpus/model/projects/workspace.gandr.toml"
@@ -56,8 +57,15 @@
     "record": "gandr check, in the directory of each manifest"
   },
   {
+    "name": "the manifest of the root workspace",
+    "kind": "first input",
+    "paths": ["workspace.gandr.toml"],
+    "reason": "the walk that finds the standard library reads the members of this manifest, and it never runs `std` to find `std`"
+  },
+  {
     "name": "the bootstrap census",
     "kind": "output",
+    "pending": "ledger-outputs-out-of-the-tree",
     "paths": ["ledger/census.md"],
     "inputs": ["Cargo.toml", "crates/"],
     "record": "mise run report:bootstrap-census"
@@ -72,6 +80,7 @@
   {
     "name": "the prose ledger",
     "kind": "ratchet",
+    "pending": "debt-ledgers-by-the-base",
     "paths": ["corpus/prose.ledger"],
     "inputs": ["./"],
     "record": "mise run check:prose --write"
@@ -79,6 +88,7 @@
   {
     "name": "the hover coverage ledger",
     "kind": "ratchet",
+    "pending": "debt-ledgers-by-the-base",
     "paths": ["crates/surface-lsp-core/coverage.ledger"],
     "inputs": ["corpus/", "crates/surface-lsp-core/"],
     "record": "SURFACE_LSP_COVERAGE_WRITE_LEDGER=1 cargo nextest run --cargo-profile sweeps --package gandr-surface-lsp-core"
