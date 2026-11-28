@@ -31,7 +31,6 @@ INSERT INTO builtin VALUES('Buf','crates/surface-grammar/src/highlight.rs','atom
 INSERT INTO builtin VALUES('Buf','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('Buf','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');
 INSERT INTO builtin VALUES('Cap','crates/surface-grammar/src/highlight.rs','former','given','stated');
-INSERT INTO builtin VALUES('Cap','crates/surface-grammar/src/surface/type_shell.rs','former','given','stated');
 INSERT INTO builtin VALUES('Char','crates/surface-grammar/src/highlight.rs','atom','given','stated');
 INSERT INTO builtin VALUES('Char','crates/surface-grammar/src/surface/type_shell.rs','atom','given','stated');
 INSERT INTO builtin VALUES('Char','crates/surface-lowering-base/src/resolve.rs','atom','given','stated');

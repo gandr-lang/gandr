@@ -138,7 +138,6 @@ pub const RULE_GATES: [(&str, RuleGate); 162_usize] = [
     ("break_expression", RuleGate::Feature("loops")),
     ("break_value_expression", RuleGate::Feature("loops")),
     ("bridge_type", RuleGate::Feature("bridge-types")),
-    ("capability_type", RuleGate::Feature("capabilities")),
     ("character", RuleGate::Feature("text-primitives")),
     ("circuit_declaration", RuleGate::Feature("operations")),
     ("close_expression", RuleGate::Feature("session-types")),
@@ -218,6 +217,7 @@ pub const RULE_GATES: [(&str, RuleGate); 162_usize] = [
         RuleGate::Core(CoreReason::Group),
     ),
     ("isomorphism_type", RuleGate::Feature("equivalence-record")),
+    ("label_set", RuleGate::Feature("capabilities")),
     (
         "labelled_sum_expression",
         RuleGate::Feature("products-and-sums"),

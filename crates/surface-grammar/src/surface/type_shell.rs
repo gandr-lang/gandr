@@ -604,7 +604,8 @@ fn add_type_rules(
     // declaration's implicit `[i : Size]` binds. Postfix in the path band,
     // so `Nat[< i] -> Nat` and `-F Nat[i]` need no parentheses. The same
     // bracket names a method's deduced mode where a view's type reads its
-    // element after it, `View[m](a)`.
+    // element after it, `View[m](a)`, and the grade of a capability, `Cap[1]
+    // {write}` or `Cap[ω] {read}`; a name there is a grade variable.
     //
     // The bracket also reads `Config[.port = 443]`, which the lowering gives a
     // tile out of place: the reader `.#{` of `extension_type` fixes a record's
@@ -644,6 +645,10 @@ fn add_type_rules(
                         tile(TileLabel("=")),
                         Regex::sort(ty),
                     ])),
+                    tile(TileLabel("]")),
+                ]),
+                Regex::seq([
+                    Regex::alt([tile(TileLabel("number")), tile(TileLabel("ω"))]),
                     tile(TileLabel("]")),
                 ]),
             ]),
@@ -897,31 +902,28 @@ fn add_type_rules(
             tile(TileLabel("]")),
         ]),
     ));
-    // The capability `Cap {read, write}`: the authority to exercise the named
-    // operations, each a host interface's operation. `Cap` is reserved as
-    // `Type` and `Path` are, and the optional bracket after it is the grade
-    // the thunk's bracket spells: `Cap[1] {write}` is a consumable
-    // capability, which the checker names and refuses. The operation list is
-    // a brace list of names, the notation the record fixes; no type opens on
-    // `{`, so the list is decided at its first tile. The rule follows the
-    // type atoms so its molds number after theirs: where a damaged type leaves
-    // a stray name, brace or comma that two molds read equally well, the
-    // molder keeps the smaller mold, and the tie falls to the reading the type
-    // had before capabilities. The tree-sitter grammar has no capability, so
-    // the kind is in `PBG_ONLY_KINDS`.
+    // A label set `{read, write}`: a term of the sort `Row` that names no
+    // head, a brace list of names, the notation the record fixes. No other
+    // type opens on `{`, so the set is decided at its first tile. A label is
+    // a name or a type name, so `{Unit}`, a labelled sum with its `+` left
+    // out, reads clean, and the lowering refuses it where it stands. The
+    // capability `Cap {read, write}` applies the prelude's `Cap` to one label
+    // set, and the optional bracket after the head, `Cap[1] {write}`, is the
+    // grade that `staged_type` reads. The rule follows the type atoms so its
+    // molds number after theirs: where a damaged type leaves a stray name,
+    // brace or comma that two molds read equally well, the molder keeps the
+    // smaller mold. The tree-sitter grammar has no label set, so the kind is
+    // in `PBG_ONLY_KINDS`.
     rules.push(rule(
-        RuleName("capability_type"),
+        RuleName("label_set"),
         ty,
         type_atom,
         Regex::seq([
-            tile(TileLabel("Cap")),
-            Regex::optional(Regex::seq([
-                tile(TileLabel("[")),
-                grade_shape(),
-                tile(TileLabel("]")),
-            ])),
             tile(TileLabel("{")),
-            comma1(tile(TileLabel("identifier"))),
+            comma1(Regex::alt([
+                tile(TileLabel("identifier")),
+                tile(TileLabel("type_identifier")),
+            ])),
             tile(TileLabel("}")),
         ]),
     ));
