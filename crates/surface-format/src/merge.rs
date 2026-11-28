@@ -690,11 +690,18 @@ pub fn merged<'leaves, 'source>(
     if respelled != name {
         return None;
     }
+    // A thunk the sugared form laid out opens with `do`, and its block closes
+    // at the definition's end: the function form writes the block after `=`.
+    let laid = matches!(*rest, [Token(_, "thunk"), Token(LeafIndex(at), "do"), ..]
+        if definition.get(at).is_some_and(|leaf| leaf.offside == Offside::Opens));
     let body = match *rest {
         [Token(_, "thunk"), Token(open, "{"), .., Token(close, "}")]
             if closing(&defined, open) == Some(close) =>
         {
             definition.get(open.0.saturating_add(1) .. close.0)?
+        },
+        [Token(_, "thunk"), Token(open, "do"), ..] if laid => {
+            definition.get(open.0.saturating_add(1) .. ends)?
         },
         _ => definition.get(equals.saturating_add(1) .. ends)?,
     };
@@ -763,6 +770,21 @@ pub fn merged<'leaves, 'source>(
         made("=", Material::Token),
         made(" ", Material::Whitespace),
     ]);
+    if laid {
+        out.push(Leaf {
+            offside: Offside::Opens,
+            ..made("", Material::Token)
+        });
+        out.extend_from_slice(inside);
+        out.push(Leaf {
+            offside: Offside::Closes,
+            ..made("", Material::Token)
+        });
+        for leaf in &mut out {
+            leaf.owner = first.owner;
+        }
+        return Some(out);
+    }
     let block = alone(inside) == Alone::No;
     if block {
         out.extend([made("{", Material::Token), made(" ", Material::Whitespace)]);

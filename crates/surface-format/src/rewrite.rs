@@ -606,7 +606,7 @@ pub const REWRITES: [Rewrite; 38] = [
         mold: MoldName(""),
         from: Spelling("= {⏎ s⏎ }"),
         to: Spelling("=⏎ s"),
-        enabled: Enabled::Off,
+        enabled: Enabled::On,
     },
 ];
 

@@ -258,25 +258,25 @@ def succeeded(n : Nat) -> Nat = Succ n
 
 def early(k : Nat) -> Nat = match k {
   | Zero => k
-  | Succ j => {
+  | Succ j =>
     let q = match j {
       | Zero => return j
       | Succ r => pure r
     }
     pure q
-  }
 };
 
 def computed(n : Nat) -> Nat = return succeeded n
 
-def stated(n : Nat) -> Nat = {
+def stated(n : Nat) -> Nat =
   return n;
-};
 
 def nested(n : Nat) -> Nat -> Nat = thunk { fun (x) { Succ x } };
 
 def blocked(n : Nat) -> Nat = match n {
-  | Zero => { let y = succeeded n; y }
+  | Zero =>
+    let y = succeeded n
+    y
   | Succ p => p
 };
 
@@ -308,7 +308,7 @@ fn a_respelled_block_keeps_the_line_ends_of_its_statements_7734()
         "def later : () -> Integer;\ndef later = thunk {\n  let one = 1\n  return one + 1\n};\n";
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
-        "def later() -> Integer = {\n  let one = 1\n  return one + 1\n};\n"
+        "def later() -> Integer =\n  let one = 1\n  return one + 1\n"
     );
 }
 
@@ -1970,7 +1970,9 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         @[runs("2")]
         def becomes() -> Integer = become twice 1
 
-        def block() -> Integer = { let m = twice 1; m };
+        def block() -> Integer =
+          let m = twice 1
+          m
 
         def pair() -> Integer * Integer = *{1, 2};
 
