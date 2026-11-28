@@ -22,4 +22,6 @@ def missing() -> u8 = word +{.1 = *{}};
 
 /// `left_word` gives the word of `left`: the exit code of its compiled program.
 @[runs("9u8")]
-def left_word() -> u8 = { let sum = left; word sum };
+def left_word() -> u8 =
+  let sum = left
+  word sum

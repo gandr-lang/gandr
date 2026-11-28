@@ -22,8 +22,12 @@ def wrapped_byte() -> u8 = u8.wrapping_add 255u8 3u8
 
 /// `answer` calls `twice` on the wrapped sum.
 @[runs("4u8")]
-def answer() -> u8 = { let sum = wrapped_byte; twice sum };
+def answer() -> u8 =
+  let sum = wrapped_byte
+  twice sum
 
 /// `exit_code` gives the answer: the exit code of its compiled program.
 @[runs("4u8")]
-def exit_code() -> u8 = { let value = answer; value };
+def exit_code() -> u8 =
+  let value = answer
+  value

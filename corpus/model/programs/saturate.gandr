@@ -29,11 +29,15 @@ def overflowing() -> u8 + Unit = checked_sum 255u8 1u8
 
 /// A small sum keeps its value.
 @[runs("7u8")]
-def small() -> u8 = { let sum = checked_sum 3u8 4u8; clamp sum };
+def small() -> u8 =
+  let sum = checked_sum 3u8 4u8
+  clamp sum
 
 /// The clamp gives 255 for a large sum.
 @[runs("255u8")]
-def large() -> u8 = { let sum = checked_sum 200u8 100u8; clamp sum };
+def large() -> u8 =
+  let sum = checked_sum 200u8 100u8
+  clamp sum
 
 /// The case reads the checked row with no call between.
 @[runs("255u8")]
@@ -44,4 +48,6 @@ def direct() -> u8 = match u8.checked_add 200u8 100u8 {
 
 /// `saturated` gives the clamped sum: the exit code of its compiled program.
 @[runs("255u8")]
-def saturated() -> u8 = { let value = large; value };
+def saturated() -> u8 =
+  let value = large
+  value

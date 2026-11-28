@@ -26,4 +26,6 @@ def skipped() -> u8 = pick false
 /// `picked` gives the choice for the held flag: the exit code of
 /// its compiled program.
 @[runs("3u8")]
-def picked() -> u8 = { let flag = held; pick flag };
+def picked() -> u8 =
+  let flag = held
+  pick flag
