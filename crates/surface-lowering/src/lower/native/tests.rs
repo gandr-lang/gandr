@@ -903,7 +903,7 @@ fn a_definition_descends_on_the_parameter_its_cases_scrutinise()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec plus(m : Nat, n : Nat) -> -F Nat = match m {{ | Zero => return n | Succ(p) => plus[<] p (Succ n) }};\n"
+        "{NAT}def rec plus(m : Nat, n : Nat) -> -F Nat = match m {{ | Zero => return n | Succ p => plus[<] p (Succ n) }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("plus"));
@@ -987,7 +987,7 @@ fn a_varying_parameter_before_the_staged_one_is_a_leading_binder_626()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec count(acc : Nat, b : Nat) -> -F Nat = match b {{ | Zero => return acc | Succ(p) => count[<] (Succ acc) p }};\n"
+        "{NAT}def rec count(acc : Nat, b : Nat) -> -F Nat = match b {{ | Zero => return acc | Succ p => count[<] (Succ acc) p }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("count"));
@@ -1075,7 +1075,7 @@ fn a_rebuilt_argument_descends_on_the_same_position()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec halve(n : Nat) -> -F Nat = match n {{ | Zero => return Zero | Succ(m) => match m {{ | Zero => return Zero | Succ(q) => {{ let h = halve[<] (Succ q); return Succ h }} }} }};\n"
+        "{NAT}def rec halve(n : Nat) -> -F Nat = match n {{ | Zero => return Zero | Succ m => match m {{ | Zero => return Zero | Succ q => {{ let h = halve[<] (Succ q); return Succ h }} }} }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("halve"));
@@ -1098,7 +1098,7 @@ fn claims_under_cases_on_two_parameters_are_refused_by_name()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec both(m : Nat, n : Nat) -> -F Nat = match m {{ | Zero => match n {{ | Zero => return Zero | Succ(q) => both[<] m q }} | Succ(p) => both[<] p n }};\n"
+        "{NAT}def rec both(m : Nat, n : Nat) -> -F Nat = match m {{ | Zero => match n {{ | Zero => return Zero | Succ q => both[<] m q }} | Succ p => both[<] p n }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let start = source.rfind("both[<]").unwrap_or_default();
@@ -1261,7 +1261,7 @@ fn a_definition_without_a_case_on_a_parameter_stages_its_last()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec count(n : Nat, m : Nat) -> -F Nat = {{ let k = m; match k {{ | Zero => return n | Succ(p) => count[<] n p }} }};\n"
+        "{NAT}def rec count(n : Nat, m : Nat) -> -F Nat = {{ let k = m; match k {{ | Zero => return n | Succ p => count[<] n p }} }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("count"));
@@ -3787,7 +3787,7 @@ fn a_pattern_variable_names_its_field_binder()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def first(m : Maybe(Integer)) -> -F Integer = match m {{ | Some(x) => return x | None => return 0 }};\n"
+        "{MAYBE}def first(m : Maybe(Integer)) -> -F Integer = match m {{ | Some x => return x | None => return 0 }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("first")));
@@ -4476,7 +4476,7 @@ fn a_pattern_of_another_type_is_refused_at_its_arm()
             gandr_surface_syntax::ByteOffset::from(start.saturating_add(pattern.len())),
         )
     };
-    for (name, written) in [("foreign", "Boxed(n)"), ("literal", "1")] {
+    for (name, written) in [("foreign", "Boxed n"), ("literal", "1")] {
         assert_eq!(
             refusal_of(&module, SurfaceName::from(name)),
             LoweringRefusal::MismatchedPattern {
@@ -4836,7 +4836,7 @@ fn a_match_keeps_its_patterns_beside_its_tree()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def pick(m : Maybe(Integer)) -> -F Integer = match m {{ | Some(x) => return x | ? => return 0 }};\n"
+        "{MAYBE}def pick(m : Maybe(Integer)) -> -F Integer = match m {{ | Some x => return x | ? => return 0 }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("pick")));
@@ -4886,7 +4886,7 @@ fn a_match_keeps_its_patterns_beside_its_tree()
         })
         .collect();
     for written in [
-        ("Some(x)", PatternReading::Matched),
+        ("Some x", PatternReading::Matched),
         ("Some", PatternReading::Constructor),
         ("x", PatternReading::Matched),
         ("?", PatternReading::Matched),
@@ -4917,7 +4917,7 @@ fn a_leaf_keeps_its_arm_body_written()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def pick(m : Maybe(Integer), d : Integer) -> -F Integer = match m {{ | Some(x) => return x | None => return d }};\n"
+        "{MAYBE}def pick(m : Maybe(Integer), d : Integer) -> -F Integer = match m {{ | Some x => return x | None => return d }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("pick")));
@@ -4957,7 +4957,7 @@ fn a_relocated_annotation_keeps_its_bytes()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def forget(b : Type, m : Maybe(b)) -> -F Maybe(b) = match m {{ | Some(x) => return (None : Maybe(b)) | None => return m }};\n"
+        "{MAYBE}def forget(b : Type, m : Maybe(b)) -> -F Maybe(b) = match m {{ | Some x => return (None : Maybe(b)) | None => return m }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("forget")));
@@ -6948,7 +6948,7 @@ fn a_matching_lambda_binds_one_lambda_per_column()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def first : (Nat, Nat) -> Nat = fun {{ | Zero, n => n | Succ(m), _ => m }};\n"
+        "{NAT}def first : (Nat, Nat) -> Nat = fun {{ | Zero, n => n | Succ m, _ => m }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let body = body_named(&module, SurfaceName::from("first"));

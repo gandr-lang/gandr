@@ -204,35 +204,35 @@ fn the_paths_of_a_computation_are_surveyed_through_nesting()
     );
     assert_surveyed(SourceText::from(source.as_str()), &[
         (
-            "match n { | Zero => pure n | Succ(p) => pure p }",
+            "match n { | Zero => pure n | Succ p => pure p }",
             Leaves::Never,
         ),
         (
-            "match n { | Zero => return n | Succ(p) => pure p }",
+            "match n { | Zero => return n | Succ p => pure p }",
             Leaves::Sometimes,
         ),
         (
-            "match n { | Zero => pure n | Succ(p) => match p { | Zero => return p | Succ(q) => pure q } }",
+            "match n { | Zero => pure n | Succ p => match p { | Zero => return p | Succ q => pure q } }",
             Leaves::Sometimes,
         ),
         (
-            "match p { | Zero => return p | Succ(q) => pure q }",
+            "match p { | Zero => return p | Succ q => pure q }",
             Leaves::Sometimes,
         ),
         (
-            "match n { | Zero => pure n | Succ(p) => match p { | Zero => pure p | Succ(q) => pure q } }",
+            "match n { | Zero => pure n | Succ p => match p { | Zero => pure p | Succ q => pure q } }",
             Leaves::Never,
         ),
         (
-            "match n { | Zero => return n | Succ(p) => match p { | Zero => return p | Succ(q) => return q } }",
+            "match n { | Zero => return n | Succ p => match p { | Zero => return p | Succ q => return q } }",
             Leaves::Always,
         ),
         (
-            "match p { | Zero => return p | Succ(q) => return q }",
+            "match p { | Zero => return p | Succ q => return q }",
             Leaves::Always,
         ),
         (
-            "match n { | Zero => return n | Succ(p) => return p }",
+            "match n { | Zero => return n | Succ p => return p }",
             Leaves::Always,
         ),
         ("thunk { return Zero }", Leaves::Never),
@@ -379,7 +379,7 @@ fn a_block_final_semicolon_returns_the_unit_in_both_spellings_7733()
 fn a_use_a_local_end_replaces_keeps_its_bytes()
 {
     let source = format!(
-        "{NAT}def twice(n : Nat) -> -F Nat = {{ let m = match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; pure q }} }} ; return Succ m }};\n"
+        "{NAT}def twice(n : Nat) -> -F Nat = {{ let m = match n {{ | Zero => return n | Succ p => {{ let q = match p {{ | Zero => return p | Succ r => pure r }} ; pure q }} }} ; return Succ m }};\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

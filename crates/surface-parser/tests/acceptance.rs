@@ -433,8 +433,8 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Failure>
         "if flag -> -F Integer { pure 1 } else { pure 2 }",
         "if flag -> -F Integer { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
         "if flag { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
-        "match subject -> -F Integer { | Inl(x) => pure x | Inr(y) => pure y }",
-        "match subject with view -> -F Integer { | Inl(x) => pure x | Inr(y) => pure y }",
+        "match subject -> -F Integer { | Inl x => pure x | Inr y => pure y }",
+        "match subject with view -> -F Integer { | Inl x => pure x | Inr y => pure y }",
         "match subject -> -F Integer { }",
         "if flag -> +U[1] (-F Integer) -> -F Integer { pure f } else { pure g }",
     ];
@@ -453,7 +453,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Failure>
 
     let bare = [
         "if flag { pure 1 } else { pure 2 }",
-        "match subject { | Inl(x) => pure x | Inr(y) => pure y }",
+        "match subject { | Inl x => pure x | Inr y => pure y }",
     ];
     for src in bare {
         let result = parse(pbg, SourceText::from(src))?;

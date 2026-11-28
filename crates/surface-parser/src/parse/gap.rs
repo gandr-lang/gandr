@@ -2413,10 +2413,10 @@ mod tests
             "  match a where",
             "    | Zero => match b where",
             "      | Zero => yes",
-            "      | Succ(_q) => no",
-            "    | Succ(p) => match b where",
+            "      | Succ _q => no",
+            "    | Succ p => match b where",
             "      | Zero => no",
-            "      | Succ(q) => pick[<] p q yes no",
+            "      | Succ q => pick[<] p q yes no",
             "",
             "def next = 1;",
         ];

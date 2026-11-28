@@ -4,7 +4,7 @@ def first(n : Nat) -> -F Nat =
 
 def sift(n : Nat) -> -F Nat =
   loop {
-    match n { | Zero => { break; } | Succ(p) => { tick p; continue; } }
+    match n { | Zero => { break; } | Succ p => { tick p; continue; } }
   }
   return n
 

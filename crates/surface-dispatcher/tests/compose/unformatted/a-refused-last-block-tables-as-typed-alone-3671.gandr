@@ -11,8 +11,8 @@ rec {
   }
 
   def rec elLevel(n : Nat, u : ULevel n) -> -F Type = match u {
-      | NatV(m) => return Nat
-      | TypeV(m) => return (ULevel(m))
-      | PiV(m, a, b) => return (+U ((x : elLevel [<] m a) -> -F elLevel [<] m (b x)))
+      | NatV m => return Nat
+      | TypeV m => return (ULevel(m))
+      | PiV m a b => return (+U ((x : elLevel [<] m a) -> -F elLevel [<] m (b x)))
     };
 }
