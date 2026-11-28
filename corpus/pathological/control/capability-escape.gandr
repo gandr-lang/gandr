@@ -1,4 +1,4 @@
-@![features(("capabilities", "data-parameters", "effect-handlers", "explicit-exits", "imports", "modules", "records"))]
+@![features(("capabilities", "effect-handlers", "explicit-exits", "imports", "modules", "records"))]
 
 // A capability returned out of the scope that minted it.
 //
@@ -14,7 +14,7 @@
 import std.process
 
 @[refuses("CapabilityEscaped")]
-def leak() -> Cap { exit } = effect c : std.process.Exit.Eff {
+def leak() -> Cap[exit] = effect c : std.process.Exit.Eff {
   return c
 } handle {
   | pure(x) => x
