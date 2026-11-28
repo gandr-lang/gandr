@@ -13,17 +13,17 @@
 //!
 //! [Pham-2026-classifying_capabilities]: https://doi.org/10.1145/3839474 "Pham, Bračevac, Xu, Zhao and Odersky, Classifying Capabilities"
 
-@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
+@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
 
 // The filesystem's host interface.
 import std.fs
 
 /// `fs` gives the host read and write authority.
 @[owes(1)]
-def fs : Cap { read, write };
+def fs : Cap[read, write]
 
 /// A reader that asks only for reading.
-pub def peek(c : Cap { read }) -> [std.fs.Eff] String =
+pub def peek(c : Cap[read]) -> [std.fs.Eff] String =
   c.read "notes"
 
 /// `granted` passes read and write authority to `peek`.
@@ -32,5 +32,5 @@ def granted() -> [std.fs.Eff] String =
 
 /// A holder of reading alone cannot write.
 @[refuses("CapabilityOutsideAuthority")]
-def save(c : Cap { read }) -> [std.fs.Eff] Unit =
+def save(c : Cap[read]) -> [std.fs.Eff] Unit =
   c.write "notes" "draft"
