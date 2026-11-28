@@ -400,7 +400,7 @@ run = '''
 set -euo pipefail
 mapfile -t fixtures < <(git ls-files -- 'crates/*.gandr' ':(exclude)crates/*/unformatted/*')
 .config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check "${fixtures[@]}"
-exec .config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std
+exec .config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/sketch corpus/surface crates/surface-corpus/strict library/std
 '''
 
 # The standard library's documentation site, written as `gandr doc` writes a
