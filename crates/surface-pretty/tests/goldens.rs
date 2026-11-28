@@ -7628,8 +7628,8 @@ fn a_row_writes_each_instance_by_its_label_2271()
         declared_whole(&source, (ty, body), PageWidth::from(120_u32)),
         Maybe::Present((
             String::from(
-                "def down[r : Region, r1 : Region](a : Cap {print} at r, b : Cap {print} at \
-                 r1) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit = *{};"
+                "def down[r : Region, r1 : Region](a : (Cap {print}) at r, b : (Cap {print}) \
+                 at r1) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit = *{};"
             ),
             Fidelity::Faithful
         )),
@@ -7754,7 +7754,7 @@ fn a_labelled_theory_entry_spells_its_label_3230()
     assert_eq!(
         declared_whole(&CoreSource::new(&core, &[]), (ty, body), wide),
         Maybe::Present((
-            String::from("def down[r : Region](a : Cap {get} at r) -> [r : State] Unit = *{};"),
+            String::from("def down[r : Region](a : (Cap {get}) at r) -> [r : State] Unit = *{};"),
             Fidelity::Faithful
         )),
         "with no manifest the header is the elaborated one"
@@ -8344,11 +8344,11 @@ fn a_scoped_capability_names_its_scope_400()
     let named = CoreSource::new(&core, &[]).scoped(&both);
     assert_eq!(
         spelled(&named, ty(outer)),
-        faithful(Written("Cap {exit} at c"))
+        faithful(Written("(Cap {exit}) at c"))
     );
     assert_eq!(
         spelled(&named, ty(inner)),
-        faithful(Written("Cap {exit} at e"))
+        faithful(Written("(Cap {exit}) at e"))
     );
     assert_eq!(spelled(&named, ty(held)), faithful(Written("Cap {exit}")));
     let one = [Some(Name::from("c"))];

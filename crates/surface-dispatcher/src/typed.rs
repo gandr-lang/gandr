@@ -9514,7 +9514,7 @@ mod tests
         let table = hosted_table(source);
         let used = || answer(&table, source, SourceText::from("c\n"));
         assert!(
-            matches!(used(), Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
+            matches!(used(), Maybe::Present(Answer { ref ty, .. }) if ty == "(Cap {exit}) at c"),
             "a capability in the scope's subject names the scope: {:?}",
             used()
         );
@@ -9522,7 +9522,7 @@ mod tests
         let read = table.read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
         let scoped: Vec<&RoundTrip> = read
             .iter()
-            .filter(|read| read.spelled == "Cap {exit} at c")
+            .filter(|read| read.spelled == "(Cap {exit}) at c")
             .map(|read| &read.trip)
             .collect();
         assert!(
@@ -9540,7 +9540,7 @@ mod tests
         let table = hosted_table(source);
         let capability = answer(&table, source, SourceText::from("c\n"));
         assert!(
-            matches!(capability, Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
+            matches!(capability, Maybe::Present(Answer { ref ty, .. }) if ty == "(Cap {exit}) at c"),
             "a capability names its scope past the hold around it: {capability:?}"
         );
         let kept = answer(&table, source, SourceText::from("k\n"));
