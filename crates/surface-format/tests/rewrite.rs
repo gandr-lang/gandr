@@ -2305,12 +2305,12 @@ fn a_module_member_s_product_is_written_in_its_braces()
 }
 
 /// The sugared form writes a block in braces after an opener in its layout
-/// form when the block spans lines: the opener ends its line, each statement
-/// stands on a line of its own, and neither brace nor the `;` after the close
-/// is written. A lambda's block opens with `do`, a nested block closes with
-/// no line of its own, and a comment keeps its line. A block of one
-/// expression and a block on one line keep their braces. The explicit form
-/// keeps the braces as the source writes them.
+/// form: the opener ends its line, each statement stands on a line of its
+/// own, and neither brace nor the `;` after the close is written. A block on
+/// one line takes its layout form as one across lines does. A lambda's block
+/// opens with `do`, a nested block closes with no line of its own, and a
+/// comment keeps its line. A block of one expression keeps its braces. The
+/// explicit form keeps the braces as the source writes them.
 #[test]
 fn a_block_in_braces_after_an_opener_is_written_in_its_layout_form()
 {
@@ -2322,6 +2322,10 @@ fn a_block_in_braces_after_an_opener_is_written_in_its_layout_form()
         "  let y = x;\n",
         "  y\n",
         "};\n",
+        "\n",
+        "def g(x : Integer) -> Integer = { let y = x; y + 1 };\n",
+        "\n",
+        "def u(x : Integer) -> Integer = { let y = x; return y; };\n",
         "\n",
         "def k(x : Integer) -> Integer = {\n",
         "  let add = fun (y : Integer) {\n",
@@ -2360,6 +2364,14 @@ fn a_block_in_braces_after_an_opener_is_written_in_its_layout_form()
           let y = x
           y
 
+        def g(x : Integer) -> Integer =
+          let y = x
+          y + 1
+
+        def u(x : Integer) -> Integer =
+          let y = x
+          return y;
+
         def k(x : Integer) -> Integer =
           let add = fun (y : Integer) do
             let w = y
@@ -2381,6 +2393,10 @@ fn a_block_in_braces_after_an_opener_is_written_in_its_layout_form()
           let y = x
           y
         };
+
+        def g(x : Integer) -> Integer = { let y = x; y + 1 };
+
+        def u(x : Integer) -> Integer = { let y = x; return y; };
 
         def k(x : Integer) -> Integer = {
           let add = fun (y : Integer) {

@@ -150,10 +150,11 @@ pub enum RewriteName
     /// `s.m`; both forms write the selection alone, the one spelling of the
     /// call.
     BareRun,
-    /// A statement block after an opener: `= {⏎ s⏎ }` and `=⏎ s`, `if c {⏎ s⏎
-    /// }` and `if c then⏎ s`, `fun (x) {⏎ s⏎ }` and `fun (x) do⏎ s`, when the
-    /// block spans lines and no bracket holds it; only the sugared form moves
-    /// it, and the explicit form keeps the braces as the source writes them.
+    /// A statement block after an opener: `= { s; t }` and `=⏎ s⏎ t`, `if c {
+    /// s; t }` and `if c then⏎ s⏎ t`, `fun (x) { s; t }` and `fun (x) do⏎ s⏎
+    /// t`, on one line or across lines, where no bracket holds it; only the
+    /// sugared form moves it, and the explicit form keeps the braces as the
+    /// source writes them.
     BlockLayout,
 }
 
@@ -1901,15 +1902,17 @@ impl<'source> Respelling<'_, 'source>
     /// - ensures: `spelled` unchanged unless the rewrite is chosen and the form
     ///   holds a block that [`Self::statement_blocks`] lists; otherwise each
     ///   such block's `{` written as its opener, empty or `then` or `do`, each
-    ///   of its `;` empty, and its `}` empty, each played as the layout pass
-    ///   plays the part of a parsed layout block.
+    ///   `;` between two of its statements empty, and its `}` empty, each
+    ///   played as the layout pass plays the part of a parsed layout block. A
+    ///   `;` after its last statement stays written.
     /// - panics: none.
     /// - executable: none — the clause names the parts of a layout block, which
     ///   no predicate on the leaves states more simply.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a block after a `=` that spans lines is written in
-    ///   its layout form, and a block on one line keeps its braces.
+    /// - hypothesis: L3 — a block after a `=` is written in its layout form, on
+    ///   one line or across lines, with the `;` after its last statement, and a
+    ///   block of one expression keeps its braces.
     /// - witness: `tests::rewrite::a_block_in_braces_after_an_opener_is_written_in_its_layout_form`
     ///
     /// # Cost
@@ -1969,9 +1972,11 @@ impl<'source> Respelling<'_, 'source>
 
     /// The statement blocks in braces that the form at `at` holds as its own
     /// tiles and that the layout form can write: each holds a statement, and
-    /// so a separator, written or not, spans lines, its `{` ends its line,
-    /// each `;` ends its line, its `}` starts its line and ends it but for a
-    /// `;` after it, and no bracket holds it. A block of one expression keeps
+    /// so a separator, written or not, and no bracket holds it. The layout
+    /// form breaks the block's lines, so the lines that the source writes do
+    /// not decide it. A block's separators are the written `;` between two of
+    /// its statements: a `;` after its last statement makes the block's value
+    /// the unit, and stays. A block of one expression keeps
     /// its braces: the lowering reads a laid block of one expression as that
     /// expression. Each block's opener is the one the layout pass reads
     /// there: none after `=`, `=>` or `else`, `then` for the first block of a
@@ -1997,7 +2002,12 @@ impl<'source> Respelling<'_, 'source>
         let mut blocks = Vec::new();
         let mut current: Option<Braced> = None;
         let mut separated = false;
+        // The written `;` that the child before was. A `;` right before the
+        // block's `}` ends its last statement, so the block's value is the
+        // unit: the layout form writes it too.
+        let mut trailing: Option<ByteSpan> = None;
         for child in written_children(self.grammar, self.tree, at) {
+            let after = trailing.take();
             let Some(NodeLabel::Tile(mold)) = self.tree.node(child).map(Node::label)
             else {
                 continue;
@@ -2024,6 +2034,7 @@ impl<'source> Respelling<'_, 'source>
                         separated = true;
                         if written == ";" {
                             block.separators.push(span);
+                            trailing = Some(span);
                         }
                     }
                 },
@@ -2036,6 +2047,9 @@ impl<'source> Respelling<'_, 'source>
                         return Vec::new();
                     }
                     block.close = span;
+                    if let Some(last) = after {
+                        block.separators.retain(|&separator| separator != last);
+                    }
                     // A form writes all its blocks in one form: a layout
                     // block beside a braced one of the same form reads as
                     // neither spelling.
@@ -2064,19 +2078,10 @@ impl<'source> Respelling<'_, 'source>
         block: &Braced,
     ) -> Option<Spelling>
     {
-        let ends_line = |span: ByteSpan| self.line_break(span.end(), Toward::Next);
-        if !ends_line(block.open)
-            || !block.separators.iter().all(|&span| ends_line(span))
-            || !self.line_break(block.close.start(), Toward::Previous)
-            || self.bracketed(block.open)
-        {
+        if self.bracketed(block.open) {
             return None;
         }
-        let after = self.token(block.close.end(), Toward::Next);
-        if after.is_some_and(|leaf| <&str>::from(leaf.text) != ";") && !ends_line(block.close) {
-            return None;
-        }
-        let before = self.token(block.open.start(), Toward::Previous)?;
+        let before = self.token_before(block.open.start())?;
         match (<&str>::from(before.text), host) {
             ("=" | "=>" | "else", _) => Some(Spelling("")),
             (_, "if_expression") => Some(Spelling("then")),
@@ -2085,54 +2090,20 @@ impl<'source> Respelling<'_, 'source>
         }
     }
 
-    /// The nearest token of the form with text, from `from` toward `toward`.
+    /// The nearest token of the form with text before `from`.
     ///
     /// # Specification
     /// trivial.
-    fn token(
+    fn token_before(
         &self,
         from: ByteOffset,
-        toward: Toward,
     ) -> Option<Leaf<'source>>
     {
         let at = self.leaves.partition_point(|leaf| leaf.span.start() < from);
         let written = |leaf: &&Leaf<'source>| {
             leaf.material == Material::Token && !<&str>::from(leaf.text).is_empty()
         };
-        match toward {
-            Toward::Next => self.leaves.get(at ..)?.iter().find(written).copied(),
-            Toward::Previous => self.leaves.get(.. at)?.iter().rev().find(written).copied(),
-        }
-    }
-
-    /// Whether a line break stands between `from` and the nearest token with
-    /// text toward `toward`, or no such token stands in the form.
-    ///
-    /// # Specification
-    /// trivial.
-    fn line_break(
-        &self,
-        from: ByteOffset,
-        toward: Toward,
-    ) -> bool
-    {
-        let at = self.leaves.partition_point(|leaf| leaf.span.start() < from);
-        let text = |leaf: &Leaf<'source>| <&str>::from(leaf.text);
-        let gap = |leaf: &&Leaf<'source>| leaf.material != Material::Token || text(leaf).is_empty();
-        let broken = |leaf: &Leaf<'source>| {
-            leaf.material == Material::Whitespace && text(leaf).contains('\n')
-        };
-        match toward {
-            Toward::Next => {
-                let rest = self.leaves.get(at ..).unwrap_or_default();
-                let run = rest.iter().take_while(gap).count();
-                run == rest.len() || rest.get(.. run).unwrap_or_default().iter().any(broken)
-            },
-            Toward::Previous => {
-                let rest = self.leaves.get(.. at).unwrap_or_default();
-                rest.iter().rev().take_while(gap).any(broken)
-            },
-        }
+        self.leaves.get(.. at)?.iter().rev().find(written).copied()
     }
 
     /// Whether a bracket holds the token at `span`: a parenthesis, a square
@@ -4443,16 +4414,6 @@ struct Braced
     separators: Vec<ByteSpan>,
     /// The span of its `}`.
     close: ByteSpan,
-}
-
-/// Which way a search through a form's leaves goes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Toward
-{
-    /// Toward the form's end.
-    Next,
-    /// Toward the form's start.
-    Previous,
 }
 
 /// The application `f a`, a call written by juxtaposition.
