@@ -18,7 +18,25 @@
 //!   program
 //! - see: `../../../library/std/src/io.gandr` — `Io.Eff` and `Scripted`
 
-@![features(("call-by-push-value", "conditionals", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "modules", "named-instances", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "records", "signature-models", "structural-recursion", "universes"))]
+@![features((
+  "call-by-push-value",
+  "conditionals",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "native-lists",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "records",
+  "signature-models",
+  "structural-recursion",
+  "universes"
+))]
 
 // The bytes of a buffer and of a tape.
 import std.list (List)
@@ -53,10 +71,10 @@ def rec copy(buffer : List u8, passes : Passes) -> [
 /// The run of `copy` under `Scripted`, from a tape whose input is `input`:
 /// the tape after it.
 def copied(input : List u8, buffer : List u8, passes : Passes) -> Tape =
-  let program : Tape -> Tape = handle io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
+  let program : Tape -> Tape = effect io : Io.Eff with sort F = Integer with sort B = List u8 with sort N = Integer with sort D = Returned with sort E = Shut {
     copy buffer passes
     pure fun (tape) { pure tape }
-  } with Scripted
+  } handle Scripted
   program (Tape input #[])
 
 /// Five passes.

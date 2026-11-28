@@ -17,7 +17,25 @@
 //! - see: `../../../library/std/src/ptr.gandr` — `Ptr.Eff` and `Extent`
 //! - see: `../../../crates/boot-core/src/search.rs` — the Rust functions
 
-@![features(("call-by-push-value", "conditionals", "data-parameters", "dependent-functions", "effect-handlers", "imports", "let-statements", "modules", "named-instances", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "signature-models", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "conditionals",
+  "data-parameters",
+  "dependent-functions",
+  "effect-handlers",
+  "imports",
+  "let-statements",
+  "modules",
+  "named-instances",
+  "native-lists",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "signature-models",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // The bytes of a memory of `Extent`.
 import std.list (List)
@@ -142,10 +160,10 @@ def outcome(ended : Ended) -> Outcome =
 /// The answer of `find_byte` for `byte` in `bytes`, under `Extent`. The
 /// extent holds the bytes alone, from the address 4096.
 def byte_in(bytes : List u8, byte : u8) -> Outcome =
-  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
     let found = find_byte (Range 4096u64 (counted bytes)) byte
     pure fun (memory) { pure Gave (word found) memory }
-  } with Extent
+  } handle Extent
   outcome (program (Memory 4096u64 bytes))
 
 /// The answer of `find_range` for `needle` in `bytes`, under `Extent`. The
@@ -153,10 +171,10 @@ def byte_in(bytes : List u8, byte : u8) -> Outcome =
 /// range ends at the end of the extent.
 def range_in(bytes : List u8, needle : List u8) -> Outcome =
   let start = u64.wrapping_add 4096u64 (size needle)
-  let program : Memory -> Ended = handle p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
+  let program : Memory -> Ended = effect p : Ptr.Eff with sort A = u64 with sort W8 = u8 with sort W16 = u16 with sort W32 = u32 with sort W64 = u64 {
     let found = find_range (Range start (counted bytes)) (Range 4096u64 (counted needle))
     pure fun (memory) { pure Gave (word found) memory }
-  } with Extent
+  } handle Extent
   outcome (program (Memory 4096u64 (joined bytes needle)))
 
 /// A byte is found at its first position: absent from an empty range, at 0
