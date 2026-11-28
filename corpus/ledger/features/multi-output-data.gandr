@@ -33,8 +33,8 @@ def rec size(e : Expr) -> Integer =
   match e where
     | Lit n => 1
     | Add a b => { let x = size[<] a; let y = size[<] b; x + y + 1 }
-    | Share(x).%left => size[<] x
-    | Share(x).%right => size[<] x
+    | (Share x).%left => size[<] x
+    | (Share x).%right => size[<] x
 
 /// `twice` adds the sizes of both ports of one share.
 @[runs("3")]

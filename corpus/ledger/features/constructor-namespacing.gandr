@@ -59,8 +59,8 @@ data Expr : Type where
 def rec size(e : Expr) -> Integer =
   match e where
     | Expr.Lit n => 1
-    | Expr.Share(x).%left => size[<] x
-    | Expr.Share(x).%right => size[<] x
+    | (Expr.Share x).%left => size[<] x
+    | (Expr.Share x).%right => size[<] x
 
 /// A port built by its qualified name.
 @[runs("1")]
