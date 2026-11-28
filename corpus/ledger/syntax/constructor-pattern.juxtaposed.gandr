@@ -1,0 +1,11 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
+/// `constructor_pattern.juxtaposed`: a constructor pattern applies its fields
+/// by juxtaposition, `Push x _`.
+data Stack : Type where
+  | Empty : Stack
+  | Push : (x : Integer, rest : Stack) --> Stack
+def top(xs : Stack) -> Integer =
+  match xs where
+    | Push x _ => x
+    | Empty => 0

@@ -1,0 +1,11 @@
+@![features(("let-statements", "nominal-data", "pattern-matching", "universes"))]
+
+/// `parenthesized_pattern`: a pattern in parentheses is one field of a
+/// constructor pattern, `Push x (Push y _)`.
+data Stack : Type where
+  | Empty : Stack
+  | Push : (x : Integer, rest : Stack) --> Stack
+def second(xs : Stack) -> Integer =
+  match xs where
+    | Push _ (Push y _) => y
+    | _ => 0
