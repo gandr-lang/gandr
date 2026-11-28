@@ -27,6 +27,7 @@ use crate::store::Store;
 use crate::tree::Source;
 use crate::tree::Tree;
 use crate::tree::TreeError;
+use crate::workspace;
 
 /// The kind of the recovery records.
 pub const RECOVERY: Kind = Kind("recovery");
@@ -82,6 +83,31 @@ pub fn packages(kind: Kind) -> &'static [&'static str]
             "gandr-surface-render-terminal",
         ]
     }
+}
+
+/// The directories below `crates/` of the tool of the kind `kind`, in name
+/// order, each one time.
+///
+/// They are the closure of each package that computes the kind in the output
+/// of `cargo metadata`, with the package of the writers.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn tool_packages(
+    metadata: &serde_json::Value,
+    kind: Kind,
+) -> Vec<String>
+{
+    let mut directories: Vec<String> = packages(kind)
+        .iter()
+        .flat_map(|package| workspace::closure(metadata, package))
+        .chain([TOOL_DIRECTORY.to_owned()])
+        .collect();
+    directories.sort();
+    directories.dedup();
+    directories
 }
 
 /// The writer of the values of one kind, under one grammar.
@@ -169,6 +195,8 @@ pub enum ComputeError
     Refusals(RefusalsError),
     /// The store could not be read or written.
     Store(io::Error),
+    /// `cargo metadata` gave no packages of the workspace.
+    Metadata(String),
 }
 
 impl fmt::Display for ComputeError
@@ -195,6 +223,7 @@ impl fmt::Display for ComputeError
             } => write!(f, "{name}: {error}"),
             Self::Refusals(ref error) => write!(f, "{error}"),
             Self::Store(ref error) => write!(f, "the store: {error}"),
+            Self::Metadata(ref error) => write!(f, "{error}"),
         }
     }
 }
@@ -646,6 +675,41 @@ pub fn refusals(
         values,
         parts,
     }))
+}
+
+/// The refusals of the work tree of the checkout `root`, under the tool of
+/// that work tree.
+///
+/// The values come from the list that `store` holds for the inputs of the
+/// walk, or from one walk of the checkout, which fills `store`. A run on a
+/// tree whose corpus, library and tool an earlier run read thus starts no
+/// walk. An earlier run of `outputs` on such a tree is such a run.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ComputeError`] when cargo, the tree, the walk or the store refuses.
+#[inline]
+pub fn work_tree_refusals(
+    store: &Store,
+    root: &Path,
+) -> Result<Values, ComputeError>
+{
+    let metadata = workspace::metadata(root).map_err(ComputeError::Metadata)?;
+    let packages = tool_packages(&metadata, REFUSALS);
+    let packages: Vec<&str> = packages.iter().map(String::as_str).collect();
+    let manifests = workspace::closure(&metadata, TOOL_PACKAGE);
+    let manifests: Vec<&str> = manifests.iter().map(String::as_str).collect();
+    let tree = Tree::of_work_tree(root, &root.join("target")).map_err(ComputeError::Tree)?;
+    let tool = tree
+        .tool(&packages, &manifests)
+        .map_err(ComputeError::Tree)?;
+    refusals(store, &tree, &tool, Some(root))?.ok_or_else(|| {
+        ComputeError::Refusals(RefusalsError {
+            faults: vec![root.to_path_buf()],
+        })
+    })
 }
 
 #[cfg(test)]
