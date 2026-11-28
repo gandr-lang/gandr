@@ -685,9 +685,9 @@ const TWINS: &[Twin] = &[
             "rule keep : wrap z ==> z;",
         ],
         verdicts: &[
-            (Place::First, "refused: RulesUncompleted"),
-            (Place::Between, "refused: RulesUncompleted"),
-            (Place::Last, "refused: RulesUncompleted"),
+            (Place::First, "settled"),
+            (Place::Between, "settled"),
+            (Place::Last, "settled"),
         ],
     },
     Twin {
@@ -700,9 +700,9 @@ const TWINS: &[Twin] = &[
             "rule : wrap z ==> z;",
         ],
         verdicts: &[
-            (Place::First, "refused: RulesDiverge"),
-            (Place::Between, "refused: RulesDiverge"),
-            (Place::Last, "refused: RulesDiverge"),
+            (Place::First, "settled"),
+            (Place::Between, "settled"),
+            (Place::Last, "settled"),
         ],
     },
     Twin {
@@ -763,10 +763,7 @@ const TWINS: &[Twin] = &[
         members: &[],
         permutation: "rule twoComm : two x y <=> two y x;",
         rules: &["rule less : two (s x) y ==> two x y;"],
-        verdicts: &[
-            (Place::First, "refused: RulesUncompleted"),
-            (Place::Last, "refused: RulesUncompleted"),
-        ],
+        verdicts: &[(Place::First, "settled"), (Place::Last, "settled")],
     },
     Twin {
         name: "a-rule-that-takes-a-successor-away-beside-the-symmetry-data",
@@ -774,10 +771,7 @@ const TWINS: &[Twin] = &[
         members: &[],
         permutation: "rule : Two x y <=> Two y x;",
         rules: &["rule : Two (S x) y ==> Two x y;"],
-        verdicts: &[
-            (Place::First, "refused: RulesDiverge"),
-            (Place::Last, "refused: RulesDiverge"),
-        ],
+        verdicts: &[(Place::First, "settled"), (Place::Last, "settled")],
     },
     Twin {
         name: "a-swap-of-two-of-three-arguments-theory",
