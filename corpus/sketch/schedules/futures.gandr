@@ -34,4 +34,4 @@ def runToCompletion[A : Type](task : Poll A) -> [Partial] A =
 
 /// A program's executor, chosen by the handler around its body.
 def main() -> [Io] Unit =
-  handle serve() with Executor.threadPool(4)
+  effect serve() handle Executor.threadPool(4)
