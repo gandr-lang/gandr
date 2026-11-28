@@ -6,18 +6,27 @@
 //! outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]
 //! ```
 //!
-//! A kind is `hovers`, the hovers of a headline source, `recovery`, the
-//! recovery record of a source, `refusals`, the refusals that `gandr check`
-//! prints for a refusing source, or `roles`, the roles that the highlight
-//! gives a source. `<kinds>` is one kind, two or more kinds with a comma
-//! between them, or `all`. One run answers each kind that it names, and reads
-//! each tree one time. `--print` takes one kind.
+//! A kind is one of these:
+//!
+//! - `captures`, the SVG of a state of a scene of the terminal face;
+//! - `formatted`, the layout of a fixture of the formatter at one page;
+//! - `hovers`, the hovers of a headline source;
+//! - `printed`, a page of the presentation printer;
+//! - `recovery`, the recovery record of a source;
+//! - `refusals`, the refusals that `gandr check` prints for a refusing source;
+//! - `rendered`, a diagnostic that the terminal renderer writes;
+//! - `roles`, the roles that the highlight gives a source.
+//!
+//! `<kinds>` is one kind, two or more kinds with a comma between them, or
+//! `all`. One run answers each kind that it names, and reads each tree one
+//! time. `--print` takes one kind.
 //!
 //! One walk computes the refusals of each source of a tree, and it reads the
 //! files of a checkout. The run walks its own work tree. The binary of a
 //! commit walks any other tree, in the checkout below the target directory.
-//! The tests of the language server give the hovers: the run starts them in
-//! its own work tree, and the binary of a commit starts them in its checkout.
+//! The tests of a package give the values of `captures`, `formatted`,
+//! `hovers`, `printed` and `rendered`. The run starts them in its own work
+//! tree, and the binary of a commit starts them in its checkout.
 //!
 //! With no revision, the tree is the work tree with its changes. The store is
 //! the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs`.
@@ -75,7 +84,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is hovers, recovery, refusals or roles; <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
+const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is captures, formatted, hovers, printed, recovery, refusals, rendered or roles;\n       <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
 
 /// How many changes `difference` prints when the command line names no
 /// count.

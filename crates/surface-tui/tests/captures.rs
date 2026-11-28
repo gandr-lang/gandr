@@ -14,6 +14,8 @@ use gandr_surface_render_remote::conform;
 use gandr_surface_tui::Following;
 use gandr_surface_tui::rendering;
 use gandr_surface_tui::svg;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::given;
 
 /// A scene: the stem of its frames and of its captures, and the first head of
 /// each pane that it shows, in order.
@@ -36,7 +38,9 @@ struct Scene
 ///   before it as the earlier one. The capture at the n-th blank line,
 ///   one-based, equals `tests/captures/<stem>.<n>.svg`, and the scene has one
 ///   capture at least.
-/// - provides: the golden of each capture of the scene.
+/// - provides: the golden of each capture of the scene. Each capture goes to
+///   the store of outputs as a value of the kind `captures`, when the
+///   environment names a run.
 /// - fails: never.
 /// - panics: when a file is missing, a line is not a frame, a state breaks a
 ///   rule, or a capture differs from its file.
@@ -83,8 +87,11 @@ fn captured(scene: Scene)
                 "capture {taken} of {} shows its panes",
                 scene.stem
             );
-            expect_file![captures.join(format!("{}.{taken}.svg", scene.stem))]
-                .assert_eq(&svg(shown));
+            let name = format!("{}.{taken}.svg", scene.stem);
+            let image = svg(shown);
+            let _given = given::give(Kind("captures"), &name, image.as_bytes())
+                .unwrap_or_else(|error| panic!("the capture `{name}` goes to the store: {error}"));
+            expect_file![captures.join(name)].assert_eq(&image);
             continue;
         }
         let frame: RenderFrame = serde_json::from_str(line).expect("each line is a frame");

@@ -19,6 +19,8 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::given;
 
 /// The narrow page.
 const NARROW: u32 = 40;
@@ -124,7 +126,9 @@ fn sources_below(roots: &[&Path]) -> Vec<std::path::PathBuf>
     sources
 }
 
-/// The unformatted input `name`, and its goldens at both pages.
+/// The unformatted input `name`, and its goldens at both pages. Each layout
+/// goes to the store of outputs as a value of the kind `formatted`, when the
+/// environment names a run.
 ///
 /// # Specification
 /// trivial.
@@ -143,11 +147,10 @@ fn golden(name: &Path)
             "{} formats once at {width}",
             name.display()
         );
-        expect_file![
-            root.join("golden")
-                .join(format!("{}.{page}.txt", name.display()))
-        ]
-        .assert_eq(&laid);
+        let golden = format!("{}.{page}.txt", name.display());
+        let _given = given::give(Kind("formatted"), &golden, laid.as_bytes())
+            .unwrap_or_else(|error| panic!("the layout `{golden}` goes to the store: {error}"));
+        expect_file![root.join("golden").join(golden)].assert_eq(&laid);
     }
 }
 
