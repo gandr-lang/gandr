@@ -6,15 +6,18 @@
 //! outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]
 //! ```
 //!
-//! A kind is `recovery`, the recovery record of a source, `refusals`, the
-//! refusals that `gandr check` prints for a refusing source, or `roles`, the
-//! roles that the highlight gives a source. `<kinds>` is one kind, two or
-//! more kinds with a comma between them, or `all`. One run answers each kind
-//! that it names, and reads each tree one time. `--print` takes one kind.
+//! A kind is `hovers`, the hovers of a headline source, `recovery`, the
+//! recovery record of a source, `refusals`, the refusals that `gandr check`
+//! prints for a refusing source, or `roles`, the roles that the highlight
+//! gives a source. `<kinds>` is one kind, two or more kinds with a comma
+//! between them, or `all`. One run answers each kind that it names, and reads
+//! each tree one time. `--print` takes one kind.
 //!
 //! One walk computes the refusals of each source of a tree, and it reads the
 //! files of a checkout. The run walks its own work tree. The binary of a
 //! commit walks any other tree, in the checkout below the target directory.
+//! The tests of the language server give the hovers: the run starts them in
+//! its own work tree, and the binary of a commit starts them in its checkout.
 //!
 //! With no revision, the tree is the work tree with its changes. The store is
 //! the directory that `GANDR_OUTPUT_STORE` names, or `target/outputs`.
@@ -72,7 +75,7 @@ use gandr_workflow_outputs::workspace;
 const WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 /// The usage of the binary.
-const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is recovery, refusals or roles; <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
+const USAGE: &str = "usage: outputs compute <kinds> [--revision <revision>] [--print] [--cost]\n       outputs difference <kinds> --base <revision> [--head <revision>] [--lines <count>] [--cost]\n       a kind is hovers, recovery, refusals or roles; <kinds> is one kind, kinds with a comma between them, or all\n       --print takes one kind";
 
 /// How many changes `difference` prints when the command line names no
 /// count.
@@ -348,11 +351,18 @@ impl Run
         kind: Kind,
     ) -> Result<Option<compute::Values>, String>
     {
-        if kind == compute::REFUSALS {
+        let refusals = kind == compute::REFUSALS;
+        let tested = compute::tested(kind);
+        if refusals || tested.is_some() {
             let work = self.tree(None)?;
             let checkout = (work.id() == tree.id()).then(|| self.root.clone());
-            let values = compute::refusals(&self.store, tree, tool, checkout.as_deref())
-                .map_err(|error| error.to_string())?;
+            let values = match tested {
+                Some(tested) => {
+                    compute::tested_values(&self.store, tree, tool, tested, checkout.as_deref())
+                },
+                None => compute::refusals(&self.store, tree, tool, checkout.as_deref()),
+            }
+            .map_err(|error| error.to_string())?;
             if let Some(ref values) = values {
                 self.parts.extend(values.parts.iter().copied());
             }

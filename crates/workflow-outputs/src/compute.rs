@@ -3,13 +3,16 @@
 //!
 //! The writer of the records and the writer of the roles compute one value
 //! from one source. The refusals of a source read the library and the other
-//! sources, so one walk computes them for each source of a tree.
+//! sources, so one walk computes them for each source of a tree. The values
+//! of a kind in [`TESTED`] come from a run of the tests of its package, which
+//! give each value to the store.
 
 use core::fmt;
 use core::num::NonZeroUsize;
 use core::time::Duration;
 use std::io;
 use std::path::Path;
+use std::process::Command;
 use std::time::Instant;
 
 use anodized::spec;
@@ -17,6 +20,7 @@ use gandr_workflow_output_store::Digest;
 use gandr_workflow_output_store::Kind;
 use gandr_workflow_output_store::Listed;
 use gandr_workflow_output_store::Store;
+use gandr_workflow_output_store::given;
 
 use crate::recovery::RecordError;
 use crate::recovery::Recorder;
@@ -29,6 +33,10 @@ use crate::tree::Tree;
 use crate::tree::TreeError;
 use crate::workspace;
 
+/// The kind of the hovers of the headline sources, which the editor harness
+/// of the language server gives.
+pub const HOVERS: Kind = Kind("hovers");
+
 /// The kind of the recovery records.
 pub const RECOVERY: Kind = Kind("recovery");
 
@@ -39,7 +47,42 @@ pub const REFUSALS: Kind = Kind("refusals");
 pub const ROLES: Kind = Kind("roles");
 
 /// Each kind, in the order of the names.
-pub const KINDS: [Kind; 3] = [RECOVERY, REFUSALS, ROLES];
+pub const KINDS: [Kind; 4] = [HOVERS, RECOVERY, REFUSALS, ROLES];
+
+/// A kind whose values only a test can compute: the tests of its package give
+/// each value to the store.
+#[derive(Clone, Copy, Debug)]
+pub struct Tested
+{
+    /// The kind.
+    pub kind: Kind,
+    /// The package whose tests give the values.
+    pub package: &'static str,
+    /// The filter of nextest that names those tests.
+    pub filter: &'static str,
+    /// The paths of the tree outside the packages that the tests read.
+    pub inputs: &'static [&'static str],
+}
+
+/// Each kind whose values only a test can compute.
+pub const TESTED: [Tested; 1] = [Tested {
+    kind: HOVERS,
+    package: "gandr-surface-lsp",
+    filter: "test(=editor::shapes::the_headline_sources_hover_as_their_goldens)",
+    inputs: &crate::tree::REFUSAL_INPUTS,
+}];
+
+/// The entry of [`TESTED`] of the kind `kind`, or `None` when a writer of
+/// this crate computes the kind.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn tested(kind: Kind) -> Option<&'static Tested>
+{
+    TESTED.iter().find(|tested| tested.kind == kind)
+}
 
 /// The package that holds the writer of each kind. Its closure in the
 /// workspace builds the binary.
@@ -64,7 +107,10 @@ pub const STORE_DIRECTORY: &str = "workflow-output-store";
 #[must_use]
 pub fn packages(kind: Kind) -> &'static [&'static str]
 {
-    if kind == RECOVERY {
+    if kind == HOVERS {
+        &["gandr-surface-lsp"]
+    }
+    else if kind == RECOVERY {
         &[
             "gandr-surface-grammar",
             "gandr-surface-parser",
@@ -94,7 +140,8 @@ pub fn packages(kind: Kind) -> &'static [&'static str]
 ///
 /// They are the closure of each package that computes the kind in the output
 /// of `cargo metadata`, with the package of the writers and the package of
-/// the store.
+/// the store. The closure of a kind in [`TESTED`] holds the development
+/// dependencies of its package, which build its tests.
 ///
 /// # Specification
 /// trivial.
@@ -105,9 +152,15 @@ pub fn tool_packages(
     kind: Kind,
 ) -> Vec<String>
 {
+    let closure: fn(&serde_json::Value, &str) -> Vec<String> = if tested(kind).is_some() {
+        workspace::test_closure
+    }
+    else {
+        workspace::closure
+    };
     let mut directories: Vec<String> = packages(kind)
         .iter()
-        .flat_map(|package| workspace::closure(metadata, package))
+        .flat_map(|package| closure(metadata, package))
         .chain([TOOL_DIRECTORY.to_owned(), STORE_DIRECTORY.to_owned()])
         .collect();
     directories.sort();
@@ -202,6 +255,14 @@ pub enum ComputeError
     Store(io::Error),
     /// `cargo metadata` gave no packages of the workspace.
     Metadata(String),
+    /// The run of the tests of a kind failed.
+    Tests
+    {
+        /// The name of the kind.
+        kind: &'static str,
+        /// The last line that the run wrote.
+        line: String,
+    },
 }
 
 impl fmt::Display for ComputeError
@@ -229,6 +290,9 @@ impl fmt::Display for ComputeError
             Self::Refusals(ref error) => write!(f, "{error}"),
             Self::Store(ref error) => write!(f, "the store: {error}"),
             Self::Metadata(ref error) => write!(f, "{error}"),
+            Self::Tests { kind, ref line } => {
+                write!(f, "the tests of the kind {kind} failed: {line}")
+            },
         }
     }
 }
@@ -715,6 +779,129 @@ pub fn work_tree_refusals(
             faults: vec![root.to_path_buf()],
         })
     })
+}
+
+/// The values of the kind of `tested` of `tree` under the tool `tool`.
+///
+/// The tests of the kind compute the values, so the store holds the list of
+/// each run at the digest of the tool with the inputs of the tests. A tree
+/// with those inputs reads that list and runs no test. Else, with the
+/// directory `checkout` of the tree, the run starts the tests of the kind
+/// there, with `GANDR_OUTPUT_STORE` and `GANDR_OUTPUT_RUN` set, and lists
+/// the values that they give. With no such directory and no list, it gives
+/// `None`.
+///
+/// # Specification
+/// - ensures: the values are in name order.
+///
+/// # Errors
+/// [`ComputeError`] when the tree, the run of the tests or the store
+/// refuses.
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |values| values.as_ref().is_none_or(|values| values.values.is_sorted_by(|left, right| left.0 <= right.0))))]
+#[inline]
+pub fn tested_values(
+    store: &Store,
+    tree: &Tree,
+    tool: &Digest,
+    tested: &Tested,
+    checkout: Option<&Path>,
+) -> Result<Option<Values>, ComputeError>
+{
+    let kind = tested.kind;
+    let mut parts = Vec::new();
+    let started = Instant::now();
+    let inputs = tree.inputs(tested.inputs).map_err(ComputeError::Tree)?;
+    let run = Digest::of_parts([b"run".as_slice(), tool.0.as_slice(), inputs.as_bytes()]).hex();
+    let held = read_list(store, kind, &run)?;
+    parts.push(Part {
+        name: "read the list",
+        count: held.as_ref().map_or(0, |held| held.1.len()),
+        time: started.elapsed(),
+    });
+    if let Some((entries, values)) = held {
+        store
+            .list(kind, tree.id(), &entries)
+            .map_err(ComputeError::Store)?;
+        return Ok(Some(Values {
+            values,
+            computed: 0,
+            parts,
+        }));
+    }
+    let Some(checkout) = checkout
+    else {
+        return Ok(None);
+    };
+    let started = Instant::now();
+    let directory =
+        checkout
+            .join("target/outputs-run")
+            .join(format!("{}.{}", kind.0, std::process::id()));
+    match std::fs::remove_dir_all(&directory) {
+        Ok(()) => {},
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+        Err(error) => return Err(ComputeError::Store(error)),
+    }
+    let root = std::path::absolute(store.root()).map_err(ComputeError::Store)?;
+    let ran = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .args(["nextest", "run", "--locked", "--no-fail-fast"])
+        .args(["--package", tested.package, "-E", tested.filter])
+        .env(given::STORE, &root)
+        .env(given::RUN, &directory)
+        .current_dir(checkout)
+        .output()
+        .map_err(|error| ComputeError::Tests {
+            kind: kind.0,
+            line: error.to_string(),
+        })?;
+    if !ran.status.success() {
+        let line = String::from_utf8_lossy(&ran.stderr)
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or_default()
+            .to_owned();
+        return Err(ComputeError::Tests { kind: kind.0, line });
+    }
+    let entries = given::entries(&directory, kind).map_err(ComputeError::Store)?;
+    let mut values = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let value = store
+            .get(kind, &entry.key)
+            .map_err(ComputeError::Store)?
+            .ok_or_else(|| {
+                ComputeError::Store(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!(
+                        "the run gave {} and the store holds no value of it",
+                        entry.name
+                    ),
+                ))
+            })?;
+        values.push((
+            Source {
+                name: entry.name.clone(),
+                object: entry.object.clone(),
+            },
+            value,
+        ));
+    }
+    parts.push(Part {
+        name: "run the tests",
+        count: values.len(),
+        time: started.elapsed(),
+    });
+    for name in [run.as_str(), tree.id()] {
+        store
+            .list(kind, name, &entries)
+            .map_err(ComputeError::Store)?;
+    }
+    let _removed = std::fs::remove_dir_all(&directory);
+    Ok(Some(Values {
+        computed: values.len(),
+        values,
+        parts,
+    }))
 }
 
 #[cfg(test)]
