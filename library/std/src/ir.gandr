@@ -1,4 +1,15 @@
-@![features(("builtin-declarations", "data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "builtin-declarations",
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // `std.ir`: Dybjer and Setzer's codes for inductive-recursive definitions,
 // as data, with the arguments a code asks for and their decode.
@@ -44,17 +55,17 @@ pub data IR(d : Type) : Type[+, 1] where
 @[builtin("irArgs")]
 pub def rec args(d : Type, c : IR d, x : Type, t : x -> d) -> Type =
   match c where
-    | Iota(e) => return Unit
-    | SigmaC(a, f) => return (Sig a (fun (y) { args[<] d (f y) x t }))
-    | DeltaC(a, f) => return (Sig (a -> x) (fun (h) { args[<] d (f (fun (z) { t (h z) })) x t }))
+    | Iota e => return Unit
+    | SigmaC a f => return (Sig a (fun (y) { args[<] d (f y) x t }))
+    | DeltaC a f => return (Sig (a -> x) (fun (h) { args[<] d (f (fun (z) { t (h z) })) x t }))
 
 /// The decode of the arguments a code asks for. The code's case refines their
 /// type, since the marked call stages the code.
 @[builtin("irDecode"), form(explicit)]
 pub def rec decodeArgs(d : Type, c : IR d, x : Type, t : x -> d, v : args d c x t) -> d =
   match c where
-    | Iota(e) => e
-    | SigmaC(a, f) => match v where
-      | MkSig(y, r) => decodeArgs[<] d (f y) x t r
-    | DeltaC(a, f) => match v where
-      | MkSig(h, r) => decodeArgs[<] d (f (fun (z) { t (h z) })) x t r
+    | Iota e => e
+    | SigmaC a f => match v where
+      | MkSig y r => decodeArgs[<] d (f y) x t r
+    | DeltaC a f => match v where
+      | MkSig h r => decodeArgs[<] d (f (fun (z) { t (h z) })) x t r

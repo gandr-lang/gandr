@@ -21,7 +21,18 @@
 //! [Youssef-2025-coherence_algebraic_rewriting_systems_decreasingness]: https://doi.org/10.70675/ac84f832z1632z49d3za008zba5df4cfed2e "Youssef, Coherence of algebraic rewriting systems by decreasingness"
 //! [Dershowitz-1979-proving_termination_multiset_orderings]: https://doi.org/10.1145/359138.359142 "Dershowitz and Manna, Proving Termination with Multiset Orderings"
 
-@![features(("data-parameters", "identity-types", "imports", "let-statements", "native-primitives", "nominal-data", "pattern-matching", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "identity-types",
+  "imports",
+  "let-statements",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // `Count`, the order of the binary naturals.
 import "./grade.gandr"
@@ -50,7 +61,7 @@ def same(a : Nat, b : Nat) -> Bool =
 def rec dominant(ls : Labels, top : Nat) -> Labels =
   match ls where
     | Done => Done
-    | Then(l, rest) => match below l top where
+    | Then l rest => match below l top where
       | true => dominant[<] rest top
       | false => Then l (dominant[<] rest l)
 
@@ -63,13 +74,13 @@ pub def measure(ls : Labels) -> Labels = dominant ls Zero
 pub def rec union(a : Labels, b : Labels) -> Labels =
   match a where
     | Done => b
-    | Then(l, rest) => Then l (union[<] rest b)
+    | Then l rest => Then l (union[<] rest b)
 
 /// `ls` with one label equal to `l` taken out, when it holds one.
 def rec without(ls : Labels, l : Nat) -> Labels =
   match ls where
     | Done => Done
-    | Then(k, rest) => match same k l where
+    | Then k rest => match same k l where
       | true => rest
       | false => Then k (without[<] rest l)
 
@@ -78,13 +89,13 @@ def rec without(ls : Labels, l : Nat) -> Labels =
 def rec minus(a : Labels, b : Labels) -> Labels =
   match b where
     | Done => a
-    | Then(l, rest) => minus[<] (without a l) rest
+    | Then l rest => minus[<] (without a l) rest
 
 /// The greatest label of `ls`, at least `top`.
 def rec greatest(ls : Labels, top : Nat) -> Nat =
   match ls where
     | Done => top
-    | Then(l, rest) => match below top l where
+    | Then l rest => match below top l where
       | true => greatest[<] rest l
       | false => greatest[<] rest top
 
@@ -95,9 +106,9 @@ def rec greatest(ls : Labels, top : Nat) -> Nat =
 pub def lower(a : Labels, b : Labels) -> Bool =
   match minus b a where
     | Done => false
-    | Then(l, rest) => match minus a b where
+    | Then l rest => match minus a b where
       | Done => true
-      | Then(k, others) => below (greatest others k) (greatest rest l)
+      | Then k others => below (greatest others k) (greatest rest l)
 
 /// Whether `a` is at most `b` in the multiset order: below it, or the same
 /// multiset.
@@ -105,8 +116,8 @@ pub def atMost(a : Labels, b : Labels) -> Bool =
   match minus b a where
     | Done => match minus a b where
       | Done => true
-      | Then(_k, _others) => false
-    | Then(_l, _rest) => lower a b
+      | Then _k _others => false
+    | Then _l _rest => lower a b
 
 /// The measure of the peak `(v', v ⋆ u)` of the system `X` of Example 3.3.2:
 /// the labels `0` and `21` give `[0, 2]` (Example 3.3.12).

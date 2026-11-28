@@ -27,7 +27,19 @@
 //!
 //! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
-@![features(("data-parameters", "dependent-functions", "explicit-exits", "let-statements", "nominal-data", "pattern-matching", "second-order-rules", "signatures-as-values", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "explicit-exits",
+  "let-statements",
+  "nominal-data",
+  "pattern-matching",
+  "second-order-rules",
+  "signatures-as-values",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 /// A value the fragment computes: an integer or a boolean.
 pub data Value : Type where
@@ -128,7 +140,7 @@ pub def branch(v : Value, t : Type, f : Type) -> Type =
   match v where
     | True => t
     | False => f
-    | Int(_n) => return Void
+    | Int _n => return Void
 
 /// The core transformer: what `e` needs, at the parameter `x` and the table
 /// `spec` over the items `f`, to end in `k` or return into `r`.
@@ -140,16 +152,16 @@ pub def rec wp[f : Type](
   r : Value -> Type
 ) -> Type =
   match e where
-    | Lit(n) => k (Int n)
+    | Lit n => k (Int n)
     | Param => k x
-    | If(c, t, o) => wp[<]
+    | If c t o => wp[<]
       spec
       c
       x
       (fun (v) { branch v (wp[<] spec t x k r) (wp[<] spec o x k r) })
       r
-    | Return(a) => wp[<] spec a x r r
-    | Call(g, a) => wp[<] spec a x (fun (v) { spec g v k }) r
+    | Return a => wp[<] spec a x r r
+    | Call g a => wp[<] spec a x (fun (v) { spec g v k }) r
 
 /// A function's transformer: its body run as a return, guarded so the return
 /// reaches the caller's continuation. It takes the crate's items `f` as its

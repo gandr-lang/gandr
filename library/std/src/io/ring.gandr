@@ -17,7 +17,22 @@
 //! - see: `crates/surface-dispatcher/tests/ring.rs` — the comparison of each
 //!   size and each offset with a `#[repr(C)]` declaration of Rust
 
-@![features(("call-by-push-value", "conditionals", "data-parameters", "imports", "let-statements", "list-case", "native-lists", "native-primitives", "nominal-data", "pattern-matching", "products-and-sums", "structural-recursion", "universes", "visibility"))]
+@![features((
+  "call-by-push-value",
+  "conditionals",
+  "data-parameters",
+  "imports",
+  "let-statements",
+  "list-case",
+  "native-lists",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "products-and-sums",
+  "structural-recursion",
+  "universes",
+  "visibility"
+))]
 
 // The fields of a structure.
 import std.list (List)
@@ -116,7 +131,7 @@ def rec fields_of(all : List Structure, name : String) -> List Field =
   match all where
     | #[] => #[]
     | #[structure, ..rest] => match structure where
-      | Structure(named, size, fields) => if named == name { fields } else {
+      | Structure named size fields => if named == name { fields } else {
         fields_of[<] rest name
       }
 
@@ -126,7 +141,7 @@ def rec size_of(all : List Structure, name : String) -> Integer =
   match all where
     | #[] => 0 - 1
     | #[structure, ..rest] => match structure where
-      | Structure(named, size, fields) => if named == name { size } else { size_of[<] rest name }
+      | Structure named size fields => if named == name { size } else { size_of[<] rest name }
 
 /// The field `name` of `fields` as its offset and its width, or `-1` and `-1`
 /// when no field has the name.
@@ -134,7 +149,7 @@ def rec field_of(fields : List Field, name : String) -> Integer * Integer =
   match fields where
     | #[] => (0 - 1, 0 - 1)
     | #[field, ..rest] => match field where
-      | Field(named, offset, width) => if named == name { (offset, width) } else {
+      | Field named offset width => if named == name { (offset, width) } else {
         field_of[<] rest name
       }
 

@@ -166,7 +166,7 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
   def read(file : Integer, buffer : List u8, k : Returned -> (Tape -> Tape)) -> Tape -> Tape =
     fun (tape) {
       match tape where
-        | Tape(input, output) => {
+        | Tape input output => {
           let held = file == 0
           let filled : List u8 = if held { placed buffer input } else { buffer }
           let rest : List u8 = if held { left buffer input } else { input }
@@ -189,7 +189,7 @@ pub module Scripted : Model(Io.Eff) with sort F = Integer with sort B = List u8 
   ) -> Tape -> Tape =
     fun (tape) {
       match tape where
-        | Tape(input, output) => {
+        | Tape input output => {
           let held = file == 1
           let bytes : List u8 = if held { front buffer count } else { #[] }
           let written : Integer = if held { size bytes } else { bad_file }

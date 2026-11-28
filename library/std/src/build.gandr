@@ -1,4 +1,19 @@
-@![features(("conditionals", "data-parameters", "explicit-exits", "inert-fields", "let-statements", "modules", "native-primitives", "nominal-data", "pattern-matching", "signatures-as-values", "structural-recursion", "text-primitives", "universes", "visibility"))]
+@![features((
+  "conditionals",
+  "data-parameters",
+  "explicit-exits",
+  "inert-fields",
+  "let-statements",
+  "modules",
+  "native-primitives",
+  "nominal-data",
+  "pattern-matching",
+  "signatures-as-values",
+  "structural-recursion",
+  "text-primitives",
+  "universes",
+  "visibility"
+))]
 
 // `std.build`: the theories a project's manifest comes from. A package's
 // `package.gandr` declares `module Package : Model(Gandr.Package)`, and a
@@ -169,7 +184,7 @@ pub def entryType(s : EntrySort) -> Type =
 /// `Opaque` for a constant with none.
 pub def portSort(outputs : Theory) -> EntrySort =
   match outputs where
-    | Theory.Port(name, sort, indices, rest) => entrySort sort
+    | Theory.Port name sort indices rest => entrySort sort
     | _ => Opaque
 
 /// An entry, then the entries after it.
@@ -186,17 +201,17 @@ pub data NoEntries : Type where
 /// A member that is no constant adds no entry.
 def rec chainType(chain : Theory) -> Type =
   match chain where
-    | Theory.Const(name, inputs, outputs, rest) => return (Entries
+    | Theory.Const name inputs outputs rest => return (Entries
       (entryType (portSort outputs))
       (chainType[<] rest))
-    | Theory.Oper(name, inputs, outputs, rest) => chainType[<] rest
+    | Theory.Oper name inputs outputs rest => chainType[<] rest
     | _ => return NoEntries
 
 /// The type of the entries of a model of the presentation `presented`: one
 /// entry for each constant, in the order of the presentation.
 pub def modelType(presented : Theory) -> Type =
   match presented where
-    | Theory.Presents(sorts, opers, rules) => chainType opers
+    | Theory.Presents sorts opers rules => chainType opers
     | _ => return NoEntries
 
 /// The line of the constant `name` whose entry is `x`: `name = value` for a
@@ -211,16 +226,16 @@ def line(name : String, s : EntrySort, x : entryType s) -> String =
 /// The lines of a member chain's entries `v`, one for each constant.
 def rec chainLines(chain : Theory, v : chainType chain) -> String =
   match chain where
-    | Theory.Const(name, inputs, outputs, rest) => match v where
-      | Entry(x, r) => string.append (line name (portSort outputs) x) (chainLines[<] rest r)
-    | Theory.Oper(name, inputs, outputs, rest) => chainLines[<] rest v
+    | Theory.Const name inputs outputs rest => match v where
+      | Entry x r => string.append (line name (portSort outputs) x) (chainLines[<] rest r)
+    | Theory.Oper name inputs outputs rest => chainLines[<] rest v
     | _ => ""
 
 /// The lines of the entries `v` of a model of `presented`, one for each
 /// constant, in the order of the presentation.
 pub def encode(presented : Theory, v : modelType presented) -> String =
   match presented where
-    | Theory.Presents(sorts, opers, rules) => chainLines opers v
+    | Theory.Presents sorts opers rules => chainLines opers v
     | _ => ""
 
 /// The presentation of [`Gandr.Package`], from which its entries' type is
