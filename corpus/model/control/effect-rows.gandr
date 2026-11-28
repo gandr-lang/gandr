@@ -14,7 +14,7 @@
 //!
 //! [Hillerström-2016-liberating_effects_rows_handlers]: https://doi.org/10.1145/2976022.2976033 "Hillerström and Lindley, Liberating Effects with Rows and Handlers"
 
-@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "thunks-and-force"))]
+@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules", "thunks-and-force"))]
 
 // `peek` reads through `std.fs.Eff`.
 // `once` states `Partial`.

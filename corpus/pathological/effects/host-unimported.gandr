@@ -1,4 +1,4 @@
-@![features(("call-by-push-value", "capabilities", "effect-handlers", "effect-rows", "let-statements", "modules", "records"))]
+@![features(("call-by-push-value", "capabilities", "data-parameters", "effect-handlers", "effect-rows", "let-statements", "modules", "records"))]
 
 // A host interface written with no import of its module names no type.
 //

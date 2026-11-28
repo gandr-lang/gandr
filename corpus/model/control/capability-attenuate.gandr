@@ -13,7 +13,7 @@
 //!
 //! [Pham-2026-classifying_capabilities]: https://doi.org/10.1145/3839474 "Pham, Bračevac, Xu, Zhao and Odersky, Classifying Capabilities"
 
-@![features(("capabilities", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
+@![features(("capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules", "visibility"))]
 
 // The filesystem's host interface.
 import std.fs

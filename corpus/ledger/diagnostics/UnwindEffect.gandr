@@ -1,4 +1,4 @@
-@![features(("call-by-push-value", "capabilities", "let-statements", "temporary-access"))]
+@![features(("call-by-push-value", "capabilities", "data-parameters", "let-statements", "temporary-access"))]
 
 /// `UnwindEffect`: an access's unwind performing an effect.
 @[refuses("UnwindEffect")]

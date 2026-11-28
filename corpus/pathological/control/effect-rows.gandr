@@ -1,4 +1,4 @@
-@![features(("call-by-push-value", "capabilities", "effect-rows", "imports", "let-statements", "modules"))]
+@![features(("call-by-push-value", "capabilities", "data-parameters", "effect-rows", "imports", "let-statements", "modules"))]
 
 // What `../../model/control/effect-rows.gandr` proves, refused: a row names
 // each interface once, and a row without an interface its computation

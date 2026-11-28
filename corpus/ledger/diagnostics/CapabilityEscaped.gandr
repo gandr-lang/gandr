@@ -1,4 +1,4 @@
-@![features(("capabilities", "effect-handlers", "explicit-exits", "imports", "modules", "records"))]
+@![features(("capabilities", "data-parameters", "effect-handlers", "explicit-exits", "imports", "modules", "records"))]
 
 /// `CapabilityEscaped`: a scoped capability that would outlive its region.
 

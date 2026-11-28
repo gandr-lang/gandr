@@ -1,7 +1,9 @@
-@![features(("nominal-data", "sized-types", "universes"))]
+@![features(("capabilities", "data-parameters", "nominal-data", "sized-types", "universes"))]
 
-/// `staged_type`: a type at a stage its signature binds.
+/// `staged_type`: a type at a stage that its signature binds, beside a
+/// capability at the unrestricted grade, written with its glyph and in ASCII.
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-def kept[i : Size](n : Nat[i]) -> Nat[i] = n;
+def kept[i : Size](n : Nat[i], c : Cap[ω] { read }) -> Nat[i] = n;
+def keptAscii[i : Size](n : Nat[i], c : Cap[inf] { read }) -> Nat[i] = n;
