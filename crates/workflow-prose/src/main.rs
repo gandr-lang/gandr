@@ -16,7 +16,10 @@
 //! parses once. `prose --python PATH --body FILE` judges the one body in
 //! `FILE` under the body rules, with no ledger. The variables `PROSE_PYTHON`,
 //! `PROSE_CACHE` and `PROSE_MODEL` give `--python`, `--cache` and `--model`
-//! when the command line does not.
+//! when the command line does not. When the environment names a run of
+//! `outputs` (`GANDR_OUTPUT_STORE` and `GANDR_OUTPUT_RUN`), `prose` gives the
+//! findings as the values of the kind `prose`, one value for each file and one
+//! line `RULE DIGEST` for each finding, and judges nothing.
 //!
 //! # Exit codes
 //!
@@ -41,6 +44,8 @@ use std::process::ExitCode;
 use gandr_workflow_debt_ledger::Ledger;
 use gandr_workflow_debt_ledger::LedgerError;
 use gandr_workflow_debt_ledger::Standing;
+use gandr_workflow_output_store::Kind;
+use gandr_workflow_output_store::given;
 use gandr_workflow_prose::Finding;
 use gandr_workflow_prose::Glossary;
 use gandr_workflow_prose::Key;
@@ -620,6 +625,10 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         };
         findings.extend(rules::procedure(golden, help));
     }
+    if given::asked().is_some() {
+        give(&findings)?;
+        return Ok(Outcome::Agreed);
+    }
     let ledger_path = cli.root.join("corpus/prose.ledger");
     if cli.write {
         let text = gandr_workflow_debt_ledger::write(ledger::HEADER, findings.iter().map(Key::of));
@@ -694,4 +703,38 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
     )
     .map_err(output)?;
     Ok(Outcome::Agreed)
+}
+
+/// Gives `findings` to the run of `outputs` that the environment names, as
+/// the values of the kind `prose`: one value for each file, with one line
+/// `RULE DIGEST` for each finding, in the order of the keys.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ProseError::Io`] when the store or the run refuses a value.
+fn give(findings: &[Finding]) -> Result<(), ProseError>
+{
+    let mut keys: Vec<Key> = findings.iter().map(Key::of).collect();
+    keys.sort();
+    let mut values: Vec<(String, String)> = Vec::new();
+    for key in keys {
+        if values.last().is_none_or(|&(ref path, _)| *path != key.path) {
+            values.push((key.path.clone(), String::new()));
+        }
+        if let Some(&mut (_, ref mut value)) = values.last_mut() {
+            value.push_str(&key.rule.to_string());
+            value.push(' ');
+            value.push_str(&key.digest);
+            value.push('\n');
+        }
+    }
+    for (path, value) in values {
+        given::give(Kind("prose"), &path, value.as_bytes()).map_err(|error| ProseError::Io {
+            path: PathBuf::from(&path),
+            message: error.to_string(),
+        })?;
+    }
+    Ok(())
 }

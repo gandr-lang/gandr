@@ -86,12 +86,18 @@ pub const UNEXERCISED: Kind = Kind("unexercised");
 /// The name of the one value of [`UNEXERCISED`].
 pub const GRAMMAR: &str = "grammar";
 
+/// The kind of the findings of the prose check that the check holds as debt:
+/// one value for each file, one line for each finding, its rule and the digest
+/// of its sentence. It is a ratchet.
+pub const PROSE: Kind = Kind("prose");
+
 /// Each kind, in the order of the names.
-pub const KINDS: [Kind; 11] = [
+pub const KINDS: [Kind; 12] = [
     CAPTURES,
     FORMATTED,
     HOVERS,
     PRINTED,
+    PROSE,
     RECOVERY,
     REFUSALS,
     RENDERED,
@@ -104,66 +110,94 @@ pub const KINDS: [Kind; 11] = [
 /// Each kind that is a ratchet: a line of a value is a member, and the gate
 /// refuses a member that the head has and the base does not have. The head
 /// can drop a member.
-pub const RATCHETS: [Kind; 3] = [UNANSWERED, UNCOMMENTED, UNEXERCISED];
+pub const RATCHETS: [Kind; 4] = [PROSE, UNANSWERED, UNCOMMENTED, UNEXERCISED];
 
-/// A kind whose values only a test can compute: the tests of its package give
-/// each value to the store.
+/// How a run gives the values of a kind of [`TESTED`].
+#[derive(Clone, Copy, Debug)]
+pub enum Run
+{
+    /// The tests of the package that this filter of nextest names.
+    Tests(&'static str),
+    /// The binary of the package with this name.
+    Binary(&'static str),
+}
+
+/// A kind whose values only a test or a binary of a package can compute: the
+/// run gives each value to the store.
 #[derive(Clone, Copy, Debug)]
 pub struct Tested
 {
     /// The kind.
     pub kind: Kind,
-    /// The package whose tests give the values.
+    /// The package whose tests or binary give the values.
     pub package: &'static str,
-    /// The filter of nextest that names those tests.
-    pub filter: &'static str,
-    /// The paths of the tree outside the packages that the tests read.
+    /// The tests or the binary.
+    pub run: Run,
+    /// The paths of the tree outside the packages that the run reads.
     pub inputs: &'static [&'static str],
+    /// The variables of the environment whose values the run reads, beside
+    /// the tree.
+    pub environment: &'static [&'static str],
 }
 
-/// Each kind whose values only a test can compute, in the order of the names.
-pub const TESTED: [Tested; 7] = [
+/// Each kind whose values only a test or a binary can compute, in the order
+/// of the names.
+pub const TESTED: [Tested; 8] = [
     Tested {
         kind: CAPTURES,
         package: "gandr-surface-tui",
-        filter: "test(/^captures::/)",
+        run: Run::Tests("test(/^captures::/)"),
         inputs: &[],
+        environment: &[],
     },
     Tested {
         kind: FORMATTED,
         package: "gandr-surface-format",
-        filter: "test(/^format::/) & !test(/^format::sweeps::/)",
+        run: Run::Tests("test(/^format::/) & !test(/^format::sweeps::/)"),
         inputs: &[],
+        environment: &[],
     },
     Tested {
         kind: HOVERS,
         package: "gandr-surface-lsp",
-        filter: "test(=editor::shapes::the_headline_sources_give_their_hovers)",
+        run: Run::Tests("test(=editor::shapes::the_headline_sources_give_their_hovers)"),
         inputs: &crate::tree::REFUSAL_INPUTS,
+        environment: &[],
     },
     Tested {
         kind: PRINTED,
         package: "gandr-surface-pretty",
-        filter: "test(/^goldens::/)",
+        run: Run::Tests("test(/^goldens::/)"),
         inputs: &[],
+        environment: &[],
+    },
+    Tested {
+        kind: PROSE,
+        package: "gandr-workflow-prose",
+        run: Run::Binary("prose"),
+        inputs: &["corpus", "crates", "library"],
+        environment: &["PROSE_MODEL"],
     },
     Tested {
         kind: RENDERED,
         package: "gandr-surface-render-terminal",
-        filter: "test(/^render::/)",
+        run: Run::Tests("test(/^render::/)"),
         inputs: &crate::tree::REFUSAL_INPUTS,
+        environment: &[],
     },
     Tested {
         kind: UNANSWERED,
         package: "gandr-surface-lsp-core",
-        filter: "test(=hover::tests::coverage::sweeps::every_corpus_name_gives_its_gaps)",
+        run: Run::Tests("test(=hover::tests::coverage::sweeps::every_corpus_name_gives_its_gaps)"),
         inputs: &["corpus"],
+        environment: &[],
     },
     Tested {
         kind: UNCOMMENTED,
         package: "gandr-surface-corpus",
-        filter: "test(=comments::gate::the_fixture_gives_its_uncommented_items)",
+        run: Run::Tests("test(=comments::gate::the_fixture_gives_its_uncommented_items)"),
         inputs: &["corpus"],
+        environment: &[],
     },
 ];
 
@@ -235,8 +269,8 @@ pub fn packages(kind: Kind) -> &'static [&'static str]
 ///
 /// They are the closure of each package that computes the kind in the output
 /// of `cargo metadata`, with the package of the writers and the package of
-/// the store. The closure of a kind in [`TESTED`] holds the development
-/// dependencies of its package, which build its tests.
+/// the store. The closure of a kind that tests of [`TESTED`] give holds the
+/// development dependencies of its package, which build its tests.
 ///
 /// # Specification
 /// trivial.
@@ -247,11 +281,15 @@ pub fn tool_packages(
     kind: Kind,
 ) -> Vec<String>
 {
-    let closure: fn(&serde_json::Value, &str) -> Vec<String> = if tested(kind).is_some() {
-        workspace::test_closure
-    }
-    else {
-        workspace::closure
+    let closure: fn(&serde_json::Value, &str) -> Vec<String> = match tested(kind) {
+        Some(&Tested {
+            run: Run::Tests(_), ..
+        }) => workspace::test_closure,
+        Some(&Tested {
+            run: Run::Binary(_),
+            ..
+        })
+        | None => workspace::closure,
     };
     let mut directories: Vec<String> = packages(kind)
         .iter()
@@ -1012,13 +1050,13 @@ fn work_tree_tool(
 
 /// The values of the kind of `tested` of `tree` under the tool `tool`.
 ///
-/// The tests of the kind compute the values, so the store holds the list of
-/// each run at the digest of the tool with the inputs of the tests. A tree
-/// with those inputs reads that list and runs no test. Else, with the
-/// directory `checkout` of the tree, the run starts the tests of the kind
-/// there, with `GANDR_OUTPUT_STORE` and `GANDR_OUTPUT_RUN` set, and lists
-/// the values that they give. With no such directory and no list, it gives
-/// `None`.
+/// The tests or the binary of the kind compute the values, so the store
+/// holds the list of each run at the digest of the tool with the inputs of
+/// the run and the values of its variables. A tree with those inputs reads
+/// that list and starts no run. Else, with the directory `checkout` of the
+/// tree, the run starts the tests or the binary of the kind there, with
+/// `GANDR_OUTPUT_STORE` and `GANDR_OUTPUT_RUN` set, and lists the values that
+/// they give. With no such directory and no list, it gives `None`.
 ///
 /// # Specification
 /// - ensures: the values are in name order.
@@ -1040,7 +1078,21 @@ pub fn tested_values(
     let mut parts = Vec::new();
     let started = Instant::now();
     let inputs = tree.inputs(tested.inputs).map_err(ComputeError::Tree)?;
-    let run = Digest::of_parts([b"run".as_slice(), tool.0.as_slice(), inputs.as_bytes()]).hex();
+    let mut environment = String::new();
+    for &variable in tested.environment {
+        let value = std::env::var(variable).unwrap_or_default();
+        environment.push_str(variable);
+        environment.push('=');
+        environment.push_str(&value);
+        environment.push('\0');
+    }
+    let run = Digest::of_parts([
+        b"run".as_slice(),
+        tool.0.as_slice(),
+        inputs.as_bytes(),
+        environment.as_bytes(),
+    ])
+    .hex();
     let held = read_list(store, kind, &run)?;
     parts.push(Part {
         name: "read the list",
@@ -1072,9 +1124,19 @@ pub fn tested_values(
         Err(error) => return Err(ComputeError::Store(error)),
     }
     let root = std::path::absolute(store.root()).map_err(ComputeError::Store)?;
-    let ran = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-        .args(["nextest", "run", "--locked", "--no-fail-fast"])
-        .args(["--package", tested.package, "-E", tested.filter])
+    let mut command = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    match tested.run {
+        Run::Tests(filter) => command
+            .args(["nextest", "run", "--locked", "--no-fail-fast"])
+            .args(["--package", tested.package, "-E", filter]),
+        Run::Binary(binary) => command.args(["run", "--locked", "--quiet"]).args([
+            "--package",
+            tested.package,
+            "--bin",
+            binary,
+        ]),
+    };
+    let ran = command
         .env(given::STORE, &root)
         .env(given::RUN, &directory)
         .current_dir(checkout)
