@@ -1,13 +1,13 @@
 //! `std.llvm`: the fragment of the `llvm` dialect of MLIR that `std` admits, as
 //! one `theory` block.
 //!
-//! The block is a signature: its sorts and its operations, with no rule and no
-//! model. It has each integer operation, the comparison, the select, the casts,
-//! the address arithmetic, the load and the store, the atomic access, inline
-//! assembly, the tail call and the return. A term of the sort `Body` is a
-//! sequence of operations of the dialect, one operation of the block for each.
+//! The block is a signature with rules and no model. It has each integer
+//! operation, the comparison, the select, the casts, the address arithmetic,
+//! the load and the store, the atomic access, inline assembly, the tail call
+//! and the return. A term of the sort `Body` is a sequence of operations of
+//! the dialect, one operation of the block for each.
 //!
-//! The block has three forms:
+//! The block has four forms:
 //!
 //! - A value has its type as an index: `Val(t : Ty)`, with one constant of
 //!   `Ty` for each type.
@@ -16,6 +16,15 @@
 //! - The rest of a body is a port of the sort `Body`. A port that binds a value
 //!   over `Body` is the rest after an operation that gives that value, so each
 //!   value of the term has one name, as in MLIR.
+//! - A total operation also has a value form, with the prefix `val_`: an
+//!   operation of the sort `Val` with the ports of the body form but the rest.
+//!   One rule takes the body form to its rest at the value form. A law on a
+//!   total operation is a rule on its value form.
+//!
+//! An operation is total when it has no effect and no undefined behaviour in
+//! the LLVM Language Reference of the pinned release. `shl`, `lshr` and `ashr`
+//! are total and give a poison value for a shift that is not less than the
+//! width, so their value is a value of LLVM, which can be poison.
 //!
 //! An operation with a variable count of operands has one operation for each
 //! count that `std` uses. `acquire`, `release`, `select` and `return` are
@@ -27,7 +36,13 @@
 //! - see: `corpus/model/desc/llvm-constants-are-terms.gandr` — a source that
 //!   uses it
 
-@![features(("data-parameters", "dependent-functions", "signatures-as-values", "universes", "visibility"))]
+@![features((
+  "data-parameters",
+  "dependent-functions",
+  "signatures-as-values",
+  "universes",
+  "visibility"
+))]
 
 /// The admitted part of the `llvm` dialect.
 pub theory Llvm where
@@ -239,3 +254,45 @@ pub theory Llvm where
   oper ret : (t : Ty, value : Val t) --> Body
   /// `llvm.unreachable`
   oper unreachable : Body
+  /// The value of `constant`.
+  oper val_constant : (t : Ty, value : Integer) --> Val t
+  /// The value of `add`, and so of each integer operation of two operands.
+  oper val_add : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_sub : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_mul : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_and : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_or : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_xor : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_shl : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_lshr : (t : Ty, left : Val t, right : Val t) --> Val t
+  oper val_ashr : (t : Ty, left : Val t, right : Val t) --> Val t
+  /// The value of `icmp`.
+  oper val_icmp : (t : Ty, predicate : Predicate, left : Val t, right : Val t) --> Val int1
+  /// The value of `choose`.
+  oper val_choose : (t : Ty, condition : Val int1, yes : Val t, no : Val t) --> Val t
+  /// The value of `zext`, and so of each cast between two integer types.
+  oper val_zext : (from : Ty, to : Ty, value : Val from) --> Val to
+  oper val_sext : (from : Ty, to : Ty, value : Val from) --> Val to
+  oper val_trunc : (from : Ty, to : Ty, value : Val from) --> Val to
+  /// The value of `inttoptr`.
+  oper val_inttoptr : (from : Ty, value : Val from) --> Val ptr
+  /// The value of `getelementptr`.
+  oper val_getelementptr : (element : Ty, base : Val ptr, offset : Val int64) --> Val ptr
+  /// A total operation in a body is its rest at its value.
+  rule constantVal : constant t n k <=> k (val_constant t n)
+  rule addVal : add t a b k <=> k (val_add t a b)
+  rule subVal : sub t a b k <=> k (val_sub t a b)
+  rule mulVal : mul t a b k <=> k (val_mul t a b)
+  rule andVal : and t a b k <=> k (val_and t a b)
+  rule orVal : or t a b k <=> k (val_or t a b)
+  rule xorVal : xor t a b k <=> k (val_xor t a b)
+  rule shlVal : shl t a b k <=> k (val_shl t a b)
+  rule lshrVal : lshr t a b k <=> k (val_lshr t a b)
+  rule ashrVal : ashr t a b k <=> k (val_ashr t a b)
+  rule icmpVal : icmp t p a b k <=> k (val_icmp t p a b)
+  rule chooseVal : choose t c a b k <=> k (val_choose t c a b)
+  rule zextVal : zext s t a k <=> k (val_zext s t a)
+  rule sextVal : sext s t a k <=> k (val_sext s t a)
+  rule truncVal : trunc s t a k <=> k (val_trunc s t a)
+  rule inttoptrVal : inttoptr s a k <=> k (val_inttoptr s a)
+  rule getelementptrVal : getelementptr e p i k <=> k (val_getelementptr e p i)
