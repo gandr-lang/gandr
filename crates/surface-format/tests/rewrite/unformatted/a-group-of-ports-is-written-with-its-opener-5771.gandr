@@ -1,0 +1,29 @@
+@![features(("call-by-push-value", "thunks-and-force"))]
+
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n)
+
+def named(m : Integer, n : Integer) -> (q : Integer, r : Integer) =
+  (.r = n, .q = m)
+
+def half(m : Integer) -> (q : Integer) = (m,)
+
+def commented(m : Integer, n : Integer) -> (q : Integer, r : Integer) =
+  (
+    // the quotient first
+    m,
+    n
+  )
+
+def first(a : Integer) -> Integer = {
+  let (q, r) = divmod a a
+  q
+}
+
+def punned(a : Integer) -> Integer = {
+  let (.r, .q) = divmod a a
+  r
+}
+
+def grouped(a : Integer) -> Integer = (a)
+
+def annotated(a : Integer) -> Integer = (a : Integer)

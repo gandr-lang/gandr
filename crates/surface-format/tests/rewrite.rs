@@ -1636,6 +1636,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "pattern-application",
             "handler-words",
             "bare-run",
+            "port-group",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -2719,6 +2720,78 @@ fn a_handler_is_written_effect_then_handle()
             spelled(&grammar, source, form, only),
             moved,
             "{form}: the words move alike"
+        );
+        assert_eq!(
+            spelled(&grammar, moved.as_str(), form, only),
+            moved,
+            "{form}: a second pass changes nothing"
+        );
+    }
+}
+
+/// #5771: a group of ports is written with its opener `%(` in either form
+/// when the rewrite is named: a positional, a labelled and a one-port group
+/// in a tail, and a positional and a labelled group in a pattern. A comment
+/// in a group keeps its place, and a grouping, an annotation and the list of
+/// an attribute stay. The meaning check withdraws nothing, and a second pass
+/// changes nothing.
+#[test]
+fn a_group_of_ports_is_written_with_its_opener_5771()
+{
+    let grammar = grammar();
+    let source =
+        include_str!("rewrite/unformatted/a-group-of-ports-is-written-with-its-opener-5771.gandr");
+    let only = Selection::Only(&[RewriteName::PortGroup]);
+    let moved = spelled(&grammar, source, Form::Sugared, only);
+    expect![[r#"
+        @![features(("call-by-push-value", "thunks-and-force"))]
+
+        def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = %(m, n)
+
+        def named(m : Integer, n : Integer) -> (q : Integer, r : Integer) =
+          %(.r = n, .q = m)
+
+        def half(m : Integer) -> (q : Integer) = %(m)
+
+        def commented(m : Integer, n : Integer) -> (q : Integer, r : Integer) =
+          %(
+            // the quotient first
+            m,
+            n
+          )
+
+        def first(a : Integer) -> Integer = {
+          let %(q, r) = divmod a a
+          q
+        }
+
+        def punned(a : Integer) -> Integer = {
+          let %(.r, .q) = divmod a a
+          r
+        }
+
+        def grouped(a : Integer) -> Integer = (a)
+
+        def annotated(a : Integer) -> Integer = (a : Integer)
+    "#]]
+    .assert_eq(&moved);
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        rewrites: only,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(
+        formatted.withdrawn(),
+        [],
+        "the meaning check keeps each group"
+    );
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, only),
+            moved,
+            "{form}: the groups move alike"
         );
         assert_eq!(
             spelled(&grammar, moved.as_str(), form, only),
