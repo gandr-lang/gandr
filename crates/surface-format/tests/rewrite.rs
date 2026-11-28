@@ -141,18 +141,20 @@ fn each_rewrite_moves_its_pair_both_ways()
     }
 }
 
-/// #1327: the default grade of a thunk type, `ω` or `inf` in ASCII, is
-/// unwritten in either form, as the printer writes neither, and a value
-/// function written with it is sugared as one written without; a comment
-/// within the grade, or any other grade, keeps it written. In a theory's
-/// judgment only the alias over one bare domain is written: a parenthesised
-/// list there opens the judgment's port group (#1329).
+/// #1327: the sugared form leaves the default grade of a thunk type, `ω` or
+/// `inf` in ASCII, unwritten, as the printer writes it in neither form, and a
+/// value function written with it is sugared as one written without. The
+/// explicit form keeps a grade that the source writes, so an exemplar of the
+/// grade keeps its spelling. A comment within the grade, or any other grade,
+/// keeps it written. In a theory's judgment only the alias over one bare
+/// domain is written: a parenthesised list there opens the judgment's port
+/// group (#1329).
 #[test]
-fn the_default_grade_is_unwritten_in_either_form_1327()
+fn the_default_grade_is_unwritten_in_the_sugared_form_1327()
 {
     let grammar = grammar();
     let source = include_str!(
-        "rewrite/unformatted/the-default-grade-is-unwritten-in-either-form-1327.gandr"
+        "rewrite/unformatted/the-default-grade-is-unwritten-in-the-sugared-form-1327.gandr"
     );
     for (form, expected) in [
         (
@@ -172,14 +174,14 @@ theory Counting where {
         (
             Form::Explicit,
             "\
-def step : +U (Integer -> -F Integer)
-def lazy : +U &{-F Integer, -F Integer};
+def step : +U[ω] (Integer -> -F Integer)
+def lazy : +U[inf] &{-F Integer, -F Integer};
 def noted : +U[/* every use */ ω] (-F Integer)
 def once : +U[1] (Integer -> -F Integer)
 theory Counting where {
   sort T : Type
-  oper next : +U (T -> -F T)
-  oper add : +U (T -> T -> -F T)
+  oper next : +U[ω] (T -> -F T)
+  oper add : +U[ω] (T -> T -> -F T)
 }
 ",
         ),

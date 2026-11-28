@@ -86,8 +86,9 @@ pub enum RewriteName
     LazyProduct,
     /// The value function: `+U (A -> -F B)` and `(A) -> B`.
     ValueFunction,
-    /// The default grade of a thunk type: `+U[ω] B` and `+U B`, both forms
-    /// leaving it unwritten as the printer does.
+    /// The default grade of a thunk type: `+U[ω] B` and `+U B`. The sugared
+    /// form leaves it unwritten, as the printer does; the explicit form keeps
+    /// a grade that the source writes.
     DefaultGrade,
     /// The path composite: `Path.walk (fun (y) { Path[.A = A](a, y) }) q p`
     /// and `Path.step p q`, both forms writing the composite as the printer
@@ -297,7 +298,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 40] = [
+pub const REWRITES: [Rewrite; 39] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -365,14 +366,6 @@ pub const REWRITES: [Rewrite; 40] = [
     Rewrite {
         name: RewriteName::DefaultGrade,
         direction: Direction::Sugar,
-        mold: MoldName("u_type"),
-        from: Spelling("+U[ω] B"),
-        to: Spelling("+U B"),
-        enabled: Enabled::On,
-    },
-    Rewrite {
-        name: RewriteName::DefaultGrade,
-        direction: Direction::Desugar,
         mold: MoldName("u_type"),
         from: Spelling("+U[ω] B"),
         to: Spelling("+U B"),

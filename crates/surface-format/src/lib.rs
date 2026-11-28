@@ -97,9 +97,10 @@
 //! the eager product, the sum, the lazy product, the tuple, the value function,
 //! the path composite, the path inverse and a map's action on a path — each
 //! moving one form between its two spellings, and the default grade `ω` of a
-//! thunk type, which the printer writes in neither form and both leave
-//! unwritten, so a value function written with it is sugared as one written
-//! without. The sugared form also leaves out a tail's `return` where the
+//! thunk type, which the printer writes in neither form: the sugared form
+//! leaves it unwritten, so a value function written with it is sugared as one
+//! written without, and the explicit form keeps a grade that the source
+//! writes. The sugared form also leaves out a tail's `return` where the
 //! lowering would infer it, as the printer's canonical body does: a `return`
 //! of a value where a path through its body ends, which the lowering lists
 //! (`gandr_surface_lowering::ElidableExit`), and one of a call or an operator
@@ -132,7 +133,7 @@
 //! | `sum`            | `+{A, B, …}`            | `A + B + …`     |
 //! | `lazy-product`   | `&{C, D}`               | `C & D`         |
 //! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) -> C` |
-//! | `default-grade`  | `+U B`, from `+U[ω] B`  | `+U B`, from `+U[ω] B` |
+//! | `default-grade`  | `+U[ω] B`, as written   | `+U B`, from `+U[ω] B` |
 //! | `path-composite` | `Path.step(p, q)`, from `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` | `Path.step(p, q)`, from `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` |
 //! | `path-inverse`   | `Path.back(p)`, from `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` | `Path.back(p)`, from `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` |
 //! | `path-action`    | `Path.ap(f, p)`, from `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` | `Path.ap(f, p)`, from `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` |
