@@ -12,6 +12,14 @@
 //! `mprotect` per emission, is two system calls per function and stops every
 //! other thread's code in the region while it writes.
 //!
+//! A macOS host with no per-thread toggle, such as a virtual machine, where
+//! `pthread_jit_write_protect_supported_np()` is 0, would keep its `MAP_JIT`
+//! pages writable and executable at one time. There the region has two views,
+//! as on Linux: `mach_vm_remap` gives a second view of the same pages, which
+//! is made writable alone, and the mapping itself is made readable and
+//! executable alone. On a host with the toggle, the kernel refuses that remap
+//! of a `MAP_JIT` mapping.
+//!
 //! On Linux a region is one `memfd` mapped twice: writable at any address,
 //! and readable and executable. Writes go through the first view and code
 //! runs from the second, so no page is ever both writable and executable and
@@ -94,7 +102,8 @@ pub struct Region
 {
     /// The executable view's first byte.
     code: *mut u8,
-    /// The writable view's first byte: the executable view itself on macOS.
+    /// The writable view's first byte: the executable view itself on a macOS
+    /// host with the per-thread toggle.
     write: *mut u8,
     /// The mapping's length.
     capacity: usize,
@@ -204,11 +213,14 @@ impl Region
 #[derive(Clone, Copy, Debug)]
 struct Bytes(usize);
 
-/// The cache maintenance libSystem declares in `<libkern/OSCacheControl.h>`.
+/// The cache maintenance libSystem declares in `<libkern/OSCacheControl.h>`,
+/// and the Mach call of `<mach/mach_vm.h>` that maps the pages of a range a
+/// second time.
 ///
 /// # Safety
-/// - unsafe invariants: the signature matches the declaration — `void *` and a
-///   transparent `size_t` — and the range passed lies inside a live mapping.
+/// - unsafe invariants: each signature matches its declaration — `void *` and a
+///   transparent `size_t`; the Mach types of `<mach/mach_vm.h>` as libc names
+///   them — and each range passed lies inside a live mapping.
 #[cfg(all(target_os = "macos", gandr_executable))]
 #[expect(
     unused_doc_comments,
@@ -231,7 +243,50 @@ unsafe extern "C" {
         start: *mut core::ffi::c_void,
         length: Bytes,
     );
+
+    /// Map the pages of a range of `source_task` a second time in
+    /// `target_task`, and give the protections of the new view.
+    ///
+    /// # Specification
+    /// - requires: the source range lies inside a live mapping; each pointer is
+    ///   valid for one write.
+    /// - ensures: on `KERN_SUCCESS`, a view at `target_address` that shares the
+    ///   source's pages when `copy` is 0.
+    /// - executable: none — a foreign declaration has no body to check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — on a macOS host with no per-thread toggle, every
+    ///   named program is written through this view; a view that shared no page
+    ///   would run bytes never written.
+    /// - witness: `executable::tests::no_view_is_writable_and_executable`
+    fn mach_vm_remap(
+        target_task: libc::vm_map_t,
+        target_address: *mut libc::mach_vm_address_t,
+        size: libc::mach_vm_size_t,
+        mask: libc::mach_vm_offset_t,
+        flags: libc::c_int,
+        source_task: libc::vm_map_t,
+        source_address: libc::mach_vm_address_t,
+        copy: libc::boolean_t,
+        current_protection: *mut libc::vm_prot_t,
+        maximum_protection: *mut libc::vm_prot_t,
+        inheritance: libc::vm_inherit_t,
+    ) -> libc::kern_return_t;
+
+    /// The port of this task, which `mach_task_self()` of `<mach/mach_init.h>`
+    /// reads.
+    static mach_task_self_: libc::mach_port_t;
 }
+
+/// `VM_FLAGS_ANYWHERE` of `<mach/vm_statistics.h>`: the kernel chooses the
+/// address of the new view.
+#[cfg(all(target_os = "macos", gandr_executable))]
+const ANYWHERE: libc::c_int = 0x0001;
+
+/// `VM_INHERIT_NONE` of `<mach/vm_inherit.h>`: a forked child does not
+/// inherit the view.
+#[cfg(all(target_os = "macos", gandr_executable))]
+const INHERIT_NONE: libc::vm_inherit_t = 2;
 
 /// Make `MAP_JIT` pages writable, and not executable, for the calling
 /// thread.
@@ -439,13 +494,17 @@ impl Region
     /// Map a region of `capacity` bytes.
     ///
     /// # Specification
-    /// - ensures: a readable, executable `MAP_JIT` mapping, write-protected for
-    ///   the calling thread, so no thread writes it outside a write.
+    /// - ensures: a readable, executable `MAP_JIT` mapping. On a host with the
+    ///   per-thread toggle it is the one view, write-protected for the calling
+    ///   thread, so no thread writes it outside a write. On a host with no
+    ///   toggle, a second view of its pages is the writable view, and neither
+    ///   view is writable and executable.
     /// - executable: none — the mapping's protection is the host's state, which
     ///   no predicate reads.
     ///
     /// # Errors
-    /// [`MapFailure`] with the `mmap` error.
+    /// [`MapFailure`] with the `mmap` or `mprotect` error, or the Mach error of
+    /// the remap.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every named program runs from a region this maps; a
@@ -470,13 +529,114 @@ impl Region
         if base == libc::MAP_FAILED {
             return Err(last_error());
         }
-        Ok(Self {
-            code: base.cast(),
-            write: base.cast(),
-            capacity: capacity.0,
-            used: 0,
-        })
+        // SAFETY: the query reads the host's support and changes nothing.
+        if unsafe { libc::pthread_jit_write_protect_supported_np() } != 0_i32 {
+            return Ok(Self {
+                code: base.cast(),
+                write: base.cast(),
+                capacity: capacity.0,
+                used: 0,
+            });
+        }
+        let write = writable_alias(base, capacity);
+        let mapped = write.and_then(|write| {
+            // SAFETY: the mapping is ours, and no code runs from it yet.
+            if unsafe { libc::mprotect(base, capacity.0, libc::PROT_READ | libc::PROT_EXEC) }
+                != 0_i32
+            {
+                let failure = last_error();
+                // SAFETY: the alias is ours and unused.
+                unsafe {
+                    libc::munmap(write.cast(), capacity.0);
+                }
+                return Err(failure);
+            }
+            Ok(Self {
+                code: base.cast(),
+                write,
+                capacity: capacity.0,
+                used: 0,
+            })
+        });
+        if mapped.is_err() {
+            // SAFETY: the mapping is ours and unused.
+            unsafe {
+                libc::munmap(base, capacity.0);
+            }
+        }
+        mapped
     }
+}
+
+/// A second view of the `capacity` bytes at `base`, writable and not
+/// executable, which a forked child does not inherit.
+///
+/// # Specification
+/// - requires: `base` is a live mapping of `capacity` bytes.
+/// - ensures: on success, a view that shares the pages of `base`, readable and
+///   writable alone.
+/// - fails: [`MapFailure`] with the Mach error of the remap, or the `mprotect`
+///   error; nothing stays mapped.
+/// - panics: none.
+/// - executable: none — the view's protection is the host's state, which no
+///   predicate reads.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L2 — on a macOS host with no per-thread toggle, every named
+///   program is written through this view; a view that kept execute permission
+///   lets the child's write to the executable view pass.
+/// - witness: `executable::tests::no_view_is_writable_and_executable`
+#[cfg(all(target_os = "macos", gandr_executable))]
+fn writable_alias(
+    base: *mut libc::c_void,
+    capacity: Offset,
+) -> Result<*mut u8, MapFailure>
+{
+    let overflow = |_overflow| MapFailure(libc::EINVAL);
+    let size = libc::mach_vm_size_t::try_from(capacity.0).map_err(overflow)?;
+    let source = libc::mach_vm_address_t::try_from(base.addr()).map_err(overflow)?;
+    let mut target: libc::mach_vm_address_t = 0;
+    let mut current: libc::vm_prot_t = 0;
+    let mut maximum: libc::vm_prot_t = 0;
+    // SAFETY: the port is set before `main` and never written again.
+    let task = unsafe { mach_task_self_ };
+    // SAFETY: the source range is the live mapping at `base`, and each
+    // pointer is a local of this frame.
+    let remapped = unsafe {
+        mach_vm_remap(
+            task,
+            &raw mut target,
+            size,
+            0,
+            ANYWHERE,
+            task,
+            source,
+            0,
+            &raw mut current,
+            &raw mut maximum,
+            INHERIT_NONE,
+        )
+    };
+    if remapped != libc::KERN_SUCCESS {
+        return Err(MapFailure(remapped));
+    }
+    let write: *mut u8 =
+        core::ptr::with_exposed_provenance_mut(usize::try_from(target).map_err(overflow)?);
+    // SAFETY: the view is ours, and nothing runs from it.
+    if unsafe { libc::mprotect(write.cast(), capacity.0, libc::PROT_READ | libc::PROT_WRITE) }
+        != 0_i32
+    {
+        let failure = last_error();
+        // SAFETY: the view is ours and unused.
+        unsafe {
+            libc::munmap(write.cast(), capacity.0);
+        }
+        return Err(failure);
+    }
+    Ok(write)
 }
 
 /// The executable view's placement flag: below 2 GiB for the x86-64 static
