@@ -11,7 +11,7 @@
 /// - see: corpus/sketch/environments/open.gandr — `open e;` on a configuration
 
 /// What a plugin may touch: one directory to read and one log to write.
-pub def Grants : Type = Model *{ fs : Cap { read }; log : Sink });
+pub def Grants : Type = Model *{ fs : Cap[read]; log : Sink });
 
 /// A plugin that reads its configuration and logs what it read.
 def plugin(grants : Grants) -> [Io] Unit =
@@ -19,7 +19,7 @@ def plugin(grants : Grants) -> [Io] Unit =
   log.emit (fs.read "config.toml")
 
 /// The host grants the plugin one directory and its log, and keeps the rest.
-def host(root : Cap { read, write }, log : Sink) -> [Io] Unit =
+def host(root : Cap[read, write], log : Sink) -> [Io] Unit =
   let grants : Grants = *{.fs = root.attenuate ({ read }), .log = log}
   plugin grants
 
